@@ -19,3 +19,6 @@ frontend/.bindings-tmp-*/
 
 # To ignore binaries generated during dev runs
 *.syso
+
+# the machine's own variables for the tasks, such as the game installs
+.env

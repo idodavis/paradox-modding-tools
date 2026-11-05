@@ -63,10 +63,19 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   define the name, the one the game keeps first. A command's card shows the scopes the dumps give it, or says they
   name none. A fact learned only from the game's files marks the card inferred. `Classes` are the wiki lexicon's, in the
   order of its tabs, and `Card.Lexicon` names the one that lists what the card is about.
-- **Completion.** `Complete` returns what fits at a key: the language's operators for the block, then its commands
-  ranked by how often the game writes each there, then its fields. At a value it returns the field's choices, yes and
-  no, the names of its database, or the image files under the folder typed so far. A value that takes a target also
-  gets the links that lead to the scope it needs, and the scopes saved earlier in the definition.
+- **Completion.** `Complete` returns what fits at a key: the language's operators for the block, then its commands,
+  the scripted definitions the block's caller calls and, where the block reads links, the links written alone that
+  run in its scope, `this`, `root`, `prev` and the scopes saved earlier, each ranked by how often the game writes it,
+  then its fields and the names of the database its keys name. A block whose caller is any call, such as a command's
+  block or a random list's branch, gets the definitions that act as a command it allows: scripted effects among
+  effects, scripted triggers among triggers. At a value it returns what a call's row says it
+  writes, yes and no or the field's choices, and the names of each database the walk finds the value refers to: its
+  localization keys, its image files under the folder typed so far, or its definitions, after the link's prefix where
+  one is typed. Where none of these apply, it returns the values the game's own files write there, without numbers or
+  dates. A value that takes a target also gets the links and the link prefixes that lead to the scope it needs, and
+  the scopes saved earlier in the definition. The value of a link is a target of the scope the link leads to. A word
+  written alone in a block gets both lists, the values and the block's keys, since it may also be a key typed before
+  its equals sign. A definition local to another file is never offered.
 - **Navigation.** `Definition` returns where a name is defined, the kept definition first. `References` adds where it is
   used. `Rename` returns its edits grouped by the mod file they change, and `PrepareRename` refuses a name the game
   defines too, or one no mod defines. `ListSymbols` is a file's outline, and `FindSymbols` searches the workspace.

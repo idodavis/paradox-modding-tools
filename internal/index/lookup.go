@@ -110,24 +110,37 @@ func (index *Index) ListMessages(key string) []Site {
 }
 
 // ListKeys returns up to the given limit of the localization keys that contain the given text, in any case, and have
-// a loaded message in the given language. Each key comes once, in the order the index first met it.
+// a loaded message in the given language. The keys that start with the text come before the ones that only contain
+// it. Each key comes once, and within each of the two the keys come in the order the index first met them.
 func (index *Index) ListKeys(language, text string, limit int) []string {
 	ordinal, ok := index.Databases.Lookup(game.Localization)
 	if !ok {
 		return nil
 	}
 	posting, lower := Posting{Role: RoleLocalizes, Database: uint16(ordinal)}, strings.ToLower(text)
-	var keys []string
+	var starting, containing []string
 	for name, key := range index.Names.Texts {
-		if len(keys) == limit {
+		if len(starting) == limit {
 			break
 		}
-		if strings.Contains(strings.ToLower(key), lower) && slices.ContainsFunc(index.listKey(posting, uint32(name)),
+		folded := strings.ToLower(key)
+		starts := strings.HasPrefix(folded, lower)
+		// a key that only contains the text is kept only while the keys that start with it leave room
+		if !starts && (len(starting)+len(containing) >= limit || !strings.Contains(folded, lower)) {
+			continue
+		}
+		if !slices.ContainsFunc(index.listKey(posting, uint32(name)),
 			func(site Site) bool { return index.IsLoaded(site.File) && index.Language(site) == language }) {
-			keys = append(keys, key)
+			continue
+		}
+		if starts {
+			starting = append(starting, key)
+		} else {
+			containing = append(containing, key)
 		}
 	}
-	return keys
+	keys := slices.Concat(starting, containing)
+	return keys[:min(len(keys), limit)]
 }
 
 // FindDefinition returns the definition that a site sits inside, or false if the site is at the top of its file.

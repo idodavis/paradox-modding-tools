@@ -214,6 +214,9 @@ var Keywords = []Keyword{
 	{Key: "random_events/<number>", Weighted: true, Blurb: "One event the on_action can pick; its number is how likely it is. An event of 0 is a chance that none fires."},
 	{Key: "random_on_action/<number>", Weighted: true, Blurb: "One on_action the on_action can pick; its number is how likely it is."},
 	{Key: "random_on_actions/<number>", Weighted: true, Blurb: "One on_action the on_action can pick; its number is how likely it is."},
+	// CK3 history/_characters.info:65-66,78: a date entry changes the character's own keys, and reads any other key as
+	// an effect
+	{Games: []string{ck3}, Holder: "setup", Key: "<number>", Shape: "setup", Blurb: "What changes for the character on this date."},
 	{Key: "switch/<any>", Shape: "enclosing", Blurb: "One case of a switch: runs when the trigger's value is this."},
 	{Key: "every_*", Shape: "effects", Class: "list", Blurb: "Runs the effects inside it on every item of the list named after every_."},
 	{Key: "random_*", Shape: "effects", Class: "list", Blurb: "Runs the effects inside it on one random item of the list."},
@@ -260,6 +263,8 @@ var Keywords = []Keyword{
 	{Holder: "value", Key: "trigger", Shape: ShapeTriggers, Blurb: "The conditions that must hold for the modifier around it to apply."},
 	{Holder: "value", Key: "opinion_modifier", Shape: "arguments", Modifies: true, Blurb: "Changes the weight by how much one character likes another."},
 	{Holder: "value", Key: "compare_modifier", Shape: "arguments", Modifies: true, Blurb: "Changes the weight by how a value of one character compares with another's."},
+	// CK3 character_interactions/00_scheme_interactions.txt:2099 and schemes/scheme_types/befriend_scheme.txt:315
+	{Games: []string{ck3}, Holder: "value", Key: "compatibility_modifier", Shape: "arguments", Modifies: true, Blurb: "Changes the weight by how well two characters' traits get along."},
 	{Key: "and", Shape: "triggers", Class: "logical", Says: "all of", Blurb: "True only when everything inside it is true."},
 	{Key: "or", Shape: "triggers", Class: "logical", Says: "any of", Blurb: "True when at least one thing inside it is true."},
 	{Key: "not", Shape: "triggers", Class: "logical", Says: "not all of", Negates: true, Blurb: "True when what is inside it is false."},

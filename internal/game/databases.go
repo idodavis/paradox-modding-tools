@@ -89,6 +89,7 @@ type Callable struct {
 	Proves     []string // the shapes a block that calls one of its definitions can have
 	// Command is the command a definition acts as where it is called, an effect or a trigger, or "" for neither.
 	Command string
+	Values  []string // what a call writes as its value where it passes no parameters; none means a call writes none
 }
 
 // A FileType is what a file's extension says about a file, beyond what the databases of its folder say.
@@ -482,15 +483,22 @@ var Nestings = []Nesting{
 
 // Callables lists the callable databases by name.
 var Callables = map[string]Callable{
+	// a call writes yes and never no, as CK3 events/activities/activity_system_events.txt:151 does
 	"scripted_effects": {
 		Callers: []string{callEffect}, Shape: "effects", Parameters: true, Proves: []string{ShapeEffects}, Command: callEffect,
+		Values: []string{"yes"},
 	},
-	// A value block calls them too.
+	// A value block calls them too. A call writes yes, or no to test the opposite, as CK3
+	// events/activities/chariot_race_activity/chariot_ongoing_events_jp.txt:189 does.
 	"scripted_triggers": {
 		Callers: []string{callTrigger, callValue}, Shape: "triggers", Parameters: true, Proves: []string{ShapeTriggers, ShapeValue},
-		Command: callTrigger,
+		Command: callTrigger, Values: Bools,
 	},
-	"scripted_modifiers": {Callers: []string{callValue}, Shape: ShapeValue, Parameters: true, Proves: []string{ShapeValue}},
+	// CK3 common/activities/activity_types/camp_party.txt:638
+	"scripted_modifiers": {
+		Callers: []string{callValue}, Shape: ShapeValue, Parameters: true, Proves: []string{ShapeValue},
+		Values: []string{"yes"},
+	},
 	"script_values":      {Callers: []string{callTrigger, callValue}, Shape: "value", Proves: []string{ShapeTriggers, ShapeValue}},
 	"gui.type":           {Callers: []string{guiTagCalls}, FoldsCase: true}, // a widget key naming a type
 	"gui.local_type":     {Callers: []string{guiTagCalls}, Local: true},
@@ -646,6 +654,8 @@ var References = []Reference{
 		Games: []string{ck3}, Database: "events", KeyPath: "sender/triggered_animation/animation",
 		Target: "gfx/portraits/portrait_animations",
 	},
+	// a date entry's liege names the title above it, as CK3 history/titles/00_other_titles.txt:2525 writes e_hre
+	{Games: []string{ck3}, Database: "history/titles", KeyPath: "<number>/liege", Target: "landed_titles"},
 	{Games: vic3AndEU5, Database: "events", KeyPath: "title", Target: Localization},
 	{Games: vic3AndEU5, Database: "events", KeyPath: "desc", Target: Localization},
 	{Games: []string{vic3}, Database: "events", KeyPath: "flavor", Target: Localization},

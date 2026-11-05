@@ -26,7 +26,6 @@ import { canSplit, useEditorStore, type Group, type Side, type Tab } from "../..
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
-import CreateModForm from "../../ui/CreateModForm.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import CodeEditor from "./CodeEditor.vue";
@@ -56,6 +55,7 @@ const MODES = [
   { label: "Visual", icon: "i-lucide-eye", value: "visual" },
 ];
 const REVEAL = findCommand("explorer.reveal");
+const CREATE = findCommand("mod.create");
 const SAVE_ALL = findCommand("editor.saveAll");
 
 const editor = useEditorStore();
@@ -107,7 +107,6 @@ const { data: menuCopies } = useQuery(() => ({
 }));
 const menuGameCopy = computed(() => menuPlace.value && findGameCopy(menuPlace.value, menuCopies.value));
 const closedNotices = shallowReactive(new Set<string>());
-const creating = shallowRef(false);
 // The other ways to change a read only file when the caret is in no entry to override. Null until the caret is known.
 const hint = computed(() => {
   const activePlace = place.value;
@@ -644,10 +643,14 @@ const actions = computed<DropdownMenuItem[]>(() => [
         size="xs"
         @click="copyToMod(place)"
       />
-      <template v-if="notice.workshop">
-        <UButton label="New mod for my changes…" size="xs" color="neutral" variant="outline" @click="creating = true" />
-        <CreateModForm v-model:open="creating" :workspace-id="workspace.activeId()" />
-      </template>
+      <UButton
+        v-if="notice.workshop"
+        label="New mod for my changes…"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        @click="CREATE?.onSelect?.()"
+      />
       <UButton
         icon="i-lucide-x"
         size="xs"

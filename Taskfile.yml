@@ -97,7 +97,9 @@ tasks:
       PMT_TEST_INSTALL_{CK3,VIC3,EU5} to the three game roots; the console
       dumps are read from each game's Documents folder. PKGS limits the run
       to some packages (PKGS="./internal/schema/... ./services/lsp"), and
-      PMT_TEST_ENCODE turns on texture's encoding of every picture.
+      PMT_TEST_ENCODE turns on texture's encoding of every picture. A .env
+      beside this file, kept out of git, can set the variables.
+    dotenv: ["{{.TASKFILE_DIR}}/.env"]
     cmds:
       # not 60s: each gate here scans three real installs
       - go test -count=1 -timeout 1800s {{.PKGS | default "./..."}}
@@ -116,3 +118,15 @@ tasks:
     cmds:
       - task: test:gate
       - task: check:types
+
+  schema:shipped:
+    summary: >
+      Brings the shipped backup of each game's dumps up to date: for each game
+      whose install PMT_TEST_INSTALL_{CK3,VIC3,EU5} names, a backup older than
+      the install's dumps is written again from them. It prints one line per
+      game: up to date, rebuilt, skipped, or the dumps still to make in the game.
+      A .env beside this file, kept out of git, can set the variables.
+    dotenv: ["{{.TASKFILE_DIR}}/.env"]
+    dir: internal/schema
+    cmds:
+      - go run ./gen ck3 vic3 eu5

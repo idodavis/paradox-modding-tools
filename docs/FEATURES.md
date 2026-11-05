@@ -51,18 +51,9 @@ mods into load order. A second list takes mods you only want to check yours agai
 
 Everything can be changed later in Settings. The new workspace opens on the page you chose to start on.
 
-**Make a new mod** is the way in for a new modder. It asks what you want to make:
-
-- Change something in the game.
-- Add something new.
-- Translate a mod.
-- Make two mods work together.
-- Fix a mod you have.
-- Look around the game's files, read only.
-
-PMT then asks for the game, the mods the goal works on, and a name. It shows the folder it will make, and opens the
-page that suits the goal. **Set it up myself** goes to the plain setup. Guidance for new modders can be turned off in
-Settings.
+**Make a new mod** is the short way in for a new modder. Pick the game, name the mod and choose its language. PMT shows
+the folder it will make, makes a workspace with the mod in it, and opens the IDE. **How a mod works** explains what the
+mod's folders are for. Guidance for new modders, in Settings, shows it and the first-mod checklist.
 
 ## IDE
 

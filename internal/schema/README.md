@@ -40,8 +40,8 @@ of an install and its dumps, and caches it as a gob file.
 Every fact the schema learns comes with a `game.Source`. A lower source outranks a higher one: the rows, the dumps, the
 game's executable, its logs, the docs, the wiki, its own files, and inferred last.
 
-- Only the dumps, the docs, the wiki and what a definition in the files says its name takes can accuse a mod
-  (`Source.CanAccuse`).
+- Only the dumps, the docs, the wiki and what a definition in the files says its name or a parameter takes can accuse
+  a mod (`Source.CanAccuse`).
 - A fact learned from the game's own files completes a hover card, marked as inferred. It never fails a verdict.
   A reference that only such a fact makes is `Reference.Inferred`.
 
@@ -114,13 +114,15 @@ its message keys. The DLC folder is left out. It runs in two passes.
 
 1. The `declarer` reads the files that declare what script and GUI files call by name: scripted definitions with the
    parameters their bodies write, widget types, modifier types and the event namespaces events files declare. A later
-   key under a call then counts as a call.
+   key under a call then counts as a call. What the game's parameters name is settled after the second pass, since
+   the prefixes' databases and many claims come from it.
 2. The `counter` counts what the files write, on `files.Workers` workers, each with fields of its own that are added
    together after. It counts the keys under each database's definitions, each value, the shapes a block's keys tell,
-   the names after each prefix and where each command and data function is written.
+   the names after each prefix, how often each command is written and where each command and data function is
+   written.
 
-`resolveCounts` turns the counts into the claims above, the prefixes' databases, each command's examples and its
-command patterns. A `CommandPattern` is a family of commands the dumps declare once for each definition of a database,
+`resolveCounts` turns the counts into the claims above, the prefixes' databases, each command's count and examples,
+and its command patterns. A `CommandPattern` is a family of commands the dumps declare once for each definition of a database,
 as `has_relation_*` is for the scripted relations. The walk reads a key a pattern makes as the command of one of the
 game's own definitions.
 
@@ -131,6 +133,19 @@ it saves. A modifier type's definition says whether its name takes yes or no, or
 from the game's files, and the event namespaces too. `SetScripted` reads them from the workspace's mods, in place of
 what those files declared before, so a call to a mod's scripted definition is a known call. A call finds the game's
 definition first, and a mod's never takes the place of a command the dumps declare.
+
+Each parameter is a field the definition declares (`SourceDefinitions`), so a key in a call reads as its argument,
+never as a link or a command of that name. A parameter also takes the database its body names, so the argument's
+value refers to a definition there:
+
+- A parameter written whole after a link prefix, as a key or a value (`building_type:$building_type$`), takes the
+  prefix's database, as the definition states it.
+- A parameter written whole as the value of a key with a field of its own takes what that field claims, with the
+  field's source. A link's key and an argument of a call are left out.
+- A parameter passed on whole to a call of another scripted definition takes what that one's argument takes, the
+  same way it takes the link a name is saved under (`resolveRelays`).
+
+A parameter keeps the first database it gets.
 
 ## The walk
 

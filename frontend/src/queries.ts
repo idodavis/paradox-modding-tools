@@ -150,10 +150,6 @@ export const modFolderQuery = defineQueryOptions(
     query: () => workspace.ResolveModFolder(installId, dir, name),
   }),
 );
-export const modCheckQuery = defineQueryOptions(({ installId, dir }: { installId: string; dir: string }) => ({
-  key: ["workspace", "mod-check", installId, dir],
-  query: () => workspace.CheckModFolder(installId, dir),
-}));
 export const precedenceQuery = defineQueryOptions(
   ({ gameId, database, folder }: { gameId: string; database: string; folder: string }) => ({
     key: ["workspace", "precedence", gameId, database, folder],

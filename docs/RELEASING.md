@@ -36,9 +36,24 @@ To check a download, run `gh attestation verify <zip> --repo idodavis/paradox-mo
 
 ## Before each release
 
+### The shipped schemas
+
+The app carries a backup of each game's dumps (`internal/schema/shipped/<game>.gob`) for an install that lacks a
+dump file. Bring it up to date, then commit the files it rewrites:
+
+```bash
+task schema:shipped
+```
+
+It reads each game from the install its `PMT_TEST_INSTALL_*` variable names (a `.env` beside the Taskfile can set
+all three) and prints one line per game: up to date, rebuilt, or the dumps still to make. A game whose dumps are
+missing, or older than its last update, needs them made first: start it with its debug flag (PMT's Launch does) and
+run `script_docs` and `dump_data_types` in its console, then run the task again. A release of PMT alone, with no game
+update since the last one, finds them all up to date.
+
 ### Automated
 
-- The test workflow passes on Windows and Linux: `task check` (with `TestReadmes`), the race run, the build, and the
+- The test workflow passes on Windows and Linux: `task check`, the race run, the build, and the
   built app starting.
 
 ### By hand

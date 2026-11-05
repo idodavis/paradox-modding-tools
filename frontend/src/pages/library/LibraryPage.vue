@@ -10,10 +10,9 @@ import { findCommand } from "../../app/commands";
 import { homeRoute, useShown } from "../../app/pages";
 import { describeDumps, describeLexicon, installLine, plural } from "../../lib/format";
 import { gamesQuery, reportQuery, stateQuery, workspacesQuery } from "../../queries";
-import { gameIcon, useSettingsStore } from "../../stores/settings";
+import { gameIcon } from "../../stores/settings";
 import { COMMAND_BUS } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
-import CreateModForm from "../../ui/CreateModForm.vue";
 import FirstModChecklist from "../../ui/FirstModChecklist.vue";
 import GameInstalls from "../../ui/GameInstalls.vue";
 import LevelCounts from "../../ui/LevelCounts.vue";
@@ -30,9 +29,7 @@ const LAUNCH = findCommand("game.launch");
 const router = useRouter();
 const toast = useToast();
 const store = useWorkspaceStore();
-const settings = useSettingsStore();
 const commandBus = useEventBus(COMMAND_BUS);
-const creatingMod = shallowRef(false);
 const guiding = shallowRef(false);
 const resetting = shallowRef(false);
 const confirmation = shallowRef("");
@@ -91,9 +88,9 @@ async function openSettings(record: Workspace): Promise<void> {
   commandBus.emit("settings.open");
 }
 
-/** openModDialog opens the new mod dialog, or Make a new mod if no workspace is open or Guidance is on. */
+/** openModDialog opens the new mod dialog, or Make a new mod if no workspace is open. */
 function openModDialog(): void {
-  if (state.value?.open && !settings.isGuided()) creatingMod.value = true;
+  if (state.value?.open) findCommand("mod.create")?.onSelect?.();
   else void router.push({ name: "new-mod" });
 }
 
@@ -159,15 +156,10 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
             <div class="flex flex-col gap-1">
               <h2 class="text-16">Work on a mod I have</h2>
               <p class="text-13 text-toned">
-                Choose your mod's folder. PMT reads it with its game's files and opens Health, which lists its problems.
+                Choose your mod's folder. PMT sets up a workspace with it and its game, and Health lists its problems.
               </p>
             </div>
-            <UButton
-              label="Choose a mod folder"
-              size="md"
-              class="mt-auto self-start"
-              :to="{ name: 'new-mod', query: { goal: 'fix' } }"
-            />
+            <UButton label="Choose a mod folder" size="md" class="mt-auto self-start" :to="{ name: 'wizard' }" />
           </div>
         </section>
 
@@ -346,7 +338,6 @@ function describeMenu(record: Workspace, leading: DropdownMenuItem[]): DropdownM
         </div>
       </section>
 
-      <CreateModForm v-model:open="creatingMod" :workspace-id="state?.id ?? ''" />
       <ScriptDocsGuide v-model:open="guiding" :game="state?.game?.id ?? ''" />
     </div>
 

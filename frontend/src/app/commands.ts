@@ -23,7 +23,11 @@ import { useSettingsStore } from "../stores/settings";
 import { COMMAND_BUS, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../stores/workspace";
 import { isWorkspacePage, type PageName } from "./pages";
+import CreateModForm from "./CreateModForm.vue";
 import { router } from "./router";
+
+/** createMod is the app's one Create a mod dialog, shown over whatever page or dialog is open. */
+const createMod = useOverlay().create(CreateModForm);
 
 /** A Command is one command: a menu item whose id names its area, such as `editor.save`. */
 export type Command = Omit<CommandPaletteItem, "kbds"> & {
@@ -457,6 +461,13 @@ export const COMMANDS: readonly Command[] = [
     kbds: ["meta", ","],
     when: () => true,
     onSelect: () => commandBus.emit("settings.open"),
+  },
+  {
+    id: "mod.create",
+    label: "Create a new mod",
+    icon: "i-lucide-folder-plus",
+    when: isOpen,
+    onSelect: () => void createMod.open(),
   },
   {
     id: "help.open",

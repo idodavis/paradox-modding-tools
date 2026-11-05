@@ -87,9 +87,9 @@ const databases = computed(() =>
 const facts = computed(() => [
   ...(overview
     ? [
-      { count: overview.files, label: "files" },
-      { count: overview.messages, label: "localization keys" },
-    ]
+        { count: overview.files, label: "files" },
+        { count: overview.messages, label: "localization keys" },
+      ]
     : []),
   ...databases.value.slice(0, allDatabases.value ? undefined : DATABASES_SHOWN),
 ]);
@@ -131,8 +131,8 @@ const related = computed(() => {
   const path = opened?.defined?.[0]?.place.path;
   return path
     ? compatibility.find(
-      (finding) => finding.code === "removed-names" && finding.sites?.some((site) => site.place.path === path),
-    )
+        (finding) => finding.code === "removed-names" && finding.sites?.some((site) => site.place.path === path),
+      )
     : undefined;
 });
 /** The related compatibility finding as parts, or none if there is no such finding. */
@@ -140,11 +140,11 @@ const relation = computed((): Part[] => {
   const other = related.value;
   return other
     ? [
-      ...splitSubject(other),
-      { text: ": ", style: "" },
-      ...(other.message ?? []),
-      { text: " Open it in workspace compatibility.", style: "" },
-    ]
+        ...splitSubject(other),
+        { text: ": ", style: "" },
+        ...(other.message ?? []),
+        { text: " Open it in workspace compatibility.", style: "" },
+      ]
     : [];
 });
 
@@ -176,52 +176,95 @@ function listHits(finding: Finding): Finding[] {
         <span v-for="fact in facts" :key="fact.label" class="rounded-chip border border-default bg-muted px-2 py-0.5">
           <b class="font-semibold text-highlighted tabular-nums">{{ describeCount(fact.count) }}</b> {{ fact.label }}
         </span>
-        <UButton v-if="!allDatabases && databases.length > DATABASES_SHOWN"
-          :label="plural(databases.length - DATABASES_SHOWN, 'more kind')" variant="ghost" color="neutral" size="xs"
-          @click="allDatabases = true" />
+        <UButton
+          v-if="!allDatabases && databases.length > DATABASES_SHOWN"
+          :label="plural(databases.length - DATABASES_SHOWN, 'more kind')"
+          variant="ghost"
+          color="neutral"
+          size="xs"
+          @click="allDatabases = true"
+        />
       </div>
-      <UAlert v-if="outdated" color="warning" variant="subtle" icon="i-lucide-calendar-clock"
+      <UAlert
+        v-if="outdated"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-calendar-clock"
         :title="`Made for game ${outdated.facts?.supported}; the game is ${outdated.facts?.version}.`"
-        description="Health judges the mod against the game install you have, so you may see more problems." :actions="[
+        description="Health judges the mod against the game install you have, so you may see more problems."
+        :actions="[
           {
             label: 'Show the version',
             variant: 'ghost',
             color: 'warning',
             onClick: () => outdated && emit('open', outdated),
           },
-        ]" orientation="horizontal" />
+        ]"
+        orientation="horizontal"
+      />
     </div>
-    <UCollapsible v-if="coverage.length" class="flex shrink-0 flex-col gap-1.5 px-4 pb-3"
-      :ui="{ content: 'flex flex-col gap-1.5' }">
+    <UCollapsible
+      v-if="coverage.length"
+      class="flex shrink-0 flex-col gap-1.5 px-4 pb-3"
+      :ui="{ content: 'flex flex-col gap-1.5' }"
+    >
       <button type="button" class="group flex items-center gap-2 self-start text-13 text-highlighted">
-        <UIcon name="i-lucide-chevron-right"
-          class="size-3.5 shrink-0 text-dimmed transition-transform group-data-[state=open]:rotate-90" />
+        <UIcon
+          name="i-lucide-chevron-right"
+          class="size-3.5 shrink-0 text-dimmed transition-transform group-data-[state=open]:rotate-90"
+        />
         <UIcon name="i-lucide-info" class="size-3.5 shrink-0" style="color: var(--ui-info)" />
         Languages
         <span class="text-dimmed tabular-nums">{{ describeCount(coverage.length) }}</span>
       </button>
       <template #content>
-        <div v-for="language in coverage" :key="language.name"
-          class="flex flex-wrap items-center gap-x-2 gap-y-1 ps-11 text-11">
+        <div
+          v-for="language in coverage"
+          :key="language.name"
+          class="flex flex-wrap items-center gap-x-2 gap-y-1 ps-11 text-11"
+        >
           <span class="w-36 shrink-0 truncate text-toned">{{ language.label }}</span>
           <UProgress :model-value="language.percent" size="xs" color="info" class="w-24 shrink-0" />
           <span class="shrink-0 text-dimmed tabular-nums">{{ language.text }}</span>
           <span class="grow" />
-          <UButton v-if="language.missing"
-            :label="`Write the ${plural(language.missing, `missing ${language.label} key`)}`" size="xs"
-            :loading="scaffolding" @click="writeScaffold(language.name)" />
+          <UButton
+            v-if="language.missing"
+            :label="`Write the ${plural(language.missing, `missing ${language.label} key`)}`"
+            size="xs"
+            :loading="scaffolding"
+            @click="writeScaffold(language.name)"
+          />
         </div>
       </template>
     </UCollapsible>
-    <HealthList v-model:filter="filter" :findings="topicFindings" empty="No problems." :opened="opened" class="grow"
-      @open="emit('open', $event)">
+    <HealthList
+      v-model:filter="filter"
+      :findings="topicFindings"
+      empty="No problems."
+      :opened="opened"
+      class="grow"
+      @open="emit('open', $event)"
+    >
       <template #tabs>
-        <UTabs v-model="topic" :items="topicItems" :content="false" size="xs" variant="pill" color="neutral"
-          :ui="{ root: 'max-w-full overflow-x-auto', list: 'w-max' }" />
+        <UTabs
+          v-model="topic"
+          :items="topicItems"
+          :content="false"
+          size="xs"
+          variant="pill"
+          color="neutral"
+          :ui="{ root: 'max-w-full overflow-x-auto', list: 'w-max' }"
+        />
       </template>
       <template #trailing="{ finding }">
-        <UBadge v-if="listHits(finding).length" label="in the log" color="neutral" variant="subtle" size="sm"
-          class="shrink-0" />
+        <UBadge
+          v-if="listHits(finding).length"
+          label="in the log"
+          color="neutral"
+          variant="subtle"
+          size="sm"
+          class="shrink-0"
+        />
       </template>
       <template #detail>
         <HealthDetail v-if="opened" :finding="opened">
@@ -230,8 +273,13 @@ function listHits(finding: Finding): Finding[] {
           </HealthSection>
           <HealthSection v-if="hits[0]" title="In the game's log" :count="hitLines">
             <template #actions>
-              <UButton label="Show in the log" icon="i-lucide-terminal" variant="ghost" size="xs"
-                @click="hits[0] && emit('log', hits[0])" />
+              <UButton
+                label="Show in the log"
+                icon="i-lucide-terminal"
+                variant="ghost"
+                size="xs"
+                @click="hits[0] && emit('log', hits[0])"
+              />
             </template>
             <p class="font-mono text-11.5 leading-4.5 wrap-anywhere text-toned">
               {{ joinParts(hits[0].message) }}

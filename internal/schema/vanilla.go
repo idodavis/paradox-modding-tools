@@ -32,6 +32,7 @@ type counter struct {
 	gui         bool                       // the file is a GUI file
 	prefixed    map[string]map[string]int  // by link prefix: the count of each name written after it
 	examples    map[string][]Example       // by the name written: a command's, or a data function's as Type.Function
+	commands    map[string]int             // by a command's name: how often the files write it
 }
 
 // An argumentsKey is one command under one declaration, whose arguments a worker counts apart.
@@ -72,13 +73,14 @@ func (schema *Schema) CountVanilla(listing []files.File, parse func(path string)
 			declarer.build()
 		}
 	}
-	schema.resolveSaves(schema.ScriptedDefinitions, nil)
+	schema.resolveRelays(schema.ScriptedDefinitions, nil)
 	counters := make([]*counter, files.Workers)
 	for worker := range counters {
 		counters[worker] = &counter{
 			schema: schema, fields: map[*Field]*Field{}, arguments: map[argumentsKey]*Field{},
 			definitions: map[string]*Field{}, defined: map[string]map[string]bool{}, messages: map[string]bool{},
 			unlisted: map[string]bool{}, prefixed: map[string]map[string]int{}, examples: map[string][]Example{},
+			commands: map[string]int{},
 		}
 	}
 	eachParsed(localizing, func(path string) (*loc.File, error) {
@@ -107,6 +109,9 @@ func (schema *Schema) CountVanilla(listing []files.File, parse func(path string)
 		counters[0].add(other)
 	}
 	counters[0].resolveCounts()
+	// what a parameter names rests on the prefixes' databases and the claims that the count gives
+	schema.typeParameters(schema.ScriptedDefinitions)
+	schema.resolveRelays(schema.ScriptedDefinitions, nil)
 	if len(failures) == len(listing) && len(failures) > 0 {
 		return errors.Join(failures...)
 	}
@@ -196,9 +201,9 @@ func addCounts(total, added map[string]int) map[string]int {
 	return total
 }
 
-// countCommand keeps the place of a statement whose key is a command or a link the dumps declare. A chain of links
-// counts as its first link, a prefixed link as its prefix, each in lower case, and a command's name with an argument in
-// parentheses as the name.
+// countCommand counts a statement whose key is a command or a link the dumps declare, and keeps its place. A chain of
+// links counts as its first link, a prefixed link as its prefix, each in lower case, and a command's name with an
+// argument in parentheses as the name.
 func (counter *counter) countCommand(tree *jomini.Tree, statement int32, context *Context) {
 	if context.Command == nil || context.Category != CategoryCommand && context.Category != CategoryLink {
 		return
@@ -207,6 +212,7 @@ func (counter *counter) countCommand(tree *jomini.Tree, statement int32, context
 	name, _ := splitLinkHead(counter.schema.findCallee(tree, statement))
 	example := Example{Path: counter.path, Line: tree.Lines.ToPosition(key.Start).Line}
 	counter.examples[name] = keepExample(counter.examples[name], example)
+	counter.commands[name]++
 }
 
 // keepExample adds a place to a list of places. It returns the first places by path and then line, up to ExampleCount.
@@ -481,6 +487,7 @@ func (counter *counter) add(other *counter) {
 			counter.examples[name] = keepExample(counter.examples[name], example)
 		}
 	}
+	counter.commands = addCounts(counter.commands, other.commands)
 }
 
 // add adds the counts of another field and its children to this field's. A child that no source declared gets
@@ -511,7 +518,7 @@ func (counter *counter) resolveCounts() {
 		field.add(counted)
 	}
 	for name, command := range counter.schema.Commands {
-		command.Examples = counter.examples[name]
+		command.Examples, command.Count = counter.examples[name], counter.commands[name]
 	}
 	for typeName, dataType := range counter.schema.DataTypes {
 		for name, function := range dataType.Functions {

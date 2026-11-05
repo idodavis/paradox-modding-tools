@@ -534,9 +534,9 @@ func (walker *walker) findMatch(parent *Context, key string, block bool) (match,
 	return match{}, false
 }
 
-// findCaller returns the caller that a call in the block of a context resolves through: a keyword's, else the one the
+// FindCaller returns the caller that a call in the block of a context resolves through: a keyword's, else the one the
 // block's shape gives.
-func (context *Context) findCaller() string {
+func (context *Context) FindCaller() string {
 	if context.Keyword != nil && context.Keyword.Caller != "" {
 		return context.Keyword.Caller
 	}
@@ -562,14 +562,14 @@ func (walker *walker) matchRule(rule string, parent *Context, key string, block 
 	holder := parent.Field
 	switch rule {
 	case "known-call":
-		callee, caller, ok := walker.findCalledDefinition(parent.findCaller(), key)
+		callee, caller, ok := walker.findCalledDefinition(parent.FindCaller(), key)
 		field := callee.Parameters
 		if database := walker.schema.Databases[callee.Database]; field == nil && database != nil {
 			field = database.Definition
 		}
 		return match{category: CategoryCall, field: field, callee: &callee, caller: caller}, ok
 	case "declared":
-		child := holder.findChild(key)
+		child := holder.findNumberChild(key)
 		return match{category: CategoryField, field: child}, child != nil &&
 			child.Source != game.SourceNone && child.Source != game.SourceVanilla
 	case "documented":
@@ -595,7 +595,7 @@ func (walker *walker) matchRule(rule string, parent *Context, key string, block 
 			category: CategoryReference, field: walker.findModifierField(holder, key), database: walker.schema.ModifierTypes,
 		}, walker.schema.ModifierTypes != "" && jomini.IsIdentifier(key)
 	case "observed":
-		child := holder.findChild(key)
+		child := holder.findNumberChild(key)
 		return match{category: CategoryField, field: child, observed: true}, child != nil &&
 			child.Source == game.SourceVanilla
 	case "field":
@@ -621,7 +621,7 @@ func (walker *walker) findModifierField(holder *Field, key string) *Field {
 // matchCall returns a call, with the caller of the block that holds the key. It returns false unless the key is an
 // identifier and not an event id.
 func (walker *walker) matchCall(parent *Context, key string) (match, bool) {
-	return match{category: CategoryCall, caller: parent.findCaller()}, jomini.IsIdentifier(key) && !jomini.IsEventID(key)
+	return match{category: CategoryCall, caller: parent.FindCaller()}, jomini.IsIdentifier(key) && !jomini.IsEventID(key)
 }
 
 // findCalledDefinition returns the scripted definition a key calls and the caller it is called through, trying the
@@ -984,9 +984,7 @@ func (walker *walker) listArgumentReferences(command *Command, arguments *Field,
 func (walker *walker) listClaimed(context *Context, text string) (string, []string) {
 	field := context.Field
 	step, _, isCall := walker.schema.findKeyCall(text, 0)
-	if field == nil || field.Value.Value.Database == "" || walker.schema.IsLink(text) ||
-		isCall && walker.schema.IsLink(step.Text) ||
-		field.Value.Value.Type != ValueReference && field.Value.Value.Type != ValueTarget {
+	if !field.claimsDatabase() || walker.schema.IsLink(text) || isCall && walker.schema.IsLink(step.Text) {
 		return "", nil
 	}
 	claim := field.Value.Value.Database
@@ -1171,7 +1169,7 @@ func (walker *walker) isLead(text string) bool {
 // FindDeclaration returns how the dumps declare a command, among those this context's block allows. An effect never
 // fits in a block of triggers. It returns false if the block does not take the command.
 func (context *Context) FindDeclaration(command *Command) (string, bool) {
-	position := slices.IndexFunc(command.Declared, context.allows)
+	position := slices.IndexFunc(command.Declared, context.Allows)
 	if position < 0 {
 		return "", false
 	}
@@ -1181,15 +1179,15 @@ func (context *Context) FindDeclaration(command *Command) (string, bool) {
 // FindArguments returns the keys a command takes in this context's block under the given declaration. A command
 // declared as both an effect and a trigger takes the keys of both in a block that allows either.
 func (context *Context) FindArguments(command *Command, declaration string) *Field {
-	if command.Union != nil && context.allows(game.DeclaredEffect) && context.allows(game.DeclaredTrigger) {
+	if command.Union != nil && context.Allows(game.DeclaredEffect) && context.Allows(game.DeclaredTrigger) {
 		return command.Union
 	}
 	return command.ArgumentsOf(declaration)
 }
 
-// allows reports whether this context's block takes a command with the given declaration. An effect never fits in a
+// Allows reports whether this context's block takes a command with the given declaration. An effect never fits in a
 // block of triggers.
-func (context *Context) allows(declaration string) bool {
+func (context *Context) Allows(declaration string) bool {
 	return slices.Contains(game.Shapes[findShape(context)].Allows, declaration) &&
 		(declaration != game.DeclaredEffect || !context.holdsConditions())
 }

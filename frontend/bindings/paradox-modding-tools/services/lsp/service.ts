@@ -37,7 +37,8 @@ export function CloseFile(path: string): $CancellablePromise<void> {
 
 /**
  * Complete returns the completion candidates at a position in a file: at a key the language's operators, commands and
- * fields, at a value what the field allows. It returns an empty list for a file that is not script.
+ * fields, at a value what may be written there. A word written alone in a block may be a value or a key typed before
+ * its equals sign, so it gets both. It returns an empty list for a file that is not script.
  */
 export function Complete(path: string, line: number, column: number): $CancellablePromise<$models.Completion[] | null> {
     return $Call.ByID(2419173360, path, line, column);

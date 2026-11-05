@@ -101,6 +101,7 @@ type Command struct {
 	Blurb       string
 	Usage       string    // the dump's usage lines; "" if none
 	Examples    []Example // the first places the game's own files write it, by path and then line
+	Count       int       // how often the game's own files write it
 	Wild        bool      // a link that is a pattern, so it is never matched by a written name
 	Bare        bool      // a link that script may write as its name alone, not only as name:data
 	Lists       bool      // it iterates a list and has no target, so the scope inside its block is unknown
@@ -193,6 +194,7 @@ type ScriptedDefinition struct {
 	Parameters *Field            // nil if the database's definitions take no parameters
 	Saves      map[string]string // by parameter: the link its body saves the argument's name under, such as scope
 	relays     []relay           // the parameters its body passes on to calls of other scripted definitions
+	typings    []typing          // the places its body writes a parameter where a database's name goes, in order
 }
 
 // A relay is one parameter that a scripted definition's body passes on as an argument of a call to another one.
@@ -200,6 +202,14 @@ type relay struct {
 	Callee    string // the called definition's name as written
 	Argument  string // the argument's key in the call
 	Parameter string // the parameter of the body that the argument writes
+}
+
+// A typing is one place where a scripted definition's body writes a parameter whole where a database's name may go:
+// after a link prefix, or as the value of a key that has a field.
+type typing struct {
+	Parameter string
+	Prefix    string // the link prefix written before it; "" for a key's value
+	Field     *Field // the field of the key it is the value of; nil after a prefix
 }
 
 // modScripted is what the files of the workspace's mods declare, by file and all together.
@@ -993,16 +1003,27 @@ func (field *Field) findChild(key string) *Field {
 	return field.Children[key]
 }
 
+// claimsDatabase reports whether a field's value claim says the value is a name in a database. A nil field claims
+// none.
+func (field *Field) claimsDatabase() bool {
+	if field == nil {
+		return false
+	}
+	expected := field.Value.Value
+	return expected.Database != "" && (expected.Type == ValueReference || expected.Type == ValueTarget)
+}
+
+// findNumberChild returns the field's child for a key, else its <number> child if the key is a number or a date. It
+// returns nil if there is none.
+func (field *Field) findNumberChild(key string) *Field {
+	if child := field.findChild(key); child != nil || !jomini.IsNumberKey(key) {
+		return child
+	}
+	return field.findChild(jomini.NumberKey)
+}
+
 // findPatternChild returns the field's child for a key, else its <number> child if the key is a number, else its <any>
 // child. It returns nil if there is none.
 func (field *Field) findPatternChild(key string) *Field {
-	if child := field.findChild(key); child != nil {
-		return child
-	}
-	if jomini.IsNumberKey(key) {
-		if child := field.findChild(jomini.NumberKey); child != nil {
-			return child
-		}
-	}
-	return field.findChild(game.AnyKey)
+	return cmp.Or(field.findNumberChild(key), field.findChild(game.AnyKey))
 }

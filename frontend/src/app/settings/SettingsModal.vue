@@ -25,7 +25,6 @@ import { COMMAND_BUS } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import AddModMenu from "../../ui/AddModMenu.vue";
 import ColorPicker from "../../ui/ColorPicker.vue";
-import CreateModForm from "../../ui/CreateModForm.vue";
 import FileSelector from "../../ui/FileSelector.vue";
 import InstallPicker from "../../ui/InstallPicker.vue";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -38,18 +37,33 @@ import WorkspaceModCard from "./WorkspaceModCard.vue";
 import * as workspace from "@services/workspace/service";
 import type { Mod } from "@services/workspace/models";
 
-/** GROUPS holds the sections in listed order. A workspace group shows only while a workspace is open. */
+/**
+ * GROUPS holds the sections in listed order, each with what Help says it holds. A workspace group shows only while a
+ * workspace is open.
+ */
 const GROUPS = [
   {
     label: "App",
     mark: "i-lucide-monitor",
     sub: "Every workspace on this computer",
     sections: [
-      { value: "appearance", label: "Appearance" },
-      { value: "guidance", label: "Guidance" },
-      { value: "shortcuts", label: "Keyboard shortcuts" },
-      { value: "terminal", label: "Terminal" },
-      { value: "agents", label: "Agents and tools" },
+      {
+        value: "appearance",
+        label: "Appearance",
+        about: "The theme, light or dark or the game's own, the interface scale, the pages shown and the mods' colors.",
+      },
+      {
+        value: "guidance",
+        label: "Guidance",
+        about: "One switch for the parts of PMT that teach modding, and what stays either way.",
+      },
+      { value: "shortcuts", label: "Keyboard shortcuts", about: "Every command's keys, and the ones you changed." },
+      { value: "terminal", label: "Terminal", about: "The shell a new terminal starts, and where it starts." },
+      {
+        value: "agents",
+        label: "Agents and tools",
+        about: "The agents the agent pane runs, and PMT's tools for the coding agents you run yourself.",
+      },
     ],
   },
   {
@@ -59,12 +73,20 @@ const GROUPS = [
     workspace: true,
     catalog: true,
     sections: [
-      { value: "editor", label: "Editor" },
-      { value: "explorer", label: "Explorer" },
-      { value: "language", label: "Language features" },
-      { value: "checks", label: "Checks" },
-      { value: "visual", label: "Visual view" },
-      { value: "wiki", label: "Wiki" },
+      { value: "editor", label: "Editor", about: "The font, indentation, wrapping, folding and minimap." },
+      {
+        value: "explorer",
+        label: "Explorer",
+        about: "Row density, text size, folder colors and following the open file.",
+      },
+      {
+        value: "language",
+        label: "Language features",
+        about: "Completion, hover cards, predicted text and signature help.",
+      },
+      { value: "checks", label: "Checks", about: "Which problems the editor marks. Health counts them all." },
+      { value: "visual", label: "Visual view", about: "When a GUI file opens drawn, and how it is drawn." },
+      { value: "wiki", label: "Wiki", about: "Whether the Wiki pane follows the file you are editing." },
     ],
   },
   {
@@ -72,28 +94,25 @@ const GROUPS = [
     mark: "i-lucide-folder",
     workspace: true,
     sections: [
-      { value: "general", label: "General" },
-      { value: "install", label: "Game install" },
-      { value: "mods", label: "Mods and load order" },
+      {
+        value: "general",
+        label: "General",
+        about: "The workspace's name, its language, the page it opens on and how the IDE starts.",
+      },
+      {
+        value: "install",
+        label: "Game install",
+        about: "The install it reads, Launch, and how to get the game's documentation.",
+      },
+      {
+        value: "mods",
+        label: "Mods and load order",
+        about: "The mods, dragged into the order the game loads them, and each mod's name, color, eras and links.",
+      },
     ],
   },
 ];
-/** HELP holds the paragraphs of Settings' help. */
-const HELP = [
-  "General: the workspace's name, its localization language, the page it opens on, the IDE's tabs, start page and explorer, and the first-mod checklist.",
-  "Game install: the install this workspace reads, Launch, which starts the game, and how to make the game write its documentation.",
-  "Mods and load order: drag to reorder. When two mods ship a file at the same path, the game reads the one lower in the order; Health's Compatibility view explains how each game picks between copies. Colors stay with the mod, not its position. Each mod's calendar, Workshop link and upload exclusions are on its card. Changes save as you make them.",
-  "IDE: the editor, the explorer, the language features, the checks, the Visual view and the wiki, kept for this workspace.",
-  "Appearance applies to every workspace: the theme, light and dark, matching the game's theme, the interface scale, the pages shown and the simple interface, which hides the IDE's more advanced parts.",
-  "Guidance applies to every workspace: one switch for the parts of PMT that only teach modding, and a list of what stays whichever way it is set.",
-  "Agents and tools: the port and token of PMT's tools for coding agents, the text that registers PMT with an agent you run yourself, and agents of your own.",
-];
 const GUIDED = [
-  {
-    icon: "i-lucide-target",
-    title: "What do you want to make?",
-    note: "The first screen of Make a new mod. Turned off, the form opens on the game and the name.",
-  },
   { icon: "i-lucide-layers", title: "How a mod works", note: "A link on Make a new mod. Help keeps it either way." },
   {
     icon: "i-lucide-list-checks",
@@ -123,6 +142,7 @@ const PANES = [
   { slot: "card" },
 ];
 const LAUNCH = findCommand("game.launch");
+const CREATE = findCommand("mod.create");
 const ROW = "relative flex h-14 min-w-0 items-center gap-2.5 border-b border-default ps-2 pe-3 text-start";
 const PICKED = "bg-(--accent-soft) before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary";
 // The record holds the game's automatic color as "".
@@ -151,8 +171,8 @@ const store = useWorkspaceStore();
 const commandBus = useEventBus(COMMAND_BUS);
 const open = shallowRef(false);
 const section = shallowRef("general");
+const helping = shallowRef(false);
 const search = shallowRef("");
-const creating = shallowRef(false);
 const guiding = shallowRef(false);
 const origin = shallowRef("");
 const preview = shallowRef<Mod[]>();
@@ -205,6 +225,8 @@ const theme = computed(() => settings.theme());
 const pickedFamily = computed(() => settings.value("appearance.theme"));
 const chips = computed(() => [VANILLA, ...mods.value.map((mod) => mod.id)]);
 
+/** The groups shown: the workspace's only while a workspace is open. */
+const shownGroups = computed(() => GROUPS.filter((group) => !group.workspace || record.value));
 const sections = computed(() => {
   const matches = (item: { value: string; label: string }) =>
     matchQuery(
@@ -212,7 +234,7 @@ const sections = computed(() => {
       item.label,
       ...(catalog.value ?? []).filter((row) => row.section === item.value).map((row) => `${row.label} ${row.words}`),
     );
-  return GROUPS.filter((group) => !group.workspace || record.value)
+  return shownGroups.value
     .map((group) => ({ ...group, sections: group.sections.filter(matches) }))
     .filter((group) => group.sections.length);
 });
@@ -238,6 +260,12 @@ const current = computed({
   get: () => (listed.value.find((item) => item.value === section.value) ?? listed.value[0])?.value ?? "appearance",
   set: (value: string | number) => (section.value = `${value}`),
 });
+
+/** openSection shows the given page of Settings and closes Help. */
+function openSection(value: string): void {
+  current.value = value;
+  helping.value = false;
+}
 
 useSortable(useTemplateRef<HTMLElement>("list"), order, { handle: ".mod-handle", animation: 150, watchElement: true });
 watch(mods, () => (preview.value = undefined));
@@ -319,11 +347,29 @@ async function remove(): Promise<void> {
     }"
   >
     <template #actions>
-      <UPopover :content="{ align: 'end' }">
+      <UPopover v-model:open="helping" :content="{ align: 'end' }">
         <UButton label="Help" icon="i-lucide-circle-help" variant="ghost" size="sm" />
         <template #content>
-          <div class="flex max-w-120 flex-col gap-3 p-4 text-13 text-toned">
-            <p v-for="(paragraph, index) in HELP" :key="index">{{ paragraph }}</p>
+          <div class="flex w-[min(60rem,90vw)] flex-col gap-3 p-4">
+            <p class="text-12 text-dimmed">Every change saves as you make it. Pick a page to open it.</p>
+            <div class="grid grid-cols-3 gap-4">
+              <section v-for="group in shownGroups" :key="group.label" class="flex flex-col gap-1">
+                <h3 class="flex items-center gap-2 text-13 font-semibold">
+                  <UIcon :name="group.mark" class="size-4 text-dimmed" />{{ group.label }}
+                  <span class="text-11 font-normal text-dimmed">{{ group.sub ?? record?.name }}</span>
+                </h3>
+                <button
+                  v-for="item in group.sections"
+                  :key="item.value"
+                  type="button"
+                  class="flex flex-col items-start rounded-md px-2 py-1.5 text-start hover:bg-elevated"
+                  @click="openSection(item.value)"
+                >
+                  <span class="text-13 text-highlighted">{{ item.label }}</span>
+                  <span class="text-12 text-dimmed">{{ item.about }}</span>
+                </button>
+              </section>
+            </div>
           </div>
         </template>
       </UPopover>
@@ -550,7 +596,7 @@ async function remove(): Promise<void> {
             note="Mods load top to bottom after the game."
           >
             <template #actions>
-              <UButton label="Create a new mod" size="md" @click="creating = true" />
+              <UButton label="Create a new mod" size="md" @click="CREATE?.onSelect?.()" />
               <AddModMenu>
                 <UButton
                   label="Add an existing mod"
@@ -657,7 +703,6 @@ async function remove(): Promise<void> {
                 </div>
               </template>
             </USplitter>
-            <CreateModForm v-model:open="creating" :workspace-id="id" />
           </Page>
         </template>
 

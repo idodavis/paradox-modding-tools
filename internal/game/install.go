@@ -40,13 +40,13 @@ const DLCFolder = "dlc"
 // LauncherModFolder is the folder under a game's user-data folder where its launcher keeps mods.
 const LauncherModFolder = "mod"
 
-// The patterns that read Steam's library file, an app manifest and its build id, and the game's release branch in
-// its revision log (release/1.20.1, u26q2/release/1.3.11).
+// The patterns that read Steam's library file, an app manifest and its build id, and the day the game was built in
+// its revision log.
 var (
-	vdfPathRe    = regexp.MustCompile(`"path"\s*"([^"]+)"`)
-	installDirRe = regexp.MustCompile(`"installdir"\s*"([^"]+)"`)
-	buildIDRe    = regexp.MustCompile(`"buildid"\s*"(\d+)"`)
-	gameBranchRe = regexp.MustCompile(`\]: game_branch: (?:\S+/)?release/(\S+)`)
+	vdfPathRe       = regexp.MustCompile(`"path"\s*"([^"]+)"`)
+	installDirRe    = regexp.MustCompile(`"installdir"\s*"([^"]+)"`)
+	buildIDRe       = regexp.MustCompile(`"buildid"\s*"(\d+)"`)
+	gameTimestampRe = regexp.MustCompile(`\]: game_timestamp: (\d{4}-\d{2}-\d{2})`)
 )
 
 // FindInstalls returns the installs of the game that Steam's libraries hold.
@@ -157,7 +157,8 @@ func listDefaultSteamRoots() []string {
 }
 
 // LoadVersion returns the version of an install of the game, from its launcher settings, else its revision log if the
-// game started since the last update, else its Steam manifest as "build <id>". It returns "" if none of them says.
+// game started since the last update as "build <date>", else its Steam manifest as "build <id>". It returns "" if none
+// of them says.
 func (game *Game) LoadVersion(installPath string) string {
 	settings := loadLauncher(installPath)
 	if settings.RawVersion != "" {
@@ -172,8 +173,8 @@ func (game *Game) LoadVersion(installPath string) string {
 		info, err := os.Stat(path)
 		if err == nil && !info.ModTime().Before(ReadInstallUpdatedAt(installPath)) {
 			data, err := os.ReadFile(path)
-			if match := gameBranchRe.FindSubmatch(data); err == nil && match != nil {
-				return string(match[1])
+			if match := gameTimestampRe.FindSubmatch(data); err == nil && match != nil {
+				return "build " + string(match[1])
 			}
 		}
 	}

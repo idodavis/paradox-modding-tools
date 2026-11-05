@@ -199,7 +199,7 @@ var Catalog = []Setting{
 		Words: "sidebar navigation hide"},
 	{Key: "guidance.newModders", Label: "Guidance for new modders",
 		Section: "guidance", Type: "switch", Default: "true",
-		Help:  "Shows What do you want to make?, How a mod works on Make a new mod and the first-mod checklist.",
+		Help:  "Shows How a mod works on Make a new mod and the first-mod checklist.",
 		Words: "tutorial onboarding beginner learn checklist"},
 	{Key: "terminal.shell", Label: "Default shell",
 		Section: "terminal", Type: "text", Default: "",

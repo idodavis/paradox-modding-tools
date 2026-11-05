@@ -22,6 +22,7 @@ import { useAgentStore } from "../stores/agent";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import HowModWorks from "../ui/HowModWorks.vue";
 import TermInfo from "../ui/TermInfo.vue";
+import { findCommand } from "./commands";
 import { isWorkspacePage, PAGES, PANE_HELP, TERMS, type Page } from "./pages";
 
 const route = useRoute();
@@ -128,6 +129,7 @@ function showToast(key: string, options: Partial<ToastProps>): void {
 }
 
 const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
+const LAUNCH = findCommand("game.launch");
 </script>
 
 <template>
@@ -149,6 +151,19 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
           {{ installLine(state.game?.shortName ?? "", state.install.version, state.install.scannedAt) }}
         </span>
       </span>
+      <UTooltip
+        v-if="state?.open && !scan && state.installFound !== false"
+        :text="`Launch ${state.game?.name} in debug mode. It writes fresh documentation for PMT.`"
+      >
+        <button
+          type="button"
+          :class="ITEM"
+          :aria-label="`Launch ${state.game?.name} in debug mode`"
+          @click="LAUNCH?.onSelect?.()"
+        >
+          <UIcon name="i-lucide-play" class="size-3" />
+        </button>
+      </UTooltip>
       <span class="hidden h-3 w-px shrink-0 bg-accented [&:has(+#status-start>*)]:block" />
     </template>
     <div id="status-start" class="contents" />

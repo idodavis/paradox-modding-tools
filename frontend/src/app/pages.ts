@@ -63,8 +63,8 @@ export const PAGES = {
   "new-mod": {
     title: "Make a new mod",
     help: [
-      "With Guidance for new modders on, the first screen asks what you want to make, and PMT opens the place that does it. Pick the closest; nothing here is fixed. Set it up myself goes to the New workspace setup.",
-      "Then pick the game, the folders of any mods the goal works on, and a name for the new mod. PMT shows the folder it makes, and the workspace opens on the page that suits the goal.",
+      "Pick the game and the language, and name the new mod. PMT shows the folder it makes, then makes a workspace with the mod in it and opens the IDE.",
+      "With Guidance for new modders on, How a mod works explains what the mod's folders are for.",
     ],
   },
   wizard: {

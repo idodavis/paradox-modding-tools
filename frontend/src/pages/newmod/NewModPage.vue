@@ -1,30 +1,23 @@
-<!-- Make a new mod. With Guidance on, a first screen asks what to make, and then one form makes the workspace. -->
+<!-- Make a new mod. One form picks the game and names the mod, and makes a workspace with the mod in it. -->
 <script setup lang="ts">
-import { computed, ref, shallowRef } from "vue";
+import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 
 import type { DetectedInstall, Game } from "@internal/game/models";
 import type { Install } from "@services/app/models";
 import * as workspace from "@services/workspace/service";
 import { toSentence } from "../../lib/format";
-import { GOALS, isPicked } from "../../lib/goals";
-import { gamesQuery, languagesQuery, modCheckQuery, modFolderQuery } from "../../queries";
+import { gamesQuery, languagesQuery, modFolderQuery } from "../../queries";
 import { gameIcon, useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
-import FileSelector from "../../ui/FileSelector.vue";
 import GameInstalls from "../../ui/GameInstalls.vue";
 import HowModWorks from "../../ui/HowModWorks.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 
-const { goal: routeGoal = "" } = defineProps<{ goal?: string }>();
-
 const settings = useSettingsStore();
 const store = useWorkspaceStore();
-const goalId = shallowRef(GOALS.find((goal) => goal.id === routeGoal)?.id ?? "add");
-const chosen = shallowRef(!!routeGoal);
 const gameId = shallowRef("");
 const installId = shallowRef("");
-const folders = ref(["", ""]);
 const title = shallowRef("");
 const language = shallowRef<string>();
 const explaining = shallowRef(false);
@@ -39,29 +32,8 @@ const { data: modDir, error: nameError } = useQuery(() => ({
   ...modFolderQuery({ installId: installId.value, dir: "", name: title.value.trim() }),
   enabled: !!installId.value && !!title.value.trim(),
 }));
-const checks = [0, 1].map((position) =>
-  useQuery(() => ({
-    ...modCheckQuery({ installId: installId.value, dir: folders.value[position] ?? "" }),
-    enabled: !!installId.value && !!folders.value[position] && position < selected.value.existing,
-  })),
-);
 
-const selected = computed(() => GOALS.find((goal) => goal.id === goalId.value) ?? GOALS[1]);
 const current = computed(() => games.value?.find((game) => game.id === gameId.value));
-const picked = computed(() => folders.value.slice(0, selected.value.existing));
-const workspaceName = computed(
-  () =>
-    (selected.value.makes ? title.value.trim() : "") ||
-    picked.value[0]?.split(/[\\/]/).findLast(Boolean) ||
-    `${current.value?.name ?? "Game"} files`,
-);
-const blocked = computed(
-  () =>
-    !installId.value ||
-    !isPicked(selected.value, picked.value, language.value) ||
-    checks.slice(0, selected.value.existing).some((check) => !!check.error.value) ||
-    (selected.value.makes && (!title.value.trim() || !!nameError.value)),
-);
 
 const { mutate: pick } = useMutation({
   mutation: async ({ game, recorded, local }: { game: Game; recorded?: Install; local?: DetectedInstall }) => {
@@ -78,12 +50,9 @@ const { mutate: pick } = useMutation({
 const { mutate: make, isLoading: making } = useMutation({
   mutation: () =>
     store.create(
-      { name: workspaceName.value, install: installId.value, language: language.value ?? "" },
-      [
-        ...picked.value.map((dir) => ({ dir, title: "" })),
-        ...(selected.value.makes ? [{ title: title.value.trim() }] : []),
-      ],
-      selected.value.opens,
+      { name: title.value.trim(), install: installId.value, language: language.value ?? "" },
+      [{ title: title.value.trim() }],
+      { name: "workspace-ide" },
     ),
 });
 </script>
@@ -105,48 +74,7 @@ const { mutate: make, isLoading: making } = useMutation({
         <UButton label="Cancel" size="md" :to="{ name: 'library' }" />
       </div>
 
-      <div
-        v-if="settings.isGuided() && !chosen"
-        class="flex flex-col gap-5 rounded-lg border border-default bg-elevated p-6"
-      >
-        <div class="flex flex-col gap-1">
-          <h2 class="text-16">What do you want to make?</h2>
-          <p class="text-13 text-dimmed">PMT opens the place that does it. Pick the closest; nothing here is fixed.</p>
-        </div>
-        <URadioGroup
-          v-model="goalId"
-          :items="[...GOALS]"
-          value-key="id"
-          variant="card"
-          :ui="{ fieldset: 'grid grid-cols-3 gap-3' }"
-        >
-          <template #label="{ item }">
-            <span class="flex items-center gap-2 text-13 font-semibold">
-              <UIcon :name="item.icon" class="size-4 shrink-0 text-dimmed" />{{ item.label }}
-            </span>
-          </template>
-          <template #description="{ item }">
-            <span class="flex flex-col gap-2">
-              <span class="text-12 text-toned">{{ item.blurb }}</span>
-              <span class="flex items-center gap-1.25 text-12 text-dimmed">
-                <UIcon name="i-lucide-arrow-right" class="size-3.5 shrink-0" />{{ item.hint }}
-              </span>
-            </span>
-          </template>
-        </URadioGroup>
-        <div class="flex items-center gap-2 border-t border-default pt-5">
-          <UButton label="Set it up myself" variant="ghost" size="md" :to="{ name: 'wizard' }" />
-          <span class="grow" />
-          <span class="text-11 text-dimmed">Step 1 of 2</span>
-          <UButton label="Continue" color="primary" variant="solid" size="md" @click="chosen = true" />
-        </div>
-      </div>
-
-      <form
-        v-else
-        class="flex flex-col gap-5 rounded-lg border border-default bg-elevated p-6"
-        @submit.prevent="make()"
-      >
+      <form class="flex flex-col gap-5 rounded-lg border border-default bg-elevated p-6" @submit.prevent="make()">
         <div class="flex flex-col gap-2.5">
           <h2 class="text-16">Which game is it for?</h2>
           <div class="grid grid-cols-3 gap-2.5">
@@ -179,24 +107,11 @@ const { mutate: make, isLoading: making } = useMutation({
         </div>
 
         <template v-if="installId">
-          <UFormField
-            v-for="n in selected.existing"
-            :key="n"
-            :label="selected.existing > 1 ? `Folder of mod ${n}` : 'Folder of the mod'"
-            :help="n === 1 && parent ? `Mods made in the game's launcher are in ${parent}.` : undefined"
-            :error="toSentence(checks[n - 1]?.error.value?.message ?? '')"
-          >
-            <FileSelector v-model:path="folders[n - 1]" folder :filter="[]" />
-          </UFormField>
-
-          <div v-if="selected.makes" class="grid grid-cols-2 gap-5">
+          <div class="grid grid-cols-2 gap-5">
             <UFormField label="Mod name" help="Shown in the game's launcher and on the Workshop.">
               <UInput v-model="title" class="w-full" autofocus />
             </UFormField>
-            <UFormField
-              :label="selected.id === 'translate' ? 'Language of the translation' : 'Language'"
-              help="The mod's text starts in this language. Others can be added later."
-            >
+            <UFormField label="Language" help="The mod's text starts in this language. Others can be added later.">
               <USelect
                 v-model="language"
                 :items="languages ?? []"
@@ -207,7 +122,7 @@ const { mutate: make, isLoading: making } = useMutation({
             </UFormField>
           </div>
 
-          <div v-if="selected.makes" class="flex flex-col gap-2">
+          <div class="flex flex-col gap-2">
             <span class="text-12 font-medium text-toned">PMT makes</span>
             <div class="flex flex-col gap-1 rounded-lg border border-default bg-muted px-3.5 py-2.5">
               <span v-if="nameError" class="text-12 text-error">{{ toSentence(nameError.message) }}</span>
@@ -220,7 +135,6 @@ const { mutate: make, isLoading: making } = useMutation({
         </template>
 
         <div class="flex items-center gap-3 border-t border-default pt-5">
-          <UButton v-if="settings.isGuided()" label="Back" variant="ghost" size="md" @click="chosen = false" />
           <UButton
             v-if="settings.isGuided()"
             label="How a mod works"
@@ -230,17 +144,17 @@ const { mutate: make, isLoading: making } = useMutation({
             @click="explaining = true"
           />
           <span class="grow text-end text-12 text-dimmed">
-            <template v-if="installId">
-              The workspace is named {{ workspaceName }}. All of it can be changed later in Settings.
+            <template v-if="installId && title.trim()">
+              The workspace is named {{ title.trim() }}. All of it can be changed later in Settings.
             </template>
           </span>
           <UButton
             type="submit"
-            :label="selected.makes ? 'Make the mod' : 'Open the workspace'"
+            label="Make the mod"
             color="primary"
             variant="solid"
             size="md"
-            :disabled="blocked"
+            :disabled="!installId || !title.trim() || !!nameError"
             :loading="making"
           />
         </div>

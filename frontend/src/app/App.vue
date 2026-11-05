@@ -6,6 +6,7 @@ import { useRoute } from "vue-router";
 
 import { useAgentStore } from "../stores/agent";
 import { THIS_WINDOW } from "../stores/windows";
+import { useWorkspaceStore } from "../stores/workspace";
 import AgentPane from "./AgentPane.vue";
 import { registerShortcuts } from "./commands";
 import CommandPalette from "./CommandPalette.vue";
@@ -17,6 +18,7 @@ import TopBar from "./TopBar.vue";
 registerShortcuts();
 const route = useRoute();
 const agent = useAgentStore();
+const workspace = useWorkspaceStore();
 
 // the pane sits beside a workspace's pages in the main window
 const panes = computed<SplitterItem[]>(() => [
@@ -37,7 +39,8 @@ const panes = computed<SplitterItem[]>(() => [
           <template #page>
             <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
               <RouterView v-slot="{ Component, route: current }">
-                <KeepAlive exclude="WizardPage">
+                <!-- a workspace switch drops the kept pages, so none asks the new workspace for the old one's names -->
+                <KeepAlive :key="workspace.activeId()" exclude="WizardPage">
                   <component :is="Component" :key="current.name" />
                 </KeepAlive>
               </RouterView>

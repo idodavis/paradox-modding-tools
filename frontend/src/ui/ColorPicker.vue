@@ -36,7 +36,13 @@ const custom = computed(() => !!color.value && !items.some((item) => item.value 
         @click="color = item.value"
       />
       <span class="mx-1 h-4.5 w-px shrink-0 bg-accented" />
-      <ValueField kind="color" :value="custom ? color : ''" label="Custom…" @update:value="color = $event" />
+      <ValueField
+        kind="color"
+        :value="custom ? color : ''"
+        label="Custom…"
+        class="px-0"
+        @update:value="color = $event"
+      />
     </div>
   </div>
 </template>

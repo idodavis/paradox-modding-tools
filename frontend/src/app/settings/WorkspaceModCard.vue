@@ -102,6 +102,7 @@ function updateMonth(index: number, text: string): void {
         label="External mod"
         description="Someone else's mod, which your mods are checked against. PMT never publishes it, and Health keeps its problems out of your totals."
         orientation="horizontal"
+        :ui="{ root: 'px-0' }"
       >
         <USwitch :model-value="mod.external" :disabled="mod.workshop" @update:model-value="setExternal" />
       </UFormField>

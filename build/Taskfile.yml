@@ -165,7 +165,8 @@ tasks:
     generates:
       - "windows/icon.ico"
     cmds:
-      - wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico
+      # an empty -macfilename skips the macOS icon, whose build/darwin folder PMT does not have
+      - wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico -macfilename ""
 
   dev:frontend:
     summary: Runs the frontend in development mode

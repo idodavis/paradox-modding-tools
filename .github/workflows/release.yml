@@ -97,8 +97,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # the Wails CLI links GTK 4 and WebKitGTK 6 on Linux, so the Windows build on this runner needs them too
       - name: Linux GTK4 / WebKitGTK 6
-        if: matrix.goos == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev

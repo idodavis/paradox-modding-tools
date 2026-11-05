@@ -46,11 +46,11 @@ type Node struct {
 	Parent     string     `json:"parent"` // the drawn node one step nearer the root; "" for the root
 	Count      int        `json:"count"`  // the firings a fold stands for; 0 for a definition
 	Deep       bool       `json:"deep"`   // the depth stopped at it, and it links further to a next step
-	// Fires is every firing it makes, in the order written. It is nil for a fold and outside a graph and a detail.
+	// Looped is true for a firer the backward reach found through a node the root itself fires: it fires the root
+	// only round a loop of the root's own chain.
+	Looped bool `json:"looped,omitempty"`
+	// Fires is every firing it makes, in the order written. It is nil outside a detail.
 	Fires []Edge `json:"fires,omitempty"`
-	// Rows are the lines it shows open, its firings grouped by the blocks that decide them. They are nil for a fold and
-	// outside a graph.
-	Rows []Row `json:"rows,omitempty"`
 }
 
 // An Edge is one firing, from a firer to what it fires.
@@ -64,20 +64,6 @@ type Edge struct {
 	// Via is the scripted effects passed through, when they are not drawn as nodes.
 	Via  []string `json:"via,omitempty"`
 	Site lsp.Site `json:"site"` // where the firing is written
-}
-
-// A Row is one line of an open node: firings written in the same blocks, a header for a block the rows under it share,
-// or the fold of the firings past the fan-out.
-type Row struct {
-	// Step is the block that decides its firings, or the one a header row stands for. It is nil for a plain firing and
-	// for a fold.
-	Step   *Step  `json:"step,omitempty"`
-	Scopes []Step `json:"scopes,omitempty"` // the links to other scopes its firings are written in
-	Fires  []Edge `json:"fires,omitempty"`  // nil for a header row and a fold
-	Nested bool   `json:"nested,omitempty"` // under a header row
-	Header bool   `json:"header,omitempty"`
-	Delay  string `json:"delay,omitempty"` // the delay of its first firing, in words
-	More   int    `json:"more,omitempty"`  // the firings a fold stands for; 0 for any other row
 }
 
 // A Filter says what the graph shows and how far it reaches from its root.
@@ -137,12 +123,6 @@ func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 	reach.expand(site, true)
 	reach.expand(site, false)
 	reach.splice()
-	for position, node := range reach.nodes {
-		if node.Count == 0 {
-			reach.nodes[position].Fires = makeEdges(ws, mods, listFires(ws, mods, node.Definition, filter.Follow))
-			reach.nodes[position].Rows = reach.listRows(node.ID, reach.nodes[position].Fires)
-		}
-	}
 	return Graph{
 		Root: root, Nodes: reach.nodes, Edges: lo.UniqBy(reach.edges, toKey),
 		Truncated: len(reach.cut) > 0, Total: reach.count + len(reach.cut),
@@ -402,8 +382,15 @@ func (reach *reach) add(site index.Site, step int, parent index.Site) bool {
 	reach.ids[id] = true
 	node := drawNode(reach.ws, reach.mods, site, step)
 	node.Parent = toID(reach.mods, parent)
+	node.Looped = step < 0 && reach.isLooping(node.Parent)
 	reach.nodes = append(reach.nodes, node)
 	return true
+}
+
+// isLooping reports whether a firer reached backward from the node with the given id comes round a loop: the node is
+// one the root fires, or was itself reached round one.
+func (reach *reach) isLooping(id string) bool {
+	return slices.ContainsFunc(reach.nodes, func(node Node) bool { return node.ID == id && (node.Step > 0 || node.Looped) })
 }
 
 // isHidden reports whether the filter hides a definition's node by its origin or its kind. Only the kinds Defaults
@@ -469,65 +456,6 @@ func (reach *reach) passDeep(hidden []Node, parents map[string]string) {
 			reach.nodes[position].Deep = true
 		}
 	}
-}
-
-// listRows returns the rows a node shows open, one for each group of its firings. Past the fan-out, the rest are one
-// fold row, unless the filter opens the node's fold.
-func (reach *reach) listRows(id string, fires []Edge) []Row {
-	groups := groupFires(fires)
-	var rest [][]Edge
-	if reach.isFolded(len(groups), "more:"+id) {
-		groups, rest = groups[:reach.filter.Fanout], groups[reach.filter.Fanout:]
-	}
-	var rows []Row
-	var header *Step // the branch the last header row stands for
-	for _, group := range groups {
-		steps := group[0].Steps
-		row := Row{Fires: group, Delay: group[0].Delay}
-		row.Scopes = lo.Filter(steps, func(step Step, _ int) bool { return step.Kind == kindScope })
-		if _, position, ok := lo.FindLastIndexOf(steps, isDeciding); ok {
-			row.Step = &steps[position]
-			_, branch, _ := lo.FindLastIndexOf(steps[:position], func(step Step) bool { return step.Kind == kindBranch })
-			row.Nested = branch >= 0 && row.Step.Kind != kindBranch
-			if row.Nested && (header == nil || header.Line != steps[branch].Line) {
-				header = &steps[branch]
-				rows = append(rows, Row{Step: header, Header: true})
-			}
-		}
-		rows = append(rows, row)
-	}
-	if len(rest) > 0 {
-		rows = append(rows, Row{More: len(lo.Flatten(rest))})
-	}
-	return rows
-}
-
-// groupFires returns a node's firings in groups, in the order written. Firings inside the same blocks are one group,
-// and a firing written plainly is a group of its own.
-func groupFires(fires []Edge) [][]Edge {
-	var groups [][]Edge
-	positions := map[string]int{} // the position of each group a block decides, by the lines of its blocks
-	for _, edge := range fires {
-		if !slices.ContainsFunc(edge.Steps, isDeciding) {
-			groups = append(groups, []Edge{edge})
-			continue
-		}
-		lines := fmt.Sprint(lo.Map(edge.Steps, func(step Step, _ int) int { return step.Line }))
-		position, ok := positions[lines]
-		if !ok {
-			position = len(groups)
-			positions[lines] = position
-			groups = append(groups, nil)
-		}
-		groups[position] = append(groups[position], edge)
-	}
-	return groups
-}
-
-// isDeciding reports whether a block decides which of a definition's firings run: a branch of an if, a weighted
-// branch or a list.
-func isDeciding(step Step) bool {
-	return step.Kind == kindBranch || step.Kind == kindWeight || step.Kind == kindList
 }
 
 // toKey returns a text that is the same for two edges exactly when they join the same nodes the same way.

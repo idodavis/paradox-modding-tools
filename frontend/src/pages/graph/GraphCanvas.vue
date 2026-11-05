@@ -27,7 +27,6 @@ const {
   view,
   root,
   full = false,
-  labels = {},
 } = defineProps<{
   nodes: FlowInput[];
   edges: FlowEdge[];
@@ -35,7 +34,6 @@ const {
   view: string;
   root: string;
   full?: boolean;
-  labels?: Record<string, string | undefined>;
 }>();
 const emit = defineEmits<{ select: [id: string]; draw: [id: string] }>();
 
@@ -43,6 +41,8 @@ type Point = { x: number; y: number };
 
 /** MARGIN is the space around the graph in an exported picture. */
 const MARGIN = 24;
+/** LEAD is how far an edge runs level from a handle before it curves, in pixels. */
+const LEAD = 24;
 /** LEGEND is the legend's entries. */
 const LEGEND = [
   { label: "Event", sample: "h-3 w-5.5 rounded-xs border border-(--line-2) bg-(--bg-3)" },
@@ -52,9 +52,10 @@ const LEGEND = [
   },
   { label: "Message", sample: "h-3 w-5.5 rounded-[3px] bg-(--bg-2)" },
   { label: "On action", sample: "h-2.5 w-5 rounded-full border border-(--line-2) bg-(--bg-2)" },
-  { label: "A branch's port", sample: "size-2.25 rounded-full border-[1.5px] border-(--fg-3)" },
   { label: "Root", sample: "h-2.5 w-5 rounded-full border border-primary" },
   { label: "Selected path", sample: "h-0.5 w-3.5 bg-(--link)" },
+  { label: "Delayed", sample: "w-5 border-t-[1.5px] border-dashed border-(--fg-3)" },
+  { label: "Through a macro", sample: "w-5 border-t-2 border-dotted border-(--fg-3)" },
 ];
 
 const { fitView, getNodes, viewport, zoomIn, zoomOut } = useVueFlow("event-graph");
@@ -83,21 +84,50 @@ function fit(): Promise<boolean> {
   return fitView({ padding: 0.15, maxZoom: 1 });
 }
 
-/** buildPath builds a firing's path and label place. The label sits where ELK put it, or midway along the route. */
+/**
+ * buildPath builds a firing's path and label place. The path leaves the firer's handle and reaches the target's level.
+ * Between neighbouring ranks it is one S curve; a longer edge is one smooth curve through the points the layout routes
+ * it by. The label sits at its middle.
+ */
 function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
-  const points: Point[] = edge.data.points;
+  const { sourceX, sourceY, targetX, targetY } = edge;
   if (edge.source === edge.target) {
-    const { sourceX: x, sourceY: y } = edge;
-    const top = y - edge.sourceNode.dimensions.height / 2;
-    return { path: `M${x},${y} C${x + 40},${y} ${x + 24},${top - 32} ${x - 16},${top}`, x: x + 18, y: top - 14 };
+    const top = sourceY - edge.sourceNode.dimensions.height / 2;
+    const path = `M${sourceX},${sourceY} C${sourceX + 40},${sourceY} ${sourceX + 24},${top - 32} ${sourceX - 16},${top}`;
+    return { path, x: sourceX + 18, y: top - 14 };
   }
-  const path = points.slice(1).reduce((route, point, position) => {
-    const previous = points[position];
-    const half = (point.x - previous.x) / 2;
-    return `${route} C${previous.x + half},${previous.y} ${point.x - half},${point.y} ${point.x},${point.y}`;
-  }, `M${points[0].x},${points[0].y}`);
-  const { x, y }: Point = edge.data.label ?? points[Math.floor(points.length / 2)];
-  return { path, x, y };
+  const inner: Point[] = edge.data.points;
+  if (!inner.length) {
+    const half = (targetX - sourceX) / 2;
+    const path = `M${sourceX},${sourceY} C${sourceX + half},${sourceY} ${targetX - half},${targetY} ${targetX},${targetY}`;
+    return { path, x: (sourceX + targetX) / 2, y: (sourceY + targetY) / 2 };
+  }
+  // the short level runs at both ends make the curve leave and reach the handles straight
+  const points = [
+    { x: sourceX, y: sourceY },
+    { x: sourceX + LEAD, y: sourceY },
+    ...inner,
+    { x: targetX - LEAD, y: targetY },
+    { x: targetX, y: targetY },
+  ];
+  const middle = inner[Math.floor(inner.length / 2)];
+  return { path: traceBasis(points), x: middle.x, y: middle.y };
+}
+
+/** traceBasis traces a uniform B-spline through points as an SVG path, starting and ending on the end points. */
+function traceBasis(points: Point[]): string {
+  const [first, second] = points;
+  let path = `M${first.x},${first.y} L${(5 * first.x + second.x) / 6},${(5 * first.y + second.y) / 6}`;
+  for (let position = 2; position < points.length + 1; position++) {
+    const [before, current] = [points[position - 2], points[position - 1]];
+    const next = points[Math.min(position, points.length - 1)];
+    path +=
+      ` C${(2 * before.x + current.x) / 3},${(2 * before.y + current.y) / 3}` +
+      ` ${(before.x + 2 * current.x) / 3},${(before.y + 2 * current.y) / 3}` +
+      ` ${(before.x + 4 * current.x + next.x) / 6},${(before.y + 4 * current.y + next.y) / 6}`;
+  }
+  const last = points[points.length - 1];
+  return `${path} L${last.x},${last.y}`;
 }
 
 /** resolveColor returns the minimap color of a node. */
@@ -105,9 +135,9 @@ function resolveColor(node: FlowNode): string {
   return node.id === root ? "var(--accent)" : "var(--line-2)";
 }
 
-/** click selects the node that was clicked. A column's head is not selected. */
+/** click selects the node that was clicked. A loop's marker selects the node it names. */
 function click(node: FlowNode): void {
-  if (node.type === "graph") emit("select", node.id);
+  emit("select", node.data.loop?.kind === "back" ? node.data.node.id : node.id);
 }
 
 /** save saves the whole canvas as a picture made by the given function. */
@@ -148,13 +178,17 @@ defineExpose({ fit, exportSvg: () => save(toSvg, "svg"), exportPng: () => save(t
       :max-zoom="2"
       class="h-full w-full"
       @node-click="({ node }) => click(node)"
-      @node-double-click="({ node }) => node.type === 'graph' && !node.data.node.count && emit('draw', node.id)"
+      @node-double-click="({ node }) => !node.data.loop && !node.data.node.count && emit('draw', node.id)"
       @pane-click="emit('select', '')"
       @nodes-initialized="fitOnce"
       @move-start="stopFollowing"
     >
       <template #edge-fire="edge">
         <BaseEdge :id="edge.id" :path="buildPath(edge).path" />
+        <!-- a wider invisible stroke over the edge, whose title shows the firing's conditions on hover -->
+        <path v-if="edge.data.conditions" :d="buildPath(edge).path" class="hit">
+          <title>{{ edge.data.conditions }}</title>
+        </path>
         <EdgeLabelRenderer v-if="edge.label">
           <span
             class="fire-label"
@@ -164,10 +198,7 @@ defineExpose({ fit, exportSvg: () => save(toSvg, "svg"), exportPng: () => save(t
         </EdgeLabelRenderer>
       </template>
       <template #node-graph="{ data }: { data: Drawn }">
-        <GraphNode :drawn="data" :labels="labels" @fold="emit('select', $event)" />
-      </template>
-      <template #node-head="{ data }: { data: { label: string } }">
-        <span class="pointer-events-none text-11 font-medium whitespace-nowrap text-dimmed">{{ data.label }}</span>
+        <GraphNode :drawn="data" />
       </template>
       <MiniMap
         :width="150"
@@ -223,6 +254,18 @@ defineExpose({ fit, exportSvg: () => save(toSvg, "svg"), exportPng: () => save(t
 .graph :deep(.vue-flow__edge.lit .vue-flow__edge-path) {
   stroke: var(--link);
   stroke-width: 2;
+}
+.hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+}
+.graph :deep(.vue-flow__edge.delayed .vue-flow__edge-path) {
+  stroke-dasharray: 6 4;
+}
+.graph :deep(.vue-flow__edge.via .vue-flow__edge-path) {
+  stroke-dasharray: 1.5 3.5;
+  stroke-linecap: round;
 }
 .graph :deep(.vue-flow__edge.dim) {
   opacity: 0.35;

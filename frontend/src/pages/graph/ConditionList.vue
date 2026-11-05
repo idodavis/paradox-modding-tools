@@ -1,4 +1,4 @@
-<!-- Shows conditions as words, one line each, or all on one line when inline. -->
+<!-- Shows conditions as words, one line each, a block's statements under it. -->
 <script lang="ts">
 import type { Condition, Step } from "@services/graph/models";
 
@@ -38,12 +38,29 @@ export function describeStep(step: Step): Condition[] {
   const value = step.kind === "weight" ? `${step.weight}${step.modifiers ? "±" : ""} in ${step.key}` : step.key;
   return [{ text: phrase, value, line }, ...when];
 }
+
+/** writeConditions writes conditions as plain text, one a line, a block's statements indented under it. */
+export function writeConditions(conditions: Condition[], indent = ""): string {
+  return conditions
+    .map((condition) => {
+      const words = [
+        condition.negated && "not",
+        condition.subject,
+        condition.text,
+        condition.value && (condition.title || condition.value),
+      ];
+      const line = indent + words.filter(Boolean).join(" ");
+      const inner = condition.conditions?.length ? `\n${writeConditions(condition.conditions, `${indent}  `)}` : "";
+      return line + inner;
+    })
+    .join("\n");
+}
 </script>
 
 <script setup lang="ts">
 import { createReusableTemplate } from "@vueuse/core";
 
-const { conditions, inline = false } = defineProps<{ conditions: Condition[]; inline?: boolean }>();
+const { conditions } = defineProps<{ conditions: Condition[] }>();
 // Code shows a subject or a value by its in-game name, with the text as written on hover.
 const [DefineCode, Code] = createReusableTemplate<{ text: string; name?: string; isValue?: boolean }>();
 
@@ -55,17 +72,7 @@ function splitValue(value: string): [string, string] {
 </script>
 
 <template>
-  <span v-if="inline" class="min-w-0 truncate">
-    <template v-for="(condition, position) in conditions" :key="position">
-      <template v-if="position"> · </template>
-      <template v-if="condition.negated">not </template>
-      <code v-if="condition.subject" class="font-mono">{{ condition.subject }}</code>
-      {{ condition.text }}
-      <code v-if="condition.value" class="font-mono">{{ condition.title || condition.value }}</code>
-      <template v-if="condition.conditions?.length"> …</template>
-    </template>
-  </span>
-  <ul v-else class="flex min-w-0 flex-col gap-0.5">
+  <ul class="flex min-w-0 flex-col gap-0.5">
     <DefineCode v-slot="{ text, name, isValue }">
       <code :class="[CODE, isValue ? VALUE : 'text-(--fg-1)']" :title="name ? text : undefined">
         <template v-if="name">{{ name }}</template>

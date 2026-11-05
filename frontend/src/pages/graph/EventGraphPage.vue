@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { computed, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { computedAsync, refDebounced, useElementSize, useFullscreen, useLocalStorage } from "@vueuse/core";
+import { refDebounced, useElementSize, useFullscreen, useLocalStorage } from "@vueuse/core";
 import { groupBy, union, xor } from "es-toolkit";
 import { useRouter } from "vue-router";
 import type { Filter, Node } from "@services/graph/models";
@@ -15,7 +15,7 @@ import OriginChip from "../../ui/OriginChip.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import EventDetail from "./EventDetail.vue";
 import GraphCanvas from "./GraphCanvas.vue";
-import { buildLayout, lookupLook } from "./layout";
+import { buildLayout, LOOP_PILL, lookupLook } from "./layout";
 
 const {
   id,
@@ -47,10 +47,6 @@ const LAYOUTS = [
   { label: "Detail below", icon: "i-lucide-panel-bottom", value: "panel" },
   { label: "Detail beside", icon: "i-lucide-panel-right", value: "drawer" },
 ];
-const BRANCHES = [
-  { label: "Path", icon: "i-lucide-split", value: "path" },
-  { label: "All", value: "all" },
-];
 const EXPORTS = [
   { label: "Save as SVG", icon: "i-lucide-file-code", onSelect: () => void canvas.value?.exportSvg() },
   { label: "Save as PNG", icon: "i-lucide-image", onSelect: () => void canvas.value?.exportPng() },
@@ -60,11 +56,6 @@ const CHECKBOX_UI = {
   wrapper: "flex grow items-center gap-2",
   label: "flex grow items-center gap-2 text-12",
 };
-/** LAID_OUT is the words for how the graph is laid out, for each value of branches. */
-const LAID_OUT: Record<string, string> = {
-  path: "left to right by step, the path's branches open",
-  all: "left to right by step, every node that fires open",
-};
 
 const router = useRouter();
 const workspace = useWorkspaceStore();
@@ -72,10 +63,15 @@ const settings = useSettingsStore();
 const canvas = useTemplateRef("canvas");
 const page = useTemplateRef("page");
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(page);
-const branches = useLocalStorage("pmt.graph.branches", "path");
 const recent = useLocalStorage<Recent[]>(() => `pmt.graph.recent.${id}`, []);
 
 const selected = shallowRef(node || root);
+/** loops holds the nodes whose loop firers are shown; a new root shows none. */
+const loops = shallowRef<string[]>([]);
+watch(
+  () => root,
+  () => (loops.value = []),
+);
 watch(
   () => root,
   (next) => (selected.value = next),
@@ -117,11 +113,9 @@ const { data: graph, error } = useQuery(() => ({
 }));
 const { data: own } = useQuery(() => ({ ...ownRootsQuery, enabled: workspace.isOpen() }));
 const unit = computed(() => Number(settings.value("appearance.scale")) / 100 || 1);
-// The canvas keeps the last layout until the next one arrives.
-const flow = computedAsync(() => {
-  if (!graph.value) return EMPTY;
-  return buildLayout(graph.value, { branches: branches.value, selected: selected.value, unit: unit.value });
-}, EMPTY);
+const flow = computed(() =>
+  graph.value ? buildLayout(graph.value, { selected: selected.value, unit: unit.value, loops: loops.value }) : EMPTY,
+);
 const kinds = computed(() =>
   (defaults.value?.databases ?? []).map((database) => {
     const nodes = graph.value?.nodes?.filter((entry) => entry.database === database) ?? [];
@@ -147,8 +141,11 @@ const origins = computed(() =>
 );
 
 const count = computed(() => {
-  const drawn = graph.value?.nodes?.length ?? 0;
-  const total = graph.value?.total ?? 0;
+  // a loop's pill folds firers the reach found, so they count as neither drawn nor reached
+  const shown = flow.value.nodes.filter((entry) => !entry.data.loop);
+  const folded = (graph.value?.nodes?.length ?? 0) - shown.length;
+  const drawn = shown.length;
+  const total = (graph.value?.total ?? 0) - folded;
   return total > drawn ? `${drawn} of ${plural(total, "node")}` : plural(total, "node");
 });
 const facts = computed(() => {
@@ -158,7 +155,7 @@ const facts = computed(() => {
   if (graph.value.nodes?.some((entry) => entry.deep)) drawn.push("the depth limit");
   return [
     { label: "Drawn", value: drawn.join(", ") },
-    { label: "Laid out", value: LAID_OUT[branches.value] ?? "" },
+    { label: "Laid out", value: "left to right by what fires what" },
   ];
 });
 
@@ -236,10 +233,20 @@ function showOwn(): void {
 
 /** select selects the node with the given id. A fold is opened instead of selected. */
 function select(nodeId: string): void {
+  if (nodeId.startsWith(LOOP_PILL)) {
+    loops.value = union(loops.value, [nodeId.slice(LOOP_PILL.length)]);
+    return;
+  }
   const picked = graph.value?.nodes?.find((candidate) => candidate.id === nodeId);
   const fold = nodeId.startsWith("more:") || !!picked?.count;
   if (!fold) selected.value = nodeId;
   if (fold || picked?.deep) update({ expand: union(filter.value?.expand ?? [], [nodeId]) });
+}
+
+/** collapseAll folds back every group, dashed node and loop that was opened. */
+function collapseAll(): void {
+  loops.value = [];
+  update({ expand: [] });
 }
 
 /** update changes parts of the filter once Go's defaults have arrived. */
@@ -410,15 +417,6 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
           @click="update({ follow: !filter?.follow })"
         />
       </UTooltip>
-      <UTooltip text="Which nodes open into their branches: those on the path, or all">
-        <UTabs
-          :model-value="branches"
-          :items="BRANCHES"
-          :content="false"
-          size="sm"
-          @update:model-value="branches = String($event)"
-        />
-      </UTooltip>
       <span v-if="!isFullscreen" class="grow" />
       <USeparator v-else orientation="vertical" class="h-5" />
       <span
@@ -438,12 +436,7 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
       </UButton>
       <template v-else>
         <UTooltip text="Fold back every group and every dashed node you opened">
-          <UButton
-            label="Collapse all"
-            icon="i-lucide-fold-vertical"
-            :disabled="!graph"
-            @click="update({ expand: [] })"
-          />
+          <UButton label="Collapse all" icon="i-lucide-fold-vertical" :disabled="!graph" @click="collapseAll" />
         </UTooltip>
         <UButton icon="i-lucide-maximize-2" square aria-label="Full screen" @click="toggleFullscreen()" />
         <USeparator orientation="vertical" class="h-5" />
@@ -461,7 +454,7 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
           </span>
         </div>
         <div class="flex items-start gap-7">
-          <section v-if="recent.length" class="flex flex-1 flex-col gap-1" aria-label="Recent roots">
+          <section v-if="recent.length" class="flex min-w-0 flex-1 flex-col gap-1" aria-label="Recent roots">
             <span class="px-2 pb-1.5 text-11 font-semibold tracking-wide text-dimmed uppercase">Recent</span>
             <button v-for="row in recent.slice(0, START_SHOWN)" :key="row.id" :class="START_ROW" @click="draw(row.id)">
               <span
@@ -479,7 +472,7 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
               <span class="min-w-0 grow truncate text-12 text-dimmed">{{ row.title || row.what }}</span>
             </button>
           </section>
-          <section v-if="own?.length" class="flex flex-1 flex-col gap-1" aria-label="Events from your mods">
+          <section v-if="own?.length" class="flex min-w-0 flex-1 flex-col gap-1" aria-label="Events from your mods">
             <span class="flex items-center px-2 pb-1.5">
               <span class="text-11 font-semibold tracking-wide text-dimmed uppercase">From your mods</span>
               <span class="grow" />
@@ -519,7 +512,6 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
           :view="root"
           :root="root"
           :full="isFullscreen"
-          :labels="filter?.labels ?? {}"
           @select="select"
           @draw="draw"
         />

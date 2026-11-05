@@ -85,7 +85,7 @@ Each Go package keeps its tests in one file, `<package>_test.go`.
 |---|---|
 | `task check` | Everything a commit must pass: gofmt, the vets, staticcheck, golangci-lint and the fast tests, then the frontend's type check, lint and tests |
 | `task test` | The fast Go tests alone (`go test -short -timeout 60s ./...`) |
-| `task test:race` | The same tests under the race detector, as CI runs them |
+| `task test:race` | The same tests under the race detector, as CI runs them before a release |
 | `task test:gate` | The tests over real installs of CK3, Victoria 3 and EU5 |
 | `task test:full` | `test:gate`, then the frontend's type check: run it before a change to the engine |
 

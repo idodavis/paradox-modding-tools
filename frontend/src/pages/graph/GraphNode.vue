@@ -1,35 +1,29 @@
-<!-- One node of the canvas: a frame, a toast or a pill, or when open a head with a row for each firing. -->
+<!--
+  One item of the canvas: an event's frame, a message's toast, a pill for any other entry, a fold's pill, or a loop's
+  pill: the firers that come round a loop, or a firing back into its own chain.
+-->
 <script setup lang="ts">
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
-import { describeCount } from "../../lib/format";
 import { fileUrl } from "../../queries";
 import OriginChip from "../../ui/OriginChip.vue";
-import ConditionList from "./ConditionList.vue";
-import { measureNode, type Drawn, type Row } from "./layout";
+import type { Drawn } from "./layout";
 
-const { drawn, labels = {} } = defineProps<{ drawn: Drawn; labels?: Record<string, string | undefined> }>();
-const emit = defineEmits<{ fold: [id: string] }>();
+const { drawn } = defineProps<{ drawn: Drawn }>();
 
 /** STATE is the classes that fade a node off the lit route and ring the root and the selection. */
 const STATE =
   "in-[.dim]:opacity-40 in-[.root]:border-primary in-[.root]:ring-3 in-[.root]:ring-(--accent-soft) in-[.selected]:border-secondary in-[.selected]:ring-3 in-[.selected]:ring-(--link-soft)";
-/** HATCHED is the hatching of a hidden event's scene and head. */
+/** HATCHED is the hatching of a hidden event's scene. */
 const HATCHED = "bg-[repeating-linear-gradient(135deg,var(--bg-2)_0_6px,var(--bg-1)_6px_12px)]";
-/** KEYS is the color of the key of each kind of deciding block, as the editor colors it. */
-const KEYS: Record<string, string> = { branch: "var(--syn-block)", list: "var(--syn-scope)" };
 
 const node = computed(() => drawn.node);
-/** openWidth is an open node's width in rem, as the layout sizes it. */
-const openWidth = computed(() => `${measureNode(drawn).width / 16}rem`);
 const hidden = computed(() => node.value.display === "hidden");
 /** dashed is true for a node beyond the depth limit that is not the root. */
 const dashed = computed(() => node.value.deep && node.value.step !== 0);
 /** fill is the colors of a pill. */
 const fill = computed(() => (drawn.look.filled ? "bg-muted text-highlighted" : "bg-default text-muted"));
 const icon = computed(() => (hidden.value ? "i-lucide-eye-off" : drawn.look.icon));
-/** isLit is true when the selection lights a row. */
-const isLit = computed(() => drawn.rows.some((row) => row.lit));
 const scene = computed(() =>
   node.value.background ? { backgroundImage: `url("${fileUrl(node.value.background)}")` } : undefined,
 );
@@ -38,127 +32,32 @@ const caption = computed(() => {
   if (dashed.value) return "Beyond depth, expand to load";
   return node.value.title || (hidden.value ? "hidden event" : node.value.what);
 });
-/** describeTarget describes what a row fires: one node's title or id, or a count such as "3 events". */
-function describeTarget(row: Row): string {
-  const fires = row.fires ?? [];
-  if (fires.length > 1) {
-    const database = fires[0].to.split(":")[0];
-    return `${describeCount(fires.length)} ${labels[database] ?? "entries"}`;
-  }
-  return fires[0].title || fires[0].to.slice(fires[0].to.indexOf(":") + 1);
-}
-
-/** describePlain describes a row with no step of its own. */
-function describePlain(row: Row): string {
-  return row.fires?.[0]?.steps?.[0]?.key ?? row.fires?.[0]?.effect ?? "";
-}
-
-/** openMore opens the node's "N more" fold without also selecting the node. */
-function openMore(event: MouseEvent): void {
-  event.stopPropagation();
-  emit("fold", `more:${node.value.id}`);
-}
 </script>
 
 <template>
   <div
-    v-if="node.count"
+    v-if="drawn.loop"
+    :class="STATE"
+    :title="
+      drawn.loop.kind === 'firers'
+        ? 'They fire this only round a loop through the root\'s own chain. Click to show them.'
+        : `Fires ${node.name} again, a loop back into its own chain. Click to select it.`
+    "
+    class="flex h-6.5 w-44 items-center gap-1.5 rounded-full border border-dashed border-accented px-2.5 text-12 whitespace-nowrap text-dimmed"
+  >
+    <UIcon name="i-lucide-repeat" class="size-3 shrink-0" />
+    <span v-if="drawn.loop.kind === 'firers'" class="truncate">{{ drawn.loop.count }} more firers</span>
+    <span v-else class="truncate font-mono text-11">{{ node.name }}</span>
+    <UIcon v-if="drawn.loop.kind === 'firers'" name="i-lucide-chevron-right" class="ms-auto size-3 shrink-0" />
+  </div>
+  <div
+    v-else-if="node.count"
     :class="STATE"
     class="flex h-6.5 w-44 items-center gap-1.5 rounded-full border border-dashed border-accented px-2.5 text-12 whitespace-nowrap text-dimmed"
   >
     <UIcon name="i-lucide-layers" class="size-3 shrink-0" />
     <span class="truncate">{{ node.count }} more</span>
     <UIcon name="i-lucide-chevron-right" class="ms-auto size-3 shrink-0" />
-  </div>
-  <div
-    v-else-if="drawn.open"
-    :class="STATE"
-    :style="{ width: openWidth }"
-    class="relative rounded-lg border border-(--line-2) bg-(--bg-3)"
-  >
-    <div
-      class="relative isolate flex flex-col gap-px rounded-t-lg py-1.75 ps-2.75 pe-2.5 whitespace-nowrap"
-      :class="[
-        drawn.rows.length && 'border-b border-(--line-1)',
-        hidden && HATCHED,
-        !drawn.rows.length && 'rounded-b-lg',
-      ]"
-    >
-      <span
-        v-if="scene && !hidden"
-        class="absolute inset-0 -z-1 rounded-[inherit] bg-cover bg-[center_40%] [mask:linear-gradient(90deg,transparent_30%,#000_92%)]"
-        :style="scene"
-      />
-      <span class="flex h-3.5 items-center gap-1.25 text-[10.5px] font-medium" :style="{ color: drawn.look.color }">
-        <UIcon :name="icon" class="size-3" />{{ node.what }}{{ hidden ? ", hidden" : "" }}
-        <span
-          v-if="node.hardcoded"
-          class="inline-flex h-4 items-center gap-0.75 rounded-sm bg-(--bg-4) px-1.25 text-[10px] text-(--fg-3)"
-          title="The game calls it from its own code"
-          ><UIcon name="i-lucide-cog" class="size-2.5" />game</span
-        >
-        <span class="grow" />
-        <OriginChip :origin="node.site.place.origin" dot />
-      </span>
-      <span class="truncate font-mono text-12 leading-4.25 font-semibold text-(--fg-1)">{{ node.name }}</span>
-      <span v-if="node.title && node.display === 'window'" class="truncate text-[11.5px] leading-3.75 text-(--fg-2)">{{
-        node.title
-      }}</span>
-      <span v-if="node.comment" class="truncate text-11 leading-3.75 text-(--fg-3) italic" :title="node.comment">{{
-        node.comment.split("\n")[0]
-      }}</span>
-    </div>
-    <div v-if="drawn.rows.length" class="flex flex-col py-1">
-      <div
-        v-for="row in drawn.rows"
-        :key="row.id"
-        class="relative flex h-5.5 min-w-0 items-center gap-1.5 pe-3.5 text-11 whitespace-nowrap text-(--fg-2)"
-        :class="[
-          row.nested ? 'ps-5.75' : 'ps-2.75',
-          row.header && 'text-(--fg-3)',
-          row.more && 'cursor-pointer',
-          row.lit ? 'bg-(--link-soft) text-(--fg-1)' : isLit && 'opacity-45',
-        ]"
-        @click="row.more && openMore($event)"
-      >
-        <template v-if="row.more">
-          <UIcon name="i-lucide-layers" class="size-3 shrink-0 text-dimmed" />
-          <span class="text-dimmed">{{ row.more }} more</span>
-        </template>
-        <template v-else>
-          <span
-            v-if="row.step?.kind === 'weight'"
-            class="inline-flex h-4 min-w-7 shrink-0 items-center justify-center rounded-sm bg-(--blue-soft) px-1.5 text-[10px] font-semibold text-(--blue) tabular-nums"
-            :title="row.step.modifiers ? `${row.step.modifiers} blocks change the weight` : undefined"
-            >{{ row.step.weight }}{{ row.step.modifiers ? "±" : "" }}</span
-          >
-          <span v-if="row.step" class="shrink-0" :style="{ color: KEYS[row.step.kind] ?? 'var(--fg-3)' }">{{
-            row.step.key
-          }}</span>
-          <span v-else class="shrink-0 text-(--fg-3)">{{ describePlain(row) }}</span>
-          <ConditionList
-            v-if="row.step?.when?.length"
-            :conditions="row.step.when"
-            inline
-            class="flex-1 text-[10.5px]"
-          />
-          <code
-            v-if="row.scopes?.length"
-            class="min-w-0 flex-1 truncate font-mono text-[10.5px] text-(--fg-3)"
-            :title="row.scopes.map((scope) => scope.key).join(' › ')"
-            >in {{ row.scopes.map((scope) => scope.key).join(" › ") }}</code
-          >
-          <template v-if="!row.header">
-            <span v-if="row.delay" class="shrink-0 text-(--fg-3)">{{ row.delay }}</span>
-            <span class="ms-auto min-w-0 truncate font-mono text-[10.5px] text-(--fg-1)" :title="describeTarget(row)">{{
-              describeTarget(row)
-            }}</span>
-            <Handle :id="row.id" type="source" :position="Position.Right" :connectable="false" />
-          </template>
-        </template>
-      </div>
-    </div>
-    <Handle id="node" type="source" :position="Position.Right" :connectable="false" />
   </div>
   <div
     v-else-if="drawn.look.shape === 'frame'"
@@ -171,6 +70,11 @@ function openMore(event: MouseEvent): void {
       :style="hidden ? undefined : scene"
     >
       <UIcon v-if="hidden || !scene" :name="icon" class="size-4.5" />
+      <span
+        class="absolute start-1.5 top-1.5 flex size-4.5 items-center justify-center rounded-full bg-(--bg-1) shadow-[0_0_0_2px_rgb(14_16_20/0.6)]"
+      >
+        <UIcon :name="drawn.look.icon" class="size-3" :style="{ color: drawn.look.color }" />
+      </span>
       <OriginChip
         :origin="node.site.place.origin"
         dot
@@ -206,5 +110,5 @@ function openMore(event: MouseEvent): void {
     <UIcon v-if="node.hardcoded" name="i-lucide-cog" class="ms-auto size-3 shrink-0 text-dimmed" />
   </div>
   <Handle type="target" :position="Position.Left" :connectable="false" />
-  <Handle v-if="!drawn.open" type="source" :position="Position.Right" :connectable="false" />
+  <Handle type="source" :position="Position.Right" :connectable="false" />
 </template>

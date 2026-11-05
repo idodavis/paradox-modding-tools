@@ -86,15 +86,17 @@ An editor that knows the game's script, localization and GUI files.
 ![Event Graph](images/event-graph.png)
 
 Type an event id, a namespace or a number in **Root**. The graph shows what that event, on_action, decision, message
-or scripted effect fires, and what fires it. It reads left to right, one step at a time.
+or scripted effect fires, and what fires it. It reads left to right, from what fires to what it fires.
 
 - A hidden event is hatched, and a message is drawn as a toast. An on_action the game calls from its own code is marked.
 - **Filters** picks the kinds drawn, the mods shown, the depth and the node limit. **Follow macros** walks into
   scripted effects to find the events they fire.
 - Click a node for its detail: how it triggers, its texts, every firing both ways, and its script. If it replaces the
   game's copy, you can compare the two.
-- **Path** opens the nodes on the way from the root to the one you picked, with the block each firing sits in, its
-  weight and its delay.
+- Picking a node lights the way to it from the root. A delayed firing is dashed, one through a scripted effect
+  dotted, and hovering a line shows the conditions it fires under.
+- Loops stay readable. Firers that reach the root only round a loop of its own chain fold into a "↺ more firers" pill,
+  which opens on a click, and a firing back into its own chain ends in a "↺" marker naming the node it fires.
 - **Export** saves the graph as a PNG image or as SVG.
 
 A weight is the number as written, marked where blocks change it. A trigger is shown, never worked out. A CK3 message

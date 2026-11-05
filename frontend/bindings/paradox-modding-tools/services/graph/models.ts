@@ -239,53 +239,15 @@ export interface Node {
     "deep": boolean;
 
     /**
-     * Fires is every firing it makes, in the order written. It is nil for a fold and outside a graph and a detail.
+     * Looped is true for a firer the backward reach found through a node the root itself fires: it fires the root
+     * only round a loop of the root's own chain.
+     */
+    "looped"?: boolean;
+
+    /**
+     * Fires is every firing it makes, in the order written. It is nil outside a detail.
      */
     "fires"?: Edge[] | null;
-
-    /**
-     * Rows are the lines it shows open, its firings grouped by the blocks that decide them. They are nil for a fold and
-     * outside a graph.
-     */
-    "rows"?: Row[] | null;
-}
-
-/**
- * A Row is one line of an open node: firings written in the same blocks, a header for a block the rows under it share,
- * or the fold of the firings past the fan-out.
- */
-export interface Row {
-    /**
-     * Step is the block that decides its firings, or the one a header row stands for. It is nil for a plain firing and
-     * for a fold.
-     */
-    "step"?: Step | null;
-
-    /**
-     * the links to other scopes its firings are written in
-     */
-    "scopes"?: Step[] | null;
-
-    /**
-     * nil for a header row and a fold
-     */
-    "fires"?: Edge[] | null;
-
-    /**
-     * under a header row
-     */
-    "nested"?: boolean;
-    "header"?: boolean;
-
-    /**
-     * the delay of its first firing, in words
-     */
-    "delay"?: string;
-
-    /**
-     * the firings a fold stands for; 0 for any other row
-     */
-    "more"?: number;
 }
 
 /**

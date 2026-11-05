@@ -7,8 +7,8 @@ its texts, its firings and the game rules it reads.
 
 What fires what is the [index](../../internal/index/README.md)'s: `ListFires` and `ListFiredBy` give the firings, and
 `FindKept` the definition the game keeps of a name. This service adds the reach from a root by steps, the folds, the
-splice of hidden nodes, where each firing sits in its definition, the rows a node shows open, an event's picture, and
-the detail's texts. The graph has no coordinates: the page lays it out with ELK and draws it with Vue Flow
+splice of hidden nodes, where each firing sits in its definition, an event's picture, and the detail's texts. The
+graph has no coordinates: the page lays it out with dagre and draws it with Vue Flow
 (`pages/graph`, see [the frontend](../../frontend/src/README.md)).
 
 **Uses** [game](../../internal/game/README.md), [index](../../internal/index/README.md),
@@ -25,8 +25,7 @@ flowchart TD
   kept --> backward["Go out by steps, backward:<br/>what fires each node"]
   forward --> splice["Splice out the nodes the filter hides"]
   backward --> splice
-  splice --> rows["Give each node its firings and its rows"]
-  rows --> result["Graph"]
+  splice --> result["Graph"]
 ```
 
 `BuildGraph` starts at the root and goes out by steps under a `Filter`:
@@ -67,12 +66,8 @@ event's node holds its background picture, found by the `Picture` chain of the g
 chain, of several copies of a key the first with no trigger of its own wins, or the one a `key[field=value]` names.
 Every node holds the comment lines just above its definition and the origin of the copy of its name it hides.
 
-In a graph, a node also holds the `Row`s it shows open, in the order its firings are written:
-
-- Firings that blocks decide (a branch of an if, a weighted branch or a list), written inside the same blocks, are one
-  row with the last deciding block as its `Step`. A firing written plainly is a row of its own.
-- A row that a weighted branch or a list decides inside a branch of an if sits under a header row for that branch.
-- Past the fan-out, the rest are one fold row, whose `More` counts them, unless `Expand` opens the node's fold.
+A firer that the backward reach finds through a node the root itself fires, or through such a firer, is `Looped`: it
+fires the root only round a loop of the root's own chain. It stays in the graph; the page folds it into a pill.
 
 A fold is a node too, with the id `more:<id>` or `more-in:<id>`. It stands for the firings of one node past the filter's
 fan-out, and `Count` says how many.
@@ -128,7 +123,6 @@ their settings' texts. Where the definition hides a copy of its name, the detail
   scripted effect or another entry that fires one, or a fold.
 - **Fold**: a node that stands for the firings of one node past the fan-out.
 - **Edge**: one firing, from a firer to what it fires.
-- **Row**: one line of an open node: the firings written in the same blocks, a header for a branch, or the fold.
 - **Step**: one block a firing is written inside, from the top of its definition.
 - **Condition**: one statement of a block of triggers in words, with the statements of its block under it.
 - **Filter**: what the graph shows and how far it reaches from its root.

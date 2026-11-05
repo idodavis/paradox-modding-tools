@@ -93,8 +93,9 @@ them.
 ## Installs
 
 `install.go` finds a game on this machine. `FindInstalls` looks through Steam's library folders. `LoadVersion` reads
-the game's version from the launcher's settings. Without them it reads the log the game writes at each start, if the
-game has started since its last update, and else Steam's build number. The file also finds the game's user-data and
+the game's version from the launcher's settings. Without them it reads the day the game was built, as "build <date>",
+from the log the game writes at each start, if the game has started since its last update, and else Steam's build
+number. The file also finds the game's user-data and
 dump folders and the program that starts it in debug mode.
 
 ## Adding a fact

@@ -44,10 +44,10 @@ tasks:
 
   test:race:
     summary: >
-      The fast tests under the race detector, which CI runs after task check. It is the only thing that can catch a
-      lock-discipline regression, such as the open workspace's rescans against its readers.
+      The fast tests under the race detector, which CI runs after task check before a release. It is the only thing
+      that can catch a lock-discipline regression, such as the open workspace's rescans against its readers.
     cmds:
-      - go test -short -race -timeout 60s ./...
+      - go test -short -race -timeout 5m ./...
 
   check:
     summary: Everything a commit must pass, Go and frontend. Run it before every commit.

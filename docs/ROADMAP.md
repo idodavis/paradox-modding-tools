@@ -33,6 +33,12 @@ a 👍, or open a feature request.
 - **An event simulator** that steps through an event, its options and what each one fires.
 - **An event's own window in the Event Graph**, drawn the way the game draws it.
 
+- **Event Graph lenses**, each a toggle on the same graph: the problems in a chain (a firing that names nothing, a
+  link a replaced file breaks, an event nothing fires, a loop), what your mod adds, overrides and cuts against the
+  game's chains, what else hooks the same on_action or decision, and a mod's own entry points and dead ends.
+- **A loop view of the Event Graph**: a force or radial layout that draws every loop of a chain whole, beside the
+  left-to-right view that folds them.
+
 ### Health and publishing
 
 - **A field written twice where the game takes one**, such as two `title`s in one event, once a source says which

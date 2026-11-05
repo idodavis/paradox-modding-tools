@@ -1,36 +1,33 @@
-/** How the graph's nodes look and where they go. ELK lays them out left to right, a column for each step. */
-import ELK, { type ElkExtendedEdge, type ElkNode, type ElkPort } from "elkjs/lib/elk-api";
-import workerUrl from "elkjs/lib/elk-worker.min.js?url";
-import { groupBy } from "es-toolkit";
+/** How the graph's nodes look and where they go. Dagre lays them out left to right by what fires what. */
+import dagre, { type Graph as DagreGraph } from "@dagrejs/dagre";
 import type { Edge as FlowEdge, Node as FlowNode } from "@vue-flow/core";
 
-import type { Edge, Graph, Node, Row as GraphRow } from "@services/graph/models";
-import { plural } from "../../lib/format";
+import type { Edge, Graph, Node } from "@services/graph/models";
+import { describeStep, writeConditions } from "./ConditionList.vue";
 
 /** Look is how a database's nodes are drawn. */
 export type Look = { shape: "frame" | "toast" | "pill"; filled: boolean; color: string; icon: string };
 
-/** Row is one line of an open node: Go's row with an id and whether the selection lights it. */
-export type Row = GraphRow & { id: string; lit: boolean };
-
-/** Options are what a layout is built for: which nodes open ("all" or only the route), the selection and text size. */
-export type Options = { branches: string; selected: string; unit: number };
+/** Options are what a layout is built for: the selection, text size, and the nodes whose loop firers are shown. */
+export type Options = { selected: string; unit: number; loops: string[] };
 
 /** Lit is what a selection lights: the selected node, its route back to the root, and the nodes it touches. */
 type Lit = { selected: string; route: Set<string>; near: Set<string> };
 
-/** Drawn is a node with its look, whether it is open, and its rows. */
-export type Drawn = { node: Node; look: Look; open: boolean; rows: Row[] };
+/** Loop is what a loop item stands for: the firers that come round a loop, or a firing back into its own chain. */
+export type Loop = { kind: "firers"; count: number } | { kind: "back" };
 
-/** SIZES holds node sizes in pixels at text size 1; an open node's padding is the space around its rows. */
+/** Drawn is one item of the canvas: a node with its look, or a loop item with the node it belongs to. */
+export type Drawn = { id: string; node: Node; look: Look; loop?: Loop };
+
+/** SIZES holds node sizes in pixels at text size 1. */
 const SIZES = {
   frame: { width: 196, height: 97 },
   toast: { width: 196, height: 46 },
   pill: { width: 176, height: 26 },
-  open: { width: 320, head: 46, line: 16, row: 22, padding: 9 },
 };
-/** LABEL is the pixel size of a drawn edge label: a character's width, the padding on both sides and the height. */
-const LABEL = { char: 6.3, padding: 8, height: 16 };
+/** SPACING is dagre's space between nodes in a rank, between ranks and between edges, at text size 1. */
+const SPACING = { nodesep: 14, ranksep: 90, edgesep: 10 };
 const ACTIONS: Look = { shape: "pill", filled: true, color: "var(--green)", icon: "i-lucide-timer" };
 /** LOOKS is each database's look, by Go's database id. */
 const LOOKS: Record<string, Look> = {
@@ -42,19 +39,10 @@ const LOOKS: Record<string, Look> = {
   scripted_effects: { shape: "pill", filled: false, color: "var(--purple)", icon: "i-lucide-zap" },
 };
 const QUIET: Look = { shape: "pill", filled: false, color: "var(--fg-3)", icon: "i-lucide-box" };
-/** LAYOUT is ELK's options: layered, left to right, each step a partition, edge labels on their edges. */
-const LAYOUT = {
-  "elk.algorithm": "layered",
-  "elk.direction": "RIGHT",
-  "elk.partitioning.activate": "true",
-  "elk.edgeLabels.inline": "true",
-  "elk.layered.layering.strategy": "LONGEST_PATH_SOURCE",
-  "elk.edgeRouting": "POLYLINE",
-  "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
-};
-
-// ELK runs in a worker, so a large graph never holds the page up.
-const elk = new ELK({ workerUrl });
+/** LOOP_PILL starts the id of a loop's pill, before the id of the node its firers enter by. */
+export const LOOP_PILL = "loop:";
+/** LOOP is the look of a loop item. */
+const LOOP: Look = { shape: "pill", filled: false, color: "var(--fg-3)", icon: "i-lucide-repeat" };
 
 /** lookupLook returns how the nodes of a database are drawn. */
 export function lookupLook(database: string): Look {
@@ -69,142 +57,93 @@ export function listRoute(graph: Graph, selected: string): string[] {
   return route.at(-1) === graph.root ? route : [...route, graph.root];
 }
 
-/** listDrawn lists every node of a graph with its look, whether it is open and its rows. A fold never opens. */
-function listDrawn(graph: Graph, options: Options, lit: Lit | null): Drawn[] {
-  const route = lit?.route ?? new Set([graph.root]);
-  return (graph.nodes ?? []).map((node) => {
-    const open = !node.count && (options.branches === "all" ? !!node.fires?.length : route.has(node.id));
-    const rows = open ? lightRows(node, lit) : [];
-    return { node, look: lookupLook(node.database), open, rows };
-  });
+/** measureNode returns a node's size at text size 1. A fold and a loop item are pills. */
+function measureNode({ node, look, loop }: Drawn): { width: number; height: number } {
+  return loop || node.count ? SIZES.pill : SIZES[look.shape];
 }
 
-/** lightRows lists a node's rows with their ids, lighting those with a lit firing and the header above them. */
-function lightRows(node: Node, lit: Lit | null): Row[] {
-  const rows = (node.rows ?? []).map((row, position) => ({ ...row, id: `row:${position}`, lit: false }));
-  if (!lit) return rows;
-  let header: Row | undefined;
-  for (const row of rows) {
-    if (row.header) header = row;
-    else if (!row.nested) header = undefined;
-    row.lit = !!row.fires?.some((fire) => isLit(lit, node.id, fire.to));
-    if (row.lit && header) header.lit = true;
-  }
-  return rows;
-}
-
-/** isLit reports whether a firing from one node to another is lit by the selection. */
-function isLit(lit: Lit, source: string, target: string): boolean {
-  return [source, target].includes(lit.selected) || (lit.route.has(source) && lit.route.has(target));
-}
-
-/** measureNode returns a node's size at text size 1. */
-export function measureNode(drawn: Drawn): { width: number; height: number } {
-  const { node, look, open, rows } = drawn;
-  if (!open) return node.count ? SIZES.pill : SIZES[look.shape];
-  const { width, row, padding } = SIZES.open;
-  return { width, height: measureHead(drawn) + (rows.length ? padding + rows.length * row : 0) + 2 };
-}
-
-/** measureHead returns the height of an open node's head. */
-function measureHead({ node }: Drawn): number {
-  const { head, line } = SIZES.open;
-  return head + ((node.title && node.display === "window" ? 1 : 0) + (node.comment ? 1 : 0)) * line;
-}
-
-/** buildLayout builds the canvas's nodes and edges at the places ELK gives them, lighting the selection's route. */
-export async function buildLayout(graph: Graph, options: Options): Promise<{ nodes: FlowNode[]; edges: FlowEdge[] }> {
+/** buildLayout builds the canvas's nodes and edges at the places dagre gives them, lighting the selection's route. */
+export function buildLayout(whole: Graph, options: Options): { nodes: FlowNode[]; edges: FlowEdge[] } {
+  const { graph, drawn } = foldLoops(whole, options.loops);
   const lit = findLit(graph, options.selected);
-  const drawn = listDrawn(graph, options, lit);
-  const placed = await placeNodes(graph, drawn, options.unit);
-  const boxes = new Map((placed.children ?? []).map((box) => [box.id, box]));
-  const positions = drawn.map((item) => {
-    const { x = 0, y = 0 } = boxes.get(item.node.id) ?? {};
-    return { item, position: { x, y } };
-  });
-  const top = Math.min(...positions.map(({ position }) => position.y)) - 28 * options.unit;
-  // ELK starts a column's nodes at one x.
-  const heads = Object.entries(groupBy(positions, ({ position }) => Math.round(position.x))).map(([x, members]) => ({
-    id: `head:${x}`,
-    type: "head",
-    position: { x: Number(x), y: top },
-    data: { label: describeColumn(Math.min(...members.map(({ item }) => item.node.step))) },
-    selectable: false,
-  }));
-  const nodes = positions.map(({ item, position }) => ({
-    id: item.node.id,
-    type: "graph",
-    position,
-    data: item,
-    class: [
-      item.node.id === graph.root && "root",
-      item.node.id === options.selected && "selected",
-      lit && !lit.near.has(item.node.id) && "dim",
-    ],
-  }));
-  const routes = new Map((placed.edges ?? []).map((edge) => [edge.id, edge]));
-  return { nodes: [...heads, ...nodes], edges: buildEdges(graph, drawn, routes, lit) };
-}
-
-/** placeNodes lays a graph's nodes out with ELK, each in the partition of its step. Every edge brings its label. */
-function placeNodes(graph: Graph, drawn: Drawn[], unit: number): Promise<ElkNode> {
-  const first = Math.min(...drawn.map((item) => item.node.step));
-  const byId = new Map(drawn.map((item) => [item.node.id, item]));
-  const children = drawn.map((item) => {
-    const { width, height } = measureNode(item);
+  const placed = placeNodes(graph, drawn, options.unit);
+  const nodes = drawn.map((item) => {
+    // dagre places a node by its center, Vue Flow by its corner
+    const { x = 0, y = 0, width = 0, height = 0 } = placed.node(item.id) ?? {};
     return {
-      id: item.node.id,
-      width: width * unit,
-      height: height * unit,
-      layoutOptions: {
-        "elk.partitioning.partition": String(item.node.step - first),
-        "elk.portConstraints": "FIXED_POS",
-        "elk.alignment": "LEFT",
-      },
-      ports: listPorts(item, unit),
+      id: item.id,
+      type: "graph",
+      position: { x: x - width / 2, y: y - height / 2 },
+      data: item,
+      class: [
+        item.id === graph.root && "root",
+        item.id === options.selected && "selected",
+        lit && !lit.near.has(item.id) && "dim",
+      ],
     };
   });
-  const edges = listSpans(graph)
-    .filter(({ edge }) => edge.from !== edge.to)
-    .map(({ edge, id }) => {
-      const firer = byId.get(edge.from);
-      const handle = findHandle(firer, edge);
-      const text = describeLabel(edge, firer);
-      const labels = text ? [{ text, width: text.length * LABEL.char + LABEL.padding, height: LABEL.height }] : [];
-      return { id, sources: [handle ? `${edge.from}|${handle}` : edge.from], targets: [edge.to], labels };
-    });
-  const spacing = {
-    "elk.spacing.nodeNode": String(12 * unit),
-    "elk.layered.spacing.nodeNodeBetweenLayers": String(30 * unit),
-    "elk.padding": `[top=${40 * unit},left=${20 * unit},bottom=${40 * unit},right=${20 * unit}]`,
-  };
-  return elk.layout({ id: "graph", layoutOptions: { ...LAYOUT, ...spacing }, children, edges });
+  return { nodes, edges: buildEdges(graph, placed, lit) };
 }
 
-/** listPorts lists the ports of an open node: one for each row that fires, and the node's own. */
-function listPorts(drawn: Drawn, unit: number): ElkPort[] {
-  if (!drawn.open) return [];
-  const { width, height } = measureNode(drawn);
-  const { row: rowHeight, padding } = SIZES.open;
-  const top = measureHead(drawn) + padding / 2;
-  const ports = drawn.rows.flatMap((row, index) =>
-    row.fires?.length ? [{ id: `${drawn.node.id}|${row.id}`, y: top + (index + 0.5) * rowHeight }] : [],
-  );
-  ports.push({ id: `${drawn.node.id}|node`, y: height / 2 });
-  return ports.map(({ id, y }) => ({
-    id,
-    x: width * unit,
-    y: y * unit,
-    width: 0,
-    height: 0,
-    layoutOptions: { "elk.port.side": "EAST" },
-  }));
+/**
+ * foldLoops lists what the canvas draws. A firer that fires the root only round a loop of the root's own chain folds
+ * into a pill joined to the node it enters by, unless that node's loop firers are shown. A firing back into its own
+ * chain ends in a marker naming the node it fires, in place of an edge back across the graph.
+ */
+function foldLoops(whole: Graph, loops: string[]): { graph: Graph; drawn: Drawn[] } {
+  const kept = new Map<string, Node>();
+  const folded = new Map<string, number>(); // how many looped firers stay folded, by the node they enter by
+  // the reach adds a node after the one it was reached from
+  for (const node of whole.nodes ?? []) {
+    if (!node.looped || (kept.has(node.parent) && loops.includes(node.parent))) kept.set(node.id, node);
+    else if (kept.has(node.parent)) folded.set(node.parent, (folded.get(node.parent) ?? 0) + 1);
+  }
+  const tree = { ...whole, nodes: [...kept.values()] };
+  const drawn: Drawn[] = tree.nodes.map((node) => ({ id: node.id, node, look: lookupLook(node.database) }));
+  const edges: Edge[] = [];
+  for (const edge of whole.edges ?? []) {
+    const source = kept.get(edge.from);
+    const target = kept.get(edge.to);
+    if (!source || !target) continue;
+    const isBack = source.step >= 0 && edge.from !== edge.to && listRoute(tree, edge.from).includes(edge.to);
+    if (!isBack) {
+      edges.push(edge);
+      continue;
+    }
+    const id = `back:${edges.length}`;
+    drawn.push({ id, node: target, look: LOOP, loop: { kind: "back" } });
+    edges.push({ ...edge, to: id });
+  }
+  for (const [entry, count] of folded) {
+    const node = kept.get(entry);
+    if (!node) continue;
+    const id = LOOP_PILL + entry;
+    drawn.push({ id, node, look: LOOP, loop: { kind: "firers", count } });
+    edges.push({ from: id, to: entry, site: node.site });
+  }
+  return { graph: { ...tree, edges }, drawn };
 }
 
-/** findHandle returns the id of the handle an edge leaves its firer by, or undefined if the firer is closed. */
-function findHandle(firer: Drawn | undefined, edge: Edge): string | undefined {
-  if (!firer?.open) return undefined;
-  return firer.rows.find((row) => row.fires?.some((fire) => isSameFiring(fire, edge)))?.id ?? "node";
+/** placeNodes lays a graph's nodes out with dagre. */
+function placeNodes(graph: Graph, drawn: Drawn[], unit: number): DagreGraph {
+  const placed = new dagre.graphlib.Graph({ multigraph: true });
+  placed.setGraph({
+    rankdir: "LR",
+    nodesep: SPACING.nodesep * unit,
+    ranksep: SPACING.ranksep * unit,
+    edgesep: SPACING.edgesep * unit,
+    marginx: 20 * unit,
+    marginy: 40 * unit,
+  });
+  for (const item of drawn) {
+    const { width, height } = measureNode(item);
+    placed.setNode(item.id, { width: width * unit, height: height * unit });
+  }
+  for (const { edge, id } of listSpans(graph)) {
+    if (edge.from !== edge.to) placed.setEdge(edge.from, edge.to, {}, id);
+  }
+  dagre.layout(placed);
+  return placed;
 }
 
 /** listSpans lists each edge with its id and the steps it spans, negative for an edge going back. */
@@ -217,36 +156,53 @@ function listSpans(graph: Graph): { edge: Edge; span: number; id: string }[] {
   }));
 }
 
-/** describeLabel returns an edge's label: its delay and the events it goes via. It is "" if the firer is open. */
-function describeLabel(edge: Edge, firer: Drawn | undefined): string {
-  if (firer?.open) return "";
+/** describeLabel returns an edge's label: its delay and the events it goes via. */
+function describeLabel(edge: Edge): string {
   const via = edge.via?.length ? `via ${edge.via.join(", ")}` : "";
   return [edge.delay, via].filter(Boolean).join(" · ");
 }
 
-/** buildEdges builds the canvas's edges. Each follows ELK's route, and its label sits where ELK put it. */
-function buildEdges(graph: Graph, drawn: Drawn[], routes: Map<string, ElkExtendedEdge>, lit: Lit | null): FlowEdge[] {
-  const byId = new Map(drawn.map((item) => [item.node.id, item]));
+/**
+ * buildEdges builds the canvas's edges. Each keeps the points dagre routes it through between ranks; its ends are the
+ * nodes' handles. A firing that waits or goes through a macro is marked as delayed or via, so it draws dashed or
+ * dotted. Its conditions in words are its hover text.
+ */
+function buildEdges(graph: Graph, placed: DagreGraph, lit: Lit | null): FlowEdge[] {
   return listSpans(graph).map(({ edge, span, id }) => {
-    const firer = byId.get(edge.from);
     const touches = !!lit && [edge.from, edge.to].includes(lit.selected);
-    const placed = routes.get(id);
-    const route = placed?.sections?.[0];
-    const label = placed?.labels?.[0];
+    const isRoute = !!lit && isLit(lit, edge.from, edge.to);
+    const route = edge.from === edge.to ? undefined : placed.edge(edge.from, edge.to, id);
     return {
       id,
       source: edge.from,
       target: edge.to,
-      sourceHandle: findHandle(firer, edge),
       type: "fire",
-      label: touches ? describeLabel(edge, firer) : "",
-      class: lit && isLit(lit, edge.from, edge.to) ? "lit" : [lit && "dim", span < 0 && "back"],
+      label: touches ? describeLabel(edge) : "",
+      class: [
+        isRoute ? "lit" : lit && "dim",
+        !isRoute && span < 0 && "back",
+        edge.delay && "delayed",
+        edge.via?.length && "via",
+      ],
       data: {
-        points: route ? [route.startPoint, ...(route.bendPoints ?? []), route.endPoint] : [],
-        label: label && { x: (label.x ?? 0) + (label.width ?? 0) / 2, y: (label.y ?? 0) + (label.height ?? 0) / 2 },
+        // dagre's first and last points sit on the nodes' boxes, and the canvas starts and ends at the handles. Dagre
+        // also gives every edge a point halfway, where a label would sit; an edge between neighbouring ranks has only
+        // that one, and it bends the curve, so such an edge keeps none.
+        points: dropHalfway(route?.points?.slice(1, -1) ?? []),
+        conditions: writeConditions((edge.steps ?? []).flatMap(describeStep)),
       },
     };
   });
+}
+
+/** dropHalfway returns an edge's inner points, or none if its only one is the halfway point of a short edge. */
+function dropHalfway<T>(points: T[]): T[] {
+  return points.length > 1 ? points : [];
+}
+
+/** isLit reports whether a firing from one node to another is lit by the selection. */
+function isLit(lit: Lit, source: string, target: string): boolean {
+  return [source, target].includes(lit.selected) || (lit.route.has(source) && lit.route.has(target));
 }
 
 /** findLit finds what a selection lights, or null if nothing is selected. */
@@ -259,16 +215,4 @@ function findLit(graph: Graph, selected: string): Lit | null {
     if (edge.to === selected) near.add(edge.from);
   }
   return { selected, route, near };
-}
-
-/** isSameFiring reports whether a node's firing is the one a drawn edge stands for. */
-function isSameFiring(fire: Edge, edge: Edge): boolean {
-  return fire.from === edge.from && fire.site.line === edge.site.line && fire.site.place.path === edge.site.place.path;
-}
-
-/** describeColumn labels a column by its step from the root. */
-function describeColumn(step: number): string {
-  if (step === 0) return "Root";
-  if (step === -1) return "Fired by";
-  return step < 0 ? `${-step} steps before` : plural(step, "step");
 }

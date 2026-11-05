@@ -1,6 +1,6 @@
-# Checks every pull request to main, and every release before it builds: `task check` on Windows and Linux, the race
-# detector, the full build, and the built app starting. The real-install gates need the three games installed, so
-# they stay with the maintainer: `task test:gate`.
+# Checks every pull request to main, and every release before it builds: `task check` on Windows and Linux, the full
+# build, and the built app starting; a release and a run by hand also run the race detector. The real-install gates
+# need the three games installed, so they stay with the maintainer: `task test:gate`.
 name: Test
 
 on:
@@ -65,8 +65,10 @@ jobs:
       - name: task check
         run: task check
 
-      # the race detector needs cgo, which Windows has only where the image ships gcc
+      # the race detector runs before a release and by hand, not on every pull request; it needs cgo, which Windows
+      # has only where the image ships gcc
       - name: task test:race
+        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           if [[ "${RUNNER_OS}" == "Windows" ]] && ! command -v gcc > /dev/null; then

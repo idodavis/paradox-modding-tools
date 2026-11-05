@@ -140,13 +140,18 @@ function show(place: Place, line: number): void {
           <span class="min-w-0 shrink-0 truncate font-mono text-12 text-highlighted">{{
             findLinked(edge, end)?.name ?? edge[end]
           }}</span>
-          <span class="min-w-0 flex-1 text-11 wrap-anywhere text-dimmed">{{ describeHow(edge) }}</span>
-          <UBadge
-            :label="edge.via?.length ? `through ${edge.via.join(', ')}` : 'direct'"
-            variant="subtle"
-            :color="edge.via?.length ? 'warning' : 'neutral'"
-            size="sm"
-          />
+          <span class="min-w-0 flex-1 truncate text-11 text-dimmed" :title="describeHow(edge)">{{
+            describeHow(edge)
+          }}</span>
+          <span class="flex max-w-48 min-w-0" :title="edge.via?.length ? `through ${edge.via.join(', ')}` : undefined">
+            <UBadge
+              :label="edge.via?.length ? `through ${edge.via.join(', ')}` : 'direct'"
+              variant="subtle"
+              :color="edge.via?.length ? 'warning' : 'neutral'"
+              size="sm"
+              :ui="{ base: 'min-w-0', label: 'truncate' }"
+            />
+          </span>
           <!-- The source link opens its file without selecting the row. -->
           <span class="flex max-w-40 min-w-0 shrink" @click.stop @dblclick.stop>
             <SourceLink :place="edge.site.place" :line="edge.site.line" class="min-w-0" />

@@ -68,13 +68,17 @@ export interface Coat {
     "place": workspace$0.Place;
 
     /**
-     * Width and Height are the size of its field in pixels; 0 for a sub-coat or where the game gives none.
+     * the width of its field in pixels; 0 for a sub-coat or where the game gives none
      */
     "width": number;
+
+    /**
+     * the height of its field in pixels; 0 for a sub-coat or where the game gives none
+     */
     "height": number;
 
     /**
-     * Shading is nil where the game shades no coat.
+     * nil where the game shades no coat
      */
     "shading": Shading | null;
 
@@ -116,14 +120,12 @@ export interface Font {
  */
 export interface Group {
     /**
-     * ID is the group's call. A call that reads the object of a data context is written from the window down to that
-     * object, so the same call about two objects is two groups.
+     * the group's call; a call that reads the object of a data context is written from the window down to that object, so the same call about two objects is two groups
      */
     "id": string;
 
     /**
-     * Subject is the kind of object it asks about, such as Character or Relation; Game for a call of one step, Pictures
-     * for a list of pictures, and "" for a coat's list.
+     * the kind of object it asks about, such as Character or Relation; Game for a call of one step, Pictures for a list of pictures, and "" for a coat's list
      */
     "subject"?: string;
 
@@ -138,13 +140,12 @@ export interface Group {
     "label": string;
 
     /**
-     * Exists is true when it asks whether an object further on than its subject exists.
+     * it asks whether an object further on than its subject exists
      */
     "exists"?: boolean;
 
     /**
-     * Options is the values it can take: the values the window asks of it, then every value at once where it has
-     * none or several, then none.
+     * the values it can take: the values the window asks of it, then every value at once where it has none or several, then none
      */
     "options": string[] | null;
 
@@ -159,8 +160,7 @@ export interface Group {
     "box": Box;
 
     /**
-     * Picked is the option a coat's list draws now. A window's group leaves it empty, as its value is in
-     * States.Values.
+     * the option a coat's list draws now; empty in a window's group, whose value is in States.Values
      */
     "picked"?: string;
 
@@ -185,7 +185,7 @@ export interface Group {
     "readers"?: number[] | null;
 
     /**
-     * Pictures is where the pictures it picks among are listed, for a group of a picture binding; nil otherwise.
+     * where the pictures it picks among are listed, for a group of a picture binding; nil otherwise
      */
     "pictures"?: PictureList | null;
 }
@@ -227,12 +227,12 @@ export interface Instance {
  */
 export interface Layer {
     /**
-     * Role is the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub".
+     * the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub"
      */
     "role": string;
 
     /**
-     * Texture is as written; "missing:x" when `list "x"` names a list that does not exist.
+     * as written; "missing:x" when `list "x"` names a list that does not exist
      */
     "texture": string;
 
@@ -292,12 +292,12 @@ export interface Layer {
     "lists": Group[] | null;
 
     /**
-     * Inputs is how the panel edits each key the layer's role may write, by key.
+     * how the panel edits each key the layer's role may write, by key
      */
     "inputs": { [_ in string]?: string } | null;
 
     /**
-     * Instances are in the order written. Each one's Rank says when the coat draws it.
+     * in the order written; each one's Rank says when the coat draws it
      */
     "instances": Instance[] | null;
     "sub"?: Coat | null;
@@ -383,16 +383,22 @@ export interface PictureList {
     "name": string;
 
     /**
-     * Type is the kind of object the binding reads, as its data type or its words; Field is the field it reads of one
-     * (realm_frame), and Argument the argument it passes as written (62), each "" for none.
+     * the kind of object the binding reads, as its data type or its words; "" for none
      */
     "type": string;
+
+    /**
+     * the field it reads of one; "" for none
+     */
     "field": string;
+
+    /**
+     * the argument it passes, as written; "" for none
+     */
     "argument": string;
 
     /**
-     * Folder is, for a kind whose objects are the subfolders of its icon folder rather than definitions, that folder
-     * (graphical_cultures/european_gfx); each subfolder holds the object's images, named by the argument.
+     * for a kind whose objects are the subfolders of its icon folder rather than definitions, that folder; each subfolder holds the object's images, named by the argument
      */
     "folder": string;
 
@@ -410,7 +416,7 @@ export interface Property {
     "key": string;
 
     /**
-     * Value is what the game reads: a constant, an expression or a GetDefine call is worked out, also inside a block.
+     * what the game reads: a constant, an expression or a GetDefine call is worked out, also inside a block
      */
     "value": string;
     "range": lsp$0.Range;
@@ -507,7 +513,7 @@ export interface Shading {
  */
 export interface States {
     /**
-     * Values is, by group, the value each of the window's groups is at.
+     * by group, the value each of the window's groups is at
      */
     "values": { [_ in string]?: string } | null;
 
@@ -517,12 +523,12 @@ export interface States {
     "hidden": number[] | null;
 
     /**
-     * Applies is, by group, the widgets under no hidden widget whose own condition its value decides.
+     * by group, the widgets under no hidden widget whose own condition its value decides
      */
     "applies": { [_ in string]?: number[] | null } | null;
 
     /**
-     * Choices is, by widget, the values the groups give its properties.
+     * by widget, the values the groups give its properties
      */
     "choices": { [_ in `${number}`]?: Choice[] | null } | null;
 }
@@ -534,7 +540,7 @@ export interface Widget {
     "id": number;
 
     /**
-     * Parent is the widget that holds it; the window's own widget is 0, and so is its parent.
+     * the widget that holds it; the window's own widget is 0, and so is its parent
      */
     "parent": number;
     "name": string;
@@ -546,12 +552,12 @@ export interface Widget {
     "row": game$0.WidgetType;
 
     /**
-     * Builtin is the engine's type its type comes down to, such as widget, hbox or icon.
+     * the engine's type its type comes down to, such as widget, hbox or icon
      */
     "builtin": string;
 
     /**
-     * TypeDefined is true when a file defines its type, which can then be opened; a built-in type is not defined.
+     * a file defines its type, which can then be opened; a built-in type is not defined
      */
     "typeDefined": boolean;
 
@@ -571,12 +577,12 @@ export interface Widget {
     "item": boolean;
 
     /**
-     * Properties is the positions of its properties among its window's properties, the last written of each key.
+     * the positions of its properties among its window's properties, the last written of each key
      */
     "properties": number[] | null;
 
     /**
-     * Texts is, by property key, the plain text and the data calls of each text it shows.
+     * by property key, the plain text and the data calls of each text it shows
      */
     "texts": { [_ in string]?: loc$0.Segment[] | null } | null;
 
@@ -586,19 +592,17 @@ export interface Widget {
     "textures": { [_ in string]?: string } | null;
 
     /**
-     * Colors is, by property key, the CSS color that a binding of a definition's color leads to.
+     * by property key, the CSS color that a binding of a definition's color leads to
      */
     "colors": { [_ in string]?: string } | null;
 
     /**
-     * Placeholder is the shape among the page's placeholders that it draws where its picture has no file; "" for a
-     * widget with a picture, a background or no picture.
+     * the shape among the page's placeholders that it draws where its picture has no file; "" for a widget with a picture, a background or no picture
      */
     "placeholder": string;
 
     /**
-     * Pictures is where the pictures are listed that its picture binding may draw, where no file is found for the
-     * binding as written. It draws the first of them; nil means no list.
+     * where the pictures are listed that its picture binding may draw, where no file is found for the binding as written; it draws the first of them; nil means no list
      */
     "pictures"?: PictureList | null;
 
@@ -624,7 +628,7 @@ export interface Window {
     "holders": Widget[] | null;
 
     /**
-     * Places is the places of the files that its widgets and holders are written in, each once.
+     * the places of the files that its widgets and holders are written in, each once
      */
     "places": workspace$0.Place[] | null;
 
@@ -634,39 +638,42 @@ export interface Window {
     "fonts": Font[] | null;
 
     /**
-     * Rows is, by the item of a data model, the rows its list draws; an item whose widgets read no database is left out.
+     * by the item of a data model, the rows its list draws; an item whose widgets read no database is left out
      */
     "rows": { [_ in `${number}`]?: Row[] | null } | null;
 
     /**
-     * Conditions is, by widget, the conditions it is shown on, as written. A widget shown on none is left out.
+     * by widget, the conditions it is shown on, as written; a widget shown on none is left out
      */
     "conditions": { [_ in `${number}`]?: string[] | null } | null;
 
     /**
-     * Missing is the types and templates its widgets use that no file defines.
+     * the types and templates its widgets use that no file defines
      */
     "missing": Missing[] | null;
 
     /**
-     * Groups is what the panel lets the user switch: the groups its widgets' conditions read, its lists of pictures,
-     * then its tiers. The value each is at is in States.Values.
+     * what the panel lets the user switch: the groups its widgets' conditions read, its lists of pictures, then its tiers; the value each is at is in States.Values
      */
     "groups": Group[] | null;
 
     /**
-     * TextFont and TextSize are the font and size of a text that sets neither, or "" if the game sets none.
+     * the font of a text that sets none; "" if the game sets none
      */
     "textFont": string;
+
+    /**
+     * the size of a text that sets none; "" if the game sets none
+     */
     "textSize": string;
 
     /**
-     * Properties is the properties of its widgets, its holders and their overlays, each once.
+     * the properties of its widgets, its holders and their overlays, each once
      */
     "properties": Property[] | null;
 
     /**
-     * Overlays is the textures laid over its widgets' own, each once.
+     * the textures laid over its widgets' own, each once
      */
     "overlays": Overlay[] | null;
 }

@@ -111,7 +111,7 @@ export interface Finding {
     "database": string;
 
     /**
-     * Origin is the mod the finding is about, or "" for the game's own log row.
+     * the mod the finding is about; "" for the game's own log row
      */
     "origin": string;
 
@@ -123,27 +123,27 @@ export interface Finding {
     "sites": lsp$0.Site[] | null;
 
     /**
-     * Removed holds the names the replaced sites define that the kept file does not.
+     * the names the replaced sites define that the kept file does not
      */
     "removed"?: string[] | null;
 
     /**
-     * Uses holds the removed names that the files the game reads still use, the most used first.
+     * the removed names that the files the game reads still use, the most used first
      */
     "uses"?: Use[] | null;
 
     /**
-     * Defined is where the workspace defines the name, in a mod the finding's mod does not depend on.
+     * where the workspace defines the name, in a mod the finding's mod does not depend on
      */
     "defined"?: lsp$0.Site[] | null;
 
     /**
-     * Diagnosed is true for one of the editor's own diagnostics, which the editor shows itself.
+     * one of the editor's own diagnostics, which the editor shows itself
      */
     "diagnosed": boolean;
 
     /**
-     * Comparable is true when the kept statement and the ones it replaces can be shown side by side.
+     * the kept statement and the ones it replaces can be shown side by side
      */
     "comparable": boolean;
 
@@ -153,18 +153,17 @@ export interface Finding {
     "order"?: string[] | null;
 
     /**
-     * Count is how many findings or game log lines the row stands for: 1 unless a report folded findings into it or the
-     * log repeated the line.
+     * how many findings or game log lines the row stands for: 1 unless a report folded findings into it or the log repeated the line
      */
     "count": number;
 
     /**
-     * Repeats holds the sites of the findings a report folded into this one.
+     * the sites of the findings a report folded into this one
      */
     "repeats"?: lsp$0.Site[] | null;
 
     /**
-     * Pairs are each two workspace mods the finding sets against each other, in load order, which can be ignored.
+     * each two workspace mods the finding sets against each other, in load order, which can be ignored
      */
     "pairs": string[][] | null;
 }
@@ -186,12 +185,12 @@ export interface GameLog {
     "writtenAt": string;
 
     /**
-     * Unloaded holds the workspace's mods the run that wrote the log did not read, by id. Their rows stay the game's.
+     * the workspace's mods the run that wrote the log did not read, by id; their rows stay the game's
      */
     "unloaded": string[] | null;
 
     /**
-     * Copies holds, by mod id, the folder of another copy of a workspace mod that the run read in its place.
+     * by mod id, the folder of another copy of a workspace mod that the run read in its place
      */
     "copies": { [_ in string]?: string } | null;
 }
@@ -206,8 +205,7 @@ export interface Group {
     "counts": { [_ in string]?: number } | null;
 
     /**
-     * Phrases holds each level's count as a phrase, such as 235 critical problems, by level. A level with no finding
-     * has none.
+     * each level's count as a phrase, such as 235 critical problems, by level; a level with no finding has none
      */
     "phrases": { [_ in string]?: string } | null;
 
@@ -222,13 +220,12 @@ export interface Group {
     "mod": string;
 
     /**
-     * Findings are sorted by level, the worst first, then by check, the one with the most findings first, then by
-     * weight. A mod's findings leave out its coverage.
+     * sorted by level, the worst first, then by check, the one with the most findings first, then by weight; a mod's leave out its coverage
      */
     "findings": Finding[] | null;
 
     /**
-     * Languages holds the mod's coverage findings, one for each language beside the base one.
+     * the mod's coverage findings, one for each language beside the base one
      */
     "languages": Finding[] | null;
 
@@ -252,7 +249,7 @@ export interface Overview {
     "messages": number;
 
     /**
-     * Judged holds the ids of the mods this mod's own problems are judged with: the mods it depends on, directly or not.
+     * the ids of the mods this mod's own problems are judged with: the mods it depends on, directly or not
      */
     "judged": string[] | null;
 }
@@ -267,8 +264,7 @@ export interface Report {
     "counts": { [_ in string]?: number } | null;
 
     /**
-     * Phrases holds each level's count as a phrase, such as 235 critical problems, by level. A level with no finding
-     * has none.
+     * each level's count as a phrase, such as 235 critical problems, by level; a level with no finding has none
      */
     "phrases": { [_ in string]?: string } | null;
 
@@ -322,8 +318,7 @@ export interface Tally {
     "counts": { [_ in string]?: number } | null;
 
     /**
-     * Phrases holds each level's count as a phrase, such as 235 critical problems, by level. A level with no finding
-     * has none.
+     * each level's count as a phrase, such as 235 critical problems, by level; a level with no finding has none
      */
     "phrases": { [_ in string]?: string } | null;
 

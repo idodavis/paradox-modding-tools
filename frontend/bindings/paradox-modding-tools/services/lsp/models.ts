@@ -38,8 +38,7 @@ export interface Card {
     "blurb"?: string;
 
     /**
-     * Quote is the game's own text for the word, in the workspace's language: a localization key's text, or the title
-     * of a definition.
+     * the game's own text for the word, in the workspace's language: a localization key's text, or the title of a definition
      */
     "quote"?: string;
 
@@ -206,7 +205,7 @@ export interface Code {
     "label": string;
 
     /**
-     * Description is one plain sentence on what the check looks for.
+     * one plain sentence on what the check looks for
      */
     "description": string;
 
@@ -221,13 +220,12 @@ export interface Code {
     "advice": string;
 
     /**
-     * Elsewhere is the message where a mod the file's mod does not depend on defines the name, or "" if the code has
-     * none.
+     * the message where a mod the file's mod does not depend on defines the name; "" if the code has none
      */
     "elsewhere"?: string;
 
     /**
-     * HealthOnly is true where the editor never gives the code and only Health's report finds it.
+     * the editor never gives the code and only Health's report finds it
      */
     "healthOnly": boolean;
 }
@@ -301,7 +299,7 @@ export interface Diagnostic {
     "facts": { [_ in string]?: string } | null;
 
     /**
-     * Defined is where the workspace defines a name the file's mod does not, in a mod it does not depend on.
+     * where the workspace defines a name the file's mod does not, in a mod it does not depend on
      */
     "defined"?: Site[] | null;
 }

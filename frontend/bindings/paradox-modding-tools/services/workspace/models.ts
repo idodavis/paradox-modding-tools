@@ -56,7 +56,7 @@ export interface Descriptor {
     "workshopId": string;
 
     /**
-     * Dependencies are the mods it needs. They are never written.
+     * the mods it needs; they are never written
      */
     "dependencies": Dependency[] | null;
 }
@@ -82,7 +82,7 @@ export interface FileText {
     "text": files$0.Text;
 
     /**
-     * Draft is the editor's unsaved text of the file. It is "" if there is none or it matches the disk.
+     * the editor's unsaved text of the file; "" if there is none or it matches the disk
      */
     "draft": string;
 

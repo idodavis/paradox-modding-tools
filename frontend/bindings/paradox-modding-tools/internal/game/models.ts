@@ -46,8 +46,7 @@ export interface Example {
     "names": string[] | null;
 
     /**
-     * Modes is true where a mod changes one of the definitions by writing REPLACE: in front of its name, as the
-     * database's precedence row says. ListGames fills it.
+     * a mod changes one of the definitions by writing REPLACE: before its name, as its precedence row says
      */
     "modes": boolean;
 }
@@ -71,8 +70,7 @@ export interface Game {
     "descriptor"?: string;
 
     /**
-     * FixedModFolder says that the game's launcher reads local mods only from its mod folder, so a mod made elsewhere
-     * is never loaded.
+     * the launcher reads local mods only from its mod folder, so a mod made elsewhere is never loaded
      */
     "fixedModFolder": boolean;
     "guide": Guide;
@@ -109,7 +107,7 @@ export interface Guide {
  */
 export interface WidgetType {
     /**
-     * Holding is how it holds its children: row, column, flow, grid or scroll; "" means by their anchors.
+     * how it holds its children: row, column, flow, grid or scroll; "" means by their anchors
      */
     "holding"?: string;
 

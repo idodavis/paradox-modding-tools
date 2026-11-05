@@ -201,12 +201,12 @@ export interface Workspace {
     "hideStartPage": boolean;
 
     /**
-     * Settings holds the user's values of the per-workspace settings, by key.
+     * the user's values of the per-workspace settings, by key
      */
     "settings": { [_ in string]?: string } | null;
 
     /**
-     * IgnoredPairs holds the sorted pairs of mods whose conflicts the workspace ignores.
+     * the sorted pairs of mods whose conflicts the workspace ignores
      */
     "ignoredPairs": string[][] | null;
 }

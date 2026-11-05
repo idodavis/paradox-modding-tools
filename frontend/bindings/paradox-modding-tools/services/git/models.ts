@@ -32,7 +32,7 @@ export interface Change {
     "unstaged": boolean;
 
     /**
-     * Place is where the file is in the open workspace; it is empty while none is open.
+     * where the file is in the open workspace; empty while none is open
      */
     "place": workspace$0.Place;
 }
@@ -83,8 +83,7 @@ export interface Ref {
     "hash": string;
 
     /**
-     * Date is when the commit it points to was made, or when an annotated tag was. It is the zero time if the object
-     * has no date.
+     * when the commit it points to was made, or when an annotated tag was; the zero time if the object has no date
      */
     "date": string;
     "current": boolean;
@@ -128,8 +127,7 @@ export interface Status {
     "changes": Change[] | null;
 
     /**
-     * Ignored is where the files and folders git ignores are in the open workspace. They are empty places while none
-     * is open.
+     * where the files and folders git ignores are in the open workspace; empty places while none is open
      */
     "ignored": workspace$0.Place[] | null;
 }

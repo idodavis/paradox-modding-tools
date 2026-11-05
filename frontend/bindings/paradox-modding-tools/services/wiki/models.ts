@@ -23,7 +23,7 @@ export interface LexiconRow {
     "examples": lsp$0.Site[] | null;
 
     /**
-     * Defined is where the game's copy of a scripted effect or trigger is; nil for what the dumps declare.
+     * where the game's copy of a scripted effect or trigger is; nil for what the dumps declare
      */
     "defined"?: lsp$0.Site | null;
 }

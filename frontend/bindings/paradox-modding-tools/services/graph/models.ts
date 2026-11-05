@@ -13,8 +13,7 @@ import * as lsp$0 from "../lsp/models.js";
  */
 export interface Condition {
     /**
-     * Subject is what it is about, as written, read first: a key that names a scope, or the value of a keyword that
-     * reads its value first, as in X exists; "" for any other.
+     * what it is about, as written, read first: a key that names a scope, or the value of a keyword that reads its value first; "" for any other
      */
     "subject"?: string;
 
@@ -29,7 +28,7 @@ export interface Condition {
     "value"?: string;
 
     /**
-     * Title is the in-game name of what its value names, or its subject where that is its value; "" for none.
+     * the in-game name of what its value names, or its subject where that is its value; "" for none
      */
     "title"?: string;
 
@@ -123,7 +122,7 @@ export interface Edge {
     "title"?: string;
 
     /**
-     * Via is the scripted effects passed through, when they are not drawn as nodes.
+     * the scripted effects passed through, when they are not drawn as nodes
      */
     "via"?: string[] | null;
 
@@ -188,7 +187,7 @@ export interface Node {
     "title": string;
 
     /**
-     * Display is how the player sees an event or a message: window, hidden or message; "" for any other entry.
+     * how the player sees an event or a message: window, hidden or message; "" for any other entry
      */
     "display"?: string;
 
@@ -198,7 +197,7 @@ export interface Node {
     "background"?: string;
 
     /**
-     * Trigger is its own trigger in words. It is nil for none, for a fold, and outside a graph and a detail.
+     * its own trigger in words; nil for none, for a fold, and outside a graph and a detail
      */
     "trigger"?: Condition[] | null;
 
@@ -213,7 +212,7 @@ export interface Node {
     "hardcoded"?: boolean;
 
     /**
-     * CopyOrigin is the origin of the latest-loaded copy of its name that its definition hides; "" for none.
+     * the origin of the latest-loaded copy of its name that its definition hides; "" for none
      */
     "copyOrigin"?: string;
     "site": lsp$0.Site;
@@ -239,13 +238,12 @@ export interface Node {
     "deep": boolean;
 
     /**
-     * Looped is true for a firer the backward reach found through a node the root itself fires: it fires the root
-     * only round a loop of the root's own chain.
+     * a firer the backward reach found through a node the root itself fires: it fires the root only round a loop of the root's own chain
      */
     "looped"?: boolean;
 
     /**
-     * Fires is every firing it makes, in the order written. It is nil outside a detail.
+     * every firing it makes, in the order written; nil outside a detail
      */
     "fires"?: Edge[] | null;
 }

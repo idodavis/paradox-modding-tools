@@ -78,8 +78,7 @@ export interface Segment {
     "textSpan": jomini$0.Span;
 
     /**
-     * Kind is the kind of value a data call shows where Text holds a sample of it: number or text. It is "" for any
-     * other piece and for a call as written.
+     * the kind of value a data call shows where Text holds a sample of it, number or text; "" for any other piece and for a call as written
      */
     "kind": string;
 }

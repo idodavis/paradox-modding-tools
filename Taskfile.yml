@@ -61,6 +61,7 @@ tasks:
       # the engine's packages that build without Wails, whose files for other systems need no cgo
       ENGINE: ./internal/files/... ./internal/game/... ./internal/jomini/... ./internal/loc/... ./internal/schema/... ./internal/texture/... ./internal/index/... ./internal/terminal/...
     cmds:
+      - task: check:dist
       - test -z "$(gofmt -l main.go internal services)"
       # plain vet skips the files of other systems; these three cover them. Wails' server tag leaves out its Linux
       # window code, which needs cgo, so that the services' Linux files are vetted too
@@ -71,6 +72,14 @@ tasks:
       - staticcheck ./...
       - golangci-lint run ./...
       - task: test
+
+  check:dist:
+    summary: Builds the frontend if it has never been built, since main.go embeds frontend/dist and go vet needs it.
+    internal: true
+    status:
+      - test -f frontend/dist/index.html
+    cmds:
+      - task: common:build:frontend
 
   check:frontend:
     summary: The typecheck (~30s, .vue files included), eslint with prettier, and vitest.

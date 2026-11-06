@@ -97,11 +97,14 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # the Wails CLI links GTK 4 and WebKitGTK 6 on Linux, so the Windows build on this runner needs them too
+      # the Wails CLI links GTK 4 and WebKitGTK 6 on Linux, so the Windows build on this runner needs them too. Ubuntu's
+      # mirror stalls now and then: a stalled download is retried, and the step gives up after 10 minutes
       - name: Linux GTK4 / WebKitGTK 6
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y --no-install-recommends \
+            build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
 
       - name: Install the Wails CLI and go-licenses
         run: |

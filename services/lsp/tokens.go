@@ -7,8 +7,10 @@ import (
 
 	"github.com/samber/lo"
 
+	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/services/workspace"
 )
 
 // A Legend is the list of token types and modifiers that the semantic tokens are encoded against.
@@ -23,18 +25,33 @@ var legend = []schema.Category{
 	schema.CategoryReference, schema.CategoryParameter, schema.CategoryConstant, schema.CategoryCall,
 }
 
-// Tokens returns the semantic tokens of a file: the color category of every key and value, encoded as Monaco wants.
-// It returns none for a file that is not script.
-func (lsp *Service) Tokens(path string) ([]uint32, error) {
+// Tokens returns the semantic tokens of the given range of a file: the color category of every key and value in it,
+// encoded as Monaco wants. It returns none for a file that is not script.
+func (lsp *Service) Tokens(path string, bounds Range) ([]uint32, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return nil, err
 	}
-	visitor, place := &tokensVisitor{}, ws.Locate(ws.Mods.Load(), path)
+	span := ToSpan(tree.Src, tree.Lines, bounds)
+	rangeTokens := lo.Filter(lsp.listTokens(ws, tree, path), func(current token, _ int) bool {
+		return current.span.End > span.Start && current.span.Start < span.End
+	})
+	return encodeTokens(tree.Src, tree.Lines, rangeTokens), nil
+}
+
+// listTokens returns the colored spans of a parsed file. The last file's are kept, so a request for more of the same
+// text, as each scroll makes, does not walk it again; a new text or a new mods' index walks it anew.
+func (lsp *Service) listTokens(ws *workspace.Session, tree *jomini.Tree, path string) []token {
+	mods := ws.Mods.Load()
+	if last := lsp.coloring.Load(); last != nil && last.tree == tree && last.mods == mods {
+		return last.tokens
+	}
+	visitor, place := &tokensVisitor{schema: ws.Schema}, ws.Locate(mods, path)
 	if place.Format.IsScript() {
 		ws.Schema.Walk(tree, place.File, visitor)
 	}
-	return encodeTokens(tree.Src, tree.Lines, visitor.tokens), nil
+	lsp.coloring.Store(&fileColors{tree: tree, mods: mods, tokens: visitor.tokens})
+	return visitor.tokens
 }
 
 // ListLegend returns the legend the tokens are encoded against.
@@ -45,6 +62,7 @@ func (lsp *Service) ListLegend() Legend {
 
 // A tokensVisitor collects the colored spans of a file.
 type tokensVisitor struct {
+	schema *schema.Schema
 	tokens []token
 }
 
@@ -54,12 +72,28 @@ type token struct {
 	category schema.Category
 }
 
+// A fileColors is the colored spans of one parsed file, under the mods' index that colors them.
+type fileColors struct {
+	tree   *jomini.Tree
+	mods   *index.Index
+	tokens []token
+}
+
 // Enter records the statement's key and value categories.
 func (visitor *tokensVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
 	current := tree.Statements[statement]
 	visitor.tokens = append(visitor.tokens,
-		token{span: current.Key, category: context.Category}, token{span: current.Value, category: context.ValueGroup})
+		visitor.makeToken(tree, current.Key, context.Category), visitor.makeToken(tree, current.Value, context.ValueGroup))
 	return true
+}
+
+// makeToken returns the token of a span with the given category. A span the walk gave none is a link if its text is a
+// chain of links, as scope:actor or root.liege.
+func (visitor *tokensVisitor) makeToken(tree *jomini.Tree, span jomini.Span, category schema.Category) token {
+	if category == schema.CategoryNone && !span.IsEmpty() && visitor.schema.IsLink(tree.Unquoted(span)) {
+		category = schema.CategoryLink
+	}
+	return token{span: span, category: category}
 }
 
 // Leave does nothing.

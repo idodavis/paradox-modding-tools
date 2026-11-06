@@ -190,11 +190,11 @@ export function describeLexicon(state: State): string {
   return counts.join(", ");
 }
 
-/** MARKS holds, for each status of a difference, its mark, color, and words in a count ("3 new") and a sentence. */
-export const MARKS: Readonly<Record<string, { mark: string; color: string; count: string; sentence: string }>> = {
-  changed: { mark: "~", color: "text-warning", count: "changed", sentence: "changed" },
-  added: { mark: "+", color: "text-success", count: "new", sentence: "is new" },
-  removed: { mark: "−", color: "text-error", count: "removed", sentence: "was removed" },
+/** MARKS holds, for each status of a difference, its letter, color, and words in a count ("3 new") and a sentence. */
+export const MARKS: Readonly<Record<string, { letter: string; color: string; count: string; sentence: string }>> = {
+  changed: { letter: "M", color: "text-warning", count: "changed", sentence: "changed" },
+  added: { letter: "A", color: "text-success", count: "new", sentence: "is new" },
+  removed: { letter: "D", color: "text-error", count: "removed", sentence: "was removed" },
 };
 
 /** DIFFERENCE_FIELDS holds the label of each listing field a difference can name. */

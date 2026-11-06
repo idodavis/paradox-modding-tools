@@ -106,7 +106,7 @@ func (stm *Service) CompareUpload(modID, key string) (Comparison, error) {
 		return Comparison{}, err
 	}
 	defer func() { _ = src.close() }()
-	upload, ignores, err := stm.buildUpload(mod, src)
+	upload, exclusions, err := stm.buildUpload(mod, src)
 	if err != nil {
 		return Comparison{}, err
 	}
@@ -121,7 +121,7 @@ func (stm *Service) CompareUpload(modID, key string) (Comparison, error) {
 		comparison.Page = comparePage(listing, *answer.Steam, modIDs, sync.OnceValue(stm.listSteamNames))
 	}
 	if answer.Reason == "" {
-		if comparison.Files, err = stm.compareFiles(ws, ignores, listing, src, upload); err != nil {
+		if comparison.Files, err = stm.compareFiles(ws, exclusions, listing, src, upload); err != nil {
 			return Comparison{}, err
 		}
 	}
@@ -311,13 +311,16 @@ func countLines(before, after string) (gained, lost int) {
 // compareFiles lists what an upload from a source changes in its item's files. It returns an error if PMT has no
 // snapshot of the item, or Steam cannot download the item again.
 func (stm *Service) compareFiles(
-	ws *workspace.Session, ignores []files.Ignore, listing Listing, src source, upload Upload,
+	ws *workspace.Session, exclusions []exclusion, listing Listing, src source, upload Upload,
 ) ([]Difference, error) {
 	snapshot, err := stm.loadSnapshot(ws, listing.WorkshopID)
 	if err != nil {
 		return nil, err
 	}
-	maps.DeleteFunc(snapshot.Files, func(rel, _ string) bool { return isExcluded(ignores, rel) })
+	maps.DeleteFunc(snapshot.Files, func(rel, _ string) bool {
+		_, excluded := findExclusion(exclusions, rel)
+		return excluded
+	})
 	differences := []Difference{}
 	if descriptor, _ := workspace.ReadDescriptor(ws.Game, snapshot.Dir); descriptor.Version != listing.Version {
 		differences = append(differences, Difference{

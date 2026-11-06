@@ -1,9 +1,11 @@
 package steam
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 
@@ -185,8 +187,8 @@ func TestListUploadSplitsFilesByRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantExcluded := []string{".gitignore", ".hidden", "art/logo.psd", "notes.log", "secret/key.txt"}
-	if !reflect.DeepEqual(upload.Excluded, wantExcluded) {
-		t.Errorf("got excluded %v, want %v", upload.Excluded, wantExcluded)
+	if got := slices.Sorted(maps.Keys(upload.Excluded)); !reflect.DeepEqual(got, wantExcluded) {
+		t.Errorf("got excluded %v, want %v", got, wantExcluded)
 	}
 	sent := map[string]bool{}
 	for _, file := range upload.Files {

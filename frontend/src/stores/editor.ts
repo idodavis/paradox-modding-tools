@@ -25,7 +25,7 @@ import {
 import { VIEWS } from "../pages/ide/editor/tabs";
 import { fileQuery, loadQuery, placeQuery, workspacesQuery } from "../queries";
 import { useSettingsStore } from "./settings";
-import { HAS_EDITORS, THIS_WINDOW, useWindowsStore } from "./windows";
+import { HAS_EDITORS, IS_EXPLORER, THIS_WINDOW, useWindowsStore } from "./windows";
 import { useWorkspaceStore } from "./workspace";
 
 /** A Mode is what the IDE shows of the active file: its code, or Visual, the picture it draws. */
@@ -359,11 +359,16 @@ export const useEditorStore = defineStore("editor", () => {
     release(id);
   };
 
-  /** show opens a file at a position or range, in the window that holds it. It does nothing for a folder. */
+  /**
+   * show opens a file at a position or range: in the window that holds it, else in the explorer window that shows it,
+   * else here. An explorer window opens only its own files; any other goes to the main window. It does nothing for a
+   * folder.
+   */
   const show = (place: Place, selection?: IPosition | IRange, source: Source = "navigate"): void => {
     if (place.isDir) return;
     const windows = useWindowsStore();
-    const target = windows.holderOf(place.key) || (HAS_EDITORS ? THIS_WINDOW : "main");
+    const target =
+      windows.holderOf(place.key) || windows.explorerOf(place) || (HAS_EDITORS && !IS_EXPLORER ? THIS_WINDOW : "main");
     if (target !== THIS_WINDOW) return windows.showElsewhere(target, place, selection, source);
     const group = activeGroup();
     if (!group) return;

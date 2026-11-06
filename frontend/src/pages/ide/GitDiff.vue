@@ -14,8 +14,6 @@ const { tab, side, root = "" } = defineProps<{ tab: Tab; side: DiffSide; root?: 
 
 const editor = useEditorStore();
 const place = computed(() => editor.placeOf(tab.key));
-const added = shallowRef(0);
-const removed = shallowRef(0);
 
 const { data: status } = useQuery(() => ({ ...gitStatusQuery(root), enabled: !!root }));
 const { data: log } = useQuery(() => ({
@@ -71,15 +69,11 @@ const right = computed(() => (side === "changes" ? working.value : (revised.valu
     :language="place ? EDITOR_LANGUAGES[place.format] : 'plaintext'"
     :left-label="sides.labels[0] ?? ''"
     :right-label="sides.labels[1] ?? ''"
-    @changes="(plus, minus) => ((added = plus), (removed = minus))"
   >
     <template #header>
       <OriginChip v-if="place" :origin="place.origin" dot />
-      <span class="truncate text-toned">{{ place?.rel }}</span>
-      <span class="grow" />
-      <span v-if="unreadable" class="truncate">{{ unreadable.message }}</span>
-      <UBadge :label="`+${added}`" color="success" size="sm" />
-      <UBadge :label="`-${removed}`" color="error" size="sm" />
+      <span class="truncate font-medium text-toned">{{ place?.rel }}</span>
+      <span v-if="unreadable" class="truncate text-error">{{ unreadable.message }}</span>
     </template>
   </CompareView>
 </template>

@@ -9,21 +9,21 @@ const FILES = import.meta.glob<string>("../assets/placeholders/*.svg", {
 
 /** COLORS holds the syntax color of each shape. */
 const COLORS: Record<string, string> = {
-  "crowned-ruler": "entry",
-  "top-hat": "entry",
-  "plumed-hat": "entry",
-  shield: "variable",
-  flag: "block",
-  faith: "literal",
+  "crowned-ruler": "name",
+  "top-hat": "name",
+  "plumed-hat": "name",
+  shield: "macro",
+  flag: "command",
+  faith: "keyword",
   illustration: "comment",
   goods: "number",
-  action: "literal",
+  action: "keyword",
   military: "operator",
   building: "field",
-  trait: "scope",
+  trait: "link",
   modifier: "string",
-  concept: "block",
-  rank: "entry",
+  concept: "command",
+  rank: "name",
   map: "string",
   message: "operator",
   icon: "comment",
@@ -32,7 +32,7 @@ const COLORS: Record<string, string> = {
 /** SAMPLE_COLORS holds the syntax color of a data call's sample text, by the kind Go gives the sample. */
 export const SAMPLE_COLORS: Record<string, string> = {
   number: "var(--syn-number)",
-  date: "var(--syn-literal)",
+  date: "var(--syn-number)",
   text: "var(--syn-string)",
 };
 

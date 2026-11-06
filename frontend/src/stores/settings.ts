@@ -24,6 +24,7 @@ export const THEME_FAMILIES: readonly { id: string; label: string }[] = [
   { id: "catppuccin", label: "Catppuccin" },
   { id: "one", label: "One" },
   { id: "pierre", label: "Pierre Soft" },
+  { id: "jetbrains", label: "JetBrains" },
   { id: "ck3", label: "Crusader Kings" },
   { id: "eu5", label: "Europa Universalis" },
   { id: "vic3", label: "Victoria" },

@@ -1,4 +1,4 @@
-<!-- The IDE page: the sidebar, the editors, the bottom panel and the Wiki pane. A pop-out shows one part alone. -->
+<!-- The IDE page: the sidebar, the editors, the bottom panel and the Wiki pane. A pop-out shows some of them. -->
 <script setup lang="ts">
 import { computed, nextTick, reactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -108,7 +108,7 @@ const visualGroup = computed(() => (isVisual.value ? editor.activeGroup() : null
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
 const externalOpen = useLocalStorage("pmt.ide.externalOpen", true);
 /** filtering says which trees show their filter box. */
-const filtering = reactive({ mods: false, external: false, game: false, own: false });
+const filtering = reactive({ mods: false, own: false });
 const [DefineFilterButton, FilterButton] = createReusableTemplate<{ tree: keyof typeof filtering }>();
 const visible = useShown();
 // The active file and its selected lines go with an agent's prompt as a chip. While the active tab is one Follow the
@@ -210,9 +210,7 @@ const panes = computed<SplitterItem[]>(() => [
         },
       ]
     : []),
-  ...(layout.value === "files" || layout.value === "wiki"
-    ? []
-    : [{ id: "editors", slot: "editors", order: 2, minSize: 33 }]),
+  ...(layout.value === "wiki" ? [] : [{ id: "editors", slot: "editors", order: 2, minSize: 33 }]),
   // The Wiki pane leaves the main window while it has a window of its own, and while Visual takes the screen.
   ...((layout.value === "full" && editor.wiki && !isVisual.value && !windows.listWindows().includes("wiki")) ||
   layout.value === "wiki"
@@ -391,13 +389,6 @@ function choose(value: string, collapsed: boolean, collapse: () => void): void {
   else showSidebar(value);
 }
 
-/** toggleFilter shows or hides a tree's filter box. Showing the game files' or the external mods' box unfolds them. */
-function toggleFilter(tree: keyof typeof filtering): void {
-  filtering[tree] = !filtering[tree];
-  if (tree === "game" && filtering.game) gameOpen.value = true;
-  if (tree === "external" && filtering.external) externalOpen.value = true;
-}
-
 /** toggleProblems shows the panel on Problems, or closes it if it shows Problems already. */
 function toggleProblems(): void {
   if (editor.panel === "problems" && !isVisual.value) editor.panel = "";
@@ -477,7 +468,7 @@ function collapseAll(): void {
           :color="filtering[tree] ? 'primary' : 'neutral'"
           aria-label="Filter files"
           :aria-pressed="filtering[tree]"
-          @click="toggleFilter(tree)"
+          @click="filtering[tree] = !filtering[tree]"
         />
       </UTooltip>
     </DefineFilterButton>
@@ -557,7 +548,6 @@ function collapseAll(): void {
                         class="size-3.5 shrink-0"
                       />External mods<span class="ms-1 truncate font-normal text-dimmed">read only</span>
                     </button>
-                    <FilterButton v-if="!windows.listWindows().includes('external')" tree="external" />
                     <UTooltip text="Open in its own window">
                       <UButton
                         icon="i-lucide-app-window"
@@ -580,14 +570,7 @@ function collapseAll(): void {
                       <UButton label="Show window" size="xs" variant="ghost" @click="windows.showWindow('external')" />
                     </div>
                   </div>
-                  <ExplorerTree
-                    v-else
-                    v-show="externalOpen"
-                    ref="externalTree"
-                    v-model:filtering="filtering.external"
-                    :roots="externals"
-                    @open="show"
-                  />
+                  <ExplorerTree v-else v-show="externalOpen" ref="externalTree" :roots="externals" @open="show" />
                 </div>
               </template>
               <template #game>
@@ -602,7 +585,6 @@ function collapseAll(): void {
                       <UIcon :name="gameOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
                       Game files<span class="ms-1 truncate font-normal text-dimmed">read only</span>
                     </button>
-                    <FilterButton v-if="!windows.listWindows().includes('game')" tree="game" />
                     <UTooltip text="Open in its own window">
                       <UButton
                         icon="i-lucide-app-window"
@@ -625,14 +607,7 @@ function collapseAll(): void {
                       <UButton label="Show window" size="xs" variant="ghost" @click="windows.showWindow('game')" />
                     </div>
                   </div>
-                  <ExplorerTree
-                    v-else
-                    v-show="gameOpen"
-                    ref="gameTree"
-                    v-model:filtering="filtering.game"
-                    :roots="game"
-                    @open="show"
-                  />
+                  <ExplorerTree v-else v-show="gameOpen" ref="gameTree" :roots="game" @open="show" />
                 </div>
               </template>
             </USplitter>
@@ -647,7 +622,7 @@ function collapseAll(): void {
           >
             {{ part === "game" || part === "external" ? describeWindow(part) : folderPlace?.name }}
             <span class="grow" />
-            <FilterButton tree="own" />
+            <FilterButton v-if="part === 'files'" tree="own" />
           </div>
           <ExplorerTree v-model:filtering="filtering.own" :roots="own" @open="show" />
         </aside>

@@ -7,7 +7,7 @@ info:
   companyName: "idavis.io"
   productName: "Paradox Modding Tools"
   productIdentifier: "io.idavis.paradox-modding-tools"
-  description: "Desktop workspace for Crusader Kings III, Victoria 3, and Europa Universalis V modders."
+  description: "Paradox Modding Tools"
   copyright: "(c) 2026, idavis.io"
   comments: "Unofficial. Not affiliated with Paradox Interactive."
   version: "0.0.1"

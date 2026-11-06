@@ -48,9 +48,9 @@ describe("the windows", () => {
 
   it("finds the window that holds a file, and lists the windows open", () => {
     const { windows } = stores();
-    announce({ name: "editor:1", files: ["a"], active: null });
-    announce({ name: "files:/mod/sub", files: [], active: null });
-    announce({ name: "page:health", files: [], active: null });
+    announce({ name: "editor:1", files: ["a"], active: null, folder: "" });
+    announce({ name: "files:/mod/sub", files: [], active: null, folder: "/mod/sub" });
+    announce({ name: "page:health", files: [], active: null, folder: "" });
     expect(windows.holderOf("a")).toBe("editor:1");
     expect(windows.holderOf("other")).toBe("");
     expect(windows.listWindows()).toEqual(["main", "editor:1", "files:/mod/sub", "page:health"]);
@@ -79,7 +79,7 @@ describe("the windows", () => {
 
   it("forgets a window once it has closed", () => {
     const { windows } = stores();
-    announce({ name: "editor:1", files: ["a"], active: null });
+    announce({ name: "editor:1", files: ["a"], active: null, folder: "" });
     handlerOf("window:closed")({ data: "editor:1" });
     expect(windows.holderOf("a")).toBe("");
   });

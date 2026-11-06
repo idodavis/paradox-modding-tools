@@ -18,7 +18,6 @@ import GameInstalls from "../../ui/GameInstalls.vue";
 import LevelCounts from "../../ui/LevelCounts.vue";
 import ModAvatar from "../../ui/ModAvatar.vue";
 import OriginChip from "../../ui/OriginChip.vue";
-import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import TermInfo from "../../ui/TermInfo.vue";
 import * as workspace from "@services/workspace/service";
@@ -30,7 +29,6 @@ const router = useRouter();
 const toast = useToast();
 const store = useWorkspaceStore();
 const commandBus = useEventBus(COMMAND_BUS);
-const guiding = shallowRef(false);
 const resetting = shallowRef(false);
 const confirmation = shallowRef("");
 const visible = useShown();
@@ -257,7 +255,7 @@ function describeMenu(record: Workspace): DropdownMenuItem[] {
               v-if="dumps"
               type="button"
               class="flex h-5 items-center gap-1.25 self-start text-12 text-toned hover:text-highlighted"
-              @click="guiding = true"
+              @click="commandBus.emit('docs.guide')"
             >
               <UIcon
                 :name="dumps.current ? 'i-lucide-check' : 'i-lucide-triangle-alert'"
@@ -274,7 +272,7 @@ function describeMenu(record: Workspace): DropdownMenuItem[] {
                 color="secondary"
                 size="xs"
                 class="p-0"
-                @click="guiding = true"
+                @click="commandBus.emit('docs.guide')"
               />
             </span>
             <span v-else class="text-12 text-dimmed">{{ dumps ? lexicon : "Read when you open the IDE." }}</span>
@@ -335,8 +333,6 @@ function describeMenu(record: Workspace): DropdownMenuItem[] {
           </div>
         </div>
       </section>
-
-      <ScriptDocsGuide v-model:open="guiding" :game="state?.game?.id ?? ''" />
     </div>
 
     <StatusFacts :facts="[{ label: 'Workspaces', value: `${rows.length}` }]" />

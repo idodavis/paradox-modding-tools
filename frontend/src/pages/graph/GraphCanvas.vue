@@ -1,11 +1,10 @@
-<!-- The canvas the graph draws on, with a minimap, zoom buttons and a legend. It exports the picture as SVG or PNG. -->
+<!-- The canvas the graph draws on, with a minimap, zoom buttons and a legend. -->
 <script setup lang="ts">
 import { computed, useTemplateRef } from "vue";
 import {
   BaseEdge,
   EdgeLabelRenderer,
   VueFlow,
-  getRectOfNodes,
   useVueFlow,
   type Edge as FlowEdge,
   type EdgeProps,
@@ -17,7 +16,6 @@ import { useResizeObserver } from "@vueuse/core";
 import { MiniMap } from "@vue-flow/minimap";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
-import { toPng, toSvg } from "html-to-image";
 import GraphNode from "./GraphNode.vue";
 import type { Drawn } from "./layout";
 
@@ -39,8 +37,6 @@ const emit = defineEmits<{ select: [id: string]; draw: [id: string] }>();
 
 type Point = { x: number; y: number };
 
-/** MARGIN is the space around the graph in an exported picture. */
-const MARGIN = 24;
 /** LEAD is how far an edge runs level from a handle before it curves, in pixels. */
 const LEAD = 24;
 /** LEGEND is the legend's entries. */
@@ -58,7 +54,7 @@ const LEGEND = [
   { label: "Through a macro", sample: "w-5 border-t-2 border-dotted border-(--fg-3)" },
 ];
 
-const { fitView, getNodes, viewport, zoomIn, zoomOut } = useVueFlow("event-graph");
+const { fitView, viewport, zoomIn, zoomOut } = useVueFlow("event-graph");
 const canvas = useTemplateRef("canvas");
 const zoom = computed(() => Math.round(viewport.value.zoom * 100));
 
@@ -140,29 +136,7 @@ function click(node: FlowNode): void {
   emit("select", node.data.loop?.kind === "back" ? node.data.node.id : node.id);
 }
 
-/** save saves the whole canvas as a picture made by the given function. */
-async function save(draw: typeof toSvg, extension: string): Promise<void> {
-  const flow = canvas.value?.querySelector<HTMLElement>(".vue-flow__viewport");
-  if (!canvas.value || !flow) return;
-  const bounds = getRectOfNodes(getNodes.value);
-  const width = bounds.width + 2 * MARGIN;
-  const height = bounds.height + 2 * MARGIN;
-  const link = document.createElement("a");
-  link.href = await draw(flow, {
-    width,
-    height,
-    backgroundColor: getComputedStyle(canvas.value).backgroundColor,
-    style: {
-      width: `${width}px`,
-      height: `${height}px`,
-      transform: `translate(${MARGIN - bounds.x}px, ${MARGIN - bounds.y}px) scale(1)`,
-    },
-  });
-  link.download = `event-graph.${extension}`;
-  link.click();
-}
-
-defineExpose({ fit, exportSvg: () => save(toSvg, "svg"), exportPng: () => save(toPng, "png") });
+defineExpose({ fit });
 </script>
 
 <template>

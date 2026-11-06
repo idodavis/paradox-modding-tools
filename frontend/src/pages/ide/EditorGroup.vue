@@ -738,7 +738,12 @@ const actions = computed<DropdownMenuItem[]>(() => [
           PMT can't show this file.
         </p>
       </template>
-      <StartPage v-else-if="!activeTab || activeTab.start" />
+      <template v-else-if="!activeTab || activeTab.start">
+        <StartPage v-if="THIS_WINDOW === 'main'" />
+        <p v-else class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
+          Open a file from the explorer.
+        </p>
+      </template>
       <div
         v-if="isDraggedOver"
         class="absolute inset-0 z-20"

@@ -28,6 +28,7 @@ export type Model = {
   diskText: Text | null; // the new disk text when the file changed on disk under unsaved text; null otherwise
   disk: { version: number; text: string }; // the version and text last loaded from or saved to disk
   sync: () => Promise<Diagnostic[]>; // sends the text to Go once edits pause
+  syncVersion: number; // the text version Go holds; -1 if it holds none of this window's
 };
 
 /** SEVERITIES holds the Monaco severity of each level. Monaco has one severity for both critical and error. */
@@ -47,7 +48,10 @@ const doomed = new Set<string>();
 /** setupModels keeps the models in step with the workspace and the settings. */
 export function setupModels(): void {
   Events.On("workspace:opened", () => {
-    models.forEach((model) => void (model.unsaved ? syncText(model) : diagnose(model)));
+    models.forEach((model) => {
+      model.syncVersion = -1;
+      void (model.unsaved ? syncText(model) : diagnose(model));
+    });
   });
   // a check turned on or off changes every open file's problems
   Events.On("config:changed", ({ data }) => {
@@ -88,6 +92,11 @@ export function applyEdits(model: Model, edits: Edit[]): void {
 /** syncText sends a model's text to Go once edits pause and returns its problems. A replaced call returns none. */
 export async function syncText(model: Model): Promise<Diagnostic[]> {
   return (await model.sync()) ?? [];
+}
+
+/** flushText sends a model's text to Go now, unless Go already holds its latest. */
+export async function flushText(model: Model): Promise<void> {
+  if (model.syncVersion !== model.model.getVersionId()) await sendText(model);
 }
 
 /** save writes a model's text to disk. The model stays unsaved if it was edited during the write. */
@@ -185,6 +194,7 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
     diskText: null,
     disk: { version: start.unsaved ? -1 : textModel.getAlternativeVersionId(), text: start.disk },
     sync: useDebounceFn((): Promise<Diagnostic[]> => sendText(model), 300),
+    syncVersion: start.unsaved ? -1 : textModel.getVersionId(),
   });
   textModel.onDidChangeContent(() => {
     // a file no change is written to is never unsaved
@@ -196,9 +206,11 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
   return model;
 }
 
-/** sendText sends a model's text to Go and shows the problems found as its markers. */
+/** sendText sends a model's text to Go and shows its problems as markers. It sends nothing Go holds already. */
 async function sendText(model: Model): Promise<Diagnostic[]> {
   if (model.model.isDisposed()) return [];
+  if (model.syncVersion === model.model.getVersionId()) return model.problems;
+  model.syncVersion = model.model.getVersionId();
   const diagnostics = (await lsp.SetText(model.place.path, model.model.getValue())) ?? [];
   setMarkers(model, diagnostics);
   // The drawn pictures follow the new text.

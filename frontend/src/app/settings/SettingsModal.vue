@@ -18,6 +18,7 @@ import {
   programsQuery,
   settingsCatalogQuery,
   stateQuery,
+  useRescan,
   workspacesQuery,
 } from "../../queries";
 import { gameIcon, THEME_FAMILIES, useSettingsStore } from "../../stores/settings";
@@ -29,7 +30,6 @@ import ColorPicker from "../../ui/ColorPicker.vue";
 import FileSelector from "../../ui/FileSelector.vue";
 import InstallPicker from "../../ui/InstallPicker.vue";
 import OriginChip from "../../ui/OriginChip.vue";
-import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
 import SettingsSection, { SETTING_HIGHLIGHT, SETTING_ROWS } from "../../ui/SettingsSection.vue";
 import TermInfo from "../../ui/TermInfo.vue";
 import AgentsSection from "./AgentsSection.vue";
@@ -148,6 +148,7 @@ const PANES = [
 ];
 const LAUNCH = findCommand("game.launch");
 const CREATE = findCommand("mod.create");
+const GUIDE = findCommand("docs.guide");
 const ROW = "relative flex h-14 min-w-0 items-center gap-2.5 border-b border-default ps-2 pe-3 text-start";
 const PICKED = "bg-(--accent-soft) before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary";
 // The record holds the game's automatic color as "".
@@ -159,7 +160,7 @@ const OTHER_SHELL = "other";
 const THEMES = THEME_FAMILIES.map((family) => ({ value: family.id, label: family.label }));
 // The lines of code in a theme's tile, each in a color of the code's palette.
 const PREVIEW_LINES = [
-  { color: "bg-(--syn-entry)", width: "w-3/5" },
+  { color: "bg-(--syn-name)", width: "w-3/5" },
   { color: "bg-(--syn-field)", width: "ms-2 w-2/5" },
   { color: "bg-(--syn-string)", width: "ms-2 w-1/2" },
   { color: "bg-(--syn-comment)", width: "ms-2 w-1/3" },
@@ -180,7 +181,6 @@ const open = shallowRef(false);
 const section = shallowRef("general");
 const helping = shallowRef(false);
 const search = shallowRef("");
-const guiding = shallowRef(false);
 const origin = shallowRef("");
 const preview = shallowRef<Mod[]>();
 // The row of the setting the palette opened Settings at is highlighted until the next click.
@@ -288,7 +288,7 @@ const { mutate: updateMod } = useMutation({
   mutation: ({ modId, dir }: { modId: string; dir: string }) => store.updateMod(id.value, modId, { dir }),
 });
 const { mutate: resetColors } = useMutation({ mutation: () => workspace.ResetColors(id.value) });
-const { mutate: rescan } = useMutation({ mutation: () => workspace.RescanInstall(state.value?.install.id ?? "") });
+const { mutate: rescan } = useRescan();
 
 const { data: programs } = useQuery(() => ({ ...programsQuery, enabled: open.value && current.value === "terminal" }));
 const { data: environment } = useQuery(() => ({
@@ -582,12 +582,11 @@ async function remove(): Promise<void> {
                 <UButton
                   label="How to get the game's documentation"
                   icon="i-lucide-book-open"
-                  @click="guiding = true"
+                  @click="GUIDE?.onSelect?.($event)"
                 />
-                <UButton label="Rescan the install" icon="i-lucide-refresh-cw" @click="rescan()" />
+                <UButton label="Rescan the install" icon="i-lucide-refresh-cw" @click="rescan(state.install.id)" />
               </div>
             </div>
-            <ScriptDocsGuide v-model:open="guiding" :game="state.game?.id ?? ''" />
           </Page>
         </template>
 

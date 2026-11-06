@@ -47,10 +47,6 @@ const LAYOUTS = [
   { label: "Detail below", icon: "i-lucide-panel-bottom", value: "panel" },
   { label: "Detail beside", icon: "i-lucide-panel-right", value: "drawer" },
 ];
-const EXPORTS = [
-  { label: "Save as SVG", icon: "i-lucide-file-code", onSelect: () => void canvas.value?.exportSvg() },
-  { label: "Save as PNG", icon: "i-lucide-image", onSelect: () => void canvas.value?.exportPng() },
-];
 const CHECKBOX_UI = {
   item: "h-6.5 items-center",
   wrapper: "flex grow items-center gap-2",
@@ -429,14 +425,6 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
       </span>
       <USeparator v-if="!isFullscreen" orientation="vertical" class="h-5" />
       <UButton icon="i-lucide-scan" square aria-label="Fit to view" :disabled="!graph" @click="canvas?.fit()" />
-      <UDropdownMenu :items="EXPORTS" :content="{ align: 'end' }">
-        <UButton
-          label="Export"
-          icon="i-lucide-download"
-          trailing-icon="i-lucide-chevron-down"
-          :disabled="!root || !graph"
-        />
-      </UDropdownMenu>
       <UButton v-if="isFullscreen" label="Exit full screen" icon="i-lucide-minimize-2" @click="toggleFullscreen()">
         <template #trailing><UKbd value="Esc" /></template>
       </UButton>

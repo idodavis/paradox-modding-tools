@@ -66,9 +66,15 @@ type Listing struct {
 
 // An Upload is the files that a mod's next upload sends.
 type Upload struct {
-	Files    []files.File `json:"files"`
-	Bytes    int64        `json:"bytes"`    // the total size of the files
-	Excluded []string     `json:"excluded"` // the paths that the rules leave out
+	Files    []files.File      `json:"files"`
+	Bytes    int64             `json:"bytes"`    // the total size of the files
+	Excluded map[string]string `json:"excluded"` // the paths the rules leave out, each with why
+}
+
+// An exclusion is a set of ignore rules and why an upload leaves out the files they cover.
+type exclusion struct {
+	ignore files.Ignore
+	reason string
 }
 
 // A source is a folder, or an older listing's zip, whose files are read where they are, by their Rel paths. An upload
@@ -531,9 +537,9 @@ func (stm *Service) ListUpload(modID, key string) (Upload, error) {
 }
 
 // buildUpload returns the files that the next upload of a mod sends from a source and those it leaves out, and the
-// ignores that decide which are left out. It returns an error if a file cannot be read.
-func (stm *Service) buildUpload(mod workspace.Mod, src source) (Upload, []files.Ignore, error) {
-	ignores, err := stm.buildIgnores(mod)
+// exclusions that decide which are left out. It returns an error if a file cannot be read.
+func (stm *Service) buildUpload(mod workspace.Mod, src source) (Upload, []exclusion, error) {
+	exclusions, err := stm.buildExclusions(mod)
 	if err != nil {
 		return Upload{}, nil, err
 	}
@@ -541,10 +547,10 @@ func (stm *Service) buildUpload(mod workspace.Mod, src source) (Upload, []files.
 	if err != nil {
 		return Upload{}, nil, err
 	}
-	upload := Upload{Files: []files.File{}, Excluded: []string{}}
+	upload := Upload{Files: []files.File{}, Excluded: map[string]string{}}
 	for _, file := range walked {
-		if isExcluded(ignores, file.Rel) {
-			upload.Excluded = append(upload.Excluded, file.Rel)
+		if reason, excluded := findExclusion(exclusions, file.Rel); excluded {
+			upload.Excluded[file.Rel] = reason
 			continue
 		}
 		stat, err := fs.Stat(src.files, file.Rel)
@@ -554,26 +560,31 @@ func (stm *Service) buildUpload(mod workspace.Mod, src source) (Upload, []files.
 		upload.Files = append(upload.Files, file)
 		upload.Bytes += stat.Size()
 	}
-	return upload, ignores, nil
+	return upload, exclusions, nil
 }
 
-// buildIgnores returns what every upload of a mod leaves out, by the rules, the mod's .gitignore and its own
-// exclusions. It returns an error if the .gitignore cannot be read.
-func (stm *Service) buildIgnores(mod workspace.Mod) ([]files.Ignore, error) {
+// buildExclusions returns what every upload of a mod leaves out: each rule, the mod's .gitignore and the mod's own
+// patterns. It returns an error if the .gitignore cannot be read.
+func (stm *Service) buildExclusions(mod workspace.Mod) ([]exclusion, error) {
 	gitignore, err := files.LoadText(files.Join(mod.Dir, gitignoreFile))
 	if err != nil {
 		return nil, err
 	}
-	patterns := lo.Map(stm.ListRules(), func(rule Rule, _ int) string { return rule.Pattern })
-	patterns = append(patterns, "!"+game.MetadataDir+"/")
-	return []files.Ignore{
-		files.ParseIgnore(strings.Join(patterns, "\n")), files.ParseIgnore(gitignore.Text), files.ParseIgnore(mod.Ignore),
-	}, nil
+	keepMetadata := "\n!" + game.MetadataDir + "/"
+	exclusions := lo.Map(stm.ListRules(), func(rule Rule, _ int) exclusion {
+		return exclusion{ignore: files.ParseIgnore(rule.Pattern + keepMetadata), reason: rule.Reason}
+	})
+	return append(exclusions,
+		exclusion{ignore: files.ParseIgnore(gitignore.Text), reason: "The mod's .gitignore names it."},
+		exclusion{ignore: files.ParseIgnore(mod.Ignore), reason: "One of the mod's own patterns names it."},
+	), nil
 }
 
-// isExcluded reports whether any of the ignores covers a file.
-func isExcluded(ignores []files.Ignore, rel string) bool {
-	return slices.ContainsFunc(ignores, func(ignore files.Ignore) bool { return ignore.Match(rel, false) })
+// findExclusion returns why an upload leaves out a file: the reason of the first exclusion that covers it. It returns
+// false if none does.
+func findExclusion(exclusions []exclusion, rel string) (string, bool) {
+	row, ok := lo.Find(exclusions, func(row exclusion) bool { return row.ignore.Match(rel, false) })
+	return row.reason, ok
 }
 
 // openSource opens the files a mod's listing uploads: the mod's folder, or an older listing's zip. The caller closes

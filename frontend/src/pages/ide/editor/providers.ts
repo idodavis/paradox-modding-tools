@@ -10,7 +10,7 @@ import { fileUrl, loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
 import { useWorkspaceStore } from "../../../stores/workspace";
-import { openModel, findModel } from "./models";
+import { findModel, flushText, openModel } from "./models";
 
 /** FIX_COMMAND is the id of the command a quick fix runs. */
 const FIX_COMMAND = "pmt.applyFix";
@@ -234,12 +234,15 @@ function registerDecoration(selector: languages.LanguageFilter[], legend: langua
       },
     ],
   });
-  monaco.languages.registerDocumentSemanticTokensProvider(selector, {
+  // Only the lines on screen are asked for, a moment after typing pauses, with the text Go colors sent first.
+  monaco.languages.registerDocumentRangeSemanticTokensProvider(selector, {
     getLegend: () => legend,
-    provideDocumentSemanticTokens: async (model) => ({
-      data: Uint32Array.from((await lsp.Tokens(model.uri.fsPath)) ?? []),
-    }),
-    releaseDocumentSemanticTokens: () => undefined,
+    provideDocumentRangeSemanticTokens: async (model, range) => {
+      const place = await loadQuery(placeQuery(model.uri.fsPath));
+      const fileModel = place && findModel(place.key);
+      if (fileModel) await flushText(fileModel);
+      return { data: Uint32Array.from((await lsp.Tokens(model.uri.fsPath, range)) ?? []) };
+    },
   });
 }
 

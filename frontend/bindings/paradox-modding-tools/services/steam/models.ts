@@ -265,7 +265,7 @@ export interface Upload {
     "bytes": number;
 
     /**
-     * the paths that the rules leave out
+     * the paths the rules leave out, each with why
      */
-    "excluded": string[] | null;
+    "excluded": { [_ in string]?: string } | null;
 }

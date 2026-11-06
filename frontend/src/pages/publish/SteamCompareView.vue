@@ -105,8 +105,17 @@ onKeyStroke("Escape", (event) => {
         :right="texts[1] ?? ''"
         language="plaintext"
         :left-label="comparison.steam ? `On Steam · ${day(comparison.steam.updatedAt)}` : 'On Steam'"
-        :right-label="`Here · ${listing.version}`"
-      />
+        :right-label="`Local · ${listing.version}`"
+      >
+        <template #header>
+          <b class="font-mono font-semibold" :class="MARKS[current.status]?.color">
+            {{ MARKS[current.status]?.letter }}
+          </b>
+          <span class="truncate font-medium text-toned" :class="{ 'font-mono': current.field === 'file' }">
+            {{ describeDifferenceLabel(current) }}
+          </span>
+        </template>
+      </CompareView>
       <div
         v-else-if="file?.format === Format.FormatImage"
         class="grid min-w-0 grow grid-cols-2 divide-x divide-default"

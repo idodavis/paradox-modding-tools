@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { useIntervalFn, useNow } from "@vueuse/core";
+import { createReusableTemplate, useIntervalFn, useNow } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
 import { isEqual, omit } from "es-toolkit";
 import { useRouter } from "vue-router";
@@ -26,7 +26,9 @@ const VISIBILITIES = [
 const PIPS = ["Packed", "Item ready", "Files", "Page and note"];
 
 const { modId, listingKey, listing } = defineProps<{ modId: string; listingKey: string; listing: Listing }>();
+const emit = defineEmits<{ review: [] }>();
 
+const [DefineFiles, ReuseFiles] = createReusableTemplate();
 const router = useRouter();
 const workspace = useWorkspaceStore();
 const uploads = useUploadStore();
@@ -50,6 +52,9 @@ const { data: comparison } = useQuery(() => ({
 
 // An older listing has no group in Health's report.
 const group = computed(() => (listingKey ? undefined : report.value?.mods?.find((modGroup) => modGroup.mod === modId)));
+
+const sentCount = computed(() => comparison.value?.upload.files?.length ?? 0);
+const exclusionCount = computed(() => Object.keys(comparison.value?.upload.excluded ?? {}).length);
 
 const attempt = computed(() => uploads.find(modId, listingKey));
 const healthRoute = computed(() => ({
@@ -118,6 +123,18 @@ function submit(): void {
 
 <template>
   <div class="flex shrink-0 flex-col gap-2 border-t border-default px-4.5 py-3.5">
+    <DefineFiles>
+      <div v-if="comparison" class="flex items-center gap-2 text-12 text-dimmed">
+        <UIcon name="i-lucide-files" class="size-3.5 shrink-0" />
+        <span class="grow truncate">
+          What gets uploaded:
+          <span class="font-medium text-toned tabular-nums">{{ plural(sentCount, "file") }} sent</span>
+          · {{ describeCount(exclusionCount) }} left out
+        </span>
+        <UButton label="Review" variant="link" size="xs" class="shrink-0 p-0 text-12" @click="emit('review')" />
+      </div>
+    </DefineFiles>
+
     <template v-if="attempt?.status === 'running'">
       <template v-if="stalled">
         <div class="flex items-center gap-2 text-12">
@@ -205,6 +222,7 @@ function submit(): void {
         <UIcon :name="worst.icon" class="mt-0.5 size-3.5 shrink-0" :style="{ color: `var(--ui-${worst.color})` }" />
         <span class="grow">This mod has {{ sentence }}. Steam will still take the upload.</span>
       </div>
+      <ReuseFiles />
       <div
         v-if="faults.length"
         class="max-h-36 divide-y divide-default overflow-y-auto rounded-lg border border-default bg-default"
@@ -273,6 +291,7 @@ function submit(): void {
           @click="start"
         />
       </div>
+      <ReuseFiles />
       <span v-if="obstacle" class="text-center text-11 text-dimmed">{{ obstacle }}</span>
       <span v-if="listing.workshopId" class="text-center text-11 text-dimmed">
         Updates Workshop item {{ listing.workshopId }}

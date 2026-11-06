@@ -35,7 +35,6 @@
     "@xterm/xterm": "6.0.0",
     "colorjs.io": "^0.7.1",
     "es-toolkit": "^1.53.1",
-    "html-to-image": "^1.11.13",
     "monaco-editor": "0.57.0",
     "pinia": "^4.1.0",
     "sortablejs": "^1.15.7",

@@ -213,8 +213,8 @@ export const PAGES = {
         text: "A weight is the number written, marked ± where blocks change it, never worked out. A trigger is shown, never evaluated. A delay written as a value or a name is not put in order. A CK3 message sent without a type is not drawn.",
       },
       {
-        heading: "Export and the IDE",
-        text: "Export saves the graph as a PNG image or as SVG. In the IDE, Ctrl Shift G opens the event under the cursor here.",
+        heading: "From the IDE",
+        text: "In the IDE, Ctrl Shift G opens the event under the cursor here.",
       },
     ],
   },

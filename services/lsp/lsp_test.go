@@ -380,7 +380,8 @@ func TestEncodeTokensWritesDeltas(t *testing.T) {
 // TestTokensEncodeWholeFile checks that Tokens writes five integers per token and that each type is in the legend.
 func TestTokensEncodeWholeFile(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
-	tokens, err := ide.Tokens(filepath.Join(dir, "events", "m_events.txt"))
+	whole := Range{StartLine: 1, StartColumn: 1, EndLine: 1 << 20, EndColumn: 1}
+	tokens, err := ide.Tokens(filepath.Join(dir, "events", "m_events.txt"), whole)
 	if err != nil || len(tokens) < 50 || len(tokens)%5 != 0 {
 		t.Fatalf("%d integers, %v", len(tokens), err)
 	}

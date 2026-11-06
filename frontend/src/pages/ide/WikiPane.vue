@@ -300,7 +300,7 @@ function jump(index: number): void {
           ref="list"
           v-slot="{ item }"
           :items="visible"
-          :virtualize="{ estimateSize: (index) => (visible[index]?.blurb || visible[index]?.usage ? 120 : 32) }"
+          :virtualize="{ estimateSize: (index) => (visible[index]?.blurb || visible[index]?.usage ? 140 : 52) }"
           class="min-h-0 flex-1"
           @scroll="markLetter"
         >
@@ -308,16 +308,14 @@ function jump(index: number): void {
             class="flex flex-col gap-1.5 border-b border-default px-3.5"
             :class="item.blurb || item.usage ? 'py-2.5' : 'py-1.5'"
           >
-            <div class="flex items-baseline gap-2">
-              <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-                <span class="font-mono text-13 font-semibold break-all text-highlighted">{{ item.name }}</span>
-                <UBadge v-for="scope in item.scopes ?? []" :key="scope" :label="scope" size="sm" />
-                <span v-if="item.target" class="font-mono text-11 text-dimmed">→ {{ item.target }}</span>
-              </div>
-              <UTooltip v-if="item.defined" :text="item.defined.place.rel">
-                <SourceLink :place="item.defined.place" :line="item.defined.line" short class="shrink-0" />
-              </UTooltip>
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="font-mono text-13 font-semibold break-all text-highlighted">{{ item.name }}</span>
+              <UBadge v-for="scope in item.scopes ?? []" :key="scope" :label="scope" size="sm" />
+              <span v-if="item.target" class="font-mono text-11 text-dimmed">→ {{ item.target }}</span>
             </div>
+            <UTooltip v-if="item.defined" :text="item.defined.place.rel" class="self-start">
+              <SourceLink :place="item.defined.place" :line="item.defined.line" short class="text-11 text-dimmed" />
+            </UTooltip>
             <p v-if="item.blurb" class="text-12 text-toned">{{ item.blurb }}</p>
             <ScriptSnippet
               v-if="item.usage"

@@ -239,7 +239,7 @@ const menu = computed<DropdownMenuItem[][]>(() => [
     },
   ],
   [
-    { label: "Files never uploaded…", icon: "i-lucide-file-x", onSelect: () => (filesOpen.value = true) },
+    { label: "What an upload sends…", icon: "i-lucide-files", onSelect: () => (filesOpen.value = true) },
     {
       label: "Save the mod as a zip…",
       icon: "i-lucide-file-archive",
@@ -522,6 +522,7 @@ function openCompare(differenceId: string): void {
           @update:listing="edit"
           @compare="openCompare"
           @link="linking = true"
+          @review="filesOpen = true"
         />
       </div>
     </template>
@@ -536,7 +537,7 @@ function openCompare(differenceId: string): void {
       :mode="olderMode"
       @added="listingKey = $event"
     />
-    <UploadFiles v-if="current" v-model:open="filesOpen" :mod="current" />
+    <UploadFiles v-if="current" v-model:open="filesOpen" :mod="current" :listing-key="listingKey" />
     <UModal
       v-model:open="linking"
       title="Link to another Workshop item"

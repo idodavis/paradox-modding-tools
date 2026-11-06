@@ -1,6 +1,6 @@
 <!-- The IDE's start page: what needs the user, ways to begin, the files opened last and a few keys worth knowing. -->
 <script setup lang="ts">
-import { computed, onActivated, shallowRef } from "vue";
+import { computed, onActivated } from "vue";
 import { useQuery } from "@pinia/colada";
 import { keyBy, sumBy } from "es-toolkit";
 import type { RouteLocationRaw } from "vue-router";
@@ -15,7 +15,6 @@ import { gameIcon } from "../../stores/settings";
 import { useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
-import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
 import SettingsSection from "../../ui/SettingsSection.vue";
 
 /** An Action is the button on a line of Where you left off: a page to open or a thing to do. */
@@ -46,7 +45,7 @@ const editor = useEditorStore();
 const git = useGitStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
-const guiding = shallowRef(false);
+const GUIDE = findCommand("docs.guide");
 
 const row = computed(() => workspace.active());
 const mods = computed(() => workspace.listOwnMods());
@@ -120,7 +119,7 @@ function describeKnowledge(): Line | undefined {
     color: "var(--ui-warning)",
     title: dumps.label,
     note: `It may be older than ${state.value?.install.version || "the game"}.`,
-    action: { label: "Show me how", onSelect: () => (guiding.value = true) },
+    action: { label: "Show me how", onSelect: () => GUIDE?.onSelect?.() },
   };
 }
 
@@ -262,6 +261,5 @@ function countChanges(mod: Mod): number {
         @update:model-value="workspace.update({ ...row.record, hideStartPage: $event !== true })"
       />
     </div>
-    <ScriptDocsGuide v-model:open="guiding" :game="state?.game?.id ?? ''" />
   </div>
 </template>

@@ -113,7 +113,6 @@ or scripted effect fires, and what fires it. It reads left to right, from what f
   dotted, and hovering a line shows the conditions it fires under.
 - Loops stay readable. Firers that reach the root only round a loop of its own chain fold into a "↺ more firers" pill,
   which opens on a click, and a firing back into its own chain ends in a "↺" marker naming the node it fires.
-- **Export** saves the graph as a PNG image or as SVG.
 
 A weight is the number as written, marked where blocks change it. A trigger is shown, never worked out. A CK3 message
 sent without a type is not drawn.
@@ -158,6 +157,9 @@ them. Every change is saved in the mod's files as you stop typing.
 - **The rail** on the right is this update: its version, the game version it is for and its change note. PMT drafts the
   note from the mod's git history. The rail lists what the upload changes on Steam, and a click shows a change
   beside Steam's copy.
+- **What an upload sends** shows beside Upload: how many files the upload sends and leaves out. Review lists each file
+  left out under the rule that leaves it out, with the mod's own patterns. The Workshop page is kept in the mod's
+  `.workshop` folder, which no upload sends.
 - **Compare with Steam** is also in the IDE, for the active file's mod.
 - **Older versions.** A mod can have a separate Workshop item for an older game version.
 - **Paradox Mods** has no way in for tools. Copy the description for it from the BBCode view, and paste it in the
@@ -175,7 +177,7 @@ Opened from the top bar's gear menu (Ctrl ,), which also switches the theme and 
 shortcuts and opens Help. It has three groups.
 
 - **App**, for every workspace:
-  - Appearance: the theme (PMT, Catppuccin, One, Pierre, or a look for each game), light or dark, the interface scale,
+  - Appearance: the theme (PMT, Catppuccin, One, Pierre, JetBrains, or a look for each game), light or dark, the interface scale,
     the pages shown, and a simple interface that hides the IDE's advanced parts.
   - Guidance, keyboard shortcuts, the Terminal's default shell, and Agents and tools.
 - **IDE**, for every workspace: the editor, the explorer, the language features, the Visual view and the wiki. The
@@ -266,8 +268,9 @@ registry into its own folder, with Node if your system has none new enough.
 ![A pop-out window](images/pop-out.png)
 
 Drag an editor tab out of the window to make a window of its own for it. Every page but the IDE can open in a window
-of its own from the top bar, so Health can sit on a second screen. The Terminal and the Wiki pane can too. A window can
-hand its tabs back to the main window.
+of its own from the top bar, so Health can sit on a second screen. The Terminal and the Wiki pane can too. Game files,
+External mods and a mod's folder open in a window with their own editors: a file of theirs opens there, from their
+explorer or from any other page. A window can hand its tabs back to the main window.
 
 ## External mods
 

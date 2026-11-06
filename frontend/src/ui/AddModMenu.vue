@@ -60,7 +60,7 @@ const items: DropdownMenuItem[][] = [
 
 <template>
   <!-- not modal: inside the Settings dialog, a modal menu never shows its items -->
-  <UDropdownMenu :items="items" :content="CONTENT" :modal="false" :ui="{ content: 'w-72' }">
+  <UDropdownMenu :items="items" :content="CONTENT" :modal="false" :ui="{ content: 'w-96' }">
     <slot />
   </UDropdownMenu>
   <WorkshopPicker

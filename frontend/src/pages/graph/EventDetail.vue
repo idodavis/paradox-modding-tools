@@ -331,14 +331,14 @@ function show(place: Place, line: number): void {
                 <span
                   v-if="segment.markup === Markup.MarkupCall"
                   :class="CHIP"
-                  class="text-(--syn-scope)"
+                  class="text-(--syn-command)"
                   :title="segment.text"
                   >{{ segment.text }}</span
                 >
                 <span
                   v-else-if="segment.markup === Markup.MarkupKey"
                   :class="CHIP"
-                  class="font-mono text-(--syn-variable)"
+                  class="font-mono text-(--syn-macro)"
                   >{{ segment.text }}</span
                 >
                 <br v-else-if="segment.markup === Markup.MarkupBreak" />

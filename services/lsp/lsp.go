@@ -4,6 +4,7 @@ package lsp
 
 import (
 	"strings"
+	"sync/atomic"
 	"unicode/utf16"
 
 	"github.com/samber/lo"
@@ -13,9 +14,11 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the language service. It asks the workspace service for the open session at each call and keeps nothing.
+// Service is the language service. It asks the workspace service for the open session at each call, and keeps only
+// the colors of the last file it colored.
 type Service struct {
 	Workspace *workspace.Service
+	coloring  atomic.Pointer[fileColors] // the last file's colors, kept while its text and the mods' index stay the same
 }
 
 // A Range is a span as Monaco counts it: lines and columns from one, the column in UTF-16 code units, the end

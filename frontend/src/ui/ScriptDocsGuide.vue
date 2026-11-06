@@ -9,6 +9,7 @@ import * as workspace from "@services/workspace/service";
 const open = defineModel<boolean>("open", { default: false });
 const { game } = defineProps<{ game: string }>();
 
+// A step's title writes what the user types between backticks.
 const STEPS = [
   {
     title: "Launch the game from PMT",
@@ -20,7 +21,7 @@ const STEPS = [
     body: "The console opens in a game, not in the main menu.",
   },
   {
-    title: "Open the console and type script_docs, then dump_data_types",
+    title: "Open the console and type `script_docs`, then `dump_data_types`",
     body: "The console key is ` or ~, by keyboard layout. Each prints nothing; that is expected.",
   },
   {
@@ -75,7 +76,16 @@ const name = computed(() => games.value?.find((row) => row.id === game)?.name ??
               {{ i + 1 }}
             </span>
             <div class="min-w-0 grow">
-              <p class="font-medium text-highlighted">{{ step.title }}</p>
+              <p class="font-medium text-highlighted">
+                <template v-for="(piece, at) in step.title.split('`')" :key="at">
+                  <code
+                    v-if="at % 2"
+                    class="rounded-md border border-default bg-(--bg-0) px-1.5 py-0.5 font-mono text-[0.9em] text-(--syn-command)"
+                    >{{ piece }}</code
+                  >
+                  <template v-else>{{ piece }}</template>
+                </template>
+              </p>
               <p class="break-words text-toned">{{ step.body }}</p>
             </div>
             <UButton

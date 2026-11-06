@@ -3,7 +3,7 @@
  * per window name.
  */
 import { defineStore } from "pinia";
-import { useMutation } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { until, useBroadcastChannel, useEventBus, useEventListener, type EventBusKey } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import type { IPosition, IRange } from "monaco-editor";
@@ -14,8 +14,9 @@ import * as app from "@services/app/service";
 import type { Place } from "@services/workspace/models";
 import { isPage, PAGES, WORKSPACE_TOOLS, type WorkspacePage } from "../app/pages";
 import { findModel, openModel, saveUnsaved } from "../pages/ide/editor/models";
+import { placeQuery } from "../queries";
 import { useEditorStore, type Source, type Tab } from "./editor";
-import { useWorkspaceStore } from "./workspace";
+import { useWorkspaceStore, VANILLA } from "./workspace";
 
 /** A WindowName is a window's name from its URL: `main`, `page:<route>`, `editor:<n>`, `terminal`, `wiki` and so on. */
 type WindowName = string;
@@ -25,6 +26,7 @@ export type WindowState = {
   name: WindowName;
   files: string[];
   active: Place | null;
+  folder: string; // the key of the folder a folder's window shows; "" for any other window
 };
 
 /** A WikiLookup is a wiki page by its title, or a lexicon entry by class and name. */
@@ -51,8 +53,11 @@ export const WINDOW_QUERY = new URLSearchParams(location.search);
 /** THIS_WINDOW is this window's name, from its URL. */
 export const THIS_WINDOW: WindowName = WINDOW_QUERY.get("window") ?? "main";
 
-/** HAS_EDITORS reports whether this window holds editors, as the main window and an editor window do. */
-export const HAS_EDITORS = THIS_WINDOW === "main" || THIS_WINDOW.startsWith("editor:");
+/** IS_EXPLORER reports whether this window is a part of the explorer: Game files, External mods or a folder. */
+export const IS_EXPLORER = ["game", "external", "files"].includes(THIS_WINDOW.split(":")[0] ?? "");
+
+/** HAS_EDITORS reports whether this window holds editors: the main window, an editor window or an explorer window. */
+export const HAS_EDITORS = IS_EXPLORER || THIS_WINDOW === "main" || THIS_WINDOW.startsWith("editor:");
 
 /** POP_OUT_PAGES holds the pages that open in a window of their own: every workspace page but the IDE. */
 export const POP_OUT_PAGES: readonly WorkspacePage[] = WORKSPACE_TOOLS.filter((tool) => tool !== "workspace-ide");
@@ -130,6 +135,10 @@ export const useWindowsStore = defineStore("windows", () => {
     },
   });
 
+  const { data: folderPlace } = useQuery(() => ({
+    ...placeQuery(THIS_WINDOW.slice("files:".length)),
+    enabled: THIS_WINDOW.startsWith("files:"),
+  }));
   // The active file goes as a copy, since a message cannot carry a proxy.
   const state = computed<WindowState>(() => {
     const active = editor.activeFile();
@@ -137,6 +146,7 @@ export const useWindowsStore = defineStore("windows", () => {
       name: THIS_WINDOW,
       files: [...new Set(editor.listTabs().flatMap((tab) => (tab.start ? [] : tab.key)))],
       active: active ? { ...active } : null,
+      folder: folderPlace.value?.key ?? "",
     };
   });
 
@@ -242,6 +252,17 @@ export const useWindowsStore = defineStore("windows", () => {
     [state.value, ...others.values()].find((held) => held.files.includes(key))?.name ?? "";
 
   /**
+   * explorerOf returns the open window whose explorer shows a file: Game files for the game's, External mods for an
+   * external mod's, or the window of a folder the file is in. It returns "" if no open window shows it.
+   */
+  const explorerOf = (place: Place): WindowName => {
+    const open = [state.value, ...others.values()];
+    if (place.origin === VANILLA) return open.find((held) => held.name === "game")?.name ?? "";
+    if (workspace.isExternal(place.origin)) return open.find((held) => held.name === "external")?.name ?? "";
+    return open.find((held) => held.folder && place.key.startsWith(`${held.folder}/`))?.name ?? "";
+  };
+
+  /**
    * popOut opens the window of the given name with the given tabs, or brings it to the front if it is open. The name is
    * a page's window or one of the IDE's parts; any other name does nothing.
    */
@@ -319,6 +340,7 @@ export const useWindowsStore = defineStore("windows", () => {
   return {
     listWindows,
     holderOf,
+    explorerOf,
     popOut,
     dockBack,
     requestTab,

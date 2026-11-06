@@ -32,7 +32,7 @@ const { modId, listingKey, comparing, picked } = defineProps<{
   /** The id of the difference the compare shows, or "". */
   picked: string;
 }>();
-const emit = defineEmits<{ compare: [id: string]; link: [] }>();
+const emit = defineEmits<{ compare: [id: string]; link: []; review: [] }>();
 const listing = defineModel<Listing>("listing", { required: true });
 
 const workspace = useWorkspaceStore();
@@ -258,6 +258,6 @@ function change(changes: Partial<Listing>): void {
       </section>
     </div>
 
-    <UploadAction :mod-id="modId" :listing-key="listingKey" :listing="listing" />
+    <UploadAction :mod-id="modId" :listing-key="listingKey" :listing="listing" @review="emit('review')" />
   </aside>
 </template>

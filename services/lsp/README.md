@@ -83,8 +83,10 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   defines too, or one no mod defines. `ListSymbols` is a file's outline, and `FindSymbols` searches the workspace's
   definitions, or its localization keys, best match first. Only a script file is walked to a position, since the
   schema has no rules for the keys of any other file.
-- **Tokens.** `Tokens` returns the color category of every key and value, from the walk, encoded as Monaco's semantic
-  tokens against `ListLegend`.
+- **Tokens.** `Tokens` returns the color category of every key and value in a range, from the walk, encoded as Monaco's
+  semantic tokens against `ListLegend`. A key or value the walk gives no category is a link if it starts a chain of
+  links. The service keeps the last file's tokens while its tree and the mods' index stay the same, so the editor
+  asking for the next lines as it scrolls does not walk the file again.
 - **Edits.** `Format` keeps the file's own indentation, and gives no edits for a read-only file, a file that does not
   parse, or one that would change in more than its spacing. `ListFixes` gives the quick fixes: the nearest defined
   name for one nothing defines, which for a call is also a command the block allows, a missing key with its default, an entry mode out of place removed, and the file's

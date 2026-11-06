@@ -177,6 +177,11 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 		if err = files.SaveGob(schemaCache, language); err != nil {
 			return err
 		}
+		// The built schema's names are slices of the game files' text, which they would keep in memory; the cache's
+		// copy holds none of it, and is what a later open reads.
+		if language, hasSchema = files.LoadGob[*schema.Schema](schemaCache); !hasSchema {
+			return fmt.Errorf("cannot read back the schema cache %s", schemaCache)
+		}
 	}
 	if !hasInstall {
 		install = index.Scan(language, roots, listing, progress)

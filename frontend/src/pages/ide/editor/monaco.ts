@@ -3,8 +3,7 @@ import { useEventBus } from "@vueuse/core";
 import Color from "colorjs.io";
 import * as monaco from "monaco-editor/editor/editor.api";
 import "monaco-editor/features/register.all";
-// The one editor feature register.all leaves out: asking a provider for a model's semantic tokens.
-import "monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens";
+import "monaco-editor/editor/contrib/semanticTokens/browser/viewportSemanticTokens";
 import "monaco-editor/languages/definitions/markdown/register";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import { watch } from "vue";
@@ -54,21 +53,21 @@ const SYNTAX: Record<string, string> = {
   comment: "comment",
   string: "string",
   number: "number",
-  literal: "literal",
+  literal: "number",
   operator: "operator",
-  block: "block",
+  block: "field",
   field: "field",
-  entry: "entry",
-  variable: "variable",
-  scope: "scope",
-  keyword: "operator",
-  command: "field",
-  definition: "entry",
-  reference: "entry",
-  link: "scope",
-  call: "scope",
-  parameter: "variable",
-  constant: "variable",
+  entry: "name",
+  variable: "macro",
+  scope: "command",
+  keyword: "keyword",
+  command: "command",
+  definition: "name",
+  reference: "name",
+  link: "link",
+  call: "command",
+  parameter: "macro",
+  constant: "macro",
 };
 
 const defined = new Set<string>();
@@ -227,8 +226,8 @@ function buildColors(token: (key: string) => string, dark: boolean): Record<stri
     "editorIndentGuide.background1": token("line-1"),
     "editorIndentGuide.activeBackground1": token("line-2"),
     "editorWhitespace.foreground": token("line-2"),
-    "editorBracketHighlight.foreground1": token("syn-block"),
-    "editorBracketHighlight.foreground2": token("syn-entry"),
+    "editorBracketHighlight.foreground1": token("syn-command"),
+    "editorBracketHighlight.foreground2": token("syn-name"),
     "editorBracketHighlight.foreground3": token("syn-number"),
     "editorBracketMatch.background": `${accent}26`,
     "editorBracketMatch.border": `${accent}80`,
@@ -283,15 +282,21 @@ function buildColors(token: (key: string) => string, dark: boolean): Record<stri
     "scrollbarSlider.activeBackground": token("fg-3"),
     "minimap.background": token("bg-0"),
     "widget.shadow": `${token(dark ? "bg-0" : "fg-1")}40`,
-    "diffEditor.insertedTextBackground": `${added}33`,
-    "diffEditor.removedTextBackground": `${removed}33`,
-    "diffEditor.insertedLineBackground": `${added}1a`,
-    "diffEditor.removedLineBackground": `${removed}1a`,
-    "diffEditorGutter.insertedLineBackground": `${added}26`,
-    "diffEditorGutter.removedLineBackground": `${removed}26`,
-    "diffEditor.diagonalFill": token("line-1"),
-    "diffEditor.unchangedRegionBackground": token("bg-1"),
-    "diffEditor.unchangedRegionForeground": token("fg-3"),
+    "diffEditor.insertedLineBackground": `${added}26`,
+    "diffEditor.removedLineBackground": `${removed}26`,
+    "diffEditor.insertedTextBackground": `${added}4d`,
+    "diffEditor.removedTextBackground": `${removed}4d`,
+    "diffEditorGutter.insertedLineBackground": `${added}40`,
+    "diffEditorGutter.removedLineBackground": `${removed}40`,
+    "diffEditorOverview.insertedForeground": `${added}cc`,
+    "diffEditorOverview.removedForeground": `${removed}cc`,
+    "diffEditor.border": token("line-2"),
+    "diffEditor.diagonalFill": token("line-2"),
+    "diffEditor.unchangedRegionBackground": token("bg-2"),
+    "diffEditor.unchangedRegionForeground": token("fg-2"),
+    "diffEditor.unchangedCodeBackground": `${token("fg-3")}1a`,
+    "diffEditor.move.border": token("blue"),
+    "diffEditor.moveActive.border": accent,
     // The change bars' marks in the ruler (changes.ts).
     "pmt.changeAdded": added,
     "pmt.changeChanged": token("blue"),

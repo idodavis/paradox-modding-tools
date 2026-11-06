@@ -110,6 +110,10 @@ export const workspacesQuery = defineQueryOptions({
 });
 export const releasesQuery = defineQueryOptions({ key: ["app", "releases"], query: () => app.ListReleases() });
 export const stateQuery = defineQueryOptions({ key: keys.state, query: () => workspace.State() });
+/** useRescan returns a mutation that scans the install with the given id again. */
+export function useRescan() {
+  return useMutation({ mutation: (installId: string) => workspace.RescanInstall(installId) });
+}
 export const languagesQuery = defineQueryOptions((installId: string) => ({
   key: [...keys.installs, installId, "languages"],
   query: () => workspace.ListLanguages(installId),

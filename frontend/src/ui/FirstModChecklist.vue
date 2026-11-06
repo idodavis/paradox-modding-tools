@@ -1,15 +1,16 @@
 <!-- The first-mod checklist on the Library's active card, from making a mod to writing its Workshop listing. -->
 <script setup lang="ts">
-import { computed, onActivated, shallowRef } from "vue";
+import { computed, onActivated } from "vue";
 import { useQuery } from "@pinia/colada";
+import { useEventBus } from "@vueuse/core";
 import { keyBy } from "es-toolkit";
 import type { RouteLocationRaw } from "vue-router";
 
 import { describeDumps, list } from "../lib/format";
 import { levelsQuery, overviewQuery, ownListingsQuery, reportQuery, stateQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
+import { COMMAND_BUS } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
-import ScriptDocsGuide from "./ScriptDocsGuide.vue";
 
 /** The steps, in order, with the button of each that is not done. */
 const STEPS = [
@@ -22,7 +23,7 @@ const STEPS = [
 
 const settings = useSettingsStore();
 const workspace = useWorkspaceStore();
-const guiding = shallowRef(false);
+const commandBus = useEventBus(COMMAND_BUS);
 
 const record = computed(() => workspace.active()?.record);
 const mods = computed(() => workspace.listOwnMods());
@@ -81,7 +82,7 @@ const rows = computed(() => {
       : {
           done: false,
           note: `It may be older than ${state.value?.install.version || "the game"}.`,
-          onSelect: () => (guiding.value = true),
+          onSelect: () => commandBus.emit("docs.guide"),
         },
     listing: unlisted.length
       ? {
@@ -162,6 +163,5 @@ function hide(): void {
         @click="row.onSelect?.()"
       />
     </div>
-    <ScriptDocsGuide v-model:open="guiding" :game="state?.game?.id ?? ''" />
   </section>
 </template>

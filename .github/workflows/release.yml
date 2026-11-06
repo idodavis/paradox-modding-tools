@@ -68,23 +68,32 @@ jobs:
 
   build:
     needs: [test, version]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     environment: Production
     strategy:
       fail-fast: false
       matrix:
         include:
-          - goos: windows
+          - os: windows-latest
             goarch: amd64
             task: windows:build
             binary: paradox-modding-tools.exe
             zip: paradox-modding-tools-windows-amd64.zip
-          - goos: linux
+          - os: ubuntu-latest
             goarch: amd64
             task: linux:build
             binary: paradox-modding-tools
             zip: paradox-modding-tools-linux-amd64.zip
+    defaults:
+      run:
+        shell: bash
     steps:
+      # Defender scans every file the Go toolchain and the build write, which slows the Windows runner
+      - name: Windows Defender's real-time scan off
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
@@ -92,14 +101,20 @@ jobs:
           go-version-file: go.mod
 
       - uses: actions/setup-node@v7
+        id: node
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
-      # the Wails CLI links GTK 4 and WebKitGTK 6 on Linux, so the Windows build on this runner needs them too. Ubuntu's
-      # mirror stalls now and then: a stalled download is retried, and the step gives up after 10 minutes
+      # the frontend's packages as the build last installed them, so its npm install has nothing to fetch
+      - name: Cache node_modules
+        uses: actions/cache@v6
+        with:
+          path: frontend/node_modules
+          key: node-modules-${{ runner.os }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('frontend/package-lock.json') }}
+
+      # Ubuntu's mirror stalls now and then: a stalled download is retried, and the step gives up after 10 minutes
       - name: Linux GTK4 / WebKitGTK 6
+        if: runner.os == 'Linux'
         timeout-minutes: 10
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
@@ -131,7 +146,7 @@ jobs:
             echo 'Paradox Modding Tools includes the following third-party software.'
             echo
             echo '== Go modules (module, license page, license) =='
-            GOOS="${{ matrix.goos }}" go-licenses report . --ignore paradox-modding-tools
+            go-licenses report . --ignore paradox-modding-tools
             echo
             echo '== Frontend packages =='
             (cd frontend && npx --yes license-checker-rseidelsohn --production --plainVertical)
@@ -155,8 +170,13 @@ jobs:
             '' \
             'License: Apache-2.0 (see LICENSE and NOTICE).' \
             > "${stage}/README.txt"
-          (cd "${stage}" && zip -9 "${GITHUB_WORKSPACE}/${{ matrix.zip }}" \
-            "${{ matrix.binary }}" LICENSE NOTICE README.txt THIRD_PARTY_NOTICES.txt)
+          # the Windows image has 7-Zip and no zip; zip keeps the Linux binary's executable bit
+          contents=("${{ matrix.binary }}" LICENSE NOTICE README.txt THIRD_PARTY_NOTICES.txt)
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            (cd "${stage}" && 7z a -tzip -mx=9 "${GITHUB_WORKSPACE}/${{ matrix.zip }}" "${contents[@]}")
+          else
+            (cd "${stage}" && zip -9 "${GITHUB_WORKSPACE}/${{ matrix.zip }}" "${contents[@]}")
+          fi
 
       - uses: actions/upload-artifact@v7
         with:

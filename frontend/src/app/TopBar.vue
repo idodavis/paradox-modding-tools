@@ -5,7 +5,7 @@
 -->
 <script setup lang="ts">
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
-import { useMutation, useQuery } from "@pinia/colada";
+import { useQuery } from "@pinia/colada";
 import { until, useDebounceFn, useElementSize, useEventBus, useEventListener } from "@vueuse/core";
 import { Events, System, Window } from "@wailsio/runtime";
 import { computed, onScopeDispose, reactive, shallowRef, useTemplateRef, watch } from "vue";
@@ -13,9 +13,8 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import * as health from "@services/health/service";
-import * as workspaceApi from "@services/workspace/service";
 import { countFindings, list, plural } from "../lib/format";
-import { gamesQuery, workspacesQuery } from "../queries";
+import { gamesQuery, useRescan, workspacesQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { gameIcon, useSettingsStore } from "../stores/settings";
 import {
@@ -56,7 +55,7 @@ const active = computed(() => workspaces.value?.find((row) => row.record.id === 
 const activeGame = computed(() => active.value?.game?.id ?? "");
 const tools = computed(listShownTools);
 const activeIcon = computed(() => gameIcon(activeGame.value));
-const { mutate: rescan } = useMutation({ mutation: (installId: string) => workspaceApi.RescanInstall(installId) });
+const { mutate: rescan } = useRescan();
 
 if (IS_MAIN) onScopeDispose(Events.On("game:exited", ({ data: dumpsFresher }) => void announceExit(dumpsFresher)));
 

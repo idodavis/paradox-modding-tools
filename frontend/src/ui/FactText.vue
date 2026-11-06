@@ -32,11 +32,11 @@ const drawn = computed(() => {
     return { text: part.text, style };
   });
   return styled.map(({ text, style }, index) => {
-    const owns = style === "mod" && !!styled[index + 1]?.text.startsWith("'s");
-    const owned = styled[index - 1]?.style === "mod" && text.startsWith("'s");
+    const gainsPossessive = style === "mod" && !!styled[index + 1]?.text.startsWith("'s");
+    const losesPossessive = styled[index - 1]?.style === "mod" && text.startsWith("'s");
     const fileStart = style === "path" ? text.lastIndexOf("/") + 1 : 0;
     return {
-      text: (owned ? text.slice(2) : text) + (owns ? "'s" : ""),
+      text: (losesPossessive ? text.slice(2) : text) + (gainsPossessive ? "'s" : ""),
       style,
       color: style === "mod" ? modColors.value.get(text) : undefined,
       folder: text.slice(0, fileStart),

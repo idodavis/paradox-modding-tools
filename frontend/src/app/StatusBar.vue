@@ -3,7 +3,7 @@
   the Help dialog, which the top bar's gear menu opens.
 -->
 <script setup lang="ts">
-import type { ToastProps } from "@nuxt/ui";
+import type { DropdownMenuItem, ToastProps } from "@nuxt/ui";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
@@ -17,10 +17,11 @@ import * as wikiApi from "@services/wiki/service";
 import type { Scanning } from "@services/workspace/models";
 import { confirm, copyText } from "../lib/feedback";
 import { day, installLine } from "../lib/format";
-import { crashedQuery, levelsQuery, releasesQuery, stateQuery, updateQuery, versionQuery } from "../queries";
+import { crashedQuery, levelsQuery, releasesQuery, stateQuery, updateQuery, useRescan, versionQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import HowModWorks from "../ui/HowModWorks.vue";
+import ScriptDocsGuide from "../ui/ScriptDocsGuide.vue";
 import { STATUS_ITEM } from "../ui/StatusFacts.vue";
 import TermInfo from "../ui/TermInfo.vue";
 import { findCommand } from "./commands";
@@ -40,8 +41,22 @@ const sections = computed(() => [
 ]);
 // The Help dialog opens on the help.open command, from the top bar's gear menu, F1 or the palette.
 const helping = shallowRef(false);
-useEventBus(COMMAND_BUS).on((command) => command === "help.open" && (helping.value = true));
 const explaining = shallowRef(false);
+// the one guide to the game's documentation: nested in another dialog, Reka's layers update each other without end
+const guiding = shallowRef(false);
+useEventBus(COMMAND_BUS).on((command) => {
+  if (command === "help.open") helping.value = true;
+  if (command === "docs.guide") guiding.value = true;
+});
+const { mutate: rescan } = useRescan();
+const installMenu = computed<DropdownMenuItem[]>(() => [
+  {
+    label: "Rescan the install",
+    icon: "i-lucide-refresh-cw",
+    onSelect: () => state.value && rescan(state.value.install.id),
+  },
+  { label: "How to get the game's documentation", icon: "i-lucide-book-open", onSelect: () => (guiding.value = true) },
+]);
 const agentDot = computed(() => {
   if (!agent.active) return "";
   if (agent.isWaiting(agent.active)) return "bg-warning";
@@ -150,20 +165,22 @@ const LAUNCH = findCommand("game.launch");
     class="flex h-6 shrink-0 items-center gap-3.5 border-t border-default bg-muted px-3 text-11 whitespace-nowrap text-dimmed"
   >
     <template v-if="scan || state?.open">
-      <span class="flex items-center gap-1.5 text-toned">
-        <span
-          class="size-1.5 shrink-0 rounded-full"
-          :class="[state?.installFound === false ? 'bg-error' : 'bg-success', { 'animate-pulse': scan }]"
-        />
-        <template v-if="scan">
-          <span>{{ scan.stage }}</span>
-          <span v-if="scan.percent >= 0" class="tabular-nums">{{ scan.percent }}%</span>
-        </template>
-        <span v-else-if="state?.installFound === false">Install not found</span>
-        <span v-else-if="state?.open">
-          {{ installLine(state.game?.shortName ?? "", state.install.version, state.install.scannedAt) }}
-        </span>
-      </span>
+      <UDropdownMenu :items="installMenu" :disabled="!!scan" :content="{ side: 'top', align: 'start' }">
+        <button type="button" :class="[STATUS_ITEM, 'text-toned']">
+          <span
+            class="size-1.5 shrink-0 rounded-full"
+            :class="[state?.installFound === false ? 'bg-error' : 'bg-success', { 'animate-pulse': scan }]"
+          />
+          <template v-if="scan">
+            <span>{{ scan.stage }}</span>
+            <span v-if="scan.percent >= 0" class="tabular-nums">{{ scan.percent }}%</span>
+          </template>
+          <span v-else-if="state?.installFound === false">Install not found</span>
+          <span v-else-if="state?.open">
+            {{ installLine(state.game?.shortName ?? "", state.install.version, state.install.scannedAt) }}
+          </span>
+        </button>
+      </UDropdownMenu>
       <UTooltip
         v-if="state?.open && !scan && state.installFound !== false"
         :text="`Launch ${state.game?.name} in debug mode. It writes fresh documentation for PMT.`"
@@ -246,6 +263,8 @@ const LAUNCH = findCommand("game.launch");
       </template>
     </UModal>
     <HowModWorks v-model:open="explaining" :game-id="state?.game?.id ?? ''" mod-title="" />
+    <!-- mounted on opening, so it lands after any dialog already open and shows above it -->
+    <ScriptDocsGuide v-if="guiding" v-model:open="guiding" :game="state?.game?.id ?? ''" />
     <UModal
       title="Releases"
       :ui="{ content: 'h-130 sm:max-w-2xl' }"

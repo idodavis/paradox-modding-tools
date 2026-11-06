@@ -181,7 +181,7 @@ jobs:
         working-directory: dist
         run: sha256sum paradox-modding-tools-*.zip > SHA256SUMS
 
-      - uses: actions/attest-build-provenance@v3
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/*.zip

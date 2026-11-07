@@ -145,7 +145,13 @@ export default defineConfig({
             { color: "neutral", variant: "ghost", class: "text-toned hover:bg-accented hover:text-highlighted" },
             // pressed
             { color: "neutral", variant: "soft", class: "bg-accented text-highlighted ring ring-inset ring-accented" },
-            { color: "primary", variant: "solid", class: "text-(--accent-ink) hover:bg-primary/85" },
+            // disabled, it loses the accent
+            {
+              color: "primary",
+              variant: "solid",
+              class:
+                "text-(--accent-ink) hover:bg-primary/85 disabled:bg-accented disabled:text-dimmed aria-disabled:bg-accented aria-disabled:text-dimmed",
+            },
             // on
             {
               color: "primary",

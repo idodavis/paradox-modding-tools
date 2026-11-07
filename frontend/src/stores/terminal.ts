@@ -56,7 +56,8 @@ export const useTerminalStore = defineStore("terminal", () => {
   const { data: shells } = useQuery(() => ({ ...shellsQuery, enabled: holding.value }));
 
   const { mutate: start } = useMutation({
-    mutation: (program: string) => launch((path, columns, rows) => terminal.Start(path, program, columns, rows)),
+    mutation: ({ program, folder }: { program: string; folder?: string }) =>
+      launch((path, columns, rows) => terminal.Start(path, program, columns, rows), folder),
   });
   const { mutateAsync: run } = useMutation({
     mutation: (command: string[]) => launch((path, columns, rows) => terminal.Run(path, command, columns, rows)),
@@ -85,10 +86,13 @@ export const useTerminalStore = defineStore("terminal", () => {
     { flush: "post" },
   );
 
-  /** launch starts a shell through the given call and shows it. */
-  async function launch(begin: (path: string, columns: number, rows: number) => Promise<Shell | null>): Promise<void> {
+  /** launch starts a shell through the given call and shows it. It starts in the given folder, else the active file's. */
+  async function launch(
+    begin: (path: string, columns: number, rows: number) => Promise<Shell | null>,
+    folder?: string,
+  ): Promise<void> {
     const size = consoles.get(active.value)?.xterm;
-    const shell = await begin(findFile()?.path ?? "", size?.cols ?? 80, size?.rows ?? 24);
+    const shell = await begin(folder ?? findFile()?.path ?? "", size?.cols ?? 80, size?.rows ?? 24);
     if (shell) active.value = shell.id;
   }
 

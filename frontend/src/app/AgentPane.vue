@@ -179,7 +179,7 @@ async function runTask(task: Task): Promise<void> {
         />
         <template #content>
           <div class="flex w-80 flex-col gap-1.5 p-3">
-            <span class="text-11 font-semibold tracking-wide text-dimmed uppercase">Files this session edited</span>
+            <span class="text-11 font-semibold text-dimmed">Files this session edited</span>
             <span v-for="change in changes" :key="change.path" class="truncate font-mono text-11" :title="change.path">
               {{ change.label }}
             </span>

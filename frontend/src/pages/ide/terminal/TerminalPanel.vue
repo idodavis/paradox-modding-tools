@@ -6,6 +6,7 @@ import type { DropdownMenuItem, SplitterItem } from "@nuxt/ui";
 import { useResizeObserver, useThrottleFn } from "@vueuse/core";
 
 import type { Shell } from "@internal/terminal/models";
+import { useKeptPixelSize } from "../../../lib/splitter";
 import { loadQuery, programsQuery, shellsQuery } from "../../../queries";
 import { useTerminalStore } from "../../../stores/terminal";
 import { useWindowsStore } from "../../../stores/windows";
@@ -38,6 +39,7 @@ const ICONS: Record<string, string> = {
 const terminal = useTerminalStore();
 const workspace = useWorkspaceStore();
 const host = useTemplateRef("host");
+const keepShellsWidth = useKeptPixelSize(useTemplateRef("splitter"), 1);
 const term = shallowRef("");
 // The active shell's rows as text, read while the find box is open.
 const rows = shallowRef<string[]>([]);
@@ -46,8 +48,17 @@ const current = computed(() => terminal.consoles.find((session) => session.shell
 const hasFile = computed(() => !!terminal.findFile());
 const windows = useWindowsStore();
 const { data: programs } = useQuery(programsQuery);
+// With more than one mod, a new shell asks which mod's folder it opens in.
+const folders = computed(() => workspace.listMods().filter((mod) => !mod.broken));
+const asks = computed(() => folders.value.length > 1);
+const choosing = shallowRef(false);
+const newShellItems = computed(() => listFolders(""));
 const programItems = computed<DropdownMenuItem[]>(() =>
-  (programs.value ?? []).map((program) => ({ label: program.name, onSelect: () => terminal.start(program.path) })),
+  (programs.value ?? []).map((program) =>
+    asks.value
+      ? { label: program.name, children: listFolders(program.path) }
+      : { label: program.name, onSelect: () => terminal.start({ program: program.path }) },
+  ),
 );
 const loadRows = useThrottleFn(() => {
   const buffer = current.value?.xterm.buffer.active;
@@ -57,7 +68,7 @@ const loadRows = useThrottleFn(() => {
 }, 200);
 
 onMounted(async () => {
-  if (terminal.holding && !(await loadQuery(shellsQuery))?.length) terminal.start("");
+  if (terminal.holding && !(await loadQuery(shellsQuery))?.length) terminal.start({ program: "" });
 });
 watch(
   [() => terminal.active, host, () => terminal.consoles.length],
@@ -81,9 +92,27 @@ watch(
   { immediate: true },
 );
 
-/** describeShell returns where a shell started: its mod's name, else its folder. */
+/** listFolders returns the menu of the folders a shell of the given program can open in, "" being the default. */
+function listFolders(program: string): DropdownMenuItem[][] {
+  return [
+    [
+      { type: "label", label: "Open in" },
+      ...folders.value.map((mod) => ({
+        label: mod.descriptor.name,
+        onSelect: () => terminal.start({ program, folder: mod.dir }),
+      })),
+    ],
+  ];
+}
+
+/** newShell starts a shell of the default program, unless it must first ask for the folder. */
+function newShell(): void {
+  if (!asks.value) terminal.start({ program: "" });
+}
+
+/** describeShell returns where a shell started: the name of the mod in its folder, else the folder. */
 function describeShell(shell: Shell): string {
-  return workspace.originName(shell.origin) || shell.folder;
+  return workspace.listMods().find((mod) => mod.dir === shell.folder)?.descriptor.name ?? shell.folder;
 }
 
 /** showHit scrolls the active shell to the given row and selects the find term in it. */
@@ -109,7 +138,14 @@ function closeFind(): void {
     The shells are in the terminal's own window.
     <div><UButton label="Show window" size="xs" variant="ghost" @click="windows.showWindow('terminal')" /></div>
   </div>
-  <USplitter v-else :items="PANES" auto-save-id="pmt.terminal.shells" class="min-h-0 min-w-0 flex-1">
+  <USplitter
+    v-else
+    ref="splitter"
+    :items="PANES"
+    auto-save-id="pmt.terminal.shells"
+    class="min-h-0 min-w-0 flex-1"
+    @layout="keepShellsWidth"
+  >
     <template #screen>
       <Teleport defer to="#panel-actions">
         <UButton
@@ -145,56 +181,75 @@ function closeFind(): void {
         class="flex size-full min-w-0 flex-col gap-1 overflow-y-auto border-s border-default"
         :class="collapsed ? 'items-center px-1 py-2' : 'p-2'"
       >
-        <div
+        <UContextMenu
           v-for="session in terminal.consoles"
           :key="session.shell.id"
-          role="button"
-          class="group flex min-h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md text-12"
-          :class="[
-            collapsed ? 'size-7 justify-center' : 'py-1 ps-2.5 pe-1',
-            session.shell.id === terminal.active
-              ? 'bg-elevated text-highlighted ring ring-accented ring-inset'
-              : 'text-dimmed hover:text-toned',
-          ]"
-          :title="collapsed ? `${session.shell.name}, ${describeShell(session.shell)}` : session.shell.folder"
-          @click="terminal.active = session.shell.id"
+          :items="[{ label: 'Close the shell', icon: 'i-lucide-x', onSelect: () => terminal.close(session.shell.id) }]"
         >
-          <UIcon :name="ICONS[session.shell.name] ?? 'i-codicon-terminal'" class="size-3.5 shrink-0" />
-          <template v-if="!collapsed">
-            <span class="flex min-w-0 grow flex-col">
-              <span class="truncate">{{ session.shell.name }}</span>
-              <span class="truncate text-11 text-dimmed">{{ describeShell(session.shell) }}</span>
-            </span>
-            <UButton
-              icon="i-lucide-x"
-              variant="ghost"
-              size="xs"
-              square
-              aria-label="Close the shell"
-              :class="session.shell.id !== terminal.active && 'invisible group-hover:visible'"
-              @click.stop="terminal.close(session.shell.id)"
-            />
-          </template>
-        </div>
-        <UButton
+          <div
+            role="button"
+            class="group flex min-h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md text-12"
+            :class="[
+              collapsed ? 'size-7 justify-center' : 'py-1 ps-2.5 pe-1',
+              session.shell.id === terminal.active
+                ? 'bg-elevated text-highlighted ring ring-accented ring-inset'
+                : 'text-dimmed hover:text-toned',
+            ]"
+            :title="collapsed ? `${session.shell.name}, ${describeShell(session.shell)}` : session.shell.folder"
+            @click="terminal.active = session.shell.id"
+          >
+            <UIcon :name="ICONS[session.shell.name] ?? 'i-codicon-terminal'" class="size-3.5 shrink-0" />
+            <template v-if="!collapsed">
+              <span class="flex min-w-0 grow flex-col">
+                <span class="truncate">{{ session.shell.name }}</span>
+                <span class="truncate text-11 text-dimmed">{{ describeShell(session.shell) }}</span>
+              </span>
+              <UButton
+                icon="i-lucide-x"
+                variant="ghost"
+                size="xs"
+                square
+                aria-label="Close the shell"
+                :class="session.shell.id !== terminal.active && 'invisible group-hover:visible'"
+                @click.stop="terminal.close(session.shell.id)"
+              />
+            </template>
+          </div>
+        </UContextMenu>
+        <!-- The menu opens only when a new shell asks for its folder. -->
+        <UDropdownMenu
           v-if="collapsed"
-          icon="i-lucide-plus"
-          variant="ghost"
-          color="neutral"
-          size="sm"
-          square
-          aria-label="New shell"
-          @click="terminal.start('')"
-        />
-        <UFieldGroup v-else size="sm" class="w-full">
+          :items="newShellItems"
+          :open="choosing"
+          :content="{ side: 'left', align: 'end' }"
+          @update:open="choosing = $event && asks"
+        >
           <UButton
-            label="New shell"
             icon="i-lucide-plus"
             variant="ghost"
             color="neutral"
-            class="grow justify-start"
-            @click="terminal.start('')"
+            size="sm"
+            square
+            aria-label="New shell"
+            @click="newShell"
           />
+        </UDropdownMenu>
+        <UFieldGroup v-else size="sm" class="w-full">
+          <UDropdownMenu
+            :items="newShellItems"
+            :open="choosing"
+            :content="{ align: 'start' }"
+            @update:open="choosing = $event && asks"
+          >
+            <UButton
+              label="New shell"
+              icon="i-lucide-plus"
+              variant="ghost"
+              color="neutral"
+              class="grow justify-start"
+              @click="newShell"
+            />
+          </UDropdownMenu>
           <UDropdownMenu :items="programItems" :content="{ align: 'end' }">
             <UButton icon="i-lucide-chevron-down" variant="ghost" color="neutral" square aria-label="Choose a shell" />
           </UDropdownMenu>

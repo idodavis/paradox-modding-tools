@@ -255,6 +255,11 @@ function update(change: Partial<Filter>): void {
 function setNumber(key: "depth" | "limit", value: number | null | undefined): void {
   if (value) update({ [key]: value });
 }
+
+/** describeStart returns what a row of the start view says after its name: its title, else what it is. */
+function describeStart(row: Pick<Recent, "what" | "title" | "display">): string {
+  return row.title || (row.display === "hidden" ? `hidden ${row.what}` : row.what);
+}
 </script>
 
 <template>
@@ -454,7 +459,7 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
         </div>
         <div class="flex items-start gap-7">
           <section v-if="recent.length" class="flex min-w-0 flex-1 flex-col gap-1" aria-label="Recent roots">
-            <span class="px-2 pb-1.5 text-11 font-semibold tracking-wide text-dimmed uppercase">Recent</span>
+            <span class="px-2 pb-1.5 text-11 font-semibold text-dimmed">Recent</span>
             <button v-for="row in recent.slice(0, START_SHOWN)" :key="row.id" :class="START_ROW" @click="draw(row.id)">
               <span
                 v-if="row.display === 'window' && row.background"
@@ -468,21 +473,19 @@ function setNumber(key: "depth" | "limit", value: number | null | undefined): vo
                 :style="{ color: lookupLook(row.database).color }"
               />
               <span class="font-mono text-12 text-highlighted">{{ row.name }}</span>
-              <span class="min-w-0 grow truncate text-12 text-dimmed">{{ row.title || row.what }}</span>
+              <span class="min-w-0 grow truncate text-12 text-dimmed">{{ describeStart(row) }}</span>
             </button>
           </section>
           <section v-if="own?.length" class="flex min-w-0 flex-1 flex-col gap-1" aria-label="Events from your mods">
             <span class="flex items-center px-2 pb-1.5">
-              <span class="text-11 font-semibold tracking-wide text-dimmed uppercase">From your mods</span>
+              <span class="text-11 font-semibold text-dimmed">From your mods</span>
               <span class="grow" />
               <UButton :label="`Show all ${own.length}`" variant="link" size="xs" class="p-0" @click="showOwn()" />
             </span>
             <button v-for="row in own.slice(0, START_SHOWN)" :key="row.id" :class="START_ROW" @click="draw(row.id)">
               <OriginChip :origin="row.site.place.origin" dot />
               <span class="font-mono text-12 text-highlighted">{{ row.name }}</span>
-              <span class="min-w-0 grow truncate text-12 text-dimmed">{{
-                row.display === "hidden" ? "hidden" : row.title || row.what
-              }}</span>
+              <span class="min-w-0 grow truncate text-12 text-dimmed">{{ describeStart(row) }}</span>
               <UBadge
                 :label="row.copyOrigin ? 'replaces' : 'added'"
                 :color="row.copyOrigin ? 'warning' : 'success'"

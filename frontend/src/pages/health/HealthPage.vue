@@ -1,8 +1,7 @@
 <!-- The Health page: a rail switches between the summary and the views of compatibility, each mod and the log. -->
 <script setup lang="ts">
-import { computed, onActivated, onDeactivated, shallowRef, watch } from "vue";
+import { computed, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
-import { useLocalStorage } from "@vueuse/core";
 import { isEqual, keyBy } from "es-toolkit";
 import { useRouter } from "vue-router";
 import type { SplitterItem } from "@nuxt/ui";
@@ -10,6 +9,7 @@ import { ReorderMods } from "@services/workspace/service";
 import type { Finding, Tally } from "@services/health/models";
 import type { Mod } from "@services/workspace/models";
 import { countFindings, describeCount, joinParts } from "../../lib/format";
+import { useSavedPixelSize } from "../../lib/splitter";
 import { useShown } from "../../app/pages";
 import { errorLogQuery, keys, overviewQuery, reportQuery, stateQuery } from "../../queries";
 import { makeChip, useChip } from "../../stores/toolView";
@@ -59,7 +59,6 @@ const RAIL = {
   slot: "rail",
   order: 1,
   sizeUnit: "px" as const,
-  defaultSize: 410,
   minSize: 200,
   maxSize: 520,
 };
@@ -117,14 +116,9 @@ const landing = computed(() => {
   return { view: logRows.value.some(matchLogRow) ? "log" : "summary", mod: "" };
 });
 const shown = computed(() => view || landing.value.view);
-/** The rail's width in pixels, kept between visits. */
-const railWidth = useLocalStorage("pmt.health.rail", RAIL.defaultSize);
-/** The splitter's panes. The rail takes its kept width when it appears, not while it is dragged. */
-const panes = shallowRef<SplitterItem[]>([VIEW]);
-watch(
-  () => shown.value === "summary",
-  (summary) => (panes.value = summary ? [VIEW] : [{ ...RAIL, defaultSize: railWidth.value }, VIEW]),
-  { immediate: true },
+const railWidth = useSavedPixelSize(useTemplateRef("splitter"), 0, "pmt.health.rail", 410);
+const panes = computed<SplitterItem[]>(() =>
+  shown.value === "summary" ? [VIEW] : [{ ...RAIL, defaultSize: railWidth.size() }, VIEW],
 );
 const currentId = computed(() => mod || landing.value.mod);
 const current = computed(() => mods.value.find((candidate) => candidate.id === currentId.value) ?? mods.value[0]);
@@ -243,11 +237,6 @@ function showCheck(check: string): void {
   void router.replace({ query: { view: "compatibility", code: check } });
 }
 
-/** keepRailWidth keeps the rail's width from the panes' sizes. */
-function keepRailWidth(sizes: number[]): void {
-  if (sizes.length === 2 && sizes[0]) railWidth.value = Math.round(sizes[0]);
-}
-
 /** openRow opens a finding of the view shown. */
 function openRow(finding: Finding): void {
   void router.replace({
@@ -280,11 +269,16 @@ function openRow(finding: Finding): void {
       :description="logError.message"
       class="mx-4 mb-4 shrink-0"
     />
-    <USplitter :items="panes" class="min-h-0 grow" @layout="keepRailWidth">
+    <USplitter
+      ref="splitter"
+      :items="panes"
+      class="min-h-0 grow"
+      @layout="panes.length === 2 && railWidth.keep($event)"
+    >
       <template #rail>
         <nav class="flex min-w-0 grow flex-col gap-0.5 overflow-y-auto border-e border-default bg-muted p-2">
           <template v-for="group in rail" :key="group.title">
-            <span v-if="group.title" class="px-2 pt-3 pb-1 text-11 font-semibold tracking-wide text-dimmed uppercase">
+            <span v-if="group.title" class="px-2 pt-3 pb-1 text-11 font-semibold text-dimmed">
               {{ group.title }}
             </span>
             <button

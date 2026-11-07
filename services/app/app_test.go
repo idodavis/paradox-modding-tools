@@ -42,7 +42,7 @@ func TestSaveJSON(t *testing.T) {
 // TestOpenConfig opens a missing config.json as a writable first run and an unreadable one as read-only.
 func TestOpenConfig(t *testing.T) {
 	file := openConfig(Dirs{App: t.TempDir()})
-	if file.readOnly {
+	if file.fault != nil {
 		t.Fatal("a first run gave a read-only config")
 	}
 	dirs := Dirs{App: t.TempDir()}
@@ -50,7 +50,7 @@ func TestOpenConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	file = openConfig(dirs)
-	if !file.readOnly {
+	if file.fault == nil {
 		t.Fatal("an unreadable file gave a writable config")
 	}
 	if err := file.Update("", func(*Config) error { return nil }); err == nil {

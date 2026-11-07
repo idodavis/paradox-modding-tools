@@ -1,7 +1,7 @@
 /** The editor store: this window's groups of tabs, its mode, and the history of places the user jumped between. */
 import { defineStore } from "pinia";
 import { useMutation, useQuery } from "@pinia/colada";
-import { StorageSerializers, until, useLocalStorage } from "@vueuse/core";
+import { StorageSerializers, until, useLocalStorage, useSessionStorage } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { ref, shallowReactive, shallowRef, toRaw, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -91,6 +91,18 @@ export const useEditorStore = defineStore("editor", () => {
   );
   const wiki = useLocalStorage("pmt.ide.wiki", false);
   const panel = useLocalStorage("pmt.ide.panel", "");
+  // The workspace the window last showed. A reload, which session storage outlives, keeps its tab in front.
+  const lastWorkspace = useSessionStorage("pmt.ide.shown", "");
+  // The panel opens on Problems with each workspace, so no shell starts until Terminal is picked.
+  if (THIS_WINDOW === "main") {
+    watch(
+      () => workspace.activeId(),
+      () => {
+        if (panel.value === "terminal") panel.value = "problems";
+      },
+      { immediate: true },
+    );
+  }
   const compareFile = useLocalStorage<Place | null>("pmt.ide.compare", null, { serializer: StorageSerializers.object });
   const recent = useLocalStorage<Place[]>(() => `pmt.ide.recent.${workspace.activeId()}`, []);
   const mode = shallowRef<Mode>("code");
@@ -199,6 +211,8 @@ export const useEditorStore = defineStore("editor", () => {
     current.value = -1;
     state.value = makeLayout();
     activeId.value = state.value.rows[0]?.columns[0]?.id ?? "";
+    const reloaded = lastWorkspace.value === id;
+    lastWorkspace.value = id;
     if (!id || THIS_WINDOW !== "main") return;
     const { record } = await until(() => records.value?.find((row) => row.record.id === id)).toBeTruthy();
     // Go finds a file's place only once the workspace is open.
@@ -212,7 +226,7 @@ export const useEditorStore = defineStore("editor", () => {
       await Promise.allSettled(Object.values(saved.paths).map((path) => openPath(path)));
       if (workspace.activeId() !== id) return;
     }
-    if (!record.hideStartPage) showStart();
+    if (!record.hideStartPage && !reloaded) showStart();
     tracking.value = true;
   }
 

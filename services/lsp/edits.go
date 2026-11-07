@@ -445,28 +445,28 @@ func buildEntryFix(ws *workspace.Session, mods *index.Index, target, source, ent
 }
 
 // BuildOverride returns the fix that overrides the entry at a position of a file: a copy of it, written as the game
-// keeps it over the others, in the mod with the given id or else the first other mod that can be written to. It returns
-// an error if the position is in no entry, the mod defines the entry already, the game combines every copy of that
-// kind of entry, or no mod can hold the copy.
-func (lsp *Service) BuildOverride(path string, line, column int, modID string) (Fix, error) {
+// keeps it over the others, in the mod with the given id or else the first other mod that can be written to. It
+// returns nil if the position is in no entry. It returns an error if the mod defines the entry already, the game
+// combines every copy of that kind of entry, or no mod can hold the copy.
+func (lsp *Service) BuildOverride(path string, line, column int, modID string) (*Fix, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
-		return Fix{}, err
+		return nil, err
 	}
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	definition, err := findEntry(ws, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
-	if err != nil {
-		return Fix{}, err
+	definition := findEntry(ws, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
+	if definition == nil {
+		return nil, nil
 	}
 	database := ws.Schema.Databases[definition.Database]
 	mod, err := lsp.findOverrideMod(place, modID)
 	if err != nil {
-		return Fix{}, err
+		return nil, err
 	}
 	sites := mods.Resolve(schema.Reference{Database: definition.Database, Name: definition.Name})
 	if lo.SomeBy(sites, func(site index.Site) bool { return mods.File(site).Origin == mod.ID }) {
-		return Fix{}, fmt.Errorf("%s defines the %s %s already", ws.DescribeMod(mod.ID),
+		return nil, fmt.Errorf("%s defines the %s %s already", ws.DescribeMod(mod.ID),
 			game.DescribeDefinition(definition.Database, false), definition.Name)
 	}
 	entry, side := tree.Text(tree.Statements[definition.Statement].Span), 0
@@ -477,7 +477,7 @@ func (lsp *Service) BuildOverride(path string, line, column int, modID string) (
 	case precedence.Keeps == "first":
 		side = -1
 	case precedence.KeepsEvery():
-		return Fix{}, errors.New("the game joins every copy of an entry of this kind, so a mod adds to it instead of overriding it")
+		return nil, errors.New("the game joins every copy of an entry of this kind, so a mod adds to it instead of overriding it")
 	case precedence.Keeps == "highest":
 		highest := lo.Max(lo.Map(sites, func(site index.Site, _ int) int { return int(mods.Occurrence(site).Priority) }))
 		entry = buildPriorityCopy(tree, definition, precedence, highest+1)
@@ -487,24 +487,24 @@ func (lsp *Service) BuildOverride(path string, line, column int, modID string) (
 	folder := resolveOverrideFolder(ws.Game, mods, place, database, rivals, side)
 	prefix, ok := findPrefix(ws.Game, mods, mod, folder, side, rivals)
 	if !ok {
-		return Fix{}, fmt.Errorf("no file name in %s makes the copy load %s the other copies", folder,
+		return nil, fmt.Errorf("no file name in %s makes the copy load %s the other copies", folder,
 			lo.Ternary(side < 0, "before", "after"))
 	}
 	target := files.Join(mod.Dir, resolveEntryRel(mod, folder, prefix))
 	source, _ := ws.LoadSource(target)
 	fix := buildEntryFix(ws, mods, target, source, buildNamespace(database, definition.Name, source)+entry)
 	fix.Title = "Override " + definition.Name + " in " + ws.DescribeMod(mod.ID)
-	return fix, nil
+	return &fix, nil
 }
 
 // findEntry returns the definition at an offset of a file that a mod can override: one written in a folder of its
-// database. It returns an error if the offset is in none.
-func findEntry(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) (*schema.Definition, error) {
+// database. It returns nil if the offset is in none.
+func findEntry(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) *schema.Definition {
 	definition := walkTo(ws, tree, place, offset).context.Definition
 	if definition == nil || definition.Statement == 0 || !hasFolder(ws.Schema.Databases[definition.Database]) {
-		return nil, errors.New("there is no entry to override at this position")
+		return nil
 	}
-	return definition, nil
+	return definition
 }
 
 // listRivals returns the copies of a name that an override has to load after or before: the ones written with an

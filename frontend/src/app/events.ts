@@ -1,6 +1,7 @@
 /** The events table: each event Go sends and the queries it makes stale. */
 import { useQueryCache, type EntryKey } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
+import { nextTick } from "vue";
 
 import { errorLogQuery, isGitStatus, keys, updateQuery } from "../queries";
 
@@ -84,9 +85,23 @@ export function subscribeEvents(): void {
         affected.forEach((key) => forget(cache, key));
         return;
       }
-      // A query that fails keeps its error for the page that shows it.
-      for (const key of affected) cache.invalidateQueries({ key: key as EntryKey }).catch(() => undefined);
+      void refresh(cache, affected);
     });
+  }
+}
+
+/**
+ * refresh reads again the cached queries under each key in turn, once the key before it is read and drawn. So what an
+ * earlier answer takes off the page, such as a removed mod's card, no longer asks Go about it. A query that fails
+ * keeps its error for the page that shows it.
+ */
+async function refresh(
+  cache: ReturnType<typeof useQueryCache>,
+  affected: readonly (readonly unknown[])[],
+): Promise<void> {
+  for (const key of affected) {
+    await cache.invalidateQueries({ key: key as EntryKey }).catch(() => undefined);
+    await nextTick();
   }
 }
 

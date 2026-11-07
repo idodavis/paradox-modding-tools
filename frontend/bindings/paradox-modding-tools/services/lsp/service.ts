@@ -21,11 +21,11 @@ import * as $models from "./models.js";
 
 /**
  * BuildOverride returns the fix that overrides the entry at a position of a file: a copy of it, written as the game
- * keeps it over the others, in the mod with the given id or else the first other mod that can be written to. It returns
- * an error if the position is in no entry, the mod defines the entry already, the game combines every copy of that
- * kind of entry, or no mod can hold the copy.
+ * keeps it over the others, in the mod with the given id or else the first other mod that can be written to. It
+ * returns nil if the position is in no entry. It returns an error if the mod defines the entry already, the game
+ * combines every copy of that kind of entry, or no mod can hold the copy.
  */
-export function BuildOverride(path: string, line: number, column: number, modID: string): $CancellablePromise<$models.Fix> {
+export function BuildOverride(path: string, line: number, column: number, modID: string): $CancellablePromise<$models.Fix | null> {
     return $Call.ByID(112820297, path, line, column, modID);
 }
 

@@ -6,6 +6,7 @@ import { Browser } from "@wailsio/runtime";
 
 import type { Page } from "@services/wiki/models";
 
+import { useSavedPixelSize } from "../lib/splitter";
 import FindBox from "./FindBox.vue";
 import ScriptSnippet from "./ScriptSnippet.vue";
 
@@ -39,9 +40,20 @@ const blocks = shallowRef<HTMLElement[]>([]);
 const active = shallowRef(-1);
 const texts = shallowRef<string[]>([]);
 const codeBlocks = shallowRef<{ pre: HTMLElement; text: string }[]>([]);
+const tocWidth = useSavedPixelSize(useTemplateRef("splitter"), 0, "pmt.wiki.tocWidth", 180);
 const panes = computed(() => [
   ...(headings.value.length && !contentsHidden.value
-    ? [{ id: "toc", slot: "toc", order: 1, sizeUnit: "px" as const, defaultSize: 180, minSize: 160, maxSize: 320 }]
+    ? [
+        {
+          id: "toc",
+          slot: "toc",
+          order: 1,
+          sizeUnit: "px" as const,
+          defaultSize: tocWidth.size(),
+          minSize: 160,
+          maxSize: 320,
+        },
+      ]
     : []),
   { id: "article", slot: "article", order: 2 },
 ]);
@@ -125,7 +137,12 @@ function follow(event: MouseEvent): void {
       />
       <FindBox v-model:term="term" :texts="texts" @hit="show" @close="clear" />
     </div>
-    <USplitter :items="panes" auto-save-id="pmt.wiki" class="min-h-0 flex-1 border-t border-default">
+    <USplitter
+      ref="splitter"
+      :items="panes"
+      class="min-h-0 flex-1 border-t border-default"
+      @layout="panes.length === 2 && tocWidth.keep($event)"
+    >
       <template #toc>
         <nav
           ref="contents"

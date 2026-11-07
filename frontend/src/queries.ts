@@ -87,6 +87,7 @@ export const updateQuery = defineQueryOptions({
   query: () => app.CheckUpdate().catch(() => ({ version: "", available: false })),
 });
 export const crashedQuery = defineQueryOptions({ key: ["app", "crashed"], query: () => app.CrashedLastRun() });
+export const configFaultQuery = defineQueryOptions({ key: ["app", "config-fault"], query: () => app.ConfigFault() });
 
 export const gamesQuery = defineQueryOptions({
   key: ["workspace", "games"],
@@ -223,7 +224,7 @@ export const readersQuery = defineQueryOptions((key: string) => ({
   query: () => health.ListReaders(key),
 }));
 
-export const legendQuery = defineQueryOptions({ key: [...keys.lsp, "legend"], query: () => lsp.ListLegend() });
+export const legendQuery = defineQueryOptions({ key: ["app", "legend"], query: () => lsp.ListLegend() });
 export const indentationQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "indentation"],
   query: () => lsp.DescribeIndentation(path),
@@ -284,7 +285,7 @@ export const lexiconQuery = defineQueryOptions((cls: string) => ({
 export const classesQuery = defineQueryOptions({ key: [...keys.wiki, "classes"], query: () => wiki.ListClasses() });
 
 export const gitInstalledQuery = defineQueryOptions({
-  key: [...keys.gits, "installed"],
+  key: ["app", "git"],
   query: () => git.IsInstalled(),
 });
 export const repositoriesQuery = defineQueryOptions({

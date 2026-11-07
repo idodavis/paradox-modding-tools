@@ -14,7 +14,7 @@ const emit = defineEmits<{ pick: [id: string] }>();
 
 <template>
   <template v-for="group in groups" :key="group.label">
-    <div class="flex items-center gap-1.5 px-3 pt-2.5 pb-1 text-11 font-semibold text-dimmed uppercase">
+    <div class="flex items-center gap-1.5 px-3 pt-2.5 pb-1 text-11 font-semibold text-dimmed">
       {{ group.label }}
       <span class="font-normal tabular-nums">{{ group.differences.length }}</span>
     </div>

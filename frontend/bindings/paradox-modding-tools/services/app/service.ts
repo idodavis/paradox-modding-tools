@@ -47,6 +47,13 @@ export function CloseWindow(name: string): $CancellablePromise<void> {
 }
 
 /**
+ * ConfigFault returns why config.json could not be read when the app started, or "" if it was read or is missing.
+ */
+export function ConfigFault(): $CancellablePromise<string> {
+    return $Call.ByID(1599015411);
+}
+
+/**
  * CrashedLastRun reports whether the last run ended without a clean shutdown. It is false on the first run, and in a
  * dev build, which is stopped without a clean shutdown each time it is rebuilt.
  */

@@ -175,6 +175,14 @@ func (app *Service) CrashedLastRun() bool {
 	return crashed
 }
 
+// ConfigFault returns why config.json could not be read when the app started, or "" if it was read or is missing.
+func (app *Service) ConfigFault() string {
+	if app.Config.fault == nil {
+		return ""
+	}
+	return app.Config.fault.Error()
+}
+
 // BuildDiagnostics returns what a bug report needs: the version, the system, the installs and the end of pmt.log.
 func (app *Service) BuildDiagnostics() string {
 	var report strings.Builder
@@ -249,7 +257,7 @@ func (app *Service) OpenWindow(name, url string) error {
 	if _, open := pmt.Window.Get(name); open {
 		return fmt.Errorf("a window named %q is already open", name)
 	}
-	window := newWindow(application.WebviewWindowOptions{Name: name, URL: url})
+	window := newWindow(application.WebviewWindowOptions{Name: name, URL: url, Width: 1200, Height: 800})
 	// the first close waits for the frontend; the next one goes through
 	var unhook func()
 	unhook = window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {

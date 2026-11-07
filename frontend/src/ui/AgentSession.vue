@@ -471,7 +471,7 @@ function stripControls(output: string): string {
                   <ShowTool :entry="entry" :tool="tool" />
                 </div>
                 <div v-else-if="entry.kind === 'plan'" class="flex max-w-180 flex-col gap-1">
-                  <span class="text-11 font-semibold tracking-wide text-dimmed uppercase">Plan</span>
+                  <span class="text-11 font-semibold text-dimmed">Plan</span>
                   <span
                     v-for="(step, index) in entry.steps"
                     :key="index"

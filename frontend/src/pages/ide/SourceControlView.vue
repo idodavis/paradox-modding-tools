@@ -217,9 +217,9 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
     <USplitter
       v-else
       :items="[
-        { id: 'repositories', slot: 'repositories', order: 1, sizeUnit: 'px', minSize: 200 },
+        { id: 'repositories', slot: 'repositories', order: 1, minSize: 20 },
         graphOpen
-          ? { id: 'graph', slot: 'graph', order: 2, sizeUnit: 'px', defaultSize: 240, minSize: 80 }
+          ? { id: 'graph', slot: 'graph', order: 2, defaultSize: 35, minSize: 10 }
           : { id: 'folded', slot: 'graph', order: 2, sizeUnit: 'px', defaultSize: 29, minSize: 29, maxSize: 29 },
       ]"
       orientation="vertical"

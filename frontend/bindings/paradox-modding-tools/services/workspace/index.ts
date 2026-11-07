@@ -13,6 +13,7 @@ export type {
     FileText,
     Hunk,
     Mod,
+    ModFolder,
     Place,
     Scanning,
     State,

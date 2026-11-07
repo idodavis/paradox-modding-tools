@@ -31,7 +31,7 @@ const { data: parent } = useQuery(() => ({
   ...modFolderQuery({ installId: installId.value, dir: folder.value, name: "" }),
   enabled: !!installId.value,
 }));
-const { data: modDir, error: nameError } = useQuery(() => ({
+const { data: modFolder } = useQuery(() => ({
   ...modFolderQuery({ installId: installId.value, dir: folder.value, name: title.value.trim() }),
   enabled: !!installId.value && !!title.value.trim(),
 }));
@@ -133,18 +133,16 @@ const { mutate: make, isLoading: making } = useMutation({
             label="Folder"
             help="The game's mod folder, unless you choose another."
           >
-            <FileSelector :path="folder || parent" folder :filter="[]" @update:path="folder = $event" />
+            <FileSelector :path="folder || parent?.path" folder :filter="[]" @update:path="folder = $event" />
           </UFormField>
           <p v-else class="text-12 text-dimmed">{{ current?.name }} reads local mods only from its mod folder.</p>
 
           <div class="flex flex-col gap-2">
             <span class="text-12 font-medium text-toned">PMT makes</span>
             <div class="flex flex-col gap-1 rounded-lg border border-default bg-muted px-3.5 py-2.5">
-              <span v-if="nameError" class="text-12 text-error">{{ toSentence(nameError.message) }}</span>
-              <span v-else class="truncate font-mono text-12 text-toned">{{ modDir ?? parent }}</span>
-              <span class="text-12 text-dimmed"
-                >A descriptor, the game's mod folders, readmes and a localization file.</span
-              >
+              <span v-if="modFolder?.problem" class="text-12 text-error">{{ toSentence(modFolder.problem) }}</span>
+              <span v-else class="truncate font-mono text-12 text-toned">{{ modFolder?.path ?? parent?.path }}</span>
+              <span class="text-12 text-dimmed">A descriptor, the game's mod folders and a localization file.</span>
             </div>
           </div>
         </template>
@@ -169,7 +167,7 @@ const { mutate: make, isLoading: making } = useMutation({
             color="primary"
             variant="solid"
             size="md"
-            :disabled="!installId || !title.trim() || !!nameError"
+            :disabled="!installId || !title.trim() || !!modFolder?.problem"
             :loading="making"
           />
         </div>

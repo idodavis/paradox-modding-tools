@@ -22,10 +22,7 @@ const {
   find?: string;
 }>();
 
-const PANES = [
-  { slot: "versions", defaultSize: 248, minSize: 180, maxSize: 400, sizeUnit: "px" as const },
-  { slot: "notes" },
-];
+const PANES = [{ slot: "versions", defaultSize: 15, minSize: 10, maxSize: 25 }, { slot: "notes" }];
 
 const workspace = useWorkspaceStore();
 const { data: state } = useQuery(stateQuery);

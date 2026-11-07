@@ -1,6 +1,6 @@
 <!-- Settings, a dialog over any page of any window. It opens on the command bus's settings.open. -->
 <script setup lang="ts">
-import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, nextTick, shallowRef, useTemplateRef, watch, type Slot } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import { createReusableTemplate, useEventBus, useEventListener } from "@vueuse/core";
@@ -142,10 +142,7 @@ const HEADING = {
     label: "flex flex-col items-start gap-0.5 overflow-hidden",
   },
 };
-const PANES = [
-  { slot: "list", sizeUnit: "px" as const, defaultSize: 420, minSize: 320, maxSize: 640 },
-  { slot: "card" },
-];
+const PANES = [{ slot: "list", defaultSize: 45, minSize: 35, maxSize: 70 }, { slot: "card" }];
 const LAUNCH = findCommand("game.launch");
 const CREATE = findCommand("mod.create");
 const GUIDE = findCommand("docs.guide");
@@ -172,6 +169,11 @@ const [DefinePage, Page] = createReusableTemplate<
 >();
 // A row's setting key makes it a row the palette can open Settings at.
 const [DefineRow, Row] = createReusableTemplate<{ title: string; note: string; last?: boolean; setting?: string }>();
+/**
+ * SlotContent draws a slot handed to a reusable template. It keeps the slot's controls when the page draws again,
+ * where `<component :is>` would make them anew and close an open select.
+ */
+const SlotContent = ({ render }: { render?: Slot }) => render?.();
 
 const router = useRouter();
 const settings = useSettingsStore();
@@ -394,9 +396,9 @@ async function remove(): Promise<void> {
               </h1>
               <p class="text-13 text-dimmed">{{ note }}</p>
             </div>
-            <component :is="$slots.actions" />
+            <SlotContent :render="$slots.actions" />
           </div>
-          <component :is="$slots.default" />
+          <SlotContent :render="$slots.default" />
         </div>
       </DefinePage>
       <DefineRow v-slot="{ title, note, last, setting, $slots }">
@@ -409,7 +411,7 @@ async function remove(): Promise<void> {
             <h2 class="text-13 font-semibold">{{ title }}</h2>
             <p class="mt-0.75 text-12 leading-4.5 text-dimmed">{{ note }}</p>
           </div>
-          <component :is="$slots.default" />
+          <SlotContent :render="$slots.default" />
         </section>
       </DefineRow>
       <UTabs
@@ -837,7 +839,7 @@ async function remove(): Promise<void> {
             </Row>
             <Row
               title="Where a shell starts"
-              note="The folder of the mod that holds the active file, else the workspace's first mod."
+              note="New shell asks which mod's folder to open in when the workspace has more than one mod; with one it opens there, and with none in your home folder. The shell that starts when Terminal opens is in the active file's mod."
             />
             <section class="flex flex-col gap-2.5">
               <h2 class="text-13 font-semibold">What every shell is given</h2>

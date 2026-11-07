@@ -50,7 +50,8 @@ Each is read without regard to case.
   the folder and in the name where the file has them.
 - `ToLanguageKey` writes a language as the game does, `l_english`.
 - `DescribeLanguage` gives a folder's name in English, such as Simplified Chinese for `simp_chinese`, or the folder
-  itself for a language it does not know.
+  itself for a language it does not know. `IsLanguage` tells a language's folder from the others the games keep
+  beside them, such as `jomini` and `modifiers`.
 
 ## Markup
 

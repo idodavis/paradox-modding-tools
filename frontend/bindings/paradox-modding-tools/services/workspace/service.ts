@@ -299,10 +299,10 @@ export function ResetData(): $CancellablePromise<void> {
 
 /**
  * ResolveModFolder returns the folder CreateMod would make for a mod of the given install. With no name, it returns
- * the folder the mod goes in. It returns an error if the install is not recorded, the name has no letter or digit to
- * make a folder name from, or the folder exists already.
+ * the folder the mod goes in. A name with no letter or digit to make a folder name from, or whose folder exists
+ * already, gives the problem in place of the folder. It returns an error if the install is not recorded.
  */
-export function ResolveModFolder(installID: string, dir: string, name: string): $CancellablePromise<string> {
+export function ResolveModFolder(installID: string, dir: string, name: string): $CancellablePromise<$models.ModFolder> {
     return $Call.ByID(3355031669, installID, dir, name);
 }
 

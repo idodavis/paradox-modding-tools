@@ -10,9 +10,15 @@ import { router } from "./app/router";
 import { subscribeEvents } from "./app/events";
 import { takeToasts, toast } from "./lib/feedback";
 import { splitError } from "./lib/format";
+import { useAgentStore } from "./stores/agent";
+import { useEditorStore } from "./stores/editor";
+import { useGitStore } from "./stores/git";
 import { useSearchStore } from "./stores/search";
+import { useSettingsStore } from "./stores/settings";
 import { useTerminalStore } from "./stores/terminal";
 import { useToolViewStore } from "./stores/toolView";
+import { useWindowsStore } from "./stores/windows";
+import { useWorkspaceStore } from "./stores/workspace";
 import { setupMonaco } from "./pages/ide/editor/monaco";
 import "./styles/nuxt-ui.css";
 
@@ -64,7 +70,14 @@ app.use(router);
 app.runWithContext(() => {
   subscribeEvents();
   useSearchStore().subscribe();
-  // The window that shows the panel holds the shells from its start, whichever page it shows.
+  // The stores that hold queries are made outside any component, which would take their queries with it when it
+  // closes.
+  useWorkspaceStore();
+  useSettingsStore();
+  useWindowsStore();
+  useEditorStore();
+  useGitStore();
+  useAgentStore();
   useTerminalStore();
   useToolViewStore();
   setupMonaco();

@@ -151,6 +151,21 @@ export interface Mod {
 }
 
 /**
+ * A ModFolder is the folder a new mod would be made in, or why it cannot be made.
+ */
+export interface ModFolder {
+    /**
+     * "" when there is a problem
+     */
+    "path": string;
+
+    /**
+     * why no mod can be made with the name, such as its folder existing already; "" if one can
+     */
+    "problem": string;
+}
+
+/**
  * A Place is where one file sits in the workspace, with the root it is under and what the workspace knows about it.
  * Every answer that names a file carries one.
  */

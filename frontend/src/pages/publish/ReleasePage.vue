@@ -239,7 +239,6 @@ const menu = computed<DropdownMenuItem[][]>(() => [
     },
   ],
   [
-    { label: "What an upload sends…", icon: "i-lucide-files", onSelect: () => (filesOpen.value = true) },
     {
       label: "Save the mod as a zip…",
       icon: "i-lucide-file-archive",
@@ -411,18 +410,25 @@ function openCompare(differenceId: string): void {
             class="shrink-0"
           />
           <span class="grow" />
+          <UButton
+            v-if="!current.external"
+            label="What an upload sends"
+            icon="i-lucide-files"
+            class="shrink-0"
+            @click="filesOpen = true"
+          />
           <UDropdownMenu
             v-if="!current.external"
             :items="menu"
             :content="{ align: 'end', onCloseAutoFocus: keepFocus }"
             :ui="{ content: 'w-80' }"
           >
-            <UTooltip text="Steam page, links, older versions and the mod's files">
+            <UTooltip text="Steam page, links, older versions, a zip and the mod's folder">
               <UButton
                 icon="i-lucide-ellipsis"
                 square
                 class="shrink-0"
-                aria-label="Steam page, links, older versions and the mod's files"
+                aria-label="Steam page, links, older versions, a zip and the mod's folder"
               />
             </UTooltip>
           </UDropdownMenu>

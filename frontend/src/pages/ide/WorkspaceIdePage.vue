@@ -13,6 +13,7 @@ import type { Place } from "@services/workspace/models";
 
 import { PAGES, useShown } from "../../app/pages";
 import { joinParts, matchQuery, plural } from "../../lib/format";
+import { useKeptPixelSize } from "../../lib/splitter";
 import {
   codesQuery,
   fileQuery,
@@ -48,8 +49,8 @@ import WikiPane from "./WikiPane.vue";
 import { describeLanguage } from "./editor/monaco";
 import { findModel } from "./editor/models";
 
-// The route names the workspace; the page reads the open one from the workspace store.
-defineProps<{ id: string }>();
+// The route names the workspace, which the page's links go to; the page reads the open one from the workspace store.
+const { id } = defineProps<{ id: string }>();
 
 /** A Problem is one entry in the problems list: an editor diagnostic, or a Health finding marked with `health`. */
 type Problem = { problem: Diagnostic; health?: true };
@@ -66,7 +67,7 @@ const SIDEBAR: { value: string; icon: string; label: string; visual?: string }[]
 ];
 const PANEL = [
   { value: "problems", label: "Problems" },
-  { value: "output", label: "Output" },
+  { value: "output", label: "Git output", git: true }, // shown only while a mod is in a git repository
   { value: "terminal", label: "Terminal" },
 ] as const;
 const COMPARES = {
@@ -214,7 +215,7 @@ const panes = computed<SplitterItem[]>(() => [
   // The Wiki pane leaves the main window while it has a window of its own, and while Visual takes the screen.
   ...((layout.value === "full" && editor.wiki && !isVisual.value && !windows.listWindows().includes("wiki")) ||
   layout.value === "wiki"
-    ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: PIXELS, defaultSize: 440, minSize: 320 }]
+    ? [{ id: "wiki", slot: "wiki", order: 3, defaultSize: 25, minSize: 16 }]
     : []),
 ]);
 const editorPanes = computed<SplitterItem[]>(() => [
@@ -226,9 +227,8 @@ const editorPanes = computed<SplitterItem[]>(() => [
           id: "panel",
           slot: "panel",
           order: 2,
-          sizeUnit: PIXELS,
-          defaultSize: 200,
-          minSize: 120,
+          defaultSize: 20,
+          minSize: 12,
           collapsible: layout.value === "full",
           collapsedSize: 0,
         },
@@ -236,6 +236,8 @@ const editorPanes = computed<SplitterItem[]>(() => [
     : []),
 ]);
 const editorSplitter = useTemplateRef("editorSplitter");
+const keepSidebarWidth = useKeptPixelSize(splitter, 0);
+const keepModsHeight = useKeptPixelSize(useTemplateRef("explorerSplitter"), 0);
 watch(
   () => editor.panel,
   (tab) => tab && void nextTick(() => editorSplitter.value?.panelsRef.at(-1)?.expand()),
@@ -257,12 +259,12 @@ const explorerPanes = computed<SplitterItem[]>(() => [
   ...(!externals.value.length
     ? []
     : externalOpen.value
-      ? [{ id: "external", slot: "external", order: 2, sizeUnit: PIXELS, defaultSize: 160, minSize: 90 }]
+      ? [{ id: "external", slot: "external", order: 2, defaultSize: 20, minSize: 10 }]
       : [foldPane("external-folded", "external", 2)]),
   ...(!gameShown.value
     ? []
     : gameOpen.value
-      ? [{ id: "game", slot: "game", order: 3, sizeUnit: PIXELS, minSize: 120 }]
+      ? [{ id: "game", slot: "game", order: 3, minSize: 12 }]
       : [foldPane("folded", "game", 3)]),
 ]);
 // The terminal's own window shows the Terminal tab alone. The simple interface leaves out the tabs it hides, unless
@@ -271,7 +273,8 @@ const panelTabs = computed(() =>
   PANEL.filter((tab) =>
     layout.value === "terminal"
       ? tab.value === "terminal"
-      : tab.value === editor.panel || !settings.isHidden(tab.value),
+      : tab.value === editor.panel ||
+        (!settings.isHidden(tab.value) && (!("git" in tab) || git.repositories.length > 0)),
   ),
 );
 const panelTab = computed(() =>
@@ -472,7 +475,7 @@ function collapseAll(): void {
         />
       </UTooltip>
     </DefineFilterButton>
-    <USplitter ref="splitter" :items="panes" class="min-w-0 flex-1">
+    <USplitter ref="splitter" :items="panes" class="min-w-0 flex-1" @layout="keepSidebarWidth">
       <template #sidebar="{ collapsed, collapse }">
         <aside
           v-if="layout === 'full'"
@@ -510,12 +513,14 @@ function collapseAll(): void {
           <div v-if="!collapsed" class="relative flex min-h-0 flex-1 flex-col">
             <USplitter
               v-if="roots"
+              ref="explorerSplitter"
               :items="explorerPanes"
               orientation="vertical"
               :disabled="!gameOpen && !(externals.length && externalOpen)"
               auto-save-id="pmt.ide.explorer"
               class="absolute inset-0 py-1"
               :class="shownSidebar !== 'explorer' && 'invisible'"
+              @layout="keepModsHeight"
             >
               <template #mods>
                 <div class="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -531,6 +536,7 @@ function collapseAll(): void {
                       </UTooltip>
                     </AddModMenu>
                   </div>
+                  <p v-if="!mods.length" class="px-2.5 py-1 text-12 text-dimmed">No mods yet. Add one with +.</p>
                   <ExplorerTree ref="modTree" v-model:filtering="filtering.mods" :roots="mods" @open="show" />
                 </div>
               </template>
@@ -723,7 +729,7 @@ function collapseAll(): void {
                       label="Open in Health"
                       variant="ghost"
                       size="xs"
-                      :to="{ name: 'health', params: { id: workspace.activeId() } }"
+                      :to="{ name: 'health', params: { id } }"
                     />
                   </Teleport>
                   <UScrollArea
@@ -822,11 +828,7 @@ function collapseAll(): void {
         </button>
       </UTooltip>
       <UTooltip v-if="healthWorst" :text="healthWorst.text">
-        <RouterLink
-          :to="{ name: 'health', params: { id: workspace.activeId() } }"
-          :class="STATUS_ITEM"
-          :aria-label="healthWorst.text"
-        >
+        <RouterLink :to="{ name: 'health', params: { id } }" :class="STATUS_ITEM" :aria-label="healthWorst.text">
           <UIcon :name="PAGES.health.icon" class="size-3" />{{ healthWorst.label }}
         </RouterLink>
       </UTooltip>

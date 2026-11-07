@@ -136,19 +136,27 @@ const gearMenu = computed(
     ] satisfies DropdownMenuItem[][],
 );
 
+// A game's workspaces sit under its name; the open one has a check.
 const switcher = computed(
   () =>
     [
-      (games.value ?? []).flatMap((game) => {
+      ...(games.value ?? []).flatMap((game) => {
         const rows = (workspaces.value ?? []).filter((row) => row.game?.id === game.id);
         if (!rows.length) return [];
         return [
-          { type: "label" as const, label: game.name, slot: "game" as const, game: game.id },
-          ...rows.map(({ record }) => ({
-            label: record.name,
-            icon: record.id === workspace.activeId() ? "i-lucide-check" : undefined,
-            to: resolveLink(record.id),
-          })),
+          [
+            { type: "label" as const, label: game.name, slot: "game" as const, game: game.id },
+            ...rows.map(({ record }) => {
+              const active = record.id === workspace.activeId();
+              return {
+                label: record.name,
+                slot: "workspace" as const,
+                active,
+                to: resolveLink(record.id),
+                class: active ? "ps-8.5 font-medium" : "ps-8.5",
+              };
+            }),
+          ],
         ];
       }),
       [{ label: "New workspace", icon: "i-lucide-plus", to: { name: "wizard" as const } }],
@@ -200,11 +208,11 @@ function popOut(name: WorkspacePage): void {
   if (route.name === name) void router.push({ name: next, params: { id: workspace.activeId() } });
 }
 
-/** dockPage closes a page's window and shows the page here once the window is gone. */
+/** dockPage closes a page's window and shows the page here as it was last shown. */
 async function dockPage(name: WorkspacePage): Promise<void> {
   windows.closeOther(pageWindow(name));
   await until(() => !isPopped(name)).toBe(true, { timeout: 5_000 });
-  await router.push({ name, params: { id: workspace.activeId() } });
+  await router.push(resolveTabLink(name));
 }
 
 /** announceExit toasts that the launched game closed. If the game wrote fresher documentation, the toast stays. */
@@ -283,18 +291,23 @@ function styleButton(region: string): string[] {
     <span class="mx-1 h-4.5 w-px shrink-0 bg-accented" />
 
     <template v-if="IS_MAIN">
-      <UDropdownMenu :items="switcher" :content="{ align: 'start' }">
+      <UDropdownMenu
+        :items="switcher"
+        :content="{ align: 'start' }"
+        :ui="{
+          content: 'min-w-(--reka-dropdown-menu-trigger-width)',
+          label: 'gap-2 pt-2.5 pb-1 text-12 font-semibold text-toned',
+        }"
+      >
         <template #game-leading="{ item }">
-          <img
-            :src="gameIcon(item.game)"
-            :alt="item.game"
-            class="size-4.5 shrink-0 rounded-sm object-contain"
-            data-art
-          />
+          <img :src="gameIcon(item.game)" :alt="item.game" class="size-4 shrink-0 rounded-sm object-contain" data-art />
+        </template>
+        <template #workspace-trailing="{ active: isOpen }">
+          <UIcon v-if="isOpen" name="i-lucide-check" class="size-3.5 text-primary" />
         </template>
         <UButton
           size="sm"
-          class="w-56 shrink-0 gap-2 ps-1.5 pe-2 text-13"
+          class="w-56 min-w-28 shrink-100 gap-2 ps-1.5 pe-2 text-13"
           trailing-icon="i-lucide-chevron-down"
           :ui="{ trailingIcon: 'text-dimmed' }"
         >
@@ -309,8 +322,8 @@ function styleButton(region: string): string[] {
         </UButton>
       </UDropdownMenu>
 
-      <!-- the tabs keep their width; the search bar gives way first, and the compact bar below that -->
-      <nav v-if="active" class="-my-px ms-1 flex shrink-0 gap-0.5 self-stretch">
+      <!-- The tabs give way last, after the search bar and the switcher; the window buttons never do. -->
+      <nav v-if="active" class="-my-px ms-1 flex min-w-0 shrink gap-0.5 self-stretch overflow-hidden">
         <UContextMenu v-for="name in tools" :key="name" :items="tabMenu(name)" :disabled="!canPopOut(name)">
           <button
             v-if="isPopped(name)"
@@ -357,15 +370,19 @@ function styleButton(region: string): string[] {
       <span class="font-medium text-highlighted">{{ describeWindow(THIS_WINDOW) }}</span>
       <span class="truncate text-dimmed">{{ active?.record.name }}</span>
     </span>
-    <button
-      type="button"
-      class="flex h-6.5 w-64 min-w-8 shrink items-center gap-2 overflow-hidden rounded-md border border-default bg-default px-2 text-12 text-dimmed hover:border-accented hover:text-toned"
-      @click="commandBus.emit('palette.open')"
-    >
-      <UIcon name="i-lucide-search" class="size-3.5 shrink-0" />
-      <span class="grow truncate text-start">Search and commands</span>
-      <UKbd v-for="kbd in findKbds('palette.open')" :key="kbd" :value="kbd" size="sm" />
-    </button>
+    <!-- Narrowed, the search bar drops its keys, its label and then itself, before any tab gives way. -->
+    <span class="@container flex w-64 min-w-0 shrink-1000">
+      <button
+        type="button"
+        aria-label="Search and commands"
+        class="flex h-6.5 w-full items-center gap-2 overflow-hidden rounded-md border border-default bg-default px-2 text-12 text-dimmed hover:border-accented hover:text-toned @max-[2rem]:hidden"
+        @click="commandBus.emit('palette.open')"
+      >
+        <UIcon name="i-lucide-search" class="size-3.5 shrink-0" />
+        <span class="grow truncate text-start @max-[5rem]:hidden">Search and commands</span>
+        <UKbd v-for="kbd in findKbds('palette.open')" :key="kbd" :value="kbd" size="sm" class="@max-[11rem]:hidden" />
+      </button>
+    </span>
     <span :class="CAPTION" class="min-w-6 grow" @dblclick="Window.ToggleMaximise()" />
 
     <UTooltip

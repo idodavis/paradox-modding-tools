@@ -32,7 +32,7 @@ const { data: parent } = useQuery(() => ({
   ...modFolderQuery({ installId: install(), dir: folder.value, name: "" }),
   enabled: !!install(),
 }));
-const { data: modDir, error: nameError } = useQuery(() => ({
+const { data: modFolder } = useQuery(() => ({
   ...modFolderQuery({ installId: install(), dir: folder.value, name: title.value.trim() }),
   enabled: !!install() && !!title.value.trim(),
 }));
@@ -57,7 +57,7 @@ const { mutate: create, isLoading: creating } = useMutation({
 <template>
   <UModal
     title="Create a mod"
-    description="A descriptor, the game's mod folders, readmes and a localization file."
+    description="A descriptor, the game's mod folders and a localization file."
     @update:open="(open) => !open && emit('close')"
   >
     <template #body>
@@ -74,8 +74,12 @@ const { mutate: create, isLoading: creating } = useMutation({
             class="w-full"
           />
         </UFormField>
-        <UFormField label="Folder" :help="modDir && `Creates ${modDir}`" :error="toSentence(nameError?.message ?? '')">
-          <FileSelector :path="folder || parent" folder :filter="[]" @update:path="folder = $event" />
+        <UFormField
+          label="Folder"
+          :help="modFolder?.path && `Creates ${modFolder.path}`"
+          :error="modFolder?.problem ? toSentence(modFolder.problem) : undefined"
+        >
+          <FileSelector :path="folder || parent?.path" folder :filter="[]" @update:path="folder = $event" />
         </UFormField>
         <div class="grid grid-cols-2 gap-4">
           <UFormField label="Localization language">
@@ -105,7 +109,7 @@ const { mutate: create, isLoading: creating } = useMutation({
         label="Create mod"
         color="primary"
         variant="solid"
-        :disabled="!title.trim() || !!nameError"
+        :disabled="!title.trim() || !!modFolder?.problem"
         :loading="creating"
       />
     </template>

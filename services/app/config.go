@@ -5,6 +5,7 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -49,7 +50,8 @@ func ResolveDirs() (Dirs, error) {
 	return dirs, nil
 }
 
-// LoadJSON reads a JSON file into a value. A missing file gives the zero value and no error.
+// LoadJSON reads a JSON file into a value. A missing file gives the zero value and no error. The error of a file that
+// cannot be read or decoded names the file.
 func LoadJSON[T any](path string) (T, error) {
 	var value, zero T
 	content, err := os.ReadFile(path)
@@ -60,7 +62,7 @@ func LoadJSON[T any](path string) (T, error) {
 		return zero, err
 	}
 	if err := json.Unmarshal(content, &value); err != nil {
-		return zero, err
+		return zero, fmt.Errorf("%s: %w", path, err)
 	}
 	return value, nil
 }
@@ -170,8 +172,8 @@ type Setting struct {
 var Catalog = []Setting{
 	{Key: "appearance.simple", Label: "Simple interface",
 		Section: "appearance", Type: "switch", Default: "false",
-		Help: "Hides Source control, Entries, Output, Terminal, the minimap, predicted text and signature help, and keeps " +
-			"hover cards short. Off shows everything.",
+		Help: "Hides Source control, Entries, Git output, Terminal, the minimap, predicted text and signature help, and " +
+			"keeps hover cards short. Off shows everything.",
 		Words: "beginner novice minimal clutter hide advanced everything"},
 	{Key: "appearance.theme", Label: "Theme",
 		Section: "appearance", Type: "choice", Default: "pmt",
@@ -350,15 +352,14 @@ type ConfigFile struct {
 	path     string
 	mu       sync.RWMutex
 	config   Config
-	revision int // how many times Update has changed the config since the app started
-	readOnly bool
+	revision int   // how many times Update has changed the config since the app started
+	fault    error // why config.json could not be read when the app started, which makes the config read-only; nil if it was read
 }
 
 // openConfig loads config.json from the app folder. A file that cannot be read gives an empty, read-only config.
 func openConfig(dirs Dirs) *ConfigFile {
 	file := &ConfigFile{Dirs: dirs, path: filepath.Join(dirs.App, "config.json")}
-	config, err := LoadJSON[Config](file.path)
-	file.config, file.readOnly = config, err != nil
+	file.config, file.fault = LoadJSON[Config](file.path)
 	return file
 }
 
@@ -382,7 +383,7 @@ func (file *ConfigFile) Revision() int {
 func (file *ConfigFile) Update(section string, change func(config *Config) error) error {
 	file.mu.Lock()
 	defer file.mu.Unlock()
-	if file.readOnly {
+	if file.fault != nil {
 		return errors.New("config.json could not be read when the app started, so it is not written")
 	}
 	content, err := json.Marshal(file.config)

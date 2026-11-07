@@ -242,7 +242,7 @@ function describeLogPlace(finding: Finding): Part[] {
             <UIcon :name="panel.icon" class="size-5" />
           </span>
           <span class="flex min-w-0 grow flex-col">
-            <span class="text-11 font-medium tracking-wide text-dimmed uppercase">{{ panel.kicker }}</span>
+            <span class="text-11 font-semibold text-dimmed">{{ panel.kicker }}</span>
             <span class="line-clamp-2 text-20 leading-tight text-highlighted">{{ panel.verdict }}</span>
             <span class="line-clamp-2 text-11 text-dimmed">{{ panel.note }}</span>
           </span>

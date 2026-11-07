@@ -274,7 +274,13 @@ export const useWindowsStore = defineStore("windows", () => {
       showWindow(target);
       return;
     }
-    const route = router.resolve({ name: tool ?? "workspace-ide", params: { id: workspace.activeId() } });
+    // A page shown here takes its query along, such as the graph's root.
+    const current = router.currentRoute.value;
+    const route = router.resolve({
+      name: tool ?? "workspace-ide",
+      params: { id: workspace.activeId() },
+      query: tool && current.name === tool ? current.query : undefined,
+    });
     const url = `/?${new URLSearchParams({ window: target, ...query })}${route.href}`;
     const tabs = tabIds.flatMap((id) => editor.listTabs().find((tab) => tab.id === id && !tab.start) ?? []);
     open({ name: target, url, tabs: tabs.flatMap(toHanded) });

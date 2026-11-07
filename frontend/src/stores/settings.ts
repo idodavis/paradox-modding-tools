@@ -37,7 +37,7 @@ export const SIMPLE_HIDES: readonly { id: string; label: string }[] = [
   { id: "ide.signature", label: "Signature help" },
   { id: "git", label: "Source control" },
   { id: "entries", label: "Entries" },
-  { id: "output", label: "Output" },
+  { id: "output", label: "Git output" },
   { id: "terminal", label: "Terminal" },
   { id: "hover.details", label: "Hover card details" },
 ];

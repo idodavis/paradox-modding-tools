@@ -160,7 +160,8 @@ function setStep(index: string | number | undefined): void {
           <div class="flex flex-col gap-1">
             <h2 class="text-16">Which mods do you work on in it?</h2>
             <p class="text-13 text-dimmed">
-              Mods load top to bottom after the game; drag them into order. You can also leave the game files alone.
+              Mods load top to bottom after the game; drag them into order. A workspace can start with no mods; you can
+              add them later.
             </p>
           </div>
           <DefineRow v-slot="{ mod, index }">

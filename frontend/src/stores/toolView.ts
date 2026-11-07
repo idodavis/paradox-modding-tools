@@ -28,11 +28,12 @@ export const useToolViewStore = defineStore("toolView", () => {
   const { data: starters } = useQuery(tasksQuery);
   /**
    * The starter tasks the page shown offers. A file's task needs a file open, and one that edits the file needs one
-   * the user can change. The event's task needs an event open in the Event Graph.
+   * the user can change. A mod's task needs a mod of the user's own, and the event's an event open in the Event Graph.
    */
   const tasks = computed(() =>
     (starters.value ?? []).filter((task) => {
       if (task.chip === "file") return !!chip.value?.path && !(task.edits && editor.activeFile()?.readOnly);
+      if (task.chip === "mod") return workspace.listOwnMods().length > 0;
       if (task.chip === "event") return route.name === "event-graph" && !!chip.value;
       return true;
     }),

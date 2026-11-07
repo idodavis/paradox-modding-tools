@@ -215,7 +215,7 @@ func (wsp *Service) ListLanguages(installID string) ([]loc.Language, error) {
 	entries, _ := os.ReadDir(filepath.Join(install.Path, game.ScriptRoot, filepath.FromSlash(rel)))
 	languages := []loc.Language{}
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() && loc.IsLanguage(entry.Name()) {
 			languages = append(languages, loc.Language{
 				Folder: entry.Name(), Label: loc.DescribeLanguage(entry.Name()), Base: entry.Name() == game.BaseLanguage,
 			})

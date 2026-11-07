@@ -670,6 +670,7 @@ export function overrideEntry(place: Place, line: number, column: number, text: 
         run(async () => {
           try {
             const fix = await lsp.BuildOverride(place.path, line, column, target);
+            if (!fix) return;
             await useEditorStore().applyFixAsync(fix);
             const copy = fix.reveal?.place;
             if (!copy) return;

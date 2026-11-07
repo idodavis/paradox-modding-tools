@@ -404,9 +404,9 @@ func splitBrief(finding Finding) []lsp.Part {
 	}
 	hasUses := len(finding.Uses) > 0
 	if hasUses {
-		used := lo.Ternary(finding.Facts["count"] == "1", "{count} entry still used", "{count} entries still used")
-		add(lsp.SplitMessage(used+lo.Ternary(finding.Facts["uses"] == "1", " · {uses} use", " · {uses} uses"),
-			finding.Facts)...)
+		entries := lo.Ternary(finding.Facts["count"] == "1", "Leaves out {count} entry", "Leaves out {count} entries")
+		places := lo.Ternary(finding.Facts["uses"] == "1", " still used in {uses} place", " still used in {uses} places")
+		add(lsp.SplitMessage(entries+places, finding.Facts)...)
 	}
 	if other := finding.Facts["other"]; other != "" {
 		add(lsp.Part{Text: "only in "}, lsp.Part{Text: other, Style: "mod"})

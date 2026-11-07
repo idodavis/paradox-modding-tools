@@ -17,7 +17,16 @@ import * as wikiApi from "@services/wiki/service";
 import type { Scanning } from "@services/workspace/models";
 import { confirm, copyText } from "../lib/feedback";
 import { day, installLine } from "../lib/format";
-import { crashedQuery, levelsQuery, releasesQuery, stateQuery, updateQuery, useRescan, versionQuery } from "../queries";
+import {
+  configFaultQuery,
+  crashedQuery,
+  levelsQuery,
+  releasesQuery,
+  stateQuery,
+  updateQuery,
+  useRescan,
+  versionQuery,
+} from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import HowModWorks from "../ui/HowModWorks.vue";
@@ -67,6 +76,7 @@ const { data: version } = useQuery(versionQuery);
 const { data: update, refetch: checkUpdate, isLoading: checking } = useQuery({ ...updateQuery, staleTime: 3_600_000 });
 const { data: releases, refetch: refetchReleases } = useQuery({ ...releasesQuery, enabled: false });
 const { data: crashed } = useQuery(crashedQuery);
+const { data: configFault } = useQuery(configFaultQuery);
 const { data: levels } = useQuery(levelsQuery);
 const terms = computed(() => [
   ...TERMS,
@@ -117,9 +127,19 @@ const others = computed(() =>
 
 const toasted = new Set<string>();
 watch(
-  [crashed, state],
-  ([wasCrashed, current]) => {
+  [crashed, configFault, state],
+  ([wasCrashed, fault, current]) => {
     if (THIS_WINDOW !== "main") return;
+    if (fault) {
+      showToast("config-fault", {
+        title: "Your settings and workspaces could not be read",
+        description:
+          "PMT started empty and leaves config.json as it is, so nothing you change is saved. Mend or move the " +
+          `file, then start PMT again. ${fault}`,
+        color: "error",
+        icon: "i-lucide-triangle-alert",
+      });
+    }
     if (wasCrashed) {
       showToast("crashed", {
         title: "PMT closed unexpectedly",

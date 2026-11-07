@@ -212,3 +212,10 @@ func ToLanguageKey(language string) string {
 func DescribeLanguage(folder string) string {
 	return lo.ValueOr(languageLabels, folder, folder)
 }
+
+// IsLanguage reports whether a folder of the game's localization holds a language, not one such as jomini that the
+// games keep beside the languages.
+func IsLanguage(folder string) bool {
+	_, ok := languageLabels[folder]
+	return ok
+}

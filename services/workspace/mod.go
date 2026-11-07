@@ -53,6 +53,12 @@ type Mod struct {
 	Workshop   bool       `json:"workshop"`  // its folder is Steam's copy of a Workshop mod
 }
 
+// A ModFolder is the folder a new mod would be made in, or why it cannot be made.
+type ModFolder struct {
+	Path    string `json:"path"`    // "" when there is a problem
+	Problem string `json:"problem"` // why no mod can be made with the name, such as its folder existing already; "" if one can
+}
+
 // thumbnailName is the name, without its extension, of a mod's thumbnail file.
 const thumbnailName = "thumbnail"
 
@@ -296,18 +302,22 @@ func (wsp *Service) CreateMod(workspaceID, dir, name, language string) (Mod, err
 }
 
 // ResolveModFolder returns the folder CreateMod would make for a mod of the given install. With no name, it returns
-// the folder the mod goes in. It returns an error if the install is not recorded, the name has no letter or digit to
-// make a folder name from, or the folder exists already.
-func (wsp *Service) ResolveModFolder(installID, dir, name string) (string, error) {
+// the folder the mod goes in. A name with no letter or digit to make a folder name from, or whose folder exists
+// already, gives the problem in place of the folder. It returns an error if the install is not recorded.
+func (wsp *Service) ResolveModFolder(installID, dir, name string) (ModFolder, error) {
 	install, row, err := findInstall(wsp.Config.Config(), installID)
 	if err != nil {
-		return "", err
+		return ModFolder{}, err
 	}
 	parent := resolveModDir(row, install, dir)
 	if name == "" {
-		return parent, nil
+		return ModFolder{Path: parent}, nil
 	}
-	return resolveModFolder(parent, name)
+	folder, err := resolveModFolder(parent, name)
+	if err != nil {
+		return ModFolder{Problem: err.Error()}, nil
+	}
+	return ModFolder{Path: folder}, nil
 }
 
 // CheckModFolder returns an error if a folder cannot be added as a mod of the given install's game, or if the install

@@ -71,6 +71,7 @@ const hint = computed(() => {
   if (!note) return "";
   if (note.source !== "git") return `Taken from ${note.source}. Edit it before you upload.`;
   const since = parseTime(note.since) ? `since your last upload, ${day(note.since)}` : "since the start";
+  if (!note.count) return `No commits ${since}. Write what changed before you upload.`;
   return `Drafted from the ${plural(note.count, "commit")} ${since}. Edit it before you upload.`;
 });
 

@@ -47,12 +47,14 @@ log.
 
 ## Updates
 
-Wails's updater does the work, and the app gives it one provider, the `releaseSource`. It offers the newest release
-when that one is newer than the version running, and the release's SHA256SUMS checks the download. When the user picks
-a version, it offers that release instead, newer or older, which Wails's GitHub provider never does. The source reads
-the release from GitHub's API and takes SHA256SUMS and the download from the release's download links. GitHub allows
-60 API requests an hour from one network without a token, and counts no download link, so a check costs one request.
-Only the main window checks, at launch and then every six hours, and when the user asks.
+Wails's updater does the work, and the app gives it one provider, the `releaseSource`. With no version picked it is
+the project's GitHub provider: it offers the newest release when that one is newer than the version running, and the
+release's SHA256SUMS checks the download. That provider never offers an older release, which is why the source exists.
+When the user picks a version, the source offers that release instead, newer or older. The updater swaps one file for
+the running app, so a release's zip holds the binary alone; the releases before `firstInstallable` (0.5.2) hold more,
+and the Releases list offers no install of them. GitHub allows 60 API requests an hour from one network without a
+token, so only the main window checks, at launch and then every six hours, and when the user asks. A check GitHub
+refuses for that limit says so (`errRateLimited`).
 
 ```mermaid
 flowchart TD

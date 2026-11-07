@@ -70,6 +70,9 @@ func (app *Service) ServiceStartup(ctx context.Context, options application.Serv
 // ServiceShutdown removes the running mark, so the next start knows the shutdown was clean.
 func (app *Service) ServiceShutdown() error { return os.Remove(resolveMark(app.Config.Dirs)) }
 
+// errRateLimited is GitHub's refusal of a request once this network has made as many as GitHub allows in an hour.
+var errRateLimited = errors.New("GitHub takes no more requests from this network for now. Try again within the hour")
+
 // userAgent is how PMT names itself to the sites it fetches from.
 const userAgent = "paradox-modding-tools (+https://github.com/idodavis/paradox-modding-tools)"
 
@@ -121,7 +124,7 @@ func FetchURL(address string, timeout time.Duration) ([]byte, error) {
 	switch {
 	case response.StatusCode == http.StatusOK:
 	case response.Header.Get("X-RateLimit-Remaining") == "0":
-		return nil, errors.New("GitHub takes no more requests from this network for now. Try again within the hour")
+		return nil, errRateLimited
 	default:
 		return nil, fmt.Errorf("%s answered %s", request.URL.Host, response.Status)
 	}

@@ -29,6 +29,9 @@ const (
 	apiTimeout  = 15 * time.Second
 	// firstRelease is this app's first version. The releases before it are an older app the repository keeps.
 	firstRelease = "0.5.0"
+	// firstInstallable is the first release whose zip holds the binary alone, which the updater swaps for the running
+	// app. The zips before it also hold the licenses and notices, which the updater refuses.
+	firstInstallable = "0.5.2"
 )
 
 // An Update is the result of a check for a newer version of the app.
@@ -39,11 +42,12 @@ type Update struct {
 
 // A Release is one published version of the app, with its notes as the Markdown they are written in.
 type Release struct {
-	Version string    `json:"version"`
-	Date    time.Time `json:"date"`
-	Notes   string    `json:"notes"`
-	Running bool      `json:"running"` // it is the version running
-	Older   bool      `json:"older"`   // it is older than the version running
+	Version     string    `json:"version"`
+	Date        time.Time `json:"date"`
+	Notes       string    `json:"notes"`
+	Running     bool      `json:"running"`     // it is the version running
+	Older       bool      `json:"older"`       // it is older than the version running
+	Installable bool      `json:"installable"` // the updater can install it: it is firstInstallable or newer
 }
 
 // publishedRelease is one release as GitHub's API describes it.
@@ -63,46 +67,45 @@ type publishedAsset struct {
 	URL  string `json:"browser_download_url"`
 }
 
-// A releaseSource is the updater's one provider. It offers the newest release when that one is newer than the version
-// running. While the user has picked a version, it offers that release instead, whichever way it compares with the
-// version running. The GitHub provider downloads the file it offers.
+// A releaseSource is the updater's one provider. It offers what the GitHub provider offers, which is the newest release
+// when that one is newer than the version running. While the user has picked a version, it offers that release
+// instead, whichever way it compares with the version running, which the GitHub provider never does.
 type releaseSource struct {
 	*github.Provider
 	version string // the version the user picked, or "" for none
 	refusal error  // why the last check failed, which the updater passes on only inside its own text; nil if it worked
 }
 
-// Check returns the release to install, or nil if there is none, as find does. It keeps find's error as the refusal.
-func (source *releaseSource) Check(_ context.Context, request updater.CheckRequest) (*updater.Release, error) {
-	release, err := source.find(request)
+// Check returns the release to install, or nil if there is none: the GitHub provider's answer with no version picked,
+// and find's with one. It keeps the error as the refusal, with GitHub's refusal for its limit of requests told as
+// errRateLimited.
+func (source *releaseSource) Check(ctx context.Context, request updater.CheckRequest) (*updater.Release, error) {
+	check := source.Provider.Check
+	if source.version != "" {
+		check = source.find
+	}
+	release, err := check(ctx, request)
+	if err != nil && strings.Contains(err.Error(), "rate limit") {
+		err = errRateLimited
+	}
 	source.refusal = err
 	return release, err
 }
 
-// find returns the release to install, or nil if there is none. It reads the newest release, or the one picked, from
-// GitHub's API, picks its file for this platform and takes the file's digest from the release's SHA256SUMS. The files
-// come from the release's download links, which GitHub does not count against its limit of API requests, so a check
-// makes one request. It returns an error if the release cannot be read, has no file for this platform, or has no line
-// for the file in SHA256SUMS.
-func (source *releaseSource) find(request updater.CheckRequest) (*updater.Release, error) {
-	address := releasesURL + "/latest"
-	if source.version != "" {
-		address = releasesURL + "/tags/v" + source.version
-	}
-	published, err := fetchJSON[publishedRelease](address)
+// find returns the release the user picked. It reads the release from GitHub's API, picks its file for this platform
+// and takes the file's digest from the release's SHA256SUMS. It returns an error if the release cannot be read, has no
+// file for this platform, or has no line for the file in SHA256SUMS.
+func (source *releaseSource) find(_ context.Context, request updater.CheckRequest) (*updater.Release, error) {
+	published, err := fetchJSON[publishedRelease](releasesURL + "/tags/v" + source.version)
 	if err != nil {
 		return nil, err
-	}
-	version := strings.TrimPrefix(published.Tag, "v")
-	if source.version == "" && semver.Compare("v"+version, "v"+request.CurrentVersion) <= 0 {
-		return nil, nil
 	}
 	assets := lo.Map(published.Assets, func(asset publishedAsset, _ int) github.ReleaseAsset {
 		return github.ReleaseAsset{Name: asset.Name, Size: asset.Size, URL: asset.URL}
 	})
 	position := github.DefaultAssetMatcher(request, assets)
 	if position < 0 {
-		return nil, fmt.Errorf("%s has no file for %s/%s", version, request.Platform, request.Arch)
+		return nil, fmt.Errorf("%s has no file for %s/%s", source.version, request.Platform, request.Arch)
 	}
 	asset := published.Assets[position]
 	digest, err := lookupDigest(published.Assets, asset.Name)
@@ -110,7 +113,7 @@ func (source *releaseSource) find(request updater.CheckRequest) (*updater.Releas
 		return nil, err
 	}
 	return &updater.Release{
-		Version:      version,
+		Version:      source.version,
 		Notes:        published.Body,
 		PublishedAt:  published.Published,
 		Artifact:     updater.Artifact{Filename: asset.Name, Size: asset.Size},
@@ -243,6 +246,7 @@ func (app *Service) ListReleases() ([]Release, error) {
 			releases = append(releases, Release{
 				Version: version, Date: published.Published, Notes: published.Body,
 				Running: version == running, Older: isOlder(version, running),
+				Installable: semver.Compare("v"+version, "v"+firstInstallable) >= 0,
 			})
 		}
 		if len(listed) < pageSize {

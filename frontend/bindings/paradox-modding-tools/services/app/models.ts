@@ -111,6 +111,11 @@ export interface Release {
      * it is older than the version running
      */
     "older": boolean;
+
+    /**
+     * the updater can install it: it is firstInstallable or newer
+     */
+    "installable": boolean;
 }
 
 /**

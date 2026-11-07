@@ -330,7 +330,7 @@ const LAUNCH = findCommand("game.launch");
               </h3>
               <UBadge v-if="release.running" label="Running" color="primary" variant="subtle" size="sm" />
               <UButton
-                v-else
+                v-else-if="release.installable"
                 label="Install this version"
                 size="xs"
                 variant="soft"

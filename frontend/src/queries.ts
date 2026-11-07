@@ -81,11 +81,7 @@ export const settingsQuery = defineQueryOptions((workspaceId: string) => ({
   key: [...keys.settings, workspaceId],
   query: () => app.ReadSettings(workspaceId),
 }));
-// A check GitHub refuses, such as for a rate limit, finds no update.
-export const updateQuery = defineQueryOptions({
-  key: ["app", "update"],
-  query: () => app.CheckUpdate().catch(() => ({ version: "", available: false })),
-});
+export const updateQuery = defineQueryOptions({ key: ["app", "update"], query: () => app.CheckUpdate() });
 export const crashedQuery = defineQueryOptions({ key: ["app", "crashed"], query: () => app.CrashedLastRun() });
 export const configFaultQuery = defineQueryOptions({ key: ["app", "config-fault"], query: () => app.ConfigFault() });
 

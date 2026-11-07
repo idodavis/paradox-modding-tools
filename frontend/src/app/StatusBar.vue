@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem, ToastProps } from "@nuxt/ui";
 import { useMutation, useQuery } from "@pinia/colada";
-import { useEventBus } from "@vueuse/core";
+import { useEventBus, useIntervalFn } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { computed, onScopeDispose, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -16,7 +16,7 @@ import type { Progress } from "@services/wiki/models";
 import * as wikiApi from "@services/wiki/service";
 import type { Scanning } from "@services/workspace/models";
 import { confirm, copyText } from "../lib/feedback";
-import { day, installLine } from "../lib/format";
+import { day, installLine, toSentence } from "../lib/format";
 import {
   configFaultQuery,
   crashedQuery,
@@ -73,8 +73,16 @@ const agentDot = computed(() => {
 });
 const { data: state } = useQuery(stateQuery);
 const { data: version } = useQuery(versionQuery);
-const { data: update, refetch: checkUpdate, isLoading: checking } = useQuery({ ...updateQuery, staleTime: 3_600_000 });
-const { data: releases, refetch: refetchReleases } = useQuery({ ...releasesQuery, enabled: false });
+// Only the main window checks for updates, at launch and then every six hours, as GitHub allows few requests an hour.
+const CHECK_INTERVAL = 6 * 3_600_000;
+const {
+  data: update,
+  error: checkError,
+  refetch: checkUpdate,
+  isLoading: checking,
+} = useQuery({ ...updateQuery, staleTime: CHECK_INTERVAL, enabled: THIS_WINDOW === "main" });
+if (THIS_WINDOW === "main") useIntervalFn(() => void checkUpdate(), CHECK_INTERVAL);
+const { data: releases, error: listError, refetch: refetchReleases } = useQuery({ ...releasesQuery, enabled: false });
 const { data: crashed } = useQuery(crashedQuery);
 const { data: configFault } = useQuery(configFaultQuery);
 const { data: levels } = useQuery(levelsQuery);
@@ -85,9 +93,16 @@ const terms = computed(() => [
 const { mutate: applyUpdate } = useMutation({ mutation: () => app.ApplyUpdate() });
 const { mutate: installRelease } = useMutation({ mutation: (target: string) => app.InstallRelease(target) });
 
-/** installOlder asks before it installs an older release, as PMT restarts into it. */
-async function installOlder(release: Release): Promise<void> {
+/**
+ * installVersion installs a release and restarts into it. It asks first for an older one, which can leave the user's
+ * settings unread and keeps the running version from being offered until a newer one is out.
+ */
+async function installVersion(release: Release): Promise<void> {
   const target = release.version;
+  if (!release.older) {
+    installRelease(target);
+    return;
+  }
   const confirmed = await confirm.open({
     title: `Install ${target}?`,
     body:
@@ -287,7 +302,7 @@ const LAUNCH = findCommand("game.launch");
     <ScriptDocsGuide v-if="guiding" v-model:open="guiding" :game="state?.game?.id ?? ''" />
     <UModal
       title="Releases"
-      :ui="{ content: 'h-130 sm:max-w-2xl' }"
+      :ui="{ content: 'h-160 sm:max-w-3xl' }"
       @update:open="(opened) => opened && refetchReleases()"
     >
       <UTooltip :text="update?.available ? 'Releases and updates: a newer version is out' : 'Releases and updates'">
@@ -305,6 +320,9 @@ const LAUNCH = findCommand("game.launch");
       </UTooltip>
       <template #body>
         <div class="flex flex-col gap-5">
+          <p v-if="listError" class="text-13 text-error">
+            The releases could not be read. {{ toSentence(listError.message) }}
+          </p>
           <section v-for="release in releases ?? []" :key="release.version" class="flex flex-col gap-1.5">
             <div class="flex items-center gap-2">
               <h3 class="text-13 font-semibold text-highlighted">
@@ -312,12 +330,12 @@ const LAUNCH = findCommand("game.launch");
               </h3>
               <UBadge v-if="release.running" label="Running" color="primary" variant="subtle" size="sm" />
               <UButton
-                v-else-if="release.older"
+                v-else
                 label="Install this version"
                 size="xs"
                 variant="soft"
                 class="ml-auto"
-                @click="installOlder(release)"
+                @click="installVersion(release)"
               />
             </div>
             <UEditor :model-value="release.notes" content-type="markdown" :editable="false" :mention="false" />
@@ -325,7 +343,9 @@ const LAUNCH = findCommand("game.launch");
         </div>
       </template>
       <template #footer>
-        <span class="grow" />
+        <span class="grow text-12 text-error">
+          {{ checkError && `The check for updates failed. ${toSentence(checkError.message)}` }}
+        </span>
         <UButton v-if="update?.available" :label="`Update to ${update.version}`" @click="applyUpdate()" />
         <UButton v-else label="Check for updates" :loading="checking" @click="checkUpdate()" />
       </template>

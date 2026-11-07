@@ -7,9 +7,6 @@ import type { Events } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import type * as app$0 from "../../../../../paradox-modding-tools/services/app/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import type * as mcp$0 from "../../../../../paradox-modding-tools/services/mcp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -28,7 +25,6 @@ declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
             "agent:changed": string;
-            "app:update": app$0.Update;
             "config:changed": string;
             "errorlog:changed": {};
             "fs:changed": workspace$0.FileChange;

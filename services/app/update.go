@@ -31,7 +31,7 @@ const (
 	firstRelease = "0.5.0"
 )
 
-// An Update is the result of a check for a newer version of the app. It is the data of the app:update event.
+// An Update is the result of a check for a newer version of the app.
 type Update struct {
 	Version   string `json:"version"`
 	Available bool   `json:"available"`
@@ -63,32 +63,46 @@ type publishedAsset struct {
 	URL  string `json:"browser_download_url"`
 }
 
-// A releaseSource is the updater's one provider. It offers what the GitHub provider offers, which is the newest
-// release when that one is newer than the version running. While the user has picked a version, it offers that
-// release instead, whichever way it compares with the version running.
+// A releaseSource is the updater's one provider. It offers the newest release when that one is newer than the version
+// running. While the user has picked a version, it offers that release instead, whichever way it compares with the
+// version running. The GitHub provider downloads the file it offers.
 type releaseSource struct {
 	*github.Provider
 	version string // the version the user picked, or "" for none
+	refusal error  // why the last check failed, which the updater passes on only inside its own text; nil if it worked
 }
 
-// Check returns the release to install, or nil if there is none. With no version picked it is the GitHub provider's
-// answer. With one, it reads that release, picks its file for this platform and takes the file's digest from the
-// release's SHA256SUMS. It returns an error if the release cannot be read, has no file for this platform, or has no
-// line for the file in SHA256SUMS.
-func (source *releaseSource) Check(ctx context.Context, request updater.CheckRequest) (*updater.Release, error) {
-	if source.version == "" {
-		return source.Provider.Check(ctx, request)
+// Check returns the release to install, or nil if there is none, as find does. It keeps find's error as the refusal.
+func (source *releaseSource) Check(_ context.Context, request updater.CheckRequest) (*updater.Release, error) {
+	release, err := source.find(request)
+	source.refusal = err
+	return release, err
+}
+
+// find returns the release to install, or nil if there is none. It reads the newest release, or the one picked, from
+// GitHub's API, picks its file for this platform and takes the file's digest from the release's SHA256SUMS. The files
+// come from the release's download links, which GitHub does not count against its limit of API requests, so a check
+// makes one request. It returns an error if the release cannot be read, has no file for this platform, or has no line
+// for the file in SHA256SUMS.
+func (source *releaseSource) find(request updater.CheckRequest) (*updater.Release, error) {
+	address := releasesURL + "/latest"
+	if source.version != "" {
+		address = releasesURL + "/tags/v" + source.version
 	}
-	published, err := fetchJSON[publishedRelease](releasesURL + "/tags/v" + source.version)
+	published, err := fetchJSON[publishedRelease](address)
 	if err != nil {
 		return nil, err
+	}
+	version := strings.TrimPrefix(published.Tag, "v")
+	if source.version == "" && semver.Compare("v"+version, "v"+request.CurrentVersion) <= 0 {
+		return nil, nil
 	}
 	assets := lo.Map(published.Assets, func(asset publishedAsset, _ int) github.ReleaseAsset {
 		return github.ReleaseAsset{Name: asset.Name, Size: asset.Size, URL: asset.URL}
 	})
 	position := github.DefaultAssetMatcher(request, assets)
 	if position < 0 {
-		return nil, fmt.Errorf("%s has no file for %s/%s", source.version, request.Platform, request.Arch)
+		return nil, fmt.Errorf("%s has no file for %s/%s", version, request.Platform, request.Arch)
 	}
 	asset := published.Assets[position]
 	digest, err := lookupDigest(published.Assets, asset.Name)
@@ -96,7 +110,7 @@ func (source *releaseSource) Check(ctx context.Context, request updater.CheckReq
 		return nil, err
 	}
 	return &updater.Release{
-		Version:      source.version,
+		Version:      version,
 		Notes:        published.Body,
 		PublishedAt:  published.Published,
 		Artifact:     updater.Artifact{Filename: asset.Name, Size: asset.Size},
@@ -122,8 +136,8 @@ func (app *Service) startUpdater() error {
 	return nil
 }
 
-// CheckUpdate asks the project's GitHub releases whether a newer version exists, and emits app:update if one does.
-// It returns an empty Update if none does. A dev build is no release, so it never asks.
+// CheckUpdate asks the project's GitHub releases whether a newer version exists. It returns an empty Update if none
+// does. A dev build is no release, so it never asks.
 func (app *Service) CheckUpdate() (Update, error) {
 	app.updating.Lock()
 	defer app.updating.Unlock()
@@ -135,13 +149,21 @@ func (app *Service) check() (Update, error) {
 	if app.Build == DevBuild {
 		return Update{}, nil
 	}
-	release, err := application.Get().Updater.Check(context.Background())
+	release, err := app.checkRelease()
 	if err != nil || release == nil {
 		return Update{}, err
 	}
-	update := Update{Version: release.Version, Available: true}
-	application.Get().Event.Emit(EventAppUpdate, update)
-	return update, nil
+	return Update{Version: release.Version, Available: true}, nil
+}
+
+// checkRelease asks the updater for the release the source offers, or nil if there is none. It returns the source's
+// refusal rather than the updater's text around it, so the error says only why the check failed.
+func (app *Service) checkRelease() (*updater.Release, error) {
+	release, err := application.Get().Updater.Check(context.Background())
+	if err != nil && app.source.refusal != nil {
+		return nil, app.source.refusal
+	}
+	return release, err
 }
 
 // ApplyUpdate downloads the newer version beside the app and restarts into it. It returns an error if there is
@@ -166,8 +188,11 @@ func (app *Service) ApplyUpdate() error {
 // InstallRelease installs the release with the given version, newer or older than the one running, and restarts into
 // it. Going back to an older one skips the version running until a newer one is out. It returns an error if the
 // version is the one running, has no file for this platform or no line in SHA256SUMS, or cannot be downloaded or
-// verified.
+// verified, and in a dev build, which a release would replace.
 func (app *Service) InstallRelease(version string) error {
+	if app.Build == DevBuild {
+		return errors.New("a dev build installs no release; build or download one instead")
+	}
 	running := app.running()
 	if version == running {
 		return fmt.Errorf("%s is the version running", version)
@@ -176,14 +201,14 @@ func (app *Service) InstallRelease(version string) error {
 	defer app.updating.Unlock()
 	app.source.version = version
 	defer func() { app.source.version = "" }()
-	pmt := application.Get()
-	release, err := pmt.Updater.Check(context.Background())
+	release, err := app.checkRelease()
 	if err != nil {
 		return err
 	}
 	if release == nil {
 		return fmt.Errorf("%s is not offered", version)
 	}
+	pmt := application.Get()
 	if err := pmt.Updater.DownloadAndInstall(context.Background()); err != nil {
 		return err
 	}

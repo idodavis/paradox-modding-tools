@@ -3,7 +3,7 @@ import { useQueryCache, type EntryKey } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { nextTick } from "vue";
 
-import { errorLogQuery, isGitStatus, keys, updateQuery } from "../queries";
+import { errorLogQuery, isGitStatus, keys } from "../queries";
 
 /**
  * An EventRow is what an event makes stale, from its data. A row that forgets empties the cached data and makes
@@ -69,7 +69,6 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
   "shell:started": { stale: () => [keys.shells] },
   "shell:exited": { stale: () => [keys.shells] },
   "agent:changed": { stale: () => [keys.agents] },
-  "app:update": { stale: () => [updateQuery.key] },
 };
 
 /** subscribeEvents subscribes to every event in the table. */

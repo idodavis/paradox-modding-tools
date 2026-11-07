@@ -47,17 +47,19 @@ log.
 
 ## Updates
 
-Wails's updater does the work, and the app gives it one provider, the `releaseSource`. With no version picked it is the
-project's GitHub provider: it offers the newest release when that one is newer than the version running, and the
-release's SHA256SUMS checks the download. That provider never offers an older release, which is why the source exists.
-When the user picks a version, the source offers that release instead, newer or older.
+Wails's updater does the work, and the app gives it one provider, the `releaseSource`. It offers the newest release
+when that one is newer than the version running, and the release's SHA256SUMS checks the download. When the user picks
+a version, it offers that release instead, newer or older, which Wails's GitHub provider never does. The source reads
+the release from GitHub's API and takes SHA256SUMS and the download from the release's download links. GitHub allows
+60 API requests an hour from one network without a token, and counts no download link, so a check costs one request.
+Only the main window checks, at launch and then every six hours, and when the user asks.
 
 ```mermaid
 flowchart TD
   check["CheckUpdate"] --> latest["The newest release,<br/>if newer than the running one"]
   latest --> skipped{"Is it the skipped release?"}
   skipped -->|yes| none(["No update"])
-  skipped -->|no| offer(["app:update"])
+  skipped -->|no| offer(["The Update"])
   install["InstallRelease"] --> tag["Read the picked release,<br/>pick its file for this platform,<br/>take its digest from SHA256SUMS"]
   tag --> fetch["Download and verify"]
   fetch --> older{"Older than the running one?"}
@@ -71,14 +73,17 @@ flowchart TD
   from the config.
 - **Errors.** A release with no file for this platform or no line in SHA256SUMS is refused, and so is the running
   version. The picked version is cleared after any failure.
-- **Dev build.** A dev build (`DevBuild`) is no release, so `CheckUpdate` finds no update and does not ask GitHub.
+- **Dev build.** A dev build (`DevBuild`) is no release, so `CheckUpdate` finds no update and does not ask GitHub, and
+  `InstallRelease` refuses to replace it.
+- **Picking.** The Releases dialog installs any release but the running one; it asks first for an older one.
 - **One at a time.** A check or an install holds a lock, so a check cannot change the release an install is about to
   download.
 - **The list.** `ListReleases` returns every published release, the newest first, without drafts, prereleases and the
   releases before `firstRelease` (0.5.0), which are an older app the repository keeps on GitHub. Each
   says whether it is the running one and whether it is older. A build that is no release, such as a dev build, gets the
   newest only.
-- `FetchURL` downloads a web address with PMT's user agent, for this service and the others that read the web.
+- `FetchURL` downloads a web address with PMT's user agent, for this service and the others that read the web. It says so
+  when GitHub refuses a request for a used-up limit, without GitHub's reset time, which its answers disagree on.
 
 ## Windows
 
@@ -104,7 +109,6 @@ again, or after a timeout, and `window:closed` follows.
 | event | data | sent when |
 |---|---|---|
 | `config:changed` | the section written | config.json was written |
-| `app:update` | an `Update` | a check found a newer version |
 | `window:closing` | the window's name | a window waits for the page's answer before it closes |
 | `window:closed` | the window's name | a window closed |
 

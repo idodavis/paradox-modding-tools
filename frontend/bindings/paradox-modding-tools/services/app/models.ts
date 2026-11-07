@@ -111,6 +111,11 @@ export interface Release {
      * it is older than the version running
      */
     "older": boolean;
+
+    /**
+     * the updater can install it: it is firstInstallable or newer
+     */
+    "installable": boolean;
 }
 
 /**
@@ -154,7 +159,7 @@ export interface Setting {
 }
 
 /**
- * An Update is the result of a check for a newer version of the app. It is the data of the app:update event.
+ * An Update is the result of a check for a newer version of the app.
  */
 export interface Update {
     "version": string;

@@ -5,6 +5,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,7 +28,6 @@ import (
 // The events the app sends.
 const (
 	EventConfigChanged = "config:changed" // config.json was written; the data is the section
-	EventAppUpdate     = "app:update"     // a newer version exists; the data is the Update
 	EventWindowClosing = "window:closing" // a window waits to close for the frontend's answer; the data is its name
 	EventWindowClosed  = "window:closed"  // a window closed; the data is its name
 )
@@ -35,7 +35,6 @@ const (
 // init registers the app events with the application.
 func init() {
 	application.RegisterEvent[string](EventConfigChanged)
-	application.RegisterEvent[Update](EventAppUpdate)
 	application.RegisterEvent[string](EventWindowClosing)
 	application.RegisterEvent[string](EventWindowClosed)
 }
@@ -71,6 +70,9 @@ func (app *Service) ServiceStartup(ctx context.Context, options application.Serv
 // ServiceShutdown removes the running mark, so the next start knows the shutdown was clean.
 func (app *Service) ServiceShutdown() error { return os.Remove(resolveMark(app.Config.Dirs)) }
 
+// errRateLimited is GitHub's refusal of a request once this network has made as many as GitHub allows in an hour.
+var errRateLimited = errors.New("GitHub takes no more requests from this network for now. Try again within the hour")
+
 // userAgent is how PMT names itself to the sites it fetches from.
 const userAgent = "paradox-modding-tools (+https://github.com/idodavis/paradox-modding-tools)"
 
@@ -105,7 +107,8 @@ func OpenLog(config *ConfigFile, version string) (*slog.Logger, error) {
 func (app *Service) Version() string { return app.Build }
 
 // FetchURL downloads a web address within the given time and returns the body of the answer. It sends PMT's user
-// agent. It returns an error if the request fails or the answer is not 200.
+// agent. It returns an error if the request fails or the answer is not 200, and says so when GitHub refuses it for a
+// used-up limit of requests.
 func FetchURL(address string, timeout time.Duration) ([]byte, error) {
 	request, err := http.NewRequest(http.MethodGet, address, nil)
 	if err != nil {
@@ -118,7 +121,11 @@ func FetchURL(address string, timeout time.Duration) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
+	switch {
+	case response.StatusCode == http.StatusOK:
+	case response.Header.Get("X-RateLimit-Remaining") == "0":
+		return nil, errRateLimited
+	default:
 		return nil, fmt.Errorf("%s answered %s", request.URL.Host, response.Status)
 	}
 	return io.ReadAll(response.Body)

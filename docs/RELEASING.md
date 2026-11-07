@@ -21,8 +21,10 @@ flowchart LR
 2. **The version** is the open draft's, if there is one. Else it is the newest tag's patch number plus one, starting at
    v0.5.0. Running the workflow by hand can set it instead.
 3. **The build** makes `paradox-modding-tools-windows-amd64.zip` and `paradox-modding-tools-linux-amd64.zip`. Each holds
-   the binary, LICENSE, NOTICE, README.txt and THIRD_PARTY_NOTICES.txt. Then come `SHA256SUMS`, which the updater
-   checks a download against, and an attestation of each file.
+   the binary alone, as the app's updater swaps one file for the running app and refuses a zip that holds more. LICENSE,
+   NOTICE and each system's `THIRD_PARTY_NOTICES-<system>.txt` go on the release beside them, under names that hold no
+   architecture, so the updater never takes them for the app. Then come `SHA256SUMS`, which the updater checks a
+   download against, and an attestation of each zip. What Windows and Linux need to run PMT goes in the notes.
 4. **The draft.** The release is made as a draft, with notes GitHub generates from the merged pull requests, sorted by
    label into Features, Fixes and Other (`.github/release.yml`). Only the repository's writers can see a draft, so the
    updater and the Releases list offer nothing yet. A second push before publishing replaces the draft's zips under

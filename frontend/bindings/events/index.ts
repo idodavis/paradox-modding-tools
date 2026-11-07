@@ -14,11 +14,6 @@ import "../github.com/wailsapp/wails/v3/internal/eventcreate.js";
 export const AgentChanged = "agent:changed";
 
 /**
- * Name of the custom event "app:update".
- */
-export const AppUpdate = "app:update";
-
-/**
  * Name of the custom event "config:changed".
  */
 export const ConfigChanged = "config:changed";

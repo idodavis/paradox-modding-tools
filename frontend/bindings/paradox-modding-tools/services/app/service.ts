@@ -30,8 +30,8 @@ export function BuildDiagnostics(): $CancellablePromise<string> {
 }
 
 /**
- * CheckUpdate asks the project's GitHub releases whether a newer version exists, and emits app:update if one does.
- * It returns an empty Update if none does. A dev build is no release, so it never asks.
+ * CheckUpdate asks the project's GitHub releases whether a newer version exists. It returns an empty Update if none
+ * does. A dev build is no release, so it never asks.
  */
 export function CheckUpdate(): $CancellablePromise<$models.Update> {
     return $Call.ByID(622473172);
@@ -65,7 +65,7 @@ export function CrashedLastRun(): $CancellablePromise<boolean> {
  * InstallRelease installs the release with the given version, newer or older than the one running, and restarts into
  * it. Going back to an older one skips the version running until a newer one is out. It returns an error if the
  * version is the one running, has no file for this platform or no line in SHA256SUMS, or cannot be downloaded or
- * verified.
+ * verified, and in a dev build, which a release would replace.
  */
 export function InstallRelease(version: string): $CancellablePromise<void> {
     return $Call.ByID(1927212819, version);

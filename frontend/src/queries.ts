@@ -106,6 +106,12 @@ export const workspacesQuery = defineQueryOptions({
   query: () => workspace.ListWorkspaces(),
 });
 export const releasesQuery = defineQueryOptions({ key: ["app", "releases"], query: () => app.ListReleases() });
+// The third-party notices, which a release build writes before it builds the frontend. Other builds have none.
+const NOTICES = import.meta.glob<string>("../THIRD_PARTY_NOTICES.txt", { query: "?raw", import: "default" });
+export const noticesQuery = defineQueryOptions({
+  key: ["app", "notices"],
+  query: async () => (await Object.values(NOTICES)[0]?.()) ?? "",
+});
 export const stateQuery = defineQueryOptions({ key: keys.state, query: () => workspace.State() });
 /** useRescan returns a mutation that scans the install with the given id again. */
 export function useRescan() {

@@ -487,6 +487,13 @@ export const COMMANDS: readonly Command[] = [
     onSelect: () => commandBus.emit("help.open"),
   },
   {
+    id: "help.licenses",
+    label: "Third-party licenses",
+    icon: "i-lucide-scroll-text",
+    when: () => true,
+    onSelect: () => commandBus.emit("help.licenses"),
+  },
+  {
     id: "docs.guide",
     label: "How to get the game's documentation",
     icon: "i-lucide-book-open",

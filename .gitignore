@@ -5,6 +5,7 @@
 .agents
 bin
 frontend/dist
+frontend/THIRD_PARTY_NOTICES.txt
 frontend/node_modules
 frontend/auto-imports.d.ts
 frontend/components.d.ts

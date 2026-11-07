@@ -79,13 +79,11 @@ jobs:
             task: windows:build
             binary: paradox-modding-tools.exe
             zip: paradox-modding-tools-windows-amd64.zip
-            notices: THIRD_PARTY_NOTICES-windows.txt
           - os: ubuntu-latest
             goarch: amd64
             task: linux:build
             binary: paradox-modding-tools
             zip: paradox-modding-tools-linux-amd64.zip
-            notices: THIRD_PARTY_NOTICES-linux.txt
     defaults:
       run:
         shell: bash
@@ -129,6 +127,24 @@ jobs:
           go install github.com/google/go-licenses@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      # the Go modules the binary links for its system and the frontend's production packages, which the app shows
+      # under Third-party licenses; written before the build, which takes the file into the frontend
+      - name: Third-party notices
+        run: |
+          set -euo pipefail
+          # go-licenses loads the main package, which embeds frontend/dist; the build replaces the folder
+          mkdir -p frontend/dist && touch frontend/dist/.keep
+          (cd frontend && npm install --no-audit --no-fund)
+          {
+            echo 'Paradox Modding Tools includes the following third-party software.'
+            echo
+            echo '== Go modules (module, license page, license) =='
+            go-licenses report . --ignore paradox-modding-tools
+            echo
+            echo '== Frontend packages =='
+            (cd frontend && npx --yes license-checker-rseidelsohn --production --plainVertical)
+          } > frontend/THIRD_PARTY_NOTICES.txt
+
       - name: Stamp the version into the build assets
         run: wails3 task common:update:build-assets VERSION="${{ needs.version.outputs.version }}"
 
@@ -140,22 +156,8 @@ jobs:
             ARCH="${{ matrix.goarch }}"
           test -f "bin/${{ matrix.binary }}"
 
-      # the Go modules the binary links for its system, and the frontend's production packages
-      - name: Third-party notices
-        run: |
-          set -euo pipefail
-          {
-            echo 'Paradox Modding Tools includes the following third-party software.'
-            echo
-            echo '== Go modules (module, license page, license) =='
-            go-licenses report . --ignore paradox-modding-tools
-            echo
-            echo '== Frontend packages =='
-            (cd frontend && npx --yes license-checker-rseidelsohn --production --plainVertical)
-          } > "${{ matrix.notices }}"
-
-      # the zip holds the binary alone, as the in-app updater swaps one file for the running app; the licenses and
-      # notices go on the release beside it
+      # the zip holds the binary alone, as the in-app updater swaps one file for the running app; LICENSE goes on the
+      # release beside it
       - name: Zip the binary
         run: |
           set -euo pipefail
@@ -169,9 +171,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.zip }}
-          path: |
-            ${{ matrix.zip }}
-            ${{ matrix.notices }}
+          path: ${{ matrix.zip }}
           if-no-files-found: error
 
   publish:
@@ -187,17 +187,15 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # LICENSE and NOTICE go on the release beside the zips, which hold the binary alone
+      # LICENSE goes on the release beside the zips, which hold the binary alone
       - uses: actions/checkout@v7
         with:
           path: source
-          sparse-checkout: |
-            LICENSE
-            NOTICE
+          sparse-checkout: LICENSE
           sparse-checkout-cone-mode: false
 
-      - name: LICENSE and NOTICE
-        run: cp source/LICENSE source/NOTICE dist/
+      - name: LICENSE
+        run: cp source/LICENSE dist/
 
       - name: SHA256SUMS
         working-directory: dist
@@ -225,5 +223,3 @@ jobs:
             dist/*.zip
             dist/SHA256SUMS
             dist/LICENSE
-            dist/NOTICE
-            dist/THIRD_PARTY_NOTICES-*.txt

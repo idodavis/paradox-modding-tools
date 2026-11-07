@@ -337,6 +337,9 @@ function describeMenu(record: Workspace): DropdownMenuItem[] {
 
     <StatusFacts :facts="[{ label: 'Workspaces', value: `${rows.length}` }]" />
     <Teleport v-if="visible" defer to="#status-end">
+      <button type="button" class="h-6 hover:underline" @click="commandBus.emit('help.licenses')">
+        Third-party licenses
+      </button>
       <UModal
         v-model:open="resetting"
         title="Reset all of PMT's data?"

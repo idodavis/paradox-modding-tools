@@ -62,7 +62,10 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   leads, a date in the mod's calendar, a color, an image's header, a localization key's text and the sites that
   define the name, the one the game keeps first. What a value takes is worded in the game's words. A definition's card
   also has its localized name and description, the comment lines just above it and, for a scripted effect or trigger,
-  its parameters. A command's card shows the scopes the dumps give it, or says they name none. A fact learned only
+  its parameters. A key in a call of one is a parameter, and its card names the definition it is given to
+  (`Card.Callee`). A value that is one of the choices its key takes, such as an event's type, is named by the key,
+  with the choices and the key's own text. A command's card shows the scopes the dumps give it, or says they name
+  none. A fact learned only
   from the game's files marks the card inferred. `Classes` are the wiki lexicon's, in the
   order of its tabs, and `Card.Lexicon` names the one that lists what the card is about.
 - **Completion.** `Complete` returns what fits at a key: the language's operators for the block, then its commands,

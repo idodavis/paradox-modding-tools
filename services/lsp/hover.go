@@ -43,6 +43,7 @@ type Card struct {
 	Description string          `json:"description,omitempty"` // the text the game shows as an entry's description
 	Comment     string          `json:"comment,omitempty"`     // the comment lines just above an entry, without their hashes
 	Parameters  []string        `json:"parameters,omitempty"`  // the parameters a scripted effect or trigger takes, without dollars
+	Callee      string          `json:"callee,omitempty"`      // the scripted effect or trigger a parameter is given to; "" for any other key
 	Writes      []string        `json:"writes,omitempty"`      // the game's eight most written values for an undeclared field
 	Returns     string          `json:"returns,omitempty"`     // what a call of a scripted definition gives
 	Command     string          `json:"command,omitempty"`     // the kind of command a workspace's scripted definition acts as
@@ -79,6 +80,9 @@ var Classes = []Class{
 	{ID: "scope", Label: "Scopes"},
 	{ID: "function", Label: "Functions"},
 }
+
+// cardParameter is what a card says a parameter is: a $NAME$ in a scripted definition, or a key in a call of one.
+const cardParameter = "parameter"
 
 // returnsLabels holds what a call of a scripted definition gives, for the shape of its block.
 var returnsLabels = map[string]string{game.ShapeTriggers: "yes or no", game.ShapeValue: "a number"}
@@ -155,8 +159,12 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 	case context.Category == schema.CategoryField:
 		describeField(card, context)
 		card.Stale = ws.Schema.Dumps.Stale
+		if context.Parent.Callee != nil {
+			call := tree.Statements[visitor.statement].Parent
+			card.What, card.Callee = cardParameter, tree.Unquoted(tree.Statements[call].Key)
+		}
 	case context.Category == schema.CategoryParameter:
-		card.What = "parameter"
+		card.What = cardParameter
 	}
 	describeBlock(card, visitor)
 	if card.What == "" && card.Date == nil && card.Color == "" {
@@ -443,17 +451,27 @@ func describeNumber(card *Card, tree *jomini.Tree, span jomini.Span) {
 	}
 }
 
-// describeValue fills a card for a value that is a parameter, a constant or a data call.
+// describeValue fills a card for a value that is a parameter, a constant, a data call or one of its key's choices.
 func describeValue(card *Card, ws *workspace.Session, visitor *hoverVisitor) {
 	switch visitor.context.ValueGroup {
 	case schema.CategoryParameter:
-		card.What = "parameter"
+		card.What = cardParameter
 	case schema.CategoryConstant:
 		card.What = "constant"
 		describeNumber(card, visitor.tree, visitor.tree.Statements[visitor.statement].Value)
 	case schema.CategoryCall:
 		describeFunction(card, ws, visitor.tree, *visitor.context.Call, visitor.context.Datacontext, visitor.offset)
+	case schema.CategoryChoice:
+		describeChoice(card, visitor)
 	}
+}
+
+// describeChoice fills a card for a value that is one of the choices its key takes, such as an event's type: it names
+// the key, and gives the choices and what the key's field says of itself.
+func describeChoice(card *Card, visitor *hoverVisitor) {
+	field := visitor.context.Field
+	card.What, card.Blurb = visitor.tree.Unquoted(visitor.tree.Statements[visitor.statement].Key), field.Blurb.Value
+	describeTakes(card, field)
 }
 
 // findDate returns the date a statement writes as its value. It returns false unless the statement's field expects a

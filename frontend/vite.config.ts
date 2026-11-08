@@ -414,6 +414,13 @@ export default defineConfig({
     host: "127.0.0.1",
     port: Number(process.env.WAILS_VITE_PORT) || 9245,
     strictPort: true,
+    // the Licenses dialog shows PMT's own license, which sits beside the frontend's folder
+    fs: {
+      allow: [
+        import.meta.dirname,
+        ...["LICENSE", "NOTICE"].map((file) => path.resolve(import.meta.dirname, "..", file)),
+      ],
+    },
   },
   build: { target: "esnext" },
   optimizeDeps: {

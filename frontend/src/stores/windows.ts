@@ -36,6 +36,7 @@ export type WikiLookup = { title: string } | { class: string; name: string };
 type HandedTab = { tab: Tab; place: Place; text: string | null };
 
 type Message =
+  | { type: "hello"; state: WindowState }
   | { type: "state"; state: WindowState }
   | { type: "tab-requested"; tab: string; from: WindowName }
   | { type: "tab-handed"; from: WindowName; tabs: HandedTab[] }
@@ -150,10 +151,14 @@ export const useWindowsStore = defineStore("windows", () => {
     };
   });
 
-  watch(state, sendState, { immediate: true });
+  // A starting window, a reloaded one too, says hello, which each of the others answers with its state.
+  shared.post({ type: "hello", state: state.value });
+  watch(state, sendState);
   useEventListener(shared.channel, "message", ({ data }: MessageEvent<Message>) => {
-    if (data.type === "state") updateWindow(data.state);
-    else if (data.type === "tab-requested") {
+    if (data.type === "hello" || data.type === "state") {
+      others.set(data.state.name, data.state);
+      if (data.type === "hello") sendState();
+    } else if (data.type === "tab-requested") {
       const tab = editor.listTabs().find((other) => other.id === data.tab);
       if (!tab || tab.start) return;
       link(data.from).post({ type: "tab-handed", from: THIS_WINDOW, tabs: toHanded(tab) });
@@ -189,13 +194,6 @@ export const useWindowsStore = defineStore("windows", () => {
   /** sendState sends the other windows what this window holds. */
   function sendState(): void {
     shared.post({ type: "state", state: state.value });
-  }
-
-  /** updateWindow notes what another window holds, and answers a new window with this one's state. */
-  function updateWindow(announced: WindowState): void {
-    const isNew = !others.has(announced.name);
-    others.set(announced.name, announced);
-    if (isNew) sendState();
   }
 
   /** toHanded returns a tab ready to send as a list of one, or an empty list if its file has no place. */

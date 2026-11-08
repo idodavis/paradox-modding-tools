@@ -27,13 +27,14 @@ import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
 import OriginChip from "../../ui/OriginChip.vue";
+import RichEditor from "../../ui/RichEditor.vue";
 import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import CodeEditor from "./CodeEditor.vue";
 import DrawPane from "./draw/DrawPane.vue";
 import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
 import StartPage from "./StartPage.vue";
-import { findModel, save, setText, type Model } from "./editor/models";
+import { applyEdits, findModel, save, setText, type Model } from "./editor/models";
 import { findIcon, VIEWS } from "./editor/tabs";
 
 const { group, active } = defineProps<{ group: Group; active: boolean }>();
@@ -77,6 +78,10 @@ const { data: file } = useQuery(() => ({ ...fileQuery(place.value?.path ?? ""), 
 const isUnshown = computed(() => !!place.value && (!VIEWS[place.value.format].view || !!file.value?.binary));
 const isDrawable = computed(() => editor.isDrawable(activeTab.value));
 const isVisual = computed(() => active && editor.mode === "visual" && isDrawable.value);
+const isMarkdown = computed(() => editor.isMarkdown(activeTab.value));
+// A Markdown file shown rendered, in its tab's own Visual.
+const isRendered = computed(() => isMarkdown.value && editor.viewOf(activeTab.value) === "visual");
+const markdownBar = useTemplateRef<HTMLElement>("markdownBar");
 const isTopRight = computed(() => THIS_WINDOW === "main" && editor.layout().rows[0]?.columns.at(-1)?.id === group.id);
 const rows = computed(() => group.tabs.map(describe));
 
@@ -244,10 +249,28 @@ function describe(tab: Tab) {
 }
 type Row = ReturnType<typeof describe>;
 
-/** setMode activates this group and sets the editor mode to the one the switch picked. */
+/** setMode activates this group and shows its tab's code or Visual, as the switch picked. */
 function setMode(choice: string | number): void {
   editor.activate(group.id);
-  editor.mode = choice === "visual" ? "visual" : "code";
+  editor.showView(choice === "visual" ? "visual" : "code");
+}
+
+/**
+ * renderedText returns a file's text without the line break it ends in, as the rendered view writes it. A text that
+ * differs from the view's own is drawn again, which moves the caret.
+ */
+function renderedText(fileModel: Model): string {
+  return fileModel.model.getValue().replace(/\r?\n$/, "");
+}
+
+/**
+ * writeMarkdown puts the Markdown the rendered view writes in its file's text, as one undoable edit. The file keeps the
+ * line break it ends in.
+ */
+function writeMarkdown(fileModel: Model, markdown: string): void {
+  const current = fileModel.model.getValue();
+  const text = current.endsWith("\n") && !markdown.endsWith("\n") ? `${markdown}\n` : markdown;
+  if (text !== current) applyEdits(fileModel, [{ range: fileModel.model.getFullModelRange(), text }]);
 }
 
 /** select makes this group active and shows a row's tab, if the tab has a file or is the start tab. */
@@ -585,9 +608,9 @@ const actions = computed<DropdownMenuItem[]>(() => [
         </div>
       </template>
       <div v-else id="visual-tools" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-2" />
-      <UTooltip v-if="isDrawable" text="Code or Visual" :kbds="findKbds('ide.mode')">
+      <UTooltip v-if="isDrawable || isMarkdown" text="Code or Visual" :kbds="findKbds('ide.mode')">
         <UTabs
-          :model-value="isVisual ? 'visual' : 'code'"
+          :model-value="isVisual || isRendered ? 'visual' : 'code'"
           :items="MODES"
           :content="false"
           size="xs"
@@ -732,6 +755,19 @@ const actions = computed<DropdownMenuItem[]>(() => [
         <ImageView v-if="VIEWS[place.format].view === 'image'" :key="place.key" :place="place" />
         <template v-else-if="model">
           <DrawPane v-if="isVisual" :key="place.key" :model="model" />
+          <template v-else-if="isRendered">
+            <div ref="markdownBar" class="flex h-9 shrink-0 items-center border-b border-default bg-elevated px-2" />
+            <RichEditor
+              :key="place.key"
+              :model-value="renderedText(model)"
+              content-type="markdown"
+              :editable="!place.readOnly"
+              :toolbar="markdownBar"
+              class="flex min-h-0 flex-1 flex-col"
+              :ui="{ content: 'min-h-0 grow overflow-auto bg-(--bg-0) px-6 py-4' }"
+              @update:model-value="writeMarkdown(model, $event)"
+            />
+          </template>
           <CodeEditor v-else :key="place.key" :model="model" :active="active" />
         </template>
         <p v-else-if="isUnshown" class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">

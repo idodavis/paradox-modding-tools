@@ -543,7 +543,8 @@ func (wsp *Service) Launch() error {
 }
 
 // Read returns a file's text, its place in the workspace and the editor's draft of it. A file that is not text comes
-// back as binary, with no text. It returns an error if no workspace is open or the file cannot be read.
+// back as binary, with no text, and an empty file in the encoding its format is written in. It returns an error if no
+// workspace is open or the file cannot be read.
 func (wsp *Service) Read(path string) (FileText, error) {
 	ws, err := wsp.Session()
 	if err != nil {
@@ -553,6 +554,9 @@ func (wsp *Service) Read(path string) (FileText, error) {
 	text, err := files.ReadText(path)
 	if errors.Is(err, files.ErrBinary) {
 		return FileText{Place: place, Binary: true}, nil
+	}
+	if err == nil && text.Text == "" && text.Encoding == files.EncodingUTF8 {
+		text.Encoding = place.Format.DefaultEncoding()
 	}
 	draft, open := ws.LookupBuffer(path)
 	if !open || draft == text.Text {
@@ -642,9 +646,9 @@ func (wsp *Service) FindWritable(paths ...string) (*Session, error) {
 	return ws, nil
 }
 
-// ListFolder returns the places of a folder's entries, folders first. Hidden folders, such as .git, are left out, and
-// so are binary files while the setting to hide them is on. It returns an error if no workspace is open or the folder
-// cannot be read.
+// ListFolder returns the places of a folder's entries, folders first. The .git folder is left out, and so are the
+// other dot folders and the binary files while the settings to hide them are on. It returns an error if no workspace
+// is open or the folder cannot be read.
 func (wsp *Service) ListFolder(dir string) ([]Place, error) {
 	ws, err := wsp.Session()
 	if err != nil {
@@ -654,20 +658,27 @@ func (wsp *Service) ListFolder(dir string) ([]Place, error) {
 	if err != nil {
 		return nil, err
 	}
-	hidden, _ := wsp.Config.LookupSetting(ws.ID, "ide.hideBinaries")
+	hideBinaries, _ := wsp.Config.LookupSetting(ws.ID, "ide.hideBinaries")
+	hideDots, _ := wsp.Config.LookupSetting(ws.ID, "ide.hideDotFolders")
 	mods := ws.Mods.Load()
 	places := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (Place, bool) {
 		place := ws.Locate(mods, filepath.Join(dir, entry.Name()))
 		place.IsDir = entry.IsDir()
 		if place.IsDir {
-			return place, !files.IsHiddenDir(entry.Name())
+			return place, isListed(entry.Name(), hideDots == "true")
 		}
-		return place, hidden != "true" || place.Format.IsText()
+		return place, hideBinaries != "true" || place.Format.IsText()
 	})
 	slices.SortStableFunc(places, func(first, second Place) int {
 		return cmp.Compare(lo.Ternary(first.IsDir, 0, 1), lo.Ternary(second.IsDir, 0, 1)) // folders first
 	})
 	return places, nil
+}
+
+// isListed reports whether the explorer lists a folder of the given name: never .git, and a folder that
+// files.IsHiddenDir reports only while dot folders are not hidden.
+func isListed(name string, hideDots bool) bool {
+	return name != ".git" && (!hideDots || !files.IsHiddenDir(name))
 }
 
 // Create makes an empty file or a folder, and the folders above it. It returns an error if it exists already or is

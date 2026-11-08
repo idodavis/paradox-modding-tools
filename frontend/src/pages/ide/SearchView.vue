@@ -11,7 +11,7 @@ import type { Query } from "@services/search/models";
 import { confirm } from "../../lib/feedback";
 import { plural } from "../../lib/format";
 import { rootsQuery } from "../../queries";
-import { useEditorStore } from "../../stores/editor";
+import { tabId, useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -116,8 +116,9 @@ const { mutate: replaceAll } = useMutation({
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-    <div class="flex flex-col gap-2.5 p-2.5" @keydown.enter="run">
+  <div class="flex min-h-0 flex-1 flex-col">
+    <!-- The form stays in place, and only the results scroll. -->
+    <div class="flex shrink-0 flex-col gap-2.5 p-2.5" @keydown.enter="run">
       <UInput v-model="text" placeholder="Search" size="sm" autofocus :ui="{ trailing: 'pe-1' }">
         <template #trailing>
           <UButton
@@ -206,9 +207,9 @@ const { mutate: replaceAll } = useMutation({
     </div>
     <section
       v-if="search.current().title || (text.trim() && search.current().query)"
-      class="border-t border-default py-1"
+      class="flex min-h-0 flex-1 flex-col border-t border-default pt-1"
     >
-      <p class="flex flex-wrap items-center gap-x-2 px-2.5 pb-1 text-11 text-dimmed">
+      <p class="flex shrink-0 flex-wrap items-center gap-x-2 px-2.5 pb-1 text-11 text-dimmed">
         <span v-if="search.current().title" class="font-medium text-toned">{{ search.current().title }}</span>
         {{ plural(count, "result") }} in {{ plural(files.length, "file") }}
         <span v-if="search.current().running">· searching…</span>
@@ -220,38 +221,42 @@ const { mutate: replaceAll } = useMutation({
           size="sm"
         />
       </p>
-      <template v-for="file in files" :key="file.place.key">
-        <button
-          type="button"
-          class="flex h-6 w-full items-center gap-1.5 ps-1.5 pe-2.5 text-start text-12 whitespace-nowrap hover:bg-accented"
-          @click="flip(file.place.key)"
-        >
-          <UIcon
-            :name="file.open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
-            class="size-3.5 shrink-0 text-dimmed"
-          />
-          <OriginChip :origin="file.place.origin" dot />
-          <span class="shrink-0 text-highlighted">{{ file.place.name }}</span>
-          <span class="min-w-0 truncate text-11 text-dimmed">{{ file.folder }}</span>
-          <UBadge :label="String(file.count)" size="sm" class="ms-auto shrink-0" />
-        </button>
-        <template v-if="file.open">
+      <div class="min-h-0 flex-1 overflow-y-auto pb-1">
+        <template v-for="file in files" :key="file.place.key">
           <button
-            v-for="(hit, index) in file.lines"
-            :key="index"
             type="button"
-            class="flex h-5.5 w-full items-center ps-7 pe-2.5 text-start font-mono text-11 whitespace-nowrap text-toned hover:bg-accented"
-            :title="`${file.place.rel}:${hit.line}`"
-            @click="editor.show(file.place, { lineNumber: hit.line, column: hit.column }, 'navigate')"
+            class="flex h-6 w-full items-center gap-1.5 ps-1.5 pe-2.5 text-start text-12 whitespace-nowrap hover:bg-accented"
+            @click="flip(file.place.key)"
           >
-            <span class="truncate"
-              >{{ hit.before }}<b class="rounded-xs bg-(--accent-soft) font-medium text-highlighted">{{ hit.match }}</b
-              >{{ hit.after }}</span
-            >
+            <UIcon
+              :name="file.open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+              class="size-3.5 shrink-0 text-dimmed"
+            />
+            <OriginChip :origin="file.place.origin" dot />
+            <span class="shrink-0 text-highlighted">{{ file.place.name }}</span>
+            <span class="min-w-0 truncate text-11 text-dimmed">{{ file.folder }}</span>
+            <UBadge :label="String(file.count)" size="sm" class="ms-auto shrink-0" />
           </button>
+          <template v-if="file.open">
+            <button
+              v-for="(hit, index) in file.lines"
+              :key="index"
+              type="button"
+              class="flex h-5.5 w-full items-center ps-7 pe-2.5 text-start font-mono text-11 whitespace-nowrap text-toned hover:bg-accented"
+              :title="`${file.place.rel}:${hit.line}`"
+              @click="editor.show(file.place, { lineNumber: hit.line, column: hit.column }, 'search')"
+              @dblclick="editor.pin(tabId({ key: file.place.key }))"
+            >
+              <span class="truncate"
+                >{{ hit.before
+                }}<b class="rounded-xs bg-(--accent-soft) font-medium text-highlighted">{{ hit.match }}</b
+                >{{ hit.after }}</span
+              >
+            </button>
+          </template>
         </template>
-      </template>
-      <p v-if="!files.length && !search.current().running" class="px-2.5 py-1 text-12 text-dimmed">No results.</p>
+        <p v-if="!files.length && !search.current().running" class="px-2.5 py-1 text-12 text-dimmed">No results.</p>
+      </div>
     </section>
   </div>
 </template>

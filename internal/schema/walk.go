@@ -29,6 +29,7 @@ const (
 	CategoryParameter  Category = "parameter"  // $NAME$
 	CategoryConstant   Category = "constant"   // @name
 	CategoryCall       Category = "call"       // a data call's step
+	CategoryChoice     Category = "choice"     // one of the values a key takes, such as an event's type
 )
 
 // A Definition is a name that a statement defines in a database, with the facts that decide which definition of
@@ -893,9 +894,18 @@ func (walker *walker) resolveValue(context *Context, statement int32, level int)
 		}
 		walker.resolveValueReferences(context, statement, level, span)
 	}
-	if len(context.References) > before {
+	switch {
+	case len(context.References) > before:
 		context.ValueGroup = CategoryReference
+	case walker.isChoice(context, text):
+		context.ValueGroup = CategoryChoice
 	}
+}
+
+// isChoice reports whether a value is one of the choices that the field of a context takes.
+func (walker *walker) isChoice(context *Context, text string) bool {
+	field := context.Field
+	return field != nil && field.Value.Value.Type == ValueChoice && walker.schema.MatchValue(field.Value.Value, text)
 }
 
 // resolveValueReferences resolves the references a plain value makes. A value with a parameter or a bracket makes

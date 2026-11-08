@@ -22,7 +22,7 @@ type Legend struct {
 // legend holds the color categories a token can have. A token's type is its category's place here.
 var legend = []schema.Category{
 	schema.CategoryKeyword, schema.CategoryCommand, schema.CategoryLink, schema.CategoryField, schema.CategoryDefinition,
-	schema.CategoryReference, schema.CategoryParameter, schema.CategoryConstant, schema.CategoryCall,
+	schema.CategoryReference, schema.CategoryParameter, schema.CategoryConstant, schema.CategoryCall, schema.CategoryChoice,
 }
 
 // Tokens returns the semantic tokens of the given range of a file: the color category of every key and value in it,

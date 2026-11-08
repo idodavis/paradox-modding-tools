@@ -105,6 +105,8 @@ const members = new Map<string, Set<string>>(); // the rows of each listed folde
 // Each new row's path on disk, and the function that stops watching for its rename to be cancelled.
 const drafts = new Map<string, { path: string; stop: () => void }>();
 const icons: Record<string, { name: string; viewBox: string }> = {}; // a file's icon by its name
+// The roots' rows in their origins' colors, in a sheet of their own so a new color needs no new tree.
+const rootSheet = new CSSStyleSheet();
 // The rows git ignores are dimmed; a git status would count them as changes in every folder above.
 const ignoredSheet = new CSSStyleSheet();
 const undrawableSheet = new CSSStyleSheet();
@@ -130,9 +132,9 @@ const shape = computed(() =>
     labels.value.join("|"),
     writable.value,
     settings.isOn("ide.stickyFolders"),
-    settings.isOn("ide.rootColors"),
     settings.value("ide.density"),
     settings.isOn("ide.hideBinaries"),
+    settings.isOn("ide.hideDotFolders"),
   ].join("\n"),
 );
 
@@ -143,6 +145,7 @@ onBeforeUnmount(() => {
   view.value?.cleanUp();
 });
 watch(shape, mount);
+watch(buildStyles, (css) => rootSheet.replaceSync(css), { immediate: true });
 watch(() => git.repositories, markGit);
 watch(() => editor.activeFile()?.key, follow);
 watch(() => editor.mode, dimUndrawable);
@@ -169,7 +172,6 @@ function mount(): void {
     icons: { set: "none", spriteSheet: SPRITE },
     density: settings.value("ide.density") as FileTreeDensityKeyword,
     stickyFolders: settings.isOn("ide.stickyFolders"),
-    unsafeCSS: buildStyles(),
     renderRowDecoration: ({ item }) => (isRoot(item.path) ? markRoot(roots[rootIndex(item.path)]) : null),
     onSelectionChange: select,
     renaming: writable.value && {
@@ -194,7 +196,7 @@ function mount(): void {
   tree.subscribe(loadExpanded);
   tree.render({ containerWrapper: host.value });
   const shadow = host.value.querySelector("*")?.shadowRoot;
-  if (shadow) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, ignoredSheet, undrawableSheet];
+  if (shadow) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, rootSheet, ignoredSheet, undrawableSheet];
   view.value = tree;
   void markGit();
   follow();
@@ -315,9 +317,12 @@ const refresh = useDebounceFn(() => {
   const rows = [...pending];
   pending.clear();
   rows.forEach((row) => void load(row));
+
+  // git:changed comes only from git's own commands, so a changed file reads the marks again.
+  void markGit();
 }, 150);
 
-/** changed queues the listed folders that hold a changed path to be listed again. */
+/** changed queues the listed folders that hold a changed path to be listed again, and the git marks to be read. */
 function changed(change: FileChange): void {
   for (const row of members.keys()) {
     const dir = findPath(row);
@@ -399,7 +404,7 @@ function follow(): void {
   if (settings.isOn("ide.followFile")) void reveal();
 }
 
-/** reveal opens the folders down to the active file and selects it. A file with no row changes nothing. */
+/** reveal opens the folders down to the active file and selects it alone. A file with no row changes nothing. */
 async function reveal(): Promise<void> {
   const place = editor.activeFile();
   const folders = place ? await loadFolders(place) : [];
@@ -407,7 +412,10 @@ async function reveal(): Promise<void> {
   if (!place || !tree || !folders.length) return;
   folders.forEach((folder) => findHandle(folder)?.expand());
   const row = `${folders.at(-1)}${place.name}`;
+
+  // select adds to the selection, so the others go after it, and no other file is ever left alone and opened.
   tree.getItem(row)?.select();
+  for (const selected of [...tree.getSelectedPaths()]) if (selected !== row) tree.getItem(selected)?.deselect();
   tree.scrollToPath(row, { focus: false, offset: "nearest" });
 }
 

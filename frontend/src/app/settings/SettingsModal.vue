@@ -414,6 +414,7 @@ async function remove(): Promise<void> {
           <SlotContent :render="$slots.default" />
         </section>
       </DefineRow>
+      <!-- Reka leaves the indicator where it was when no tab is active, so a search with no hits hides it. -->
       <UTabs
         v-model="current"
         :items="tabs"
@@ -423,8 +424,9 @@ async function remove(): Promise<void> {
         :ui="{
           root: 'h-full items-stretch gap-0',
           list: 'h-full w-62 shrink-0 items-stretch gap-0.5 overflow-y-auto rounded-none border-e border-default bg-muted px-2.5 py-3.5 ring-0',
-          indicator:
-            'inset-x-2.5 overflow-hidden rounded-md bg-elevated before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary',
+          indicator: listed.length
+            ? 'inset-x-2.5 overflow-hidden rounded-md bg-elevated before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary'
+            : 'hidden',
           trigger:
             'h-7.5 w-full justify-start rounded-md ps-8.5 pe-2.5 text-13 font-normal text-toned data-[state=active]:font-medium',
           content: 'h-full min-w-0 flex-1 overflow-hidden',

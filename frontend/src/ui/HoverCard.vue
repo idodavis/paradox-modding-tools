@@ -47,6 +47,7 @@ const rows = computed(() => {
   const size = header && `${header.width}×${header.height} ${header.format}`;
   const mips = header && header.mipmaps > 1 && `${header.mipmaps} mip levels`;
   const all: [string, string | null | undefined][] = [
+    ["Given to", card?.callee],
     ["Needed", card?.need],
     ["Supported scopes", card?.runs],
     ["Takes", card?.takes || card?.target || card?.parameters?.join(", ")],

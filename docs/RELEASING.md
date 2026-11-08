@@ -22,9 +22,9 @@ flowchart LR
    v0.5.0. Running the workflow by hand can set it instead.
 3. **The build** makes `paradox-modding-tools-windows-amd64.zip` and `paradox-modding-tools-linux-amd64.zip`. Each holds
    the binary alone, as the app's updater swaps one file for the running app and refuses a zip that holds more.
-   LICENSE goes on the release beside them. Before the build, each system's third-party notices are written to
-   `frontend/THIRD_PARTY_NOTICES.txt`, which the build takes into the app: the Library's Third-party licenses shows them.
-   Then come `SHA256SUMS`, which the updater checks a download against, and an attestation of each zip. What Windows
+   Before the build, each system's third-party notices are written to `frontend/THIRD_PARTY_NOTICES.txt`, which the
+   build takes into the app: the Library's Licenses shows them after PMT's own LICENSE and NOTICE, which every build
+   holds. Then come `SHA256SUMS`, which the updater checks a download against, and an attestation of each zip. What Windows
    and Linux need to run PMT goes in the notes.
 4. **The draft.** The release is made as a draft, with notes GitHub generates from the merged pull requests, sorted by
    label into Features, Fixes and Other (`.github/release.yml`). Only the repository's writers can see a draft, so the

@@ -102,6 +102,31 @@ func CollectText(ws *workspace.Session, query Query, limit int, stop <-chan stru
 // StopSearch ends the running search, if any.
 func (sch *Service) StopSearch() { sch.setStop(nil) }
 
+// SearchFile runs a text search over one file, its unsaved text if the editor has some, and returns its hits. A file
+// the query does not search, or one gone from the workspace, has none. It returns an error if no workspace is open, or
+// if the query is empty or is a regular expression that does not parse.
+func (sch *Service) SearchFile(query Query, path string) (Hits, error) {
+	ws, err := sch.Workspace.Session()
+	if err != nil {
+		return Hits{}, err
+	}
+	expression, err := parseQuery(query)
+	if err != nil {
+		return Hits{}, err
+	}
+	mods := ws.Mods.Load()
+	place := ws.Locate(mods, path)
+	position, ok := mods.FindFile(path)
+	if !ok || !mods.IsListed(position) || !makeFilter(query)(mods.Files[position]) {
+		return Hits{Place: place}, nil
+	}
+	source, err := ws.LoadSource(path)
+	if err != nil {
+		return Hits{Place: place}, nil
+	}
+	return makeHits(place, findSites(source, expression, query.WholeWord)), nil
+}
+
 // ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. A file open in the
 // editor is skipped, and the error says how many were.
 func (sch *Service) ReplaceText(query Query, replacement string) (int, error) {
@@ -189,24 +214,36 @@ func run(ws *workspace.Session, query Query, stop <-chan struct{}, tally *tally)
 			if err != nil || !quickTest(source) {
 				return nil
 			}
-			lines := jomini.NewLines(source)
-			hits := lo.Map(findMatches(source, lines, expression, query.WholeWord), func(match []int, _ int) lsp.Site {
-				position := lines.ToPosition(match[0])
-				line := lines.LineSpan(position.Line)
-				return lsp.Site{
-					Line:  position.Line + 1,
-					Range: lsp.ToRange(source, lines, jomini.Span{Start: match[0], End: match[1]}),
-					Text:  source[line.Start:line.End],
-				}
-			})
-			if len(hits) > 0 && !isClosed(stop) {
-				tally.send(ws.Locate(mods, file.Path), hits)
+			if sites := findSites(source, expression, query.WholeWord); len(sites) > 0 && !isClosed(stop) {
+				tally.send(makeHits(ws.Locate(mods, file.Path), sites))
 			}
 			return nil
 		})
 	}
 	_ = group.Wait()
 	return tally.isFull(), nil
+}
+
+// findSites returns the matches of an expression in a file's text, each with its line and that line's text.
+func findSites(source string, expression *regexp.Regexp, wholeWord bool) []lsp.Site {
+	lines := jomini.NewLines(source)
+	return lo.Map(findMatches(source, lines, expression, wholeWord), func(match []int, _ int) lsp.Site {
+		position := lines.ToPosition(match[0])
+		line := lines.LineSpan(position.Line)
+		return lsp.Site{
+			Line:  position.Line + 1,
+			Range: lsp.ToRange(source, lines, jomini.Span{Start: match[0], End: match[1]}),
+			Text:  source[line.Start:line.End],
+		}
+	})
+}
+
+// makeHits returns one file's hits, each of the given matches marked with the file's place.
+func makeHits(place workspace.Place, sites []lsp.Site) Hits {
+	for position := range sites {
+		sites[position].Place = place
+	}
+	return Hits{Place: place, Hits: sites}
 }
 
 // makeTest returns the quick test a file's text must pass before it is searched line by line. A regular expression
@@ -241,18 +278,15 @@ func containsFold(text, piece string) bool {
 }
 
 // send gives one file's hits to the tally's receiver, as many as the limit leaves room for.
-func (tally *tally) send(place workspace.Place, hits []lsp.Site) {
+func (tally *tally) send(hits Hits) {
 	tally.mu.Lock()
 	defer tally.mu.Unlock()
-	hits = hits[:min(len(hits), tally.limit-tally.count)]
-	if len(hits) == 0 {
+	hits.Hits = hits.Hits[:min(len(hits.Hits), tally.limit-tally.count)]
+	if len(hits.Hits) == 0 {
 		return
 	}
-	tally.count += len(hits)
-	for position := range hits {
-		hits[position].Place = place
-	}
-	tally.receive(Hits{Place: place, Hits: hits})
+	tally.count += len(hits.Hits)
+	tally.receive(hits)
 }
 
 // isFull reports whether the search has given as many hits as its limit.
@@ -291,19 +325,28 @@ func parseQuery(query Query) (*regexp.Regexp, error) {
 // listFiles returns the text files a query names: those of its origins that its globs let through. The mods' files
 // come first, in the mods' load order, then the game's.
 func listFiles(mods *index.Index, query Query) []files.File {
-	include, exclude := parseGlobs(query.Include), parseGlobs(query.Exclude)
+	isSearched := makeFilter(query)
 	matches := lo.Filter(mods.Files, func(file files.File, position int) bool {
+		return mods.IsListed(int32(position)) && isSearched(file)
+	})
+	own, vanilla := lo.FilterReject(matches, func(file files.File, _ int) bool { return file.Origin != game.OriginVanilla })
+	return slices.Concat(own, vanilla)
+}
+
+// makeFilter returns the test of whether a query searches a file: a text file of one of its origins, the mods' if it
+// names none, that its globs let through.
+func makeFilter(query Query) func(file files.File) bool {
+	include, exclude := parseGlobs(query.Include), parseGlobs(query.Exclude)
+	return func(file files.File) bool {
 		searched := file.Origin != game.OriginVanilla
 		if len(query.Origins) > 0 {
 			searched = slices.Contains(query.Origins, file.Origin)
 		}
-		if !mods.IsListed(int32(position)) || !searched || !file.Format.IsText() {
+		if !searched || !file.Format.IsText() {
 			return false
 		}
 		return (include == nil || include.Match(file.Rel, false)) && !exclude.Match(file.Rel, false)
-	})
-	own, vanilla := lo.FilterReject(matches, func(file files.File, _ int) bool { return file.Origin != game.OriginVanilla })
-	return slices.Concat(own, vanilla)
+	}
 }
 
 // parseGlobs parses glob patterns separated by commas outside braces, or by line breaks, into ignore rules.

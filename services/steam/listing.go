@@ -706,6 +706,12 @@ func (src source) close() error {
 	return src.archive.Close()
 }
 
+// ExportDescription writes a listing's description, in the BBCode or Markdown the page made of it, to the given file,
+// which may be anywhere. It returns an error if the file cannot be written.
+func (stm *Service) ExportDescription(target, text string) error {
+	return files.WriteText(target, files.Text{Text: text, Encoding: files.EncodingUTF8})
+}
+
 // WriteZip writes the files of a mod's next upload as a zip.
 func (stm *Service) WriteZip(modID, target string) error {
 	upload, err := stm.ListUpload(modID, "")

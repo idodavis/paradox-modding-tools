@@ -43,6 +43,7 @@ export type Tab = {
   hash?: string;
   start?: true;
   preview: boolean;
+  visual?: true; // a Markdown file's tab shows the file's text rendered; absent shows its code
 };
 /** A Group is one column of tabs, one of them active. */
 export type Group = { id: string; tabs: Tab[]; active: string | null };
@@ -56,8 +57,11 @@ export type Layout = { rows: { columns: Group[] }[] };
 /** A SavedLayout is a workspace's saved layout. */
 type SavedLayout = { layout: Layout; active: string; paths: Record<string, string> };
 
-/** A Source is what showed a place: the explorer, Source control's lists, a jump, the history, or Follow the agent. */
-export type Source = "explorer" | "changes" | "navigate" | "history" | "agent" | "edit";
+/**
+ * A Source is what showed a place: the explorer, Source control's lists, the Search view, a jump, the history, or
+ * Follow the agent.
+ */
+export type Source = "explorer" | "changes" | "search" | "navigate" | "history" | "agent" | "edit";
 
 /** A Visit is one place the user was in: a file and a caret position in it. */
 type Visit = { place: Place; position: IPosition };
@@ -73,6 +77,7 @@ const START = { key: "", start: true } as const;
 const SOURCES: Record<Source, { preview?: true; record?: false; follow?: true }> = {
   explorer: { preview: true },
   changes: { preview: true },
+  search: { preview: true },
   navigate: {},
   history: { record: false },
   agent: { preview: true, follow: true },
@@ -346,6 +351,27 @@ export const useEditorStore = defineStore("editor", () => {
       if (!drawable) mode.value = "code";
     },
   );
+
+  /** isMarkdown reports whether the given tab is a file tab of a Markdown file, which has a Visual view of its own. */
+  function isMarkdown(tab: Tab | null | undefined): boolean {
+    return !!tab && !tab.side && placeOf(tab.key)?.format === Format.FormatMarkdown;
+  }
+
+  /** viewOf returns whether the given tab shows its code or Visual. */
+  const viewOf = (tab: Tab | null | undefined): Mode => {
+    if (isMarkdown(tab)) return tab?.visual ? "visual" : "code";
+    return isDrawable(tab) ? mode.value : "code";
+  };
+
+  /**
+   * showView shows the active tab's code or Visual. A Markdown file's tab switches alone; a drawable file takes the
+   * IDE into Visual or out of it.
+   */
+  const showView = (view: Mode): void => {
+    const tab = activeTab();
+    if (tab && isMarkdown(tab)) tab.visual = view === "visual" || undefined;
+    else mode.value = view;
+  };
 
   /** isFollowed reports whether the active tab is the one Follow the agent showed last. */
   const isFollowed = (): boolean => !!agentTab.value && activeTab()?.id === agentTab.value;
@@ -626,6 +652,9 @@ export const useEditorStore = defineStore("editor", () => {
     isFollowed,
     placeOf,
     isDrawable,
+    isMarkdown,
+    viewOf,
+    showView,
     show,
     showVisual,
     open,

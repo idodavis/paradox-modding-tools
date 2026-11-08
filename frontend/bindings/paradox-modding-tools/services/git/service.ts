@@ -118,7 +118,8 @@ export function ReadFile(dir: string, revision: string, path: string): $Cancella
 }
 
 /**
- * ReadStatus returns the status of the repository at the given root folder. The error is git's if there is none.
+ * ReadStatus returns the status of the repository at the given root folder, with each untracked file on its own rather
+ * than its folder. The error is git's if there is none.
  */
 export function ReadStatus(root: string): $CancellablePromise<$models.Status> {
     return $Call.ByID(2197323804, root);

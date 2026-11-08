@@ -102,13 +102,22 @@ func (schema *Schema) listDeclarers(declaring []files.File, parse func(path stri
 	return declarers
 }
 
-// typeParameters gives each parameter of the scripted definitions in a table the claim of the first of its typings
-// that names a database. A parameter that has a claim keeps it.
+// declareFiles gives the schema the definitions that the given files declare, a later one in place of an earlier.
+func (schema *Schema) declareFiles(declaring []files.File, parse func(path string) (*jomini.Tree, error)) {
+	for _, declarer := range schema.listDeclarers(declaring, parse) {
+		if declarer != nil {
+			declarer.build()
+		}
+	}
+}
+
+// typeParameters gives each parameter of the scripted definitions in a table the claim its typings make, as
+// isBetterClaim picks among them.
 func (schema *Schema) typeParameters(table map[string]ScriptedDefinition) {
 	for _, scripted := range table {
 		for _, typing := range scripted.typings {
-			argument := scripted.Parameters.findChild(typing.Parameter)
-			if claim, ok := schema.findTypingClaim(typing); ok && argument != nil && !argument.Value.IsStated() {
+			argument, claim := scripted.Parameters.findChild(typing.Parameter), schema.findTypingClaim(typing)
+			if argument != nil && isBetterClaim(claim, argument.Value) {
 				argument.Value = claim
 			}
 		}
@@ -116,21 +125,36 @@ func (schema *Schema) typeParameters(table map[string]ScriptedDefinition) {
 }
 
 // findTypingClaim returns what a typing says its parameter takes. After a prefix it is a name in the prefix's
-// database, as the definition states it. At a key it is what the key's field claims. It returns false if neither names
-// a database.
-func (schema *Schema) findTypingClaim(typing typing) (Claim[Expected], bool) {
-	if typing.Field != nil {
-		return typing.Field.Value, typing.Field.claimsDatabase()
+// database, as the definition states it. At a key it is what the key's field claims, inferred unless it names a
+// database, since whether a number or a choice fits depends on where the value is written. It is unstated where
+// neither says.
+func (schema *Schema) findTypingClaim(typing typing) Claim[Expected] {
+	if typing.Field == nil {
+		database := schema.Prefixes[typing.Prefix]
+		if database == "" {
+			return Claim[Expected]{}
+		}
+		return Claim[Expected]{Value: Expected{Type: ValueReference, Database: database}, Source: game.SourceDefinitions}
 	}
-	database := schema.Prefixes[typing.Prefix]
-	expected := Expected{Type: ValueReference, Database: database}
-	return Claim[Expected]{Value: expected, Source: game.SourceDefinitions}, database != ""
+	claim := typing.Field.Value
+	if claim.IsStated() && !claim.Value.namesDatabase() {
+		claim.Source = game.SourceInferred
+	}
+	return claim
+}
+
+// isBetterClaim reports whether a claim takes the place of what a parameter claims so far: it states one where the
+// parameter has none, or names a database where the parameter's names none.
+func isBetterClaim(claim, current Claim[Expected]) bool {
+	if !claim.IsStated() {
+		return false
+	}
+	return !current.IsStated() || claim.Value.namesDatabase() && !current.Value.namesDatabase()
 }
 
 // resolveRelays fills in what the parameters of each scripted definition in a table take from the calls of other
 // definitions it passes them on to: the link a name is saved under, and the claim on what it names. It repeats until
-// nothing is added. A call finds the game's definitions, then the given mods'. A parameter keeps the first of each it
-// gets.
+// nothing is added. A call finds the game's definitions, then the given mods'.
 func (schema *Schema) resolveRelays(table, mods map[string]ScriptedDefinition) {
 	for added := true; added; {
 		added = false
@@ -144,8 +168,8 @@ func (schema *Schema) resolveRelays(table, mods map[string]ScriptedDefinition) {
 	}
 }
 
-// passRelay gives the parameter that a relay passes on the save and the claim of the callee's argument that the
-// parameter lacks. It reports whether it gave either.
+// passRelay gives the parameter that a relay passes on the save that it lacks, and the claim of the callee's argument
+// where isBetterClaim picks it. It reports whether it gave either.
 func passRelay(scripted, callee ScriptedDefinition, relay relay) bool {
 	added := false
 	_, saved := scripted.Saves[relay.Parameter]
@@ -154,7 +178,7 @@ func passRelay(scripted, callee ScriptedDefinition, relay relay) bool {
 		added = true
 	}
 	parameter, argument := scripted.Parameters.findChild(relay.Parameter), callee.Parameters.findChild(relay.Argument)
-	if parameter != nil && argument != nil && argument.Value.IsStated() && !parameter.Value.IsStated() {
+	if parameter != nil && argument != nil && isBetterClaim(argument.Value, parameter.Value) {
 		parameter.Value = argument.Value
 		added = true
 	}

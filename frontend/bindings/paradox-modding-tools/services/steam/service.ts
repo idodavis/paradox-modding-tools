@@ -54,6 +54,14 @@ export function DescribeSteam(): $CancellablePromise<string> {
 }
 
 /**
+ * ExportDescription writes a listing's description, in the BBCode or Markdown the page made of it, to the given file,
+ * which may be anywhere. It returns an error if the file cannot be written.
+ */
+export function ExportDescription(target: string, text: string): $CancellablePromise<void> {
+    return $Call.ByID(1320959106, target, text);
+}
+
+/**
  * FetchItem asks Steam again about the Workshop item of one of a mod's listings and returns the comparison. It returns
  * an error as CompareUpload does.
  */

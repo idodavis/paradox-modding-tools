@@ -68,6 +68,11 @@ export interface Card {
     "parameters"?: string[] | null;
 
     /**
+     * the scripted effect or trigger a parameter is given to; "" for any other key
+     */
+    "callee"?: string;
+
+    /**
      * the game's eight most written values for an undeclared field
      */
     "writes"?: string[] | null;

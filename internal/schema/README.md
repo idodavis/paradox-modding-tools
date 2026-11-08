@@ -135,17 +135,22 @@ what those files declared before, so a call to a mod's scripted definition is a 
 definition first, and a mod's never takes the place of a command the dumps declare.
 
 Each parameter is a field the definition declares (`SourceDefinitions`), so a key in a call reads as its argument,
-never as a link or a command of that name. A parameter also takes the database its body names, so the argument's
-value refers to a definition there:
+never as a link or a command of that name. A parameter also takes what its body says it is, so the argument's value
+refers to a definition there, or is a number or a script value:
 
 - A parameter written whole after a link prefix, as a key or a value (`building_type:$building_type$`), takes the
   prefix's database, as the definition states it.
 - A parameter written whole as the value of a key with a field of its own takes what that field claims, with the
-  field's source. A link's key and an argument of a call are left out.
+  field's source where it names a database. Any other claim, such as `add_legitimacy = $LEGITIMACY$`'s number or
+  script value, is `SourceInferred`: it lets the value name a script value and never accuses. A link's key and an
+  argument of a call are left out.
 - A parameter passed on whole to a call of another scripted definition takes what that one's argument takes, the
   same way it takes the link a name is saved under (`resolveRelays`).
 
-A parameter keeps the first database it gets.
+A parameter keeps the first database it gets, else the first claim, from its body and its relays alike
+(`isBetterClaim`). `CountVanilla` declares the game's files twice: before the count, so a key under a call counts as a
+call, and after it, so the typings see the fields the count makes, such as a command's value the dumps leave out, and
+the calls to the game's own definitions.
 
 ## The walk
 

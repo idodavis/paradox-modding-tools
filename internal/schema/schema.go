@@ -990,10 +990,11 @@ func (field *Field) findChild(key string) *Field {
 // claimsDatabase reports whether a field's value claim says the value is a name in a database. A nil field claims
 // none.
 func (field *Field) claimsDatabase() bool {
-	if field == nil {
-		return false
-	}
-	expected := field.Value.Value
+	return field != nil && field.Value.Value.namesDatabase()
+}
+
+// namesDatabase reports whether a value is a name of a database: a reference, or a target that a name can be.
+func (expected Expected) namesDatabase() bool {
 	return expected.Database != "" && (expected.Type == ValueReference || expected.Type == ValueTarget)
 }
 

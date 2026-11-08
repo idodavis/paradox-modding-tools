@@ -23,10 +23,18 @@ export function fileUrl(path: string): string {
   return `/files?path=${encodeURIComponent(path)}`;
 }
 
-/** loadQuery reads a query outside a component, from the cache if it is fresh. It throws if Go fails. */
+/**
+ * loadQuery reads a query outside a component, from the cache if it is fresh. A read that a refresh cancels runs
+ * again, so a query that has never had data always gets its answer. It throws if Go fails.
+ */
 export async function loadQuery<T>(options: UseQueryOptions<T>): Promise<T | undefined> {
   const cache = useQueryCache();
-  return (await cache.refresh(cache.ensure(options))).data;
+  const entry = cache.ensure(options);
+  let state = await cache.refresh(entry);
+
+  // A cancelled read's answer never reaches the entry, which stays pending.
+  while (state.status === "pending") state = await cache.refresh(entry);
+  return state.data;
 }
 
 /** GIT_STATUS is the last part of the key of a repository's status. */

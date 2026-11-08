@@ -128,7 +128,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       # the Go modules the binary links for its system and the frontend's production packages, which the app shows
-      # under Third-party licenses; written before the build, which takes the file into the frontend
+      # under Licenses after its own; written before the build, which takes the file into the frontend
       - name: Third-party notices
         run: |
           set -euo pipefail
@@ -156,8 +156,7 @@ jobs:
             ARCH="${{ matrix.goarch }}"
           test -f "bin/${{ matrix.binary }}"
 
-      # the zip holds the binary alone, as the in-app updater swaps one file for the running app; LICENSE goes on the
-      # release beside it
+      # the zip holds the binary alone, as the in-app updater swaps one file for the running app
       - name: Zip the binary
         run: |
           set -euo pipefail
@@ -187,16 +186,6 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # LICENSE goes on the release beside the zips, which hold the binary alone
-      - uses: actions/checkout@v7
-        with:
-          path: source
-          sparse-checkout: LICENSE
-          sparse-checkout-cone-mode: false
-
-      - name: LICENSE
-        run: cp source/LICENSE dist/
-
       - name: SHA256SUMS
         working-directory: dist
         run: sha256sum paradox-modding-tools-*.zip > SHA256SUMS
@@ -222,4 +211,3 @@ jobs:
           files: |
             dist/*.zip
             dist/SHA256SUMS
-            dist/LICENSE

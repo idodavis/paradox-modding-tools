@@ -50,9 +50,10 @@ var statuses = []struct{ letters, status string }{
 	{"A", "added"}, {"D", "deleted"}, {"MT", "modified"}, {"RC", "renamed"},
 }
 
-// ReadStatus returns the status of the repository at the given root folder. The error is git's if there is none.
+// ReadStatus returns the status of the repository at the given root folder, with each untracked file on its own rather
+// than its folder. The error is git's if there is none.
 func (git *Service) ReadStatus(root string) (Status, error) {
-	stdout, err := git.run(root, "status", "--porcelain=v2", "-z", "--branch", "--ignored")
+	stdout, err := git.run(root, "status", "--porcelain=v2", "-z", "--branch", "--ignored", "--untracked-files=all")
 	if err != nil {
 		return Status{}, err
 	}

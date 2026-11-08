@@ -54,6 +54,7 @@ const SYNTAX: Record<string, string> = {
   string: "string",
   number: "number",
   literal: "number",
+  choice: "number",
   operator: "operator",
   block: "field",
   field: "field",

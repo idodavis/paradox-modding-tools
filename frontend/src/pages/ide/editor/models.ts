@@ -13,6 +13,7 @@ import * as workspace from "@services/workspace/service";
 import { confirm } from "../../../lib/feedback";
 import { list, plural } from "../../../lib/format";
 import { fileQuery, keys, loadQuery, placeQuery } from "../../../queries";
+import { useSearchStore } from "../../../stores/search";
 import { EDITOR_LANGUAGES } from "../../../ui/ScriptSnippet.vue";
 
 /** A Model is one open file in this window, shared by every tab that shows it. */
@@ -213,8 +214,10 @@ async function sendText(model: Model): Promise<Diagnostic[]> {
   model.syncVersion = model.model.getVersionId();
   const diagnostics = (await lsp.SetText(model.place.path, model.model.getValue())) ?? [];
   setMarkers(model, diagnostics);
-  // The drawn pictures follow the new text.
+
+  // The drawn pictures and the search's hits follow the new text.
   void useQueryCache().invalidateQueries({ key: keys.draw(model.place.path) });
+  useSearchStore().refresh(model.place.path);
   return diagnostics;
 }
 

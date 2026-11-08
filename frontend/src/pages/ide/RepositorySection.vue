@@ -137,6 +137,21 @@ const { mutate: commit } = useMutation({
   onSuccess: () => (message.value = ""),
 });
 
+// The main button commits. With nothing staged or written, it publishes a branch that has no upstream, or syncs one
+// that is ahead of or behind its upstream.
+const mainAction = computed(() => {
+  const { branch = "", upstream = "", ahead = 0, behind = 0 } = status.value ?? {};
+  const idle = !stagedCount.value && !message.value.trim();
+  if (idle && branch && !upstream) return { label: "Publish the branch", icon: "i-lucide-cloud-upload", onClick: sync };
+  if (idle && (ahead || behind))
+    return { label: `Sync ${ahead}↑ ${behind}↓`, icon: "i-lucide-arrow-down-up", onClick: sync };
+  return {
+    label: `Commit ${plural(stagedCount.value, "staged file")}`,
+    icon: "i-lucide-check",
+    disabled: !canCommit.value,
+    onClick: () => commit({}),
+  };
+});
 const commitOptions = computed<DropdownMenuItem[]>(() => [
   {
     label: "Commit and push",
@@ -447,33 +462,34 @@ async function deleteBranch(branch: string): Promise<void> {
       <UTooltip v-if="status?.upstream" :text="`${status.ahead} to push, ${status.behind} to pull`">
         <UButton :label="`${status.ahead}↑ ${status.behind}↓`" variant="ghost" size="xs" @click="sync" />
       </UTooltip>
-      <!-- The actions show while the pointer is on the header, and stay while their menu is open. -->
-      <span class="hidden group-hover:flex has-[[data-state=open]]:flex">
-        <UTooltip text="Commit">
-          <UButton
-            icon="i-lucide-check"
-            variant="ghost"
-            size="xs"
-            square
-            aria-label="Commit"
-            :disabled="!canCommit"
-            @click="commit({})"
-          />
-        </UTooltip>
-        <UTooltip text="Refresh">
-          <UButton
-            icon="i-lucide-refresh-cw"
-            variant="ghost"
-            size="xs"
-            square
-            aria-label="Refresh"
-            @click="queryCache.invalidateQueries({ key: keys.git(root) })"
-          />
-        </UTooltip>
-        <UDropdownMenu :items="moreActions" :content="{ align: 'end' }">
-          <UButton icon="i-lucide-ellipsis" variant="ghost" size="xs" square aria-label="More source control actions" />
-        </UDropdownMenu>
-      </span>
+      <UTooltip v-else-if="status?.branch" text="This branch is only on your computer. Publish pushes it to a remote.">
+        <UButton label="Publish" icon="i-lucide-cloud-upload" variant="ghost" size="xs" @click="sync" />
+      </UTooltip>
+      <UTooltip text="Commit">
+        <UButton
+          icon="i-lucide-check"
+          variant="ghost"
+          size="xs"
+          square
+          aria-label="Commit"
+          class="hidden group-hover:flex"
+          :disabled="!canCommit"
+          @click="commit({})"
+        />
+      </UTooltip>
+      <UTooltip text="Refresh">
+        <UButton
+          icon="i-lucide-refresh-cw"
+          variant="ghost"
+          size="xs"
+          square
+          aria-label="Refresh"
+          @click="queryCache.invalidateQueries({ key: keys.git(root) })"
+        />
+      </UTooltip>
+      <UDropdownMenu :items="moreActions" :content="{ align: 'end' }">
+        <UButton icon="i-lucide-ellipsis" variant="ghost" size="xs" square aria-label="More source control actions" />
+      </UDropdownMenu>
     </div>
     <UCollapsible :open="!folded">
       <template #content>
@@ -489,16 +505,7 @@ async function deleteBranch(branch: string): Promise<void> {
               class="[&_textarea]:resize-none"
             />
             <div class="flex gap-1">
-              <UButton
-                icon="i-lucide-check"
-                color="primary"
-                variant="solid"
-                size="sm"
-                class="grow justify-center"
-                :label="`Commit ${plural(stagedCount, 'staged file')}`"
-                :disabled="!canCommit"
-                @click="commit({})"
-              />
+              <UButton v-bind="mainAction" color="primary" variant="solid" size="sm" class="grow justify-center" />
               <UDropdownMenu :items="commitOptions">
                 <UButton icon="i-lucide-chevron-down" size="sm" square aria-label="Commit options" />
               </UDropdownMenu>

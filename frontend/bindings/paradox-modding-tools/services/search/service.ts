@@ -27,6 +27,15 @@ export function ReplaceText(query: $models.Query, replacement: string): $Cancell
 }
 
 /**
+ * SearchFile runs a text search over one file, its unsaved text if the editor has some, and returns its hits. A file
+ * the query does not search, or one gone from the workspace, has none. It returns an error if no workspace is open, or
+ * if the query is empty or is a regular expression that does not parse.
+ */
+export function SearchFile(query: $models.Query, path: string): $CancellablePromise<$models.Hits> {
+    return $Call.ByID(667912098, query, path);
+}
+
+/**
  * SearchFiles returns the files whose path contains the query's characters in order, up to the given limit. The best
  * match comes first: a file named as the query, then one whose name starts with it, then one whose path holds it, then
  * the rest. Within each of these the mods' files come before the game's.

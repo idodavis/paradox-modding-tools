@@ -159,9 +159,9 @@ export function ListCopies(path: string): $CancellablePromise<$models.Place[] | 
 }
 
 /**
- * ListFolder returns the places of a folder's entries, folders first. Hidden folders, such as .git, are left out, and
- * so are binary files while the setting to hide them is on. It returns an error if no workspace is open or the folder
- * cannot be read.
+ * ListFolder returns the places of a folder's entries, folders first. The .git folder is left out, and so are the
+ * other dot folders and the binary files while the settings to hide them are on. It returns an error if no workspace
+ * is open or the folder cannot be read.
  */
 export function ListFolder(dir: string): $CancellablePromise<$models.Place[] | null> {
     return $Call.ByID(434589381, dir);
@@ -239,7 +239,8 @@ export function Open(workspaceID: string): $CancellablePromise<void> {
 
 /**
  * Read returns a file's text, its place in the workspace and the editor's draft of it. A file that is not text comes
- * back as binary, with no text. It returns an error if no workspace is open or the file cannot be read.
+ * back as binary, with no text, and an empty file in the encoding its format is written in. It returns an error if no
+ * workspace is open or the file cannot be read.
  */
 export function Read(path: string): $CancellablePromise<$models.FileText> {
     return $Call.ByID(3746079041, path);

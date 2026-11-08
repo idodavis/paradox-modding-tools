@@ -1,130 +1,22 @@
-<!-- The listing's description, edited as it looks on Steam or as its BBCode. -->
+<!-- The listing's description, edited as it looks on Steam or as its BBCode, and exported as BBCode or Markdown. -->
 <script setup lang="ts">
 import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
-import { refAutoReset, until } from "@vueuse/core";
+import { until } from "@vueuse/core";
 import { useMutation } from "@pinia/colada";
-import { Clipboard } from "@wailsio/runtime";
-import { TableKit } from "@tiptap/extension-table";
-import type { EditorCustomHandlers, EditorHandler, EditorToolbarItem, TabsItem } from "@nuxt/ui";
+import { Dialogs } from "@wailsio/runtime";
+import type { DropdownMenuItem, TabsItem } from "@nuxt/ui";
 
-import { plural } from "../../lib/format";
-import { bbcodeQuery, htmlQuery, loadQuery } from "../../queries";
 import * as steam from "@services/steam/service";
 import type { Comparison, Listing } from "@services/steam/models";
+import { copyText, toast } from "../../lib/feedback";
+import { plural } from "../../lib/format";
+import { bbcodeQuery, htmlQuery, loadQuery } from "../../queries";
+import { useWorkspaceStore } from "../../stores/workspace";
+import RichEditor, { toMarkdown } from "../../ui/RichEditor.vue";
 
-/** The visual view's editor. */
-type Editor = Parameters<EditorHandler["execute"]>[0];
-/** A chain of editor commands. */
-type Chain = ReturnType<Editor["chain"]>;
+/** An Export is a format the description is copied or saved in, with how its text is made from the BBCode. */
+type Export = { label: string; file: string; note: string; write: (bbcode: string) => Promise<string> };
 
-/** The commands of the Table menu. */
-const TABLE_COMMANDS: readonly {
-  kind: string;
-  label: string;
-  icon: string;
-  color?: "error";
-  add: (chain: Chain) => Chain;
-}[] = [
-  {
-    kind: "insertTable",
-    label: "Insert a table",
-    icon: "i-lucide-table",
-    add: (chain) => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }),
-  },
-  {
-    kind: "addRowAfter",
-    label: "Add a row below",
-    icon: "i-lucide-between-horizontal-start",
-    add: (chain) => chain.addRowAfter(),
-  },
-  {
-    kind: "addColumnAfter",
-    label: "Add a column to the right",
-    icon: "i-lucide-between-vertical-start",
-    add: (chain) => chain.addColumnAfter(),
-  },
-  {
-    kind: "toggleHeaderRow",
-    label: "Header row on or off",
-    icon: "i-lucide-panel-top",
-    add: (chain) => chain.toggleHeaderRow(),
-  },
-  {
-    kind: "deleteRow",
-    label: "Delete the row",
-    icon: "i-lucide-trash-2",
-    color: "error",
-    add: (chain) => chain.deleteRow(),
-  },
-  {
-    kind: "deleteColumn",
-    label: "Delete the column",
-    icon: "i-lucide-trash-2",
-    color: "error",
-    add: (chain) => chain.deleteColumn(),
-  },
-  {
-    kind: "deleteTable",
-    label: "Delete the table",
-    icon: "i-lucide-trash-2",
-    color: "error",
-    add: (chain) => chain.deleteTable(),
-  },
-];
-/** The editor's handlers for the table commands. */
-const TABLE_HANDLERS: EditorCustomHandlers = Object.fromEntries(
-  TABLE_COMMANDS.map((command) => [
-    command.kind,
-    {
-      canExecute: (target: Editor) => command.add(target.can().chain()).run(),
-      execute: (target: Editor) => command.add(target.chain().focus()),
-      isActive: () => false,
-    },
-  ]),
-);
-/** Tables in the editor, without column widths, as Steam draws them. */
-const EXTENSIONS = [TableKit.configure({ table: { resizable: false } })];
-
-/** The visual view's toolbar. */
-const TOOLBAR: EditorToolbarItem<typeof TABLE_HANDLERS>[][] = [
-  [
-    {
-      icon: "i-lucide-heading",
-      tooltip: { text: "Heading" },
-      content: { align: "start" },
-      items: ([1, 2, 3] as const).map((level) => ({
-        kind: "heading" as const,
-        level,
-        icon: `i-lucide-heading-${level}`,
-        label: `Heading ${level}`,
-      })),
-    },
-  ],
-  [
-    { kind: "mark", mark: "bold", icon: "i-lucide-bold", tooltip: { text: "Bold" } },
-    { kind: "mark", mark: "italic", icon: "i-lucide-italic", tooltip: { text: "Italic" } },
-    { kind: "mark", mark: "underline", icon: "i-lucide-underline", tooltip: { text: "Underline" } },
-    { kind: "mark", mark: "strike", icon: "i-lucide-strikethrough", tooltip: { text: "Strike" } },
-  ],
-  [
-    { kind: "bulletList", icon: "i-lucide-list", tooltip: { text: "Bulleted list" } },
-    { kind: "orderedList", icon: "i-lucide-list-ordered", tooltip: { text: "Numbered list" } },
-  ],
-  [
-    { kind: "blockquote", icon: "i-lucide-text-quote", tooltip: { text: "Quote" } },
-    { kind: "codeBlock", icon: "i-lucide-square-code", tooltip: { text: "Code block" } },
-    { kind: "horizontalRule", icon: "i-lucide-separator-horizontal", tooltip: { text: "Rule" } },
-  ],
-  [
-    {
-      icon: "i-lucide-table",
-      tooltip: { text: "Table" },
-      content: { align: "start" },
-      items: TABLE_COMMANDS.map(({ kind, label, icon, color }) => ({ kind, label, icon, color })),
-    },
-  ],
-  [{ slot: "link" as const }, { slot: "image" as const }],
-];
 const PLACEHOLDER = "Describe the mod for players. While this is empty, an upload leaves Steam's description as it is.";
 /** The description's two views. */
 const VIEWS: TabsItem[] = [
@@ -138,19 +30,19 @@ const LOSSY_NOTES: Record<string, string> = {
     "The visual editor would change some of this description's line breaks or markup, so it opened as BBCode. " +
     "Choose Visual to edit it there anyway.",
 };
-/** The toolbar buttons that ask for an address. */
-const ADDRESSES = [
+/** The formats the description exports to. Paradox Mods takes the BBCode, pasted in the Paradox Launcher. */
+const EXPORTS: Export[] = [
   {
-    slot: "link",
-    label: "Link",
-    icon: "i-lucide-link",
-    run: (target: Editor, href: string) => target.chain().focus().setLink({ href }).run(),
+    label: "BBCode",
+    file: "description.bbcode",
+    note: "Paste it in the Paradox Launcher for Paradox Mods.",
+    write: (bbcode) => Promise.resolve(bbcode),
   },
   {
-    slot: "image",
-    label: "Image",
-    icon: "i-lucide-image",
-    run: (target: Editor, src: string) => target.chain().focus().setImage({ src }).run(),
+    label: "Markdown",
+    file: "description.md",
+    note: "",
+    write: async (bbcode) => toMarkdown((await loadQuery(htmlQuery(bbcode))) ?? ""),
   },
 ];
 
@@ -161,6 +53,7 @@ const {
 } = defineProps<{ modId: string; listingKey: string; comparison?: Comparison }>();
 const listing = defineModel<Listing>("listing", { required: true });
 
+const workspace = useWorkspaceStore();
 const view = shallowRef("visual");
 // Once the user picks the view, it never switches on its own.
 const chosen = shallowRef(false);
@@ -168,10 +61,7 @@ const lossy = shallowRef(false);
 const html = shallowRef<string>();
 // Counts the drawings, so one that ends late is dropped.
 let drawing = 0;
-const address = shallowRef("");
-const openSlot = shallowRef("");
-const copied = refAutoReset(false, 2000);
-const visual = useTemplateRef<{ editor?: Editor }>("visual");
+const visual = useTemplateRef("visual");
 const editor = computed(() => visual.value?.editor);
 const toolbarSpot = useTemplateRef<HTMLElement>("toolbarSpot");
 
@@ -187,11 +77,41 @@ const words = computed(
       .filter(Boolean).length,
 );
 const steamText = computed(() => (description.value ? "" : (comparison?.steam?.description ?? "")));
+const exportItems = computed<DropdownMenuItem[][]>(() => [
+  EXPORTS.map((format) => ({
+    label: `Copy as ${format.label}`,
+    icon: "i-lucide-copy",
+    disabled: !description.value,
+    onSelect: () => copyAs(format),
+  })),
+  EXPORTS.map((format) => ({
+    label: `Save as ${format.label}…`,
+    icon: "i-lucide-download",
+    disabled: !description.value,
+    onSelect: () => saveAs(format),
+  })),
+]);
 
 const { mutate: convert } = useMutation({
   mutation: (text: string) => steam.ToBBCode(text),
   onSuccess: (bbcode, text) => {
     if (text === html.value && bbcode !== description.value) description.value = bbcode;
+  },
+});
+const { mutate: copyAs } = useMutation({
+  mutation: async (format: Export) => copyText(await format.write(description.value), format.label, format.note),
+});
+const { mutate: saveAs } = useMutation({
+  mutation: async (format: Export) => {
+    const target = await Dialogs.SaveFile({
+      Title: `Save the description as ${format.label}`,
+      Directory: workspace.listMods().find((mod) => mod.id === modId)?.dir ?? "",
+      Filename: format.file,
+      ButtonText: "Save",
+    });
+    if (!target) return;
+    await steam.ExportDescription(target, await format.write(description.value));
+    toast?.add({ title: `The description saved as ${format.label}`, description: target, color: "success" });
   },
 });
 
@@ -208,6 +128,7 @@ watch([() => modId, () => listingKey, view], () => showDescription(description.v
 async function showDescription(bbcode: string): Promise<void> {
   if (view.value !== "visual") return;
   const turn = ++drawing;
+
   // An open editor would take the new text as an edit.
   html.value = undefined;
   const drawn = await loadQuery(htmlQuery(bbcode));
@@ -241,19 +162,6 @@ function copySteamText(): void {
   chosen.value = false;
   void showDescription(text);
 }
-
-/** copyDescription copies the description's BBCode, for the Paradox Launcher. */
-async function copyDescription(): Promise<void> {
-  await Clipboard.SetText(description.value);
-  copied.value = true;
-}
-
-/** insert runs an address button's command with the typed address and closes its popover. */
-function insert(target: Editor, run: (target: Editor, address: string) => unknown): void {
-  run(target, address.value.trim());
-  address.value = "";
-  openSlot.value = "";
-}
 </script>
 
 <template>
@@ -262,14 +170,6 @@ function insert(target: Editor, run: (target: Editor, address: string) => unknow
       class="sticky top-0 z-10 flex h-9 items-center gap-0.5 rounded-t-lg border-b border-default bg-elevated px-1.5"
     >
       <span ref="toolbarSpot" class="contents" />
-      <UButton
-        v-if="view === 'bbcode' && description"
-        :label="copied ? 'Copied' : 'Copy for Paradox Mods'"
-        :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-        size="xs"
-        variant="ghost"
-        @click="copyDescription"
-      />
       <span class="grow" />
       <UButton
         v-if="steamText"
@@ -280,46 +180,22 @@ function insert(target: Editor, run: (target: Editor, address: string) => unknow
         @click="copySteamText"
       />
       <span class="me-2 shrink-0 text-11 whitespace-nowrap text-dimmed">{{ plural(words, "word") }}</span>
+      <UDropdownMenu :items="exportItems" :content="{ align: 'end' }">
+        <UButton label="Export" icon="i-lucide-share" size="xs" variant="ghost" class="me-1.5" />
+      </UDropdownMenu>
       <UTabs :model-value="view" :items="VIEWS" :content="false" size="xs" @update:model-value="choose" />
     </div>
     <p v-if="lossy" class="border-b border-default px-5.5 py-1.5 text-12 text-warning">{{ LOSSY_NOTES[view] }}</p>
-    <!-- No empty line after a last heading or list, so a click rewrites nothing. -->
-    <UEditor
+    <RichEditor
       v-if="view === 'visual' && html !== undefined"
       ref="visual"
       :model-value="html"
       content-type="html"
-      :mention="false"
       :placeholder="PLACEHOLDER"
-      :starter-kit="{
-        heading: { levels: [1, 2, 3] },
-        link: { openOnClick: false, HTMLAttributes: { target: null, rel: null } },
-        trailingNode: false,
-      }"
-      :extensions="EXTENSIONS"
-      :handlers="TABLE_HANDLERS"
+      :toolbar="toolbarSpot"
       :ui="{ content: 'min-h-96 px-5.5 py-4' }"
       @update:model-value="change"
-    >
-      <!-- Inside the editor, so it gets the table handlers, and shown in the card's header. -->
-      <Teleport defer :to="toolbarSpot">
-        <UEditorToolbar v-if="editor" :editor="editor" :items="TOOLBAR">
-          <template v-for="row in ADDRESSES" :key="row.slot" #[row.slot]>
-            <UPopover :open="openSlot === row.slot" @update:open="openSlot = $event ? row.slot : ''">
-              <UTooltip :text="row.label">
-                <UButton :icon="row.icon" color="neutral" variant="ghost" size="sm" square :aria-label="row.label" />
-              </UTooltip>
-              <template #content>
-                <form class="flex gap-2 p-2.5" @submit.prevent="insert(editor, row.run)">
-                  <UInput v-model="address" :placeholder="`${row.label} address`" autofocus class="w-64" />
-                  <UButton type="submit" label="Add" color="primary" variant="solid" :disabled="!address.trim()" />
-                </form>
-              </template>
-            </UPopover>
-          </template>
-        </UEditorToolbar>
-      </Teleport>
-    </UEditor>
+    />
     <UTextarea
       v-else-if="view === 'bbcode'"
       v-model="description"

@@ -77,6 +77,16 @@ func (format Format) IsScript() bool {
 	return slices.Contains([]Format{FormatScript, FormatGUI, FormatAsset, FormatFont, FormatGFX}, format)
 }
 
+// DefaultEncoding returns the encoding a file of the format is written in when nothing on disk says. The games' script
+// and localization take UTF-8 with a byte order mark, which the lexer of ck3.exe, victoria3.exe and eu5.exe asks for
+// ("should be in utf8-bom encoding"); any other text takes UTF-8.
+func (format Format) DefaultEncoding() Encoding {
+	if format.IsScript() || format == FormatLocalization {
+		return EncodingUTF8BOM
+	}
+	return EncodingUTF8
+}
+
 // IsText reports whether files of the format are text: all but images and binaries.
 func (format Format) IsText() bool {
 	return !slices.Contains([]Format{FormatImage, FormatWebImage, FormatBinary}, format)
@@ -135,8 +145,8 @@ func Walk(root Root) ([]File, error) {
 	return list, nil
 }
 
-// IsHiddenDir reports whether a folder of the given name is one that nothing lists or watches: a dot folder, such as
-// .git, except .metadata, where Vic3 and EU5 keep a mod's descriptor.
+// IsHiddenDir reports whether a folder of the given name is one that Walk skips and the watcher leaves out: a dot
+// folder, such as .git, except .metadata, where Vic3 and EU5 keep a mod's descriptor.
 func IsHiddenDir(name string) bool {
 	return strings.HasPrefix(name, ".") && name != ".metadata"
 }

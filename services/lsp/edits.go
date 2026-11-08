@@ -349,20 +349,21 @@ func (lsp *Service) DraftFile(folder string) (Draft, error) {
 		// the mod's own name for its files is its namespace, as the part before an event's dot is
 		namespace := buildNamespace(database, resolveModStem(mod), "")
 		base := path.Base(resolveEntryRel(mod, place.Rel, ""))
-		return Draft{
-			Name: findFreeName(folder, base, path.Ext(base)),
-			Text: files.Text{Text: namespace, Encoding: files.EncodingUTF8},
-		}, nil
+		return makeDraft(place.Rel, findFreeName(folder, base, path.Ext(base)), namespace), nil
 	}
 	if language := lsp.findLanguage(place.Rel); language != "" {
 		ending := "_" + loc.ToLanguageKey(language) + ".yml"
-		return Draft{
-			Name: findFreeName(folder, resolveModStem(mod)+ending, ending),
-			Text: files.Text{Text: loc.Encode(language, nil), Encoding: files.EncodingUTF8BOM},
-		}, nil
+		return makeDraft(place.Rel, findFreeName(folder, resolveModStem(mod)+ending, ending), loc.Encode(language, nil)), nil
 	}
 	extension := findScriptExtension(ws, place.Rel)
-	return Draft{Name: findFreeName(folder, "new_file"+extension, extension), Text: files.Text{Encoding: files.EncodingUTF8}}, nil
+	return makeDraft(place.Rel, findFreeName(folder, "new_file"+extension, extension), ""), nil
+}
+
+// makeDraft returns the draft of a new file of the given name in a mod's folder, the folder given from the mod's root,
+// with the given text in the encoding its format is written in.
+func makeDraft(folderRel, name, text string) Draft {
+	encoding := files.Classify(path.Join(folderRel, name)).DefaultEncoding()
+	return Draft{Name: name, Text: files.Text{Text: text, Encoding: encoding}}
 }
 
 // findFreeName returns a name for a new file in a folder that nothing in the folder has: the given name, else numbered

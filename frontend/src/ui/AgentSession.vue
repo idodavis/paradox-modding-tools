@@ -40,8 +40,8 @@ const STATUSES: Record<string, { icon: string; color: string; text?: string }> =
   cancelled: { icon: "i-lucide-ban", color: "text-dimmed" },
 };
 const PATCH_LINE_COLORS: Record<string, string> = { "+": "text-success", "-": "text-error" };
-// An answer's text: inline code in the theme's orange softened toward its text color, on a faint tint, a code block on the darkest panel, and a quote
-// set off by a bar.
+// An answer's text: inline code in the theme's orange softened toward its text color, on a faint tint, a code block on
+// the darkest panel, and a quote set off by a bar.
 const ANSWER = [
   "w-full py-0 text-13 text-highlighted [&_code]:text-12 [&_pre]:text-12",
   "[&_:not(pre)>code]:rounded-sm [&_:not(pre)>code]:bg-(--orange)/6 [&_:not(pre)>code]:px-1",
@@ -119,7 +119,8 @@ const messages = computed(() =>
   }, []),
 );
 const frame = computed(() => (narrow ? FRAMES.narrow : FRAMES.wide));
-const status = computed(() => (session.state === "running" ? "streaming" : "ready"));
+// A resumed session's replay arrives while it starts, so the chat follows it as it follows a reply.
+const status = computed(() => (session.state === "running" || session.state === "starting" ? "streaming" : "ready"));
 const busy = computed(() => session.state === "running");
 const waiting = computed(() => agent.isWaiting(session));
 const empty = computed(() => session.state === "idle" && !session.entries.length);

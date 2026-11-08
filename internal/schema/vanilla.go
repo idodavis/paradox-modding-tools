@@ -68,11 +68,7 @@ func (schema *Schema) CountVanilla(listing []files.File, parse func(path string)
 	listing = slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool { return !file.Format.IsScript() })
 	// the files that declare callables are read first, so a key under a call counts as a call
 	declaring := slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool { return !schema.declares(file) })
-	for _, declarer := range schema.listDeclarers(declaring, parse) {
-		if declarer != nil {
-			declarer.build()
-		}
-	}
+	schema.declareFiles(declaring, parse)
 	schema.resolveRelays(schema.ScriptedDefinitions, nil)
 	counters := make([]*counter, files.Workers)
 	for worker := range counters {
@@ -109,7 +105,9 @@ func (schema *Schema) CountVanilla(listing []files.File, parse func(path string)
 		counters[0].add(other)
 	}
 	counters[0].resolveCounts()
-	// what a parameter names rests on the prefixes' databases and the claims that the count gives
+
+	// read again, so a parameter's typings see the fields the count made and the calls the files declare
+	schema.declareFiles(declaring, parse)
 	schema.typeParameters(schema.ScriptedDefinitions)
 	schema.resolveRelays(schema.ScriptedDefinitions, nil)
 	if len(failures) == len(listing) && len(failures) > 0 {

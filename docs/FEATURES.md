@@ -94,6 +94,8 @@ An editor that knows the game's script, localization and GUI files.
 - **Compare** a mod's file with the game's copy, with another file, or with its last commit.
 - **Find what fires an event**, an on_action, a decision or a scripted effect from the editor's right-click menu.
 - **Entries**, the sidebar's fourth view, lists the file's entries by type, with their titles and keys.
+- **Encoding.** A new script or localization file is UTF-8 with a byte order mark, as the games ask; any other text is
+  UTF-8. The encoding in the status bar saves the open file in another one.
 - **Delete** moves a file to PMT's trash. **Undo** in the message brings it back.
 - **The command palette** (Ctrl K) runs any command. Type `>` for the commands and settings.
 
@@ -153,7 +155,7 @@ note with a Modding section. Ctrl F finds in the note shown. PMT reads the notes
 The mod's Workshop page, as players see it. Click the name, tags, requirements, pictures or description to change
 them. Every change is saved in the mod's files as you stop typing.
 
-- **The description** is written as it looks on Steam, or as BBCode.
+- **The description** is written as it looks on Steam, or as BBCode. Export copies or saves it as BBCode or Markdown.
 - **The rail** on the right is this update: its version, the game version it is for and its change note. PMT drafts the
   note from the mod's git history. The rail lists what the upload changes on Steam, and a click shows a change
   beside Steam's copy.
@@ -162,8 +164,8 @@ them. Every change is saved in the mod's files as you stop typing.
   `.workshop` folder, which no upload sends.
 - **Compare with Steam** is also in the IDE, for the active file's mod.
 - **Older versions.** A mod can have a separate Workshop item for an older game version.
-- **Paradox Mods** has no way in for tools. Copy the description for it from the BBCode view, and paste it in the
-  Paradox Launcher.
+- **Paradox Mods** has no way in for tools. Copy the description for it with Export's Copy as BBCode, and paste it in
+  the Paradox Launcher.
 
 Steam must be running and signed in as the item's owner. A new item stays private until you make it public on its
 Workshop page. PMT never touches an item that belongs to someone else, and never publishes an
@@ -209,6 +211,8 @@ end of the tab, or Ctrl Shift V.
   draws.
 - Tools over the picture: Save picture, the resolution or the coat's frame, Bounds, Grid, and the code beside the
   picture.
+- **A Markdown file** has the same switch. Its Visual shows the text as it reads, with a toolbar to edit it there, in
+  its own tab.
 
 PMT writes your changes to the code in the editor, so undo works as it always does.
 
@@ -226,7 +230,9 @@ game's own DDS at that place.
 ![Source control](images/source-control.png)
 
 The sidebar's third view runs the git installed on your computer on each mod that is a repository. Each repository has
-a section with its branch, its commit box and its changes. The Graph shows the history of the active file's repository.
+a section with its branch, its commit box and its changes. A branch that is only on your computer shows Publish, and
+with nothing to commit the commit button publishes or syncs the branch. The Graph shows the history of the active
+file's repository.
 
 Diffs open as tabs. Merge conflicts are resolved in the editor. PMT reimplements none of git, so git must be installed.
 

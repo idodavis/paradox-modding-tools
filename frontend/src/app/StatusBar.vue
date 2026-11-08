@@ -21,6 +21,7 @@ import {
   configFaultQuery,
   crashedQuery,
   levelsQuery,
+  noticesQuery,
   releasesQuery,
   stateQuery,
   updateQuery,
@@ -32,6 +33,8 @@ import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../st
 import HowModWorks from "../ui/HowModWorks.vue";
 import ScriptDocsGuide from "../ui/ScriptDocsGuide.vue";
 import { STATUS_ITEM } from "../ui/StatusFacts.vue";
+import LICENSE from "../../../LICENSE?raw";
+import NOTICE from "../../../NOTICE?raw";
 import TermInfo from "../ui/TermInfo.vue";
 import { findCommand } from "./commands";
 import { isWorkspacePage, PAGES, PANE_HELP, TERMS, type Page } from "./pages";
@@ -53,10 +56,13 @@ const helping = shallowRef(false);
 const explaining = shallowRef(false);
 // the one guide to the game's documentation: nested in another dialog, Reka's layers update each other without end
 const guiding = shallowRef(false);
+const licensing = shallowRef(false);
 useEventBus(COMMAND_BUS).on((command) => {
   if (command === "help.open") helping.value = true;
   if (command === "docs.guide") guiding.value = true;
+  if (command === "help.licenses") licensing.value = true;
 });
+const { data: notices } = useQuery(() => ({ ...noticesQuery, enabled: licensing.value }));
 const { mutate: rescan } = useRescan();
 const installMenu = computed<DropdownMenuItem[]>(() => [
   {
@@ -298,6 +304,22 @@ const LAUNCH = findCommand("game.launch");
       </template>
     </UModal>
     <HowModWorks v-model:open="explaining" :game-id="state?.game?.id ?? ''" mod-title="" />
+    <UModal
+      v-model:open="licensing"
+      title="Licenses"
+      description="PMT's own license, then the packages it is made with, each used under the license shown."
+      :ui="{ content: 'h-[80vh] sm:max-w-4xl' }"
+    >
+      <template #body>
+        <div class="flex flex-col gap-6">
+          <pre class="font-mono text-12 whitespace-pre-wrap text-toned">{{ NOTICE }}{{ "\n" }}{{ LICENSE }}</pre>
+          <pre v-if="notices" class="font-mono text-12 whitespace-pre-wrap text-toned">{{ notices }}</pre>
+          <p v-else class="text-13 text-dimmed">
+            A release build lists the third-party packages here. This build was made without them.
+          </p>
+        </div>
+      </template>
+    </UModal>
     <!-- mounted on opening, so it lands after any dialog already open and shows above it -->
     <ScriptDocsGuide v-if="guiding" v-model:open="guiding" :game="state?.game?.id ?? ''" />
     <UModal

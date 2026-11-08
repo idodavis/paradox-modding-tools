@@ -364,10 +364,13 @@ export const COMMANDS: readonly Command[] = [
     prefix: "IDE:",
     icon: "i-lucide-eye",
     kbds: ["meta", "shift", "V"],
-    when: () => useEditorStore().isDrawable(useEditorStore().activeTab()),
+    when: () => {
+      const editor = useEditorStore();
+      return editor.isDrawable(editor.activeTab()) || editor.isMarkdown(editor.activeTab());
+    },
     onSelect: () => {
       const editor = useEditorStore();
-      editor.mode = editor.mode === "visual" ? "code" : "visual";
+      editor.showView(editor.viewOf(editor.activeTab()) === "visual" ? "code" : "visual");
     },
   },
   {
@@ -485,6 +488,13 @@ export const COMMANDS: readonly Command[] = [
     kbds: ["F1"],
     when: () => true,
     onSelect: () => commandBus.emit("help.open"),
+  },
+  {
+    id: "help.licenses",
+    label: "Licenses",
+    icon: "i-lucide-scroll-text",
+    when: () => true,
+    onSelect: () => commandBus.emit("help.licenses"),
   },
   {
     id: "docs.guide",

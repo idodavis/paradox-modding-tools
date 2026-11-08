@@ -8,6 +8,7 @@ import {
 } from "vue-router";
 
 import { saveUnsaved } from "../pages/ide/editor/models";
+import { loadQuery, stateQuery } from "../queries";
 import { THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
 import { WORKSPACE_TOOLS, type PageName } from "./pages";
@@ -53,6 +54,9 @@ router.beforeEach(async (target, previous) => {
   const params = target.params;
   if (!("id" in params) || typeof params.id !== "string") return;
   const workspace = useWorkspaceStore();
+
+  // A window that just started, as after a reload, reads Go's state first, so it never opens the open workspace again.
+  await loadQuery(stateQuery).catch(() => undefined);
   if (params.id === workspace.activeId() && workspace.isOpen()) return;
   if (params.id !== workspace.activeId() && !(await saveUnsaved("Switching workspace"))) return false;
   workspace.open(params.id);

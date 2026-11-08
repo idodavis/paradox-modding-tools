@@ -59,6 +59,11 @@ export enum Category {
      * a data call's step
      */
     CategoryCall = "call",
+
+    /**
+     * one of the values a key takes, such as an event's type
+     */
+    CategoryChoice = "choice",
 };
 
 /**

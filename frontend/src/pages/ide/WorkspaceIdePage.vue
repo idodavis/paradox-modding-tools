@@ -1,11 +1,13 @@
 <!-- The IDE page: the sidebar, the editors, the bottom panel and the Wiki pane. A pop-out shows some of them. -->
 <script setup lang="ts">
 import { computed, nextTick, reactive, shallowRef, useTemplateRef, watch } from "vue";
-import { useQuery } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { createReusableTemplate, useEventBus, useEventListener, useLocalStorage } from "@vueuse/core";
 import { countBy } from "es-toolkit";
 import { FILE_TREE_DENSITY_PRESETS, type FileTreeDensityKeyword } from "@pierre/trees";
-import type { SplitterItem } from "@nuxt/ui";
+import type { DropdownMenuItem, SplitterItem } from "@nuxt/ui";
+
+import { Encoding } from "@internal/files/models";
 
 import type { Diagnostic, Level } from "@services/lsp/models";
 import type { Chip } from "@services/mcp/models";
@@ -47,7 +49,7 @@ import SourceControlView from "./SourceControlView.vue";
 import TerminalPanel from "./terminal/TerminalPanel.vue";
 import WikiPane from "./WikiPane.vue";
 import { describeLanguage } from "./editor/monaco";
-import { findModel } from "./editor/models";
+import { findModel, save, type Model } from "./editor/models";
 
 // The route names the workspace, which the page's links go to; the page reads the open one from the workspace store.
 const { id } = defineProps<{ id: string }>();
@@ -76,10 +78,10 @@ const COMPARES = {
   conflict: "Comparing a conflict's two sides",
   commit: "Comparing a commit with its parent",
 };
-const ENCODINGS: Record<string, string> = {
-  "utf-8": "UTF-8",
-  "utf-8-bom": "UTF-8 BOM",
-  "windows-1252": "Windows-1252",
+const ENCODINGS: Partial<Record<Encoding, string>> = {
+  [Encoding.EncodingUTF8]: "UTF-8",
+  [Encoding.EncodingUTF8BOM]: "UTF-8 BOM",
+  [Encoding.EncodingWindows1252]: "Windows-1252",
 };
 /** MOUSE_BACK and MOUSE_FORWARD are the button numbers of the mouse's back and forward buttons. */
 const MOUSE_BACK = 3;
@@ -329,6 +331,24 @@ const { data: status } = useQuery(() => ({
 }));
 const activeModel = computed(() => findModel(editor.activeFile()?.key ?? ""));
 const languageName = computed(() => describeLanguage(EDITOR_LANGUAGES[activeModel.value?.place.format ?? ""]));
+const { mutate: saveWithEncoding } = useMutation({
+  mutation: ({ model, encoding }: { model: Model; encoding: Encoding }) => {
+    model.encoding = encoding;
+    return save(model);
+  },
+});
+// The active file's encoding menu saves the file in the encoding picked.
+const encodingItems = computed<DropdownMenuItem[][]>(() => {
+  const model = activeModel.value;
+  if (!model) return [];
+  const choices = (Object.entries(ENCODINGS) as [Encoding, string][]).map(([encoding, label]) => ({
+    label,
+    type: "checkbox" as const,
+    checked: model.encoding === encoding,
+    onUpdateChecked: () => saveWithEncoding({ model, encoding }),
+  }));
+  return [[{ type: "label", label: "Save with encoding" }, ...choices]];
+});
 const groupRows = computed(() =>
   editor.layout().rows.map((row, order) => ({
     id: row.columns[0]?.id ?? String(order),
@@ -845,7 +865,12 @@ function collapseAll(): void {
         <span>Ln {{ activeModel.caret.line }}, Col {{ activeModel.caret.column }}</span>
         <span v-if="indentation">{{ indentation }}</span>
         <span>{{ languageName }}</span>
-        <span>{{ ENCODINGS[activeModel.encoding] ?? activeModel.encoding }}</span>
+        <span v-if="activeModel.place.readOnly">{{ ENCODINGS[activeModel.encoding] ?? activeModel.encoding }}</span>
+        <UDropdownMenu v-else :items="encodingItems" :content="{ side: 'top', align: 'end' }">
+          <button type="button" :class="STATUS_ITEM">
+            {{ ENCODINGS[activeModel.encoding] ?? activeModel.encoding }}
+          </button>
+        </UDropdownMenu>
       </template>
     </Teleport>
     <UModal :open="!!comparing" title="Compare" fullscreen @update:open="comparing = undefined">

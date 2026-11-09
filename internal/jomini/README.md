@@ -2,9 +2,9 @@
 
 [Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › jomini
 
-The jomini package parses Paradox script, GUI and asset files into a flat tree. It also tells what shape a written word
-has: a number, a date, a parameter, a color or a data call. It answers only what the text says, such as where each
-statement starts and ends and what its parts are.
+The jomini package parses Paradox script, GUI and asset files into a flat tree, and tells what shape a written word
+has: a number, a date, a parameter, a constant, a color or a data call. The rules it reads by, and what it does with a
+text that breaks them, are its package doc in [tree.go](tree.go).
 
 What a key means is the [schema](../schema/README.md)'s question, and what a game reads is [game](../game/README.md)'s.
 This package never imports `game`.
@@ -20,101 +20,36 @@ flowchart LR
   tree --- parts["Statements, comments,<br/>errors, lines"]
 ```
 
-## The tree
+## Evidence
 
-A `Tree` is the parse of one text. Its statements are one flat slice in document order, and a block's children sit right
-after it. Statement 0 is the file itself. A statement knows its `Parent` and its `Last`, one past its last descendant,
-so its children are the statements between it and `Last`.
+Measured on the three installs, over every script, GUI, GFX and asset file under `game`, `jomini` and `clausewitz`:
 
-```text
-a = { b = 1 c = 2 } d = 3
+| | CK3 | Vic3 | EU5 |
+|---|---|---|---|
+| files read | 7,500 | 6,133 | 7,342 |
+| commas that separate values | 1,784 in 30 files | 1,698 in 32 files | 1,956 in 24 files |
+| semicolons that separate values | 88 in 23 files | 77 in 21 files | 82 in 14 files |
+| numbers written with the f of a C float | 25 in 10 files | 18 in 4 files | 25 in 4 files |
+| blocks opened deeper than 1,000 levels | 0 | 0 | 0 |
 
-0  the file    children 1, 4
-1  a = { … }   Last 4, children 2, 3
-2  b = 1       Last 3
-3  c = 2       Last 4
-4  d = 3       Last 5
-```
-
-Every part of a statement is a `Span` into the source, never a copied string: its key, operator, tag, value and block,
-and the whole statement. A scalar's value keeps its quotes. A block runs from its opening brace to its closing one. A
-bare value in a list has a value and no key.
-
-The tree also keeps the comments as spans, the parse errors and the line index. A line ends at `\n`, `\r\n` or a lone
-`\r`. Every offset is a UTF-8 byte offset, and a `Position` counts its column in bytes too. Monaco's lines and UTF-16
-columns are `lsp`'s, which converts at its edge.
-
-`FindStatement` returns the innermost statement that covers an offset. `LookupStatement` returns the one that starts at
-an offset, which is how an edit names a block. Where several children have a key, `FindChild` takes the last one.
-`FindComment` returns the comment lines written just above a statement.
-
-## The parse
-
-`Parse` never fails. A malformed text gives the statements it could parse, and each problem is an `Error` on the tree
-with a code: `unclosed-block`, `unexpected-brace`, `unclosed-string` or `missing-value`. A block that is never closed
-runs to the end of the text. A closing brace at the file's level closes nothing and is reported. [loc](../loc/README.md)
-reports its own problems as the same `Error`.
-
-`NewTree` gives the tree of a text before any script is read from it, which is all a localization file needs.
-
-The lexer splits the text into scalars, operators, braces and comments:
-
-- A quoted string is one scalar, a backslash escaping the character after it.
-- A `[ … ]` inside a word is part of that word, spaces and all. It ends at its closing `]` or at the end of the line.
-- A `#` comment runs to the end of its line.
-- The operators are `=`, `==`, `!=`, `<`, `>`, `<=`, `>=` and `?=`.
-
-A tagged block such as `rgb { … }` is one value with a tag, and so is `list "x"`.
-
-## The shapes of a word
-
-- **Parameter.** `$NAME$`, with or without a `|default`, anywhere in a word.
-- **Constant.** `@name`, or an expression `@[…]`. `Tree.ResolveNumber` works out the number a value stands for: a
-  number, a constant the file declared earlier, or an expression of numbers, constants, the four operators and
-  brackets.
-- **Dotted chain.** `SplitChain` splits `scope:x.var:y.z` into its links, keeping a dot inside brackets or quotes.
-- **Prefixed name.** `SplitPrefixed` splits `prefix:name`.
-- **Number key.** A key written as a number or a date. `NumberKey` (`<number>`) stands for it in a key path.
-- **Key path.** `MatchKeyPath` asks whether the keys that lead to a statement fit a path of segments, each a glob,
-  `<number>` or `**` for any depth.
-
-## Colors
-
-`Colors` lists the ways script writes a color, each a `Color`: an `rgb` block, a block with no tag, `hsv`, `hsv360` and
-`hex`. A part of rgb, or of a block with no tag, is out of 255, or out of 1 when red, green and blue are each at most 1.
-A fourth part is the alpha. A hex block holds one number: six hex digits for red, green and blue, or eight with the
-alpha last, written with or without `0x` (CK3 writes `hex{ 50779b }`, EU5 `hex{ 0xffbcb6b1 }`).
-
-`ColorParts` gives a block's parts as written, and `ParseColor` turns a tag and its parts into an `RGBA`; `ToColor`
-reads a statement's color block that way. `EncodeColor` writes a color back the way an existing block wrote its own:
-in the same scale, with an alpha only where that block had one, and a hex number with its digits and its `0x` as they
-were. A `ColorForm` is how to write a color where there is no block to copy: a tag and an example's parts, which give
-the scale.
-
-## Data calls
-
-A `Call` is one data call as a GUI file or a localization text writes it between brackets, such as
-`Root.GetCharacter.GetName`. It is a list of `Step`s, each with its arguments and any cast written before it, and the
-suffix a localization call writes after `|`. An `Argument` is a quoted text, a number or a nested call.
-
-Every span is in the file's own offsets, so the parser takes the offset where its text starts. `SubstituteCall` fills in
-a macro's parameters with the arguments written for them. Which function a step calls, and what it returns, is the
-schema's.
-
-## Edits
-
-An `Edit` replaces a span with a text, so an empty span inserts and an empty text deletes. `DiffEdits` gives the
-smallest list that turns one text into another, and replaces the whole text where either one is not valid UTF-8.
-`Tree.BuildInsertion` adds lines as the last statements of a block, indented the way the file indents, with a tab where
-the file has no indentation of its own.
+- Most of the commas are in the license texts and font notices the games keep as .txt files beside their script:
+  CK3's `game/licenses/software` holds 600 of them, and EU5's `game/loading_screen/fonts` 641. In script a comma
+  separates the names of a list, as in CK3's defines:
+  `ACCESSORY_PREFIXES_BLOCK_0 = { "female_clothing", "male_clothing", "female_clothes", … }`.
+- A semicolon ends a line of Vic3's and EU5's defines (`LENS_TOOLBAR_ITEM_WIDTH = 100;`,
+  `SIDEMENU_VERTICAL_OFFSET = 10.0f;`), of CK3's map environment (`map_objects_sunny_sun_elevation = 0.4;`), and of a
+  few GUI and asset lines (EU5's `spacing = 8;` and `state = { name = "idle" };`).
+- The f of a C float is in the defines of all three games (CK3's `DISBAND_FADE_LENGTH = 3.0f`) and in CK3's GUI
+  (`glow_texture_downscale = 5.5f`).
+- No shipped file nests a block that deep. The limit keeps a mod's file from overflowing the parser's stack.
 
 ## Files
 
 | file | what it holds |
 |---|---|
-| `tree.go` | The tree: spans, positions, errors, the line index, statements and the lookups over them. |
+| `tree.go` | The package doc, and the tree: spans, positions, errors, the line index, statements and the lookups over them. |
 | `parse.go` | The lexer and the parser. |
-| `shapes.go` | The shapes of a word, dates, dotted chains, key paths, and constants with the numbers they resolve to. |
+| `shapes.go` | The shapes of a word, dates, dotted chains, key paths, and constants with the numbers they stand for. |
 | `colors.go` | The color blocks script writes: reading them, and writing a color back. |
 | `call.go` | Data calls and filling in a macro's call. |
 | `edit.go` | Edits to a text, the diff between two texts, and inserting lines into a block. |
@@ -122,7 +57,8 @@ the file has no indentation of its own.
 ## Terms
 
 - **Tree**: one parse of one text.
-- **Statement**: one statement: `key op value`, a bare value inside a list, or a block with or without a tag.
+- **Statement**: one statement: `key op value`, a value alone inside a block, or a block with or without a tag.
+- **Lead**: the value written alone just before a statement in its block, such as `template` in `template x { }`.
 - **Span**: a half-open range of bytes in a text.
 - **Lines**: the line index of a text.
 - **Position**: a line and a column, both from zero, the column in UTF-8 bytes.

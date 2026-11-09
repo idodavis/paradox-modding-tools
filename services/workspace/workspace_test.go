@@ -215,7 +215,7 @@ func TestLocateSaysWhereFileSits(t *testing.T) {
 		t.Errorf("a mod's file: %+v", events.File)
 	}
 	vanilla := ws.Locate(ws.Mods.Load(), filepath.Join(resolveFixture(t, ck3), "game", "events", "v_events.txt"))
-	if vanilla.Rel != "events/v_events.txt" || vanilla.Origin != game.OriginVanilla || !vanilla.ReadOnly {
+	if vanilla.Rel != "events/v_events.txt" || vanilla.Origin != files.OriginVanilla || !vanilla.ReadOnly {
 		t.Errorf("a game's file: %+v", vanilla)
 	}
 	if fresh := ws.Locate(ws.Mods.Load(), filepath.Join(dir, "events", "m_fresh.txt")); fresh.Root != dir {
@@ -232,7 +232,7 @@ func TestListRootsPutsModsBeforeGame(t *testing.T) {
 	ws, dir := openFixture(t)
 	want := []files.Root{
 		{Dir: dir, Origin: fixtureModID},
-		{Dir: filepath.Join(resolveFixture(t, ck3), "game"), Origin: game.OriginVanilla},
+		{Dir: filepath.Join(resolveFixture(t, ck3), "game"), Origin: files.OriginVanilla},
 	}
 	isRoot := func(place Place, root files.Root) bool { return place.Path == root.Dir && place.Origin == root.Origin }
 	if roots := (&Service{session: ws}).ListRoots(); !slices.EqualFunc(roots, want, isRoot) {
@@ -250,7 +250,7 @@ func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	if !ok || text != "Replaced text" || mods.File(winner.Site).Origin != fixtureModID {
 		t.Errorf("v_key: %q %v %v", text, winner, ok)
 	}
-	if text, winner, ok = ws.LookupText(mods, "v.1.t"); !ok || text != "Hello" || mods.File(winner.Site).Origin != game.OriginVanilla {
+	if text, winner, ok = ws.LookupText(mods, "v.1.t"); !ok || text != "Hello" || mods.File(winner.Site).Origin != files.OriginVanilla {
 		t.Errorf("v.1.t: %q %v %v", text, winner, ok)
 	}
 	ws.Language = "french"

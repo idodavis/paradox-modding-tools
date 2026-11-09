@@ -11,6 +11,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/schema"
@@ -64,7 +65,7 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 	if !lo.SomeBy(sites, isGame) || lo.EveryBy(sites, isGame) {
 		return findings
 	}
-	if site, ok := lo.Find(sites, func(site index.Site) bool { return isMod(mods, site) && winner.IsKept(site) }); ok {
+	if site, ok := lo.Find(sites, func(site index.Site) bool { return isMod(mods, site) && mods.ResolveSite(winner, site).Kept }); ok {
 		facts := lsp.DescribeReference(reference)
 		facts["kept"] = describeKept(mods, site)
 		findings = append(findings, makeFinding(mods, "override", facts, lsp.MakeSites(ws, mods, sites, &winner)))
@@ -93,7 +94,7 @@ func describeKept(mods *index.Index, site index.Site) string {
 // removed-names.
 func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []Finding {
 	installed, shipped := lo.FilterReject(makeFileSites(ws, mods, path), func(site lsp.Site, _ int) bool {
-		return site.Place.Origin == game.OriginVanilla
+		return site.Place.Origin == files.OriginVanilla
 	})
 	kept := lo.SomeBy(shipped, func(site lsp.Site) bool { return site.Kept })
 	var findings []Finding
@@ -120,7 +121,7 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 		describeRemoved(ws, mods, &override, uses)
 	}
 	// entries a replaced file leaves out are its mod's own problem, unless another mod uses one
-	if lo.SomeBy(users, func(origin string) bool { return origin != override.Origin && origin != game.OriginVanilla }) {
+	if lo.SomeBy(users, func(origin string) bool { return origin != override.Origin && origin != files.OriginVanilla }) {
 		override.Question = lsp.QuestionCompatibility
 	}
 	return append(findings, override)
@@ -205,7 +206,7 @@ func listSharedMessages(ws *workspace.Session, mods *index.Index, messages []ind
 // isGameFolder reports whether the first folder of a mod file's path, after any stage folder, is one the game's own
 // files lie in.
 func isGameFolder(ws *workspace.Session, rel string) bool {
-	_, rest := ws.Game.SplitStage(strings.ToLower(rel))
+	_, rest := files.SplitStage(strings.ToLower(rel), ws.Game.Stages)
 	folder, _, nested := strings.Cut(rest, "/")
 	return nested && ws.Schema.TopFolders[folder]
 }
@@ -238,7 +239,7 @@ func splitWhy(finding Finding) []lsp.Part {
 	folder := winner.Place.Folder
 	beaten := lo.FilterMap(finding.Sites, func(site lsp.Site, _ int) (string, bool) {
 		return lo.Ternary(site.Place.Folder == folder, site.Place.Name, site.Place.Rel),
-			!site.Kept && site.Place.Origin != game.OriginVanilla
+			!site.Kept && site.Place.Origin != files.OriginVanilla
 	})
 	facts := maps.Clone(finding.Facts)
 	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, lsp.JoinList(beaten, "and")

@@ -28,8 +28,9 @@ and where each feature lives, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md), whi
 
 ## Conventions
 
-- Parser and semantics logic is game-agnostic and shared; game-specific facts live in `game`'s tables
-  ([internal/game](internal/game/README.md)).
+- Parser and semantics logic is game-agnostic and shared. A game fact is a row of a table, never code. The table
+  sits beside its reader in the one package that reads it, and moves to [internal/game](internal/game/README.md)
+  once a second package reads it; no package imports another of its layer for a table.
 - Display fields (relative paths, origin) are on Go payloads (`workspace.Place`). Pages render a payload's fields as
   they are: no path helper, no view-model re-derived from what Go computed. Where client-side path math is
   unavoidable, use the standard library (`filepath.Rel`, Node `node:path`).
@@ -44,32 +45,43 @@ and where each feature lives, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md), whi
 
 Each rule says what checks it; "review" means nothing does, so the author and the reviewer do.
 
-- **Functions** are at most 60 lines and four nesting levels; a literal table or a switch over an enum may be longer. A
-  function that does two jobs is two functions; a loop body moved out to shed a level is not a helper. (golangci-lint
-  `funlen` at 60 lines and 40 statements, and `nestif`; the rest review)
+- **Functions** are at most 80 lines, blank lines included, 40 statements and four nesting levels; a literal table or a
+  switch over an enum may be longer. A function that does two jobs is two functions; a loop body moved out to shed a
+  level is not a helper. (golangci-lint `funlen` at 80 lines and 40 statements, and `nestif`; the rest review)
+- **Blank lines.** A blank line ends each thought inside a function: after a block that ends in `return`, `continue` or
+  `break` when more code follows it, before the final `return` of a function of more than one statement, and between
+  the cases of a switch once any case holds more than one statement. A declaration stays with the line that checks or
+  adjusts it, and a comment never stands in for the blank line. Constants and fields that carry a comment have a blank
+  line before and after them. (review)
+- **Loops** are a `for`, or a `slices` or `maps` call that names the operation. No `samber/lo`. (review)
 - **Names.** One identifier per thing everywhere (each package's README). A parameter, a field or a local is named for
   its type or for what it holds, never for how a call reads as a sentence: no preposition (`in`, `at`, `from`), no
   sentence word (`found`, `written`, `said`, `made`, `left`, `taken`), no letter outside a loop counter. An exported
-  field says what it holds (`Count`, `Target`), not which way it points. A receiver is its type's word, a Wails
-  service's its name in three letters (`ide`, `git`, `wsp`), never `s`; a local holding an `*index.Index` is `index`. No
+  field says what it holds (`Count`, `Target`), not which way it points. A receiver is one letter, the first of its
+  type's name (`f *File`, `r *Reader`, `s *Service`); a local holding an `*index.Index` is `index`. No
   new identifier is built on `read`, `name`, `form` or `word`. American spelling (`color`).
   (golangci-lint `revive` for receivers and exported names, `misspell` for spelling; the rest review)
-- **Comments.** Every exported name and every function has a doc comment written the way Go's own are, in plain
-  English: short sentences, one fact each, ordinary words, as you would say it to a colleague. It begins with the
-  name and says what the thing does or returns, then what happens in the special cases (not found, nil, "", -1,
-  the error). A parameter is described in words ("one layer of a coat", "the given role"); its name is never
-  dropped into a sentence as if it were a noun ("the layer at index layer", "the file at path"). A type's comment
-  says what an instance is, not its fields; a package's says in two sentences what it does; a Vue or TS header is
-  one or two plain sentences on what the file shows or does. Never the algorithm (that is a comment inside the
-  body), never who calls it, never a library inventory, and no history, plan, stage, ruling, date or person. A
-  comment line fits in 120 columns, a tab counting 2. A struct field's comment sits beside the field, on its line, a
-  short phrase of what it holds and its special value ("" means none); that line may run to 240 columns, and no field
-  takes a comment above or below it. A comment that restates the next line is deleted. The sample
-  is `services/draw/*.go` in this repository. Before and after, from it: "ResolveWindow resolves a
-  window of a file: its types and templates the ones the game keeps, block overrides applied, each property by the
-  last written" became "ResolveWindow resolves one window in a GUI file. It applies the window's type and
-  templates, looks up its texts and finds its textures. It returns an error if the file is not in the workspace or
-  does not define the window." (`revive`'s `exported` for the leading name; the rest review)
+- **Comments.** Every exported name has a doc comment, and so does every function but a short unexported one whose
+  name and body say everything. A doc is written the way Go's own are, in plain English: short sentences, one fact
+  each, ordinary words, as you would say it to a colleague. It begins with the name (`Winner is`, not `A Winner is`)
+  and says what the thing does or returns, then what happens in the special cases (not found, nil, "", -1, the
+  error). Where the reason is the game's or a limit's, it says why, and it says what is not known and what the code
+  does about it. An example is written in the game's own syntax. A parameter may be named where the sentence can only
+  mean it ("kind names the definition in diagnostics"); where its name is also an ordinary word, it is described in
+  words ("one layer of a coat", "the given role") and never dropped in as a noun ("the layer at index layer", "the
+  file at path"). A type's comment says what an instance is, not its fields. A package's says what the package reads
+  and does, lists the game's rules it applies, and says under a `# Robustness` heading what input it refuses and what
+  it reads past. A Vue or TS header is one or two plain sentences on what the file shows or does. Never the algorithm
+  (that is a comment inside the body), never who calls it, never a library inventory, and no history, plan, stage,
+  ruling, date or person. A comment line fits in 80 columns, a tab counting 2. A struct field's comment sits above
+  the field: a sentence that begins with the field's name and says what it holds and what its special value means.
+  Fields read together share one comment, and a field whose name and type say everything takes none. A comment that
+  restates the next line is deleted. The samples are the `report`, `folders` and `database` packages of
+  [pdx-parser-go](https://github.com/kaiser-chris/pdx-parser-go). Before and after: "ResolveWindow resolves a window
+  of a file: its types and templates the ones the game keeps, block overrides applied, each property by the last
+  written" became "ResolveWindow resolves one window in a GUI file. It applies the window's type and templates, looks
+  up its texts and finds its textures. It returns an error if the file is not in the workspace or does not define the
+  window." (`revive`'s `exported` for the leading name; the rest review)
 - **Tests.** One test file per package, `<package>_test.go`; a test is named for what it tests. A real-install gate
   lives in the package's test file behind its environment variable. (review)
 

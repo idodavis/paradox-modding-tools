@@ -12,6 +12,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
@@ -176,7 +177,7 @@ func TestBuildGraphSplicesHiddenNodes(t *testing.T) {
 	gph := openFixture(t)
 	filter := gph.Defaults()
 	if !slices.Contains(filter.Databases, "events") || !slices.Contains(filter.Databases, "on_action") ||
-		!slices.Equal(filter.Origins, []string{game.OriginVanilla, modA, modB}) || filter.Depth != 3 ||
+		!slices.Equal(filter.Origins, []string{files.OriginVanilla, modA, modB}) || filter.Depth != 3 ||
 		filter.Limit != 200 || !filter.Follow {
 		t.Fatalf("defaults %+v", filter)
 	}
@@ -201,7 +202,7 @@ func TestBuildGraphSplicesHiddenNodes(t *testing.T) {
 		backward.Nodes[position].Step != -2 {
 		t.Errorf("graph from the fired event: %+v", backward.Nodes)
 	}
-	filter.Origins = []string{game.OriginVanilla, modA}
+	filter.Origins = []string{files.OriginVanilla, modA}
 	short, err := gph.BuildGraph(eventD1, filter)
 	if err != nil {
 		t.Fatal(err)
@@ -290,8 +291,8 @@ func TestBuildGraphSkipsReplacedFirer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if replacing.Node.CopyOrigin != game.OriginVanilla || replacing.Copy == nil ||
-		replacing.Copy.Site.Place.Origin != game.OriginVanilla || added.Node.CopyOrigin != "" || added.Copy != nil {
+	if replacing.Node.CopyOrigin != files.OriginVanilla || replacing.Copy == nil ||
+		replacing.Copy.Site.Place.Origin != files.OriginVanilla || added.Node.CopyOrigin != "" || added.Copy != nil {
 		t.Errorf("v.2 hides %q (%v); vc.1 hides %q (%v)", replacing.Node.CopyOrigin, replacing.Copy != nil,
 			added.Node.CopyOrigin, added.Copy != nil)
 	}

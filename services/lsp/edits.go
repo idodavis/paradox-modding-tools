@@ -475,11 +475,11 @@ func (lsp *Service) BuildOverride(path string, line, column int, modID string) (
 	switch precedence := database.Precedence; {
 	case precedence.Modes != "":
 		entry, side = buildModeCopy(tree, definition, precedence), 1
-	case precedence.Keeps == "first":
+	case precedence.Keeps == game.KeepFirst:
 		side = -1
 	case precedence.KeepsEvery():
 		return nil, errors.New("the game joins every copy of an entry of this kind, so a mod adds to it instead of overriding it")
-	case precedence.Keeps == "highest":
+	case precedence.Keeps == game.KeepHighest:
 		highest := lo.Max(lo.Map(sites, func(site index.Site, _ int) int { return int(mods.Occurrence(site).Priority) }))
 		entry = buildPriorityCopy(tree, definition, precedence, highest+1)
 	default:
@@ -525,17 +525,16 @@ func resolveOverrideFolder(
 ) string {
 	if side > 0 && len(rivals) > 0 {
 		last := slices.MaxFunc(rivals, func(first, second index.Site) int {
-			return index.CompareLoadOrder(stripStage(row, mods.File(first).Rel), stripStage(row, mods.File(second).Rel))
+			return files.CompareLoadOrder(stripStage(row, mods.File(first).Rel), stripStage(row, mods.File(second).Rel))
 		})
 		return path.Dir(mods.File(last).Rel)
 	}
-	stage, _ := row.SplitStage(place.Rel)
-	return path.Join(stage, database.Row.Folder)
+	return path.Join(place.Stage, database.Row.Folder)
 }
 
 // stripStage returns a file's path from its root in lower case, without its stage folder, as the game orders its files.
 func stripStage(row *game.Game, rel string) string {
-	_, rest := row.SplitStage(strings.ToLower(rel))
+	_, rest := files.SplitStage(strings.ToLower(rel), row.Stages)
 	return rest
 }
 
@@ -576,7 +575,7 @@ func findPrefix(
 			prefix = strings.Repeat(lo.Ternary(side < 0, "0", "z"), count) + "_"
 		}
 		candidate := stripStage(row, resolveEntryRel(mod, folder, prefix))
-		if lo.EveryBy(others, func(other string) bool { return index.CompareLoadOrder(candidate, other)*side > 0 }) {
+		if lo.EveryBy(others, func(other string) bool { return files.CompareLoadOrder(candidate, other)*side > 0 }) {
 			return prefix, true
 		}
 	}
@@ -588,7 +587,7 @@ func findPrefix(
 func buildModeCopy(tree *jomini.Tree, definition *schema.Definition, precedence game.Precedence) string {
 	statement := tree.Statements[definition.Statement]
 	entry := "REPLACE:" + tree.Src[definition.Span.Start:statement.Span.End]
-	if precedence.Modes != "wrapped" || statement.Parent == 0 {
+	if precedence.Modes != game.ModePlaceWrapped || statement.Parent == 0 {
 		return entry
 	}
 	holder := tree.Statements[statement.Parent]

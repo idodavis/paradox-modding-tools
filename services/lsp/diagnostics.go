@@ -91,6 +91,9 @@ var Codes = []Code{
 	{ID: "unclosed-block", Question: QuestionHealth, Level: LevelWarning, Topic: "syntax",
 		Label: "Unclosed block", Description: "A block that is opened and never closed.", Message: "This block is opened and never closed.",
 		Advice: "Add the closing brace where the block ends."},
+	{ID: "too-deep", Question: QuestionHealth, Level: LevelWarning, Topic: "syntax",
+		Label: "Block nested too deep", Description: "A block nested more than 1,000 levels deep.", Message: "This block is nested more than 1,000 levels deep, so nothing inside it is checked.",
+		Advice: "Close the blocks above it that are left open, or nest it less deeply."},
 	{ID: "unexpected-brace", Question: QuestionHealth, Level: LevelCritical, Topic: "syntax",
 		Label: "Unexpected brace", Description: "A closing brace with no block to close.", Message: "This closing brace has no block to close.",
 		Advice: "Delete this brace, or add the opening brace it belongs to."},
@@ -304,8 +307,8 @@ type Diagnostic struct {
 
 // valueDescriptions holds the words that describe each value type.
 var valueDescriptions = map[schema.ValueType]string{
-	schema.ValueBool: "yes or no", schema.ValueNumber: "a number", schema.ValueDate: "a date",
-	schema.ValueColor: "a color", schema.ValueCall: "a data call", schema.ValueText: "text", schema.ValueBlock: "a block",
+	schema.ValueTypeBool: "yes or no", schema.ValueTypeNumber: "a number", schema.ValueTypeDate: "a date",
+	schema.ValueTypeColor: "a color", schema.ValueTypeCall: "a data call", schema.ValueTypeText: "text", schema.ValueTypeBlock: "a block",
 }
 
 // Diagnose returns the problems of a file, judged against the open workspace. It leaves out the checks the user turned
@@ -389,7 +392,7 @@ func isDiagnosed(place workspace.Place) bool {
 		return false
 	}
 	return place.Format == files.FormatLocalization || place.Format.IsScript() || place.Format == files.FormatDescriptor ||
-		place.Format == files.FormatText && place.Origin != game.OriginVanilla && strings.HasSuffix(rel, ".yml")
+		place.Format == files.FormatText && place.Origin != files.OriginVanilla && strings.HasSuffix(rel, ".yml")
 }
 
 // listEnabled drops the diagnostics of the checks the user turned off in a workspace.
@@ -505,10 +508,10 @@ type diagnoseVisitor struct {
 // The given map holds the parameters of the callees the run has read.
 func newVisitor(ws *workspace.Session, mods *index.Index, place workspace.Place, parameters *sync.Map) *diagnoseVisitor {
 	visitor := &diagnoseVisitor{
-		ws: ws, index: mods, whole: mods, place: place, parseOnly: place.Origin == game.OriginVanilla,
+		ws: ws, index: mods, whole: mods, place: place, parseOnly: place.Origin == files.OriginVanilla,
 		parameters: parameters, enclosing: map[int32]*schema.Field{},
 	}
-	if place.Origin != "" && place.Origin != game.OriginVanilla {
+	if place.Origin != "" && place.Origin != files.OriginVanilla {
 		visitor.index = mods.Narrow(append([]string{place.Origin}, ws.ListDependencies(place.Origin)...))
 	}
 	return visitor
@@ -582,7 +585,7 @@ func (visitor *diagnoseVisitor) Leave(tree *jomini.Tree, statement int32, contex
 	}
 	var missing []string
 	for key, field := range context.Field.Children {
-		if field.Required.Value == "always" && field.Required.Source.CanAccuse() && !strings.HasPrefix(key, "<") &&
+		if field.Required.Value == schema.RequirementAlways && field.Required.Source.CanAccuse() && !strings.HasPrefix(key, "<") &&
 			!hasChild(tree, statement, key) && isRequired(context.Field, field) {
 			missing = append(missing, key)
 		}
@@ -738,7 +741,7 @@ func (visitor *diagnoseVisitor) diagnoseDefinition(tree *jomini.Tree, statement 
 	}
 	facts := DescribeReference(schema.Reference{Database: definition.Database, Name: definition.Name})
 	modes, top := database.Precedence.Modes, tree.Statements[statement].Parent == 0
-	fits := modes == "entry" && top || modes == "wrapped" && !top
+	fits := modes == game.ModePlaceEntry && top || modes == game.ModePlaceWrapped && !top
 	switch {
 	case definition.Mode != "" && modes != "" && !fits:
 		facts["mode"] = definition.Mode
@@ -784,7 +787,7 @@ func (visitor *diagnoseVisitor) isOwn(site index.Site, definition *schema.Defini
 // isPriorityTied reports whether a definition has the same override priority as another loaded plain copy of its
 // name, in a database where the game keeps the copy with the highest priority. It is false in any other database.
 func (visitor *diagnoseVisitor) isPriorityTied(definition *schema.Definition, precedence game.Precedence) bool {
-	if precedence.Keeps != "highest" {
+	if precedence.Keeps != game.KeepHighest {
 		return false
 	}
 	mods := visitor.index
@@ -803,7 +806,7 @@ func (visitor *diagnoseVisitor) isPriorityTied(definition *schema.Definition, pr
 
 // diagnoseNamespace records an event at the top of an events file that is outside the file's namespaces.
 func (visitor *diagnoseVisitor) diagnoseNamespace(tree *jomini.Tree, current jomini.Statement, context *schema.Context) {
-	database, ok := visitor.ws.Schema.FindDatabase(visitor.place.Rel)
+	database, ok := visitor.ws.Schema.FindDatabase(visitor.place.File)
 	if !ok || database.Row.Contents != game.ContentsEvents {
 		return
 	}
@@ -886,11 +889,11 @@ func (visitor *diagnoseVisitor) diagnoseValue(tree *jomini.Tree, statement int32
 	}
 	// MatchValue cannot judge a path, free text or a block's short form
 	expected, text := field.Value.Value, tree.Text(current.Value)
-	if expected.Database == game.File || expected.Type == schema.ValueText || expected.Type == schema.ValueBlock {
+	if expected.Database == game.File || expected.Type == schema.ValueTypeText || expected.Type == schema.ValueTypeBlock {
 		return
 	}
 	// the game reads a script value, or a trigger that returns a number, where a number is expected
-	readsScriptValue := expected.Type == schema.ValueNumber && jomini.IsIdentifier(tree.Unquoted(current.Value))
+	readsScriptValue := expected.Type == schema.ValueTypeNumber && jomini.IsIdentifier(tree.Unquoted(current.Value))
 	match := visitor.ws.Schema.MatchValue
 	if readsScriptValue || strings.ContainsAny(text, "[$@") || match(expected, text) ||
 		!lo.EveryBy(lo.Keys(field.Vanilla.Values), func(value string) bool { return match(expected, value) }) {
@@ -904,13 +907,13 @@ func (visitor *diagnoseVisitor) diagnoseValue(tree *jomini.Tree, statement int32
 // describeExpected returns the words for what a value must be.
 func describeExpected(expected schema.Expected) string {
 	switch {
-	case expected.Type == schema.ValueChoice:
+	case expected.Type == schema.ValueTypeChoice:
 		return "one of " + strings.Join(expected.Choices, ", ")
-	case expected.Type == schema.ValueReference && expected.Database != "":
+	case expected.Type == schema.ValueTypeReference && expected.Database != "":
 		return "the name of a " + game.DescribeDefinition(expected.Database, false)
-	case expected.Type == schema.ValueReference:
+	case expected.Type == schema.ValueTypeReference:
 		return "a name"
-	case expected.Type == schema.ValueTarget:
+	case expected.Type == schema.ValueTypeTarget:
 		description := "a link"
 		if expected.Scope != "" {
 			description += " to a " + schema.ToPhrase(expected.Scope)
@@ -931,7 +934,7 @@ func (visitor *diagnoseVisitor) diagnoseDate(tree *jomini.Tree, statement int32,
 	if key := tree.Unquoted(current.Key); !jomini.IsNumber(key) {
 		spans = append(spans, current.Key)
 	}
-	if field := context.Field; field != nil && field.Value.Value.Type == schema.ValueDate && field.Value.Source.CanAccuse() &&
+	if field := context.Field; field != nil && field.Value.Value.Type == schema.ValueTypeDate && field.Value.Source.CanAccuse() &&
 		!current.IsBlock() {
 		spans = append(spans, current.Value)
 	}

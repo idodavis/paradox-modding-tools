@@ -125,7 +125,7 @@ func (wsp *Service) DescribePrecedence(gameID, database, folder string) string {
 	if row == nil {
 		return ""
 	}
-	_, folder = row.SplitStage(folder)
+	_, folder = files.SplitStage(folder, row.Stages)
 	return row.LookupPrecedence(database, folder).Describe()
 }
 
@@ -482,7 +482,7 @@ func (wsp *Service) State() State {
 }
 
 // countDeclared returns how many of a schema's commands are declared as one kind, such as effects.
-func countDeclared(language *schema.Schema, declaration string) int {
+func countDeclared(language *schema.Schema, declaration game.Declaration) int {
 	count := 0
 	for _, command := range language.Commands {
 		if slices.Contains(command.Declared, declaration) {
@@ -636,7 +636,7 @@ func (wsp *Service) FindWritable(paths ...string) (*Session, error) {
 		switch place := ws.Locate(mods, path); {
 		case place.Root == "":
 			return nil, fmt.Errorf("%s is outside the workspace", path)
-		case place.Origin == game.OriginVanilla:
+		case place.Origin == files.OriginVanilla:
 			return nil, errors.New("the game's own files are not changed")
 		case place.ReadOnly:
 			return nil, fmt.Errorf("%s is Steam's copy of a Workshop mod; Steam replaces it when its author updates it",

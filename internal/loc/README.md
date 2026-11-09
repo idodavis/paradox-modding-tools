@@ -3,11 +3,12 @@
 [Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › loc
 
 The loc package reads and writes localization files. It parses a file into its messages, decides the file's language,
-splits a message's text into its markup, and gives the plain text a player sees.
+splits a message's text into its markup, and gives the plain text a player sees. The format it reads, the language
+rule, the markups and what it does with a file that breaks them are its package doc, in [loc.go](loc.go).
 
-It shares [jomini](../jomini/README.md)'s spans, line index and errors, so a localization file and a script file are
-read with the same offsets. It knows no game and no index: what a key names, and which message the game keeps, are the
-[index](../index/README.md)'s.
+It knows no game and no index: what a key names, and which message the game keeps, are the
+[index](../index/README.md)'s. It shares [jomini](../jomini/README.md)'s spans, line index and errors, so a
+localization file and a script file are read with the same offsets.
 
 **Uses** [jomini](../jomini/README.md) · **Used by** [schema](../schema/README.md), [index](../index/README.md) and the
 services that read localization.
@@ -18,24 +19,11 @@ flowchart LR
   file -->|a message's text| segments["Segments"]
   segments --> plain["ToPlain: the text a player reads"]
   segments --> calls["ListCalls: jomini Calls"]
+  segments --> names["ListNames: the keys, icons and formats a segment writes"]
   segments --> faults["ListMarkupFaults: errors"]
 ```
 
-## The file
-
-A `File` is one parsed localization file. A `Message` is one line of it: a key, its version and its text, with the span
-of the whole message, of the key and of the text without its quotes. `ParseMessage` reads one line, given where the line
-starts in its file, so that the spans come out in the file's offsets.
-
-`Parse` never fails:
-
-- A line above the header is an error, `loc-content-before-header`, and is not read.
-- A line that is neither a header, a comment nor a message is `malformed-line`.
-- A message with no closing quote is `loc-unterminated-value`, and its text runs to the end of its line.
-
-## The language
-
-A file's language is decided by the first of three that says:
+A file's language is decided by the first of three that names one:
 
 ```mermaid
 flowchart LR
@@ -44,49 +32,36 @@ flowchart LR
   folder -->|none| empty["No language: empty"]
 ```
 
-Each is read without regard to case.
+## Evidence
 
-- `ToLanguageRel` gives the path of the file that holds the same messages in another language, setting the language in
-  the folder and in the name where the file has them.
-- `ToLanguageKey` writes a language as the game does, `l_english`.
-- `DescribeLanguage` gives a folder's name in English, such as Simplified Chinese for `simp_chinese`, or the folder
-  itself for a language it does not know. `IsLanguage` tells a language's folder from the others the games keep
-  beside them, such as `jomini` and `modifiers`.
+Measured on the three installs, over every localization file:
 
-## Markup
+| | CK3 | Vic3 | EU5 |
+|---|---|---|---|
+| files | 11,567 | 2,308 | 7,794 |
+| messages | 2,800,474 | 1,242,935 | 2,909,393 |
+| messages with no version | 2,627,743 | 1,228,168 | 2,909,180 |
+| messages whose text holds a quote | 18,600 | 8,407 | 1,845 |
+| of them, with a quote no backslash escapes | 9,004 | 1,939 | 25 |
+| problems Parse reports | 0 | 0 | 0 |
+| files whose language the header gives | 11,557 | 2,308 | 7,794 |
+| files whose language the name or the folder gives | 10 | 0 | 0 |
+| headers after a file's first | 18 | 20 | 10 |
+| headers with a comment after them | 0 | 0 | 1 |
+| `localisation` folders | 0 | 0 | 0 |
 
-`Segments` splits a message's text into its pieces, each a `Segment` with its `Markup` and its spans in the file. The
-markups are:
-
-- plain text;
-- `$key$`, another message's text or a value the game fills in;
-- `[call]`, a data call;
-- `#format … #!`, a text format and its end;
-- `@icon!`, an icon;
-- `\n`, a break.
-
-A segment's `Text` is the piece without its markers, and its `TextSpan` is where that text sits. A format's segment is
-followed by the segments of any markup written inside its name.
-
-A segment's `Kind` is empty as parsed. Other packages set it to say what kind of value a data call shows, number or
-text, and then the segment's `Text` holds a sample of that value instead of the call.
-
-`ListCalls` parses the call segments into [jomini](../jomini/README.md) `Call`s. `ListMarkupFaults` reports two
-mistakes in the plain text: a `[` that starts a call but is never closed, and a format ended with `#.` or `#,` where
-the game ends one with `#!`.
-
-## The writer
-
-`Encode` writes the text of a localization file for one language: the header, then its messages. `EncodeMessages`
-writes the messages alone, in the layout the game reads. `EncodeAddition` writes what adds messages at the end of a
-file's text, with a line break first where the text lacks a final one, in the text's own line ending.
+- The games write a quote inside a message's text with or without a backslash before it, so a text is read to the
+  last quote on its line, not to the first.
+- The ten CK3 files with no header are empty: nine of the `pam_discovery_events_l_<language>.yml` files take their
+  language from their name, and `game/localization/french/dlc/fp2/dlc_fp2_triggers.yml` from its folder.
+- Every file is for one of the eleven languages the games keep, and every header names its language in lower case.
 
 ## Files
 
 | file | what it holds |
 |---|---|
-| `loc.go` | Messages and files, the parser, the language rule and the writer. |
-| `markup.go` | Splitting a message's text into markup, the plain text, the data calls and the markup faults. |
+| `loc.go` | The package doc, messages and files, the parser, the language rule and the writer. |
+| `markup.go` | Splitting a message's text into markup, the plain text, the data calls, the names and the markup faults. |
 
 ## Terms
 

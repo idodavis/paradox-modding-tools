@@ -1,5 +1,103 @@
-// Package jomini parses Paradox script, GUI and asset files into a flat tree and tells what shape a written key
-// or value has. It knows nothing about any game.
+// Package jomini parses Paradox script, GUI and asset files into a flat tree,
+// and tells what shape a written word has: a number, a date, a parameter, a
+// constant, a color or a data call. It answers only what the text says, such
+// as where each statement starts and ends and what its parts are. What a key
+// means is the schema's question, and this package knows no game.
+//
+// # The tree
+//
+// A Tree holds the statements of one text in one slice, in document order.
+// Statement 0 is the file itself, and a block's children sit right after it.
+// A statement knows its Parent and its Last, one past its last descendant, so
+// its children are the statements between it and Last:
+//
+//	a = { b = 1 c = 2 } d = 3
+//
+//	0  the file    children 1, 4
+//	1  a = { … }   Last 4, children 2, 3
+//	2  b = 1       Last 3
+//	3  c = 2       Last 4
+//	4  d = 3       Last 5
+//
+// Every part of a statement is a Span of the text, never a copy. Every offset
+// counts UTF-8 bytes, and so does a Position's column.
+//
+// # The syntax
+//
+// Parse reads the script language by these rules:
+//
+//   - A statement is a key, an operator and a value, or a value alone. The
+//     operators are =, ==, !=, <, >, <=, >= and ?=.
+//   - A value is a scalar or a block in braces. A word before a block is its
+//     tag, as in color = rgb { 255 0 0 }, and so is list before a quoted
+//     name, as in pattern = list "faction_patterns_list".
+//   - A value alone just before a statement in its block is the statement's
+//     lead: scripted_trigger in scripted_trigger x = { }, template in
+//     template x { } and blockoverride in blockoverride "x" { }.
+//   - A quoted string is one scalar, and a backslash escapes the character
+//     after it. A string may run over several lines.
+//   - A [ … ] inside a word is part of the word, spaces and all. It ends at
+//     its closing ] or at the end of its line.
+//   - A comma or a semicolon separates values as white space does. CK3
+//     writes NOTIFICATION_MESSAGE_RELATIONS = { "friend", "rival", "nemesis" }
+//     and map_objects_sunny_sun_elevation = 0.4;.
+//   - A # starts a comment, which runs to the end of its line.
+//   - A line ends at \n, \r\n or a lone \r.
+//
+// # Shapes
+//
+//   - A number is an optional sign, digits, an optional fraction and an
+//     optional %, or a 0x hexadecimal value. A fraction may end in the f of a
+//     C float, as in 3.0f.
+//   - A date is year.month.day, as in 1066.9.15. The day may be left out.
+//   - A parameter is $NAME$, with or without a |default, anywhere in a word.
+//   - A constant is @name, or an expression @[…] of numbers, constants, the
+//     four operators and brackets. A constant stands for the value of the
+//     last @name = value written before it in the file.
+//   - A dotted chain such as scope:x.var:y.z splits at each dot outside
+//     brackets and quotes, and a prefixed name such as var:x at its colon.
+//   - A key path is segments joined by /, each a glob, <number> for a key
+//     written as a number or a date, or ** for any depth.
+//
+// # Colors
+//
+// Colors lists the ways script writes a color. A part of rgb, or of a block
+// with no tag, is out of 255, or out of 1 when red, green and blue are each
+// at most 1. A fourth part is the alpha. A hex block holds one number of six
+// hex digits, or eight with the alpha last, with or without 0x: CK3 writes
+// hex{ 50779b } and EU5 hex{ 0xffbcb6b1 }. A color is written back the way
+// its block wrote it: in the same scale, with an alpha only where the block
+// had one, and a hex number with its digits and its 0x as they were.
+//
+// # Data calls
+//
+// A GUI file and a localization text write a data call between brackets, as
+// in [Root.GetCharacter.GetName]. A call is steps joined by dots. A step may
+// take arguments in parentheses, and may be cast by a type in parentheses
+// before it, as in (int_bool)GetPlayer.IsAlive. An argument is a text in
+// single quotes, a number or a nested call. A localization call may end in a
+// format after |, as in [GetName|U].
+//
+// # Robustness
+//
+// Parse never fails. It keeps the statements it could read, and reports each
+// problem as an Error with one of these codes:
+//
+//   - unclosed-block: a block is never closed, and runs to the end of the
+//     text.
+//   - unexpected-brace: a closing brace at the top closes nothing, and is
+//     skipped.
+//   - unclosed-string: a quoted string is never closed, and runs to the end
+//     of the text.
+//   - missing-value: a key and an operator have no value after them.
+//   - too-deep: a block opened deeper than 1,000 levels is skipped to its
+//     matching closing brace, since the parser recurses once per level and a
+//     Go stack overflow is fatal. The tree stays flat and valid.
+//
+// Parse reads past an operator with no key before it, which it drops, and
+// past a byte order mark at the start. DiffEdits replaces the whole text
+// where either text is not valid UTF-8, since the diff would move every later
+// offset.
 package jomini
 
 import (
@@ -9,106 +107,146 @@ import (
 	"strings"
 )
 
-// A Span is a half-open range of bytes in a text.
+// Span is a half-open range of bytes in a text.
 type Span struct {
 	Start int `json:"start"`
 	End   int `json:"end"`
 }
 
 // IsEmpty reports whether the span covers no bytes.
-func (span Span) IsEmpty() bool { return span.Start == span.End }
+func (s Span) IsEmpty() bool { return s.Start == s.End }
 
-// Contains reports whether the given byte offset lies inside the span.
-func (span Span) Contains(offset int) bool { return span.Start <= offset && offset < span.End }
+// Contains reports whether a byte offset lies inside the span.
+func (s Span) Contains(offset int) bool { return s.Start <= offset && offset < s.End }
 
-// A Position is a place in a text, as a line and a column. Both count from zero, and the column counts UTF-8 bytes.
+// Position is a place in a text, as a line and a column. Both count from 0,
+// and the column counts UTF-8 bytes.
 type Position struct {
 	Line   int `json:"line"`
 	Column int `json:"column"`
 }
 
-// An Error is one problem a parse found in a text, with the span it covers.
+// Error is one problem a parse found in a text.
 type Error struct {
-	// Code is unclosed-block, unexpected-brace, unclosed-string or missing-value from a script parse. The loc parser's
-	// codes are malformed-line, loc-content-before-header, loc-unterminated-value and loc-markup.
-	Code    string `json:"code"`
+	// Code names the kind of problem: one of the codes the package doc lists,
+	// or one of the loc package's.
+	Code string `json:"code"`
+
+	// Message says what is wrong, and Span is the text it covers.
 	Message string `json:"message"`
 	Span    Span   `json:"span"`
 }
 
-// Lines is the line index of a text, which turns a byte offset into a line and a column. A line ends at \n, \r\n or a
-// lone \r.
+// Lines is the line index of a text. It turns a byte offset into a line and
+// a column. A line ends at \n, \r\n or a lone \r.
 type Lines struct {
+	// starts and ends are where each line starts and ends, its line ending
+	// left out.
 	starts []int
 	ends   []int
+
+	// length is the length of the text, which an offset is clamped to.
 	length int
 }
 
 // NewLines builds the line index of a text.
 func NewLines(text string) Lines {
 	lines := Lines{starts: []int{0}, length: len(text)}
+
 	for i := 0; i < len(text); i++ {
 		if text[i] != '\n' && text[i] != '\r' {
 			continue
 		}
+
 		lines.ends = append(lines.ends, i)
+
+		// \r\n is one line ending.
 		if text[i] == '\r' && i+1 < len(text) && text[i+1] == '\n' {
 			i++
 		}
+
 		lines.starts = append(lines.starts, i+1)
 	}
+
 	lines.ends = append(lines.ends, len(text))
+
 	return lines
 }
 
 // CountLines returns how many lines the text has. An empty text has one.
-func (lines Lines) CountLines() int { return len(lines.starts) }
+func (l Lines) CountLines() int { return len(l.starts) }
 
-// ToPosition converts a byte offset to its line and column, clamped to the text.
-func (lines Lines) ToPosition(offset int) Position {
-	offset = min(max(offset, 0), lines.length)
-	line := sort.Search(len(lines.starts), func(i int) bool { return lines.starts[i] > offset }) - 1
-	return Position{Line: line, Column: offset - lines.starts[line]}
+// ToPosition returns the line and the column of a byte offset, clamped to the
+// text.
+func (l Lines) ToPosition(offset int) Position {
+	offset = min(max(offset, 0), l.length)
+	line := sort.Search(len(l.starts), func(i int) bool { return l.starts[i] > offset }) - 1
+
+	return Position{Line: line, Column: offset - l.starts[line]}
 }
 
-// LineSpan returns the span of the given line, counted from zero, without its line ending.
-func (lines Lines) LineSpan(line int) Span {
-	return Span{Start: lines.starts[line], End: lines.ends[line]}
+// LineSpan returns the span of a line, counting lines from 0, without its
+// line ending.
+func (l Lines) LineSpan(line int) Span {
+	return Span{Start: l.starts[line], End: l.ends[line]}
 }
 
-// A Statement is one statement of the file: `key op value`, a bare value inside a list, or a block with or
-// without a tag. Each part is a span into the source.
+// Statement is one statement of a text: key op value, a value alone, or a
+// block with or without a tag. Each of its parts is a span of the text, and
+// is empty where the statement does not write it.
 type Statement struct {
-	Parent int32 // the statement that holds it; 0, the file, for a top-level statement and for the file itself
-	Last   int32 // one past the last descendant, so the children are Statements[i+1:Last]
-	Span   Span  // the whole statement
-	Key    Span  // empty for a bare value
-	Op     Span  // =, ==, !=, <, >, <=, >=, ?=; empty for a bare value
-	Tag    Span  // rgb, hsv, list and so on; empty when there is none
-	Value  Span  // a scalar's text, quotes included; empty for a block
-	Block  Span  // from the opening brace to the closing one; empty for a scalar
+	// Parent is the block that holds the statement. It is 0, the file, for a
+	// statement at the top and for the file itself.
+	Parent int32
+
+	// Last is one past the statement's last descendant, so its children are
+	// Statements[i+1:Last].
+	Last int32
+
+	// Span is the whole statement.
+	Span Span
+
+	// Key is empty for a value alone.
+	Key Span
+
+	// Op is the operator: =, ==, !=, <, >, <=, >= or ?=.
+	Op Span
+
+	// Tag is the word before a block, such as rgb, or list before a quoted
+	// name.
+	Tag Span
+
+	// Value is a scalar's text, quotes included. It is empty for a block.
+	Value Span
+
+	// Block runs from the opening brace to the closing one. It is empty for
+	// a scalar.
+	Block Span
 }
 
 // IsBlock reports whether the statement's value is a block.
-func (statement Statement) IsBlock() bool { return !statement.Block.IsEmpty() }
+func (s Statement) IsBlock() bool { return !s.Block.IsEmpty() }
 
-// IsListed reports whether a statement is a bare value with no key, such as one name in a list. A bare block is
-// not one.
-func (statement Statement) IsListed() bool { return statement.Key.IsEmpty() && !statement.IsBlock() }
+// IsListed reports whether the statement is a value alone, with no key, such
+// as one name in a list. A block alone is not one.
+func (s Statement) IsListed() bool { return s.Key.IsEmpty() && !s.IsBlock() }
 
-// ResolveValueSpan returns the span of what a statement writes after its operator: its tag, value and block. It is
-// empty for a statement that writes none of them.
-func (statement Statement) ResolveValueSpan() Span {
-	for _, part := range []Span{statement.Tag, statement.Value, statement.Block} {
+// ResolveValueSpan returns the span of what the statement writes after its
+// operator: its tag, its value and its block. It is empty for a statement
+// that writes none of them.
+func (s Statement) ResolveValueSpan() Span {
+	for _, part := range []Span{s.Tag, s.Value, s.Block} {
 		if !part.IsEmpty() {
-			return Span{Start: part.Start, End: max(statement.Value.End, statement.Block.End)}
+			return Span{Start: part.Start, End: max(s.Value.End, s.Block.End)}
 		}
 	}
+
 	return Span{}
 }
 
-// A Tree is the parse of one text. Its statements are in document order, and a block's children sit right after it.
-// It also keeps the text's comments, parse errors and line index.
+// Tree is the parse of one text. Its statements are in document order, and a
+// block's children sit right after it. It also keeps the text's comments, its
+// parse errors and its line index.
 type Tree struct {
 	Src        string
 	Statements []Statement
@@ -117,118 +255,153 @@ type Tree struct {
 	Lines      Lines
 }
 
-// Text returns the source text the given span covers.
-func (tree *Tree) Text(span Span) string { return tree.Src[span.Start:span.End] }
+// Text returns the source text a span covers.
+func (t *Tree) Text(span Span) string { return t.Src[span.Start:span.End] }
 
-// Unquoted returns the source text the given span covers, with its surrounding quotes removed if it has any.
-func (tree *Tree) Unquoted(span Span) string { return tree.Text(tree.UnquotedSpan(span)) }
+// Unquoted returns the source text a span covers, without its surrounding
+// quotes if it has any.
+func (t *Tree) Unquoted(span Span) string { return t.Text(t.UnquotedSpan(span)) }
 
-// UnquotedSpan returns the given span without its surrounding quotes, if it has any. A span of one quote gives an
-// empty span.
-func (tree *Tree) UnquotedSpan(span Span) Span {
-	text := tree.Text(span)
+// UnquotedSpan returns a span without its surrounding quotes, if it has any.
+// A span of one quote gives an empty span.
+func (t *Tree) UnquotedSpan(span Span) Span {
+	text := t.Text(span)
 	if strings.HasPrefix(text, `"`) {
 		span.Start++
 	}
+
 	if strings.HasSuffix(text, `"`) && span.End > span.Start {
 		span.End--
 	}
+
 	return span
 }
 
-// ParseBracketed parses the text of the given span as a data call written between brackets, such as [Root.GetName],
-// with its quotes removed. The call's spans are offsets in the tree's text. It returns false if the text is no call.
-func (tree *Tree) ParseBracketed(span Span) (Call, bool) {
-	return ParseBracketed(tree.Unquoted(span), tree.UnquotedSpan(span).Start)
+// ParseBracketed parses the text a span covers as a data call written between
+// brackets, such as [Root.GetName], without its quotes. The call's spans are
+// offsets in the tree's text. It returns false if the text is no call.
+func (t *Tree) ParseBracketed(span Span) (Call, bool) {
+	return ParseBracketed(t.Unquoted(span), t.UnquotedSpan(span).Start)
 }
 
-// Children yields the direct children of a statement in document order. The file's children are the top-level
-// statements.
-func (tree *Tree) Children(statement int32) iter.Seq[int32] {
+// Children yields the direct children of a statement in document order. The
+// file's children are the statements at the top.
+func (t *Tree) Children(statement int32) iter.Seq[int32] {
 	return func(yield func(int32) bool) {
-		child, last := statement+1, tree.Statements[statement].Last
-		for child < last {
+		// A child's Last is where its next sibling starts.
+		for child, last := statement+1, t.Statements[statement].Last; child < last; child = t.Statements[child].Last {
 			if !yield(child) {
 				return
 			}
-			child = tree.Statements[child].Last
 		}
 	}
 }
 
-// FindPrevious returns the statement just before the given one in the same block. It returns false if the given
-// statement is the block's first.
-func (tree *Tree) FindPrevious(statement int32) (int32, bool) {
+// FindLead returns the value written alone just before a statement in its
+// block: scripted_trigger in scripted_trigger x = { }, template in
+// template x { } and blockoverride in blockoverride "x" { }. It returns false
+// if the statement is its block's first, or the one before it is no value
+// alone.
+func (t *Tree) FindLead(statement int32) (int32, bool) {
+	// A sibling with no children sits right before the statement.
+	lead := statement - 1
+	if lead < 1 || t.Statements[lead].Parent != t.Statements[statement].Parent || !t.Statements[lead].IsListed() {
+		return 0, false
+	}
+
+	return lead, true
+}
+
+// FindPrevious returns the statement just before a statement in its block. It
+// returns false if the statement is its block's first.
+func (t *Tree) FindPrevious(statement int32) (int32, bool) {
 	previous := int32(0)
-	for child := range tree.Children(tree.Statements[statement].Parent) {
+	for child := range t.Children(t.Statements[statement].Parent) {
 		if child == statement {
 			break
 		}
+
 		previous = child
 	}
+
 	return previous, previous > 0
 }
 
-// FindStatement returns the innermost statement that covers the given byte offset. It returns 0, the file, if no
-// other statement does.
-func (tree *Tree) FindStatement(offset int) int32 {
-	// The statements are in pre-order, so the last one starting at or before the offset is the deepest candidate.
-	statement := int32(sort.Search(len(tree.Statements)-1, func(i int) bool {
-		return tree.Statements[i+1].Span.Start > offset
+// FindStatement returns the innermost statement that covers a byte offset. It
+// returns 0, the file, if no other statement does.
+func (t *Tree) FindStatement(offset int) int32 {
+	// The statements are in pre-order, so the last one that starts at or
+	// before the offset is the deepest that may cover it.
+	statement := int32(sort.Search(len(t.Statements)-1, func(i int) bool {
+		return t.Statements[i+1].Span.Start > offset
 	}))
-	for statement > 0 && !tree.Statements[statement].Span.Contains(offset) {
-		statement = tree.Statements[statement].Parent
+
+	for statement > 0 && !t.Statements[statement].Span.Contains(offset) {
+		statement = t.Statements[statement].Parent
 	}
+
 	return statement
 }
 
-// LookupStatement returns the statement that starts at the given byte offset. It returns false if none does.
-func (tree *Tree) LookupStatement(start int) (int32, bool) {
-	statement := tree.FindStatement(start)
-	return statement, statement > 0 && tree.Statements[statement].Span.Start == start
+// LookupStatement returns the statement that starts at a byte offset. It
+// returns false if none does.
+func (t *Tree) LookupStatement(start int) (int32, bool) {
+	statement := t.FindStatement(start)
+
+	return statement, statement > 0 && t.Statements[statement].Span.Start == start
 }
 
-// FindChild returns the child of a statement whose key is the given text. If several children have that key, the
-// last one wins. It returns false if there is none.
-func (tree *Tree) FindChild(statement int32, key string) (int32, bool) {
+// FindChild returns the child of a statement whose key is the given text. If
+// several children have that key, the last one wins. It returns false if
+// there is none.
+func (t *Tree) FindChild(statement int32, key string) (int32, bool) {
 	match, ok := int32(0), false
-	for child := range tree.Children(statement) {
-		if tree.Text(tree.Statements[child].Key) == key {
+	for child := range t.Children(statement) {
+		if t.Text(t.Statements[child].Key) == key {
 			match, ok = child, true
 		}
 	}
+
 	return match, ok
 }
 
-// FindComment returns the comment lines written just above a statement, joined by newlines, or "" if there are none. A
-// comment after code on its line is not one of them.
-func (tree *Tree) FindComment(statement int32) string {
-	start := tree.Statements[statement].Span.Start
-	line := tree.Lines.ToPosition(start).Line
-	var lines []string
-	after := sort.Search(len(tree.Comments), func(position int) bool { return tree.Comments[position].Start >= start })
-	for position := after - 1; position >= 0; position-- {
-		comment := tree.Comments[position]
-		commentLine := line - len(lines) - 1
-		if tree.Lines.ToPosition(comment.Start).Line != commentLine ||
-			strings.TrimSpace(tree.Src[tree.Lines.LineSpan(commentLine).Start:comment.Start]) != "" {
-			break
-		}
-		lines = append(lines, strings.TrimSpace(tree.Text(comment)))
-	}
-	slices.Reverse(lines)
-	return strings.Join(lines, "\n")
-}
-
-// FindChildValue returns the unquoted value of the child FindChild finds. It returns false if there is none or the key
-// is empty.
-func (tree *Tree) FindChildValue(statement int32, key string) (string, bool) {
+// FindChildValue returns the unquoted value of the child FindChild finds. It
+// returns false if there is none or the key is empty.
+func (t *Tree) FindChildValue(statement int32, key string) (string, bool) {
 	if key == "" {
 		return "", false
 	}
-	child, ok := tree.FindChild(statement, key)
+
+	child, ok := t.FindChild(statement, key)
 	if !ok {
 		return "", false
 	}
-	return tree.Unquoted(tree.Statements[child].Value), true
+
+	return t.Unquoted(t.Statements[child].Value), true
+}
+
+// FindComment returns the comment lines written just above a statement,
+// joined by newlines. It returns "" if there are none. A comment after code
+// on its line is not one of them.
+func (t *Tree) FindComment(statement int32) string {
+	start := t.Statements[statement].Span.Start
+	line := t.Lines.ToPosition(start).Line
+	after := sort.Search(len(t.Comments), func(i int) bool { return t.Comments[i].Start >= start })
+
+	// The comments are read upwards, each on the line above the one before.
+	var lines []string
+	for position := after - 1; position >= 0; position-- {
+		comment := t.Comments[position]
+		above := line - len(lines) - 1
+		if t.Lines.ToPosition(comment.Start).Line != above ||
+			strings.TrimSpace(t.Src[t.Lines.LineSpan(above).Start:comment.Start]) != "" {
+			break
+		}
+
+		lines = append(lines, strings.TrimSpace(t.Text(comment)))
+	}
+
+	slices.Reverse(lines)
+
+	return strings.Join(lines, "\n")
 }

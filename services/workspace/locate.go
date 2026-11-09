@@ -38,15 +38,14 @@ func (ws *Session) Locate(mods *index.Index, path string) Place {
 		return place
 	}
 	// a root's own folder has no rel
-	rel, _ := files.ToRel(root.Dir, path)
-	place.File = files.File{Path: path, Key: place.Key, Rel: rel, Origin: root.Origin, Format: files.Classify(rel)}
-	if cut := strings.LastIndexByte(rel, '/'); cut >= 0 {
-		place.Folder = rel[:cut]
+	place.File, _ = files.NewFile(root, path)
+	if cut := strings.LastIndexByte(place.Rel, '/'); cut >= 0 {
+		place.Folder = place.Rel[:cut]
 	}
 	place.Root = root.Dir
-	place.ReadOnly = root.Origin == game.OriginVanilla ||
+	place.ReadOnly = root.Origin == files.OriginVanilla ||
 		lo.ContainsBy(*ws.Order.Load(), func(mod Mod) bool { return mod.ID == root.Origin && mod.Workshop })
-	if database, ok := ws.Schema.FindDatabase(rel); ok {
+	if database, ok := ws.Schema.FindDatabase(place.File); ok {
 		place.Database = database.Name
 		if database.Readme != "" {
 			place.Readme = files.Join(ws.InstallPath, database.Readme)

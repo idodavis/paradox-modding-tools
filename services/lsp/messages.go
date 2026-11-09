@@ -31,7 +31,7 @@ func (visitor *diagnoseVisitor) diagnoseMessages(document workspace.Document) []
 	for _, message := range file.Messages {
 		segments := loc.Segments(message.Text, message.TextSpan.Start)
 		visitor.diagnostics = append(visitor.diagnostics, toDiagnostics(tree, loc.ListMarkupFaults(segments))...)
-		visitor.diagnoseMissing(tree, index.ListTextReferences(visitor.ws.Schema, message))
+		visitor.diagnoseMissing(tree, visitor.ws.Schema.ListTextReferences(message))
 		visitor.diagnoseCalls(tree, segments, "")
 	}
 	if _, replaces := visitor.ws.Game.FindLocReplacement(place.Rel, file.Language); replaces {
@@ -42,7 +42,7 @@ func (visitor *diagnoseVisitor) diagnoseMessages(document workspace.Document) []
 		others := lo.CountBy(mods.ListMessages(message.Key), func(site index.Site) bool {
 			other := mods.File(site)
 			_, replaces := visitor.ws.Game.FindLocReplacement(other.Rel, file.Language)
-			repeats := other.Origin == place.Origin || other.Origin == game.OriginVanilla && visitor.ws.Game.LogsRepeatedKey
+			repeats := other.Origin == place.Origin || other.Origin == files.OriginVanilla && visitor.ws.Game.LogsRepeatedKey
 			return site.File != place.Position && repeats && mods.Language(site) == file.Language &&
 				mods.IsLoaded(site.File) && !replaces
 		})
@@ -77,7 +77,7 @@ func diagnoseFolders(tree *jomini.Tree, place workspace.Place) []Diagnostic {
 	diagnostics := []Diagnostic{}
 	folders := strings.Split(strings.ToLower(place.Rel), "/")
 	for _, folder := range folders[:len(folders)-1] {
-		if right, misspelled := game.MisspelledFolders[folder]; misspelled {
+		if right, misspelled := loc.MisspelledFolders[folder]; misspelled {
 			diagnostics = append(diagnostics, makeDiagnostic(tree, jomini.Span{}, "wrong-localization-folder",
 				map[string]string{"wrong": folder, "right": right}))
 		}

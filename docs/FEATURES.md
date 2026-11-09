@@ -221,9 +221,10 @@ PMT writes your changes to the code in the editor, so undo works as it always do
 ![Save as DDS](images/save-as-dds.png)
 
 Right-click a PNG or TGA picture, or a folder of them, and choose **Save as DDS**. PMT writes a `.dds` beside each one,
-either uncompressed (exact) or BC3 (a quarter of the size, with slightly blurred colors). Mipmaps are optional. The
-image view has the same button. PMT starts from the settings of the DDS already beside the picture, or else of the
-game's own DDS at that place.
+in B8G8R8A8 (uncompressed and exact), BC1 (an eighth of the size, each pixel opaque or clear), BC3 (a quarter of the
+size, with full alpha) or BC7 (a quarter of the size, and much closer to the picture than BC3). Mipmaps are optional.
+The image view has the same button. PMT starts from the settings of the DDS already beside the picture, or else of the
+game's own DDS at that place, and offers that DDS's format when it is another one.
 
 ### Source control
 

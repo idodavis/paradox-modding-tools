@@ -16,6 +16,7 @@ function place(key: string, format = Format.FormatScript): Place {
     name: key,
     folder: "",
     origin: "mod",
+    stage: "",
     format,
     root: "/mod",
     database: "",

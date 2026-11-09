@@ -56,7 +56,8 @@ There are four layers, and each calls only the ones below it.
 A few rules hold the layers together:
 
 - **The engine is game-agnostic.** The parser and the language model are shared by every game. Anything one game does
-  differently is a row in `game`'s tables, and `jomini` never imports `game`.
+  differently is a row of a table: in the package that reads it, or in `game` where several packages read it.
+  `jomini` never imports `game`.
 - **One open workspace.** The workspace service holds the one open workspace. The other services ask it for the
   session at every call, so none keeps a copy that could go stale.
 - **Go computes, the page shows.** A payload carries what a page displays, such as a file's relative path and its
@@ -83,11 +84,11 @@ Arrows point to what a package imports. An import that follows from others is le
 |---|---|
 | [jomini](../internal/jomini/README.md) | Parses Paradox script, GUI and asset files into a flat tree. |
 | [loc](../internal/loc/README.md) | Reads and writes localization files: messages, languages and markup. |
-| [files](../internal/files/README.md) | Lists the files of an install, a mod or a dump folder, and tells each one's format. |
-| [texture](../internal/texture/README.md) | Decodes DDS, TGA and PNG images, reads their headers, and writes DDS. |
-| [game](../internal/game/README.md) | Every fact about the supported games, as tables: installs, folders, file layout, language rules. |
+| [files](../internal/files/README.md) | Lists the files of an install, a mod or a dump folder, tells each one's format, and decides which of them the game reads. |
+| [texture](../internal/texture/README.md) | Reads DDS, TGA and PNG images and their headers through dds-go and pdx-asset-go, and writes DDS in a given DXGI format. |
+| [game](../internal/game/README.md) | The facts about the supported games that several packages read, as tables: installs, folders, file layout, language rules. |
 | [schema](../internal/schema/README.md) | The language of one game version, and the one walk over a file that every reader of script uses. |
-| [index](../internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy the game keeps. |
+| [index](../internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy of a definition the game keeps. |
 | [terminal](../internal/terminal/README.md) | Runs shells under Windows' pseudo console or a Linux pty. |
 
 [`schema/gen`](../internal/schema/gen/) writes the shipped backup schemas, the only game data the app embeds.

@@ -67,16 +67,16 @@ type Card struct {
 
 // A Class is one class of the wiki's lexicon, by which a card and a completion name the commands the game declares.
 type Class struct {
-	ID       string `json:"id"`    // such as effect
-	Label    string `json:"label"` // the lexicon tab's, such as Effects
-	Declared string `json:"-"`     // the way the game declares the class's commands; "" for a class of no commands
+	ID       string           `json:"id"`    // such as effect
+	Label    string           `json:"label"` // the lexicon tab's, such as Effects
+	Declared game.Declaration `json:"-"`     // the way the game declares the class's commands; "" for a class of no commands
 }
 
 // Classes holds the lexicon's classes, in the order its tabs show them.
 var Classes = []Class{
-	{ID: "effect", Label: "Effects", Declared: game.DeclaredEffect},
-	{ID: "trigger", Label: "Triggers", Declared: game.DeclaredTrigger},
-	{ID: "link", Label: "Event targets", Declared: game.DeclaredLink},
+	{ID: "effect", Label: "Effects", Declared: game.DeclarationEffect},
+	{ID: "trigger", Label: "Triggers", Declared: game.DeclarationTrigger},
+	{ID: "link", Label: "Event targets", Declared: game.DeclarationLink},
 	{ID: "scope", Label: "Scopes"},
 	{ID: "function", Label: "Functions"},
 }
@@ -85,15 +85,15 @@ var Classes = []Class{
 const cardParameter = "parameter"
 
 // returnsLabels holds what a call of a scripted definition gives, for the shape of its block.
-var returnsLabels = map[string]string{game.ShapeTriggers: "yes or no", game.ShapeValue: "a number"}
+var returnsLabels = map[game.Shape]string{game.ShapeTriggers: "yes or no", game.ShapeValue: "a number"}
 
 // blockLabels holds what a card says a block holds, for the shape of the block.
-var blockLabels = map[string]string{
+var blockLabels = map[game.Shape]string{
 	game.ShapeFields: "fields", game.ShapeTriggers: "triggers", game.ShapeEffects: "effects",
 	game.ShapeArguments: "what the command takes", game.ShapeEffectArguments: "what the effect takes",
 	game.ShapeTriggerArguments: "what the trigger takes", game.ShapeValue: "the steps that work out a number",
 	game.ShapeWidget: "a widget's properties and children", game.ShapeModifiers: "modifiers",
-	game.ShapeDescription: "texts, each with the trigger that picks it", "setup": "history fields and effects",
+	game.ShapeDescription: "texts, each with the trigger that picks it", game.ShapeSetup: "history fields and effects",
 }
 
 // Hover returns the hover card for the key or value at a position in a file. It returns nil if the position is on
@@ -149,7 +149,7 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 		}
 	case context.Category == schema.CategoryKeyword:
 		keyword := context.Keyword
-		card.What, card.Class, card.Blurb = "keyword", keyword.Class, keyword.Blurb
+		card.What, card.Class, card.Blurb = "keyword", string(keyword.Class), keyword.Blurb
 		if keyword.Weighted {
 			card.Weight = resolveWeight(tree, visitor.statement)
 		}
@@ -184,7 +184,7 @@ func describeDefinitions(card *Card, ws *workspace.Session, mods *index.Index, p
 		card.Node = reference.ToID()
 	}
 	if database := ws.Schema.Databases[reference.Database]; database != nil {
-		card.Returns, card.Command = returnsLabels[database.Callable.Shape], lo.Ternary(len(sites) > 0, database.Callable.Command, "")
+		card.Returns, card.Command = returnsLabels[database.Callable.Shape], lo.Ternary(len(sites) > 0, string(database.Callable.Command), "")
 	}
 	if len(entries) > 0 {
 		describeEntry(card, ws, mods, entries[0])
@@ -341,8 +341,7 @@ func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, 
 		return sites, nil
 	}
 	keeping, others := lo.FilterReject(sites, func(site index.Site, _ int) bool {
-		kept, _, _ := mods.ResolveSite(winner, site)
-		return kept
+		return mods.ResolveSite(winner, site).Kept
 	})
 	return slices.Concat(keeping, others), &winner
 }
@@ -477,7 +476,7 @@ func describeChoice(card *Card, visitor *hoverVisitor) {
 // findDate returns the date a statement writes as its value. It returns false unless the statement's field expects a
 // date and the value is one that can be.
 func findDate(tree *jomini.Tree, statement int32, context *schema.Context) (jomini.Date, bool) {
-	if context.Field == nil || context.Field.Value.Value.Type != schema.ValueDate {
+	if context.Field == nil || context.Field.Value.Value.Type != schema.ValueTypeDate {
 		return jomini.Date{}, false
 	}
 	date, ok := jomini.ParseDate(tree.Unquoted(tree.Statements[statement].Value))
@@ -518,7 +517,7 @@ func describeCommand(card *Card, visitor *hoverVisitor) {
 
 // findClass returns the lexicon class of the commands the game declares in the given way. It returns the zero Class
 // for a way no class has.
-func findClass(declaration string) Class {
+func findClass(declaration game.Declaration) Class {
 	class, _ := lo.Find(Classes, func(class Class) bool { return class.Declared != "" && class.Declared == declaration })
 	return class
 }
@@ -526,7 +525,7 @@ func findClass(declaration string) Class {
 // describeField fills a card for a field of a definition: what it does, whether it is required and what it takes.
 func describeField(card *Card, context *schema.Context) {
 	field := context.Field
-	card.What, card.Blurb, card.Need = "field", field.Blurb.Value, field.Required.Value
+	card.What, card.Blurb, card.Need = "field", field.Blurb.Value, string(field.Required.Value)
 	describeTakes(card, field)
 	if !field.Value.IsStated() {
 		values := slices.SortedFunc(maps.Keys(field.Vanilla.Values), func(first, second string) int {
@@ -570,7 +569,7 @@ func resolveWeight(tree *jomini.Tree, statement int32) int {
 // describeBlock fills a card for a statement that holds a block: what the block holds and, for a color, the color.
 func describeBlock(card *Card, visitor *hoverVisitor) {
 	if visitor.tree.Statements[visitor.statement].IsBlock() && visitor.context.Shape != game.ShapeUnknown {
-		card.Holds = cmp.Or(blockLabels[visitor.context.Shape], visitor.context.Shape)
+		card.Holds = cmp.Or(blockLabels[visitor.context.Shape], string(visitor.context.Shape))
 	}
 	if color, ok := jomini.ToColor(visitor.tree, visitor.statement); ok {
 		card.Color = color.ToCSS()

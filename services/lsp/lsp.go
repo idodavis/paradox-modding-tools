@@ -66,7 +66,8 @@ func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Sit
 		site.Holder = findHolder(ws, mods, definition)
 		var hider string
 		if winner != nil {
-			site.Kept, site.Reason, hider = mods.ResolveSite(*winner, definition)
+			outcome := mods.ResolveSite(*winner, definition)
+			site.Kept, site.Reason, hider = outcome.Kept, outcome.Reason, outcome.Hider
 		} else {
 			site.Reason, hider = mods.FindHider(definition.File)
 		}

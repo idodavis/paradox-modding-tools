@@ -283,7 +283,7 @@ func (drw *Service) lookupRows(ws *workspace.Session) int {
 // resolveIndex returns the index a file is drawn from: the game's own for a game file, else the mods'.
 func resolveIndex(ws *workspace.Session, path string) *index.Index {
 	mods := ws.Mods.Load()
-	if root, ok := mods.FindRoot(path); ok && root.Origin == game.OriginVanilla {
+	if root, ok := mods.FindRoot(path); ok && root.Origin == files.OriginVanilla {
 		return ws.Install
 	}
 	return mods
@@ -632,11 +632,10 @@ func (resolver *resolver) listFields(holder clause, depth int) iter.Seq2[string,
 			resolver.gathered.missing = append(resolver.gathered.missing, resolver.makeMissing(game.GUI.TemplateCalls, holder.writer, holder))
 			return
 		}
-		siblings := slices.Collect(holder.tree.Children(holder.statement))
-		for position, statement := range siblings {
+		for statement := range holder.tree.Children(holder.statement) {
 			current := holder.tree.Statements[statement]
 			field := clause{tree: holder.tree, path: holder.path, statement: statement, writer: holder.writer, origin: holder.origin}
-			lead := findLead(holder.tree, siblings, position)
+			lead := findLead(holder.tree, statement)
 			switch {
 			case current.IsListed(): // a bare value is only the lead of the field after it
 			case holder.tree.Unquoted(current.Key) == game.GUI.TemplateCalls:
@@ -673,22 +672,22 @@ func (resolver *resolver) listTemplate(using clause, depth int, yield func(strin
 	return true
 }
 
-// findLead returns the lead of the sibling at the given position: the lower-case word that opens a labeled block or
-// blockoverride, else the bare value written just before it. It returns "" for any other statement.
-func findLead(tree *jomini.Tree, siblings []int32, position int) string {
-	current := tree.Statements[siblings[position]]
+// findLead returns the lead of a statement in lower case: the key that opens
+// a labeled block or blockoverride, else the value written alone just before
+// it. It returns "" for any other statement.
+func findLead(tree *jomini.Tree, statement int32) string {
+	current := tree.Statements[statement]
 	key := strings.ToLower(tree.Unquoted(current.Key))
 	if tree.Unquoted(current.Tag) != "" && (key == game.GUI.BlockKey || key == game.GUI.BlockCalls) {
 		return key
 	}
-	if position == 0 {
+
+	lead, ok := tree.FindLead(statement)
+	if !ok {
 		return ""
 	}
-	previous := tree.Statements[siblings[position-1]]
-	if previous.IsListed() {
-		return strings.ToLower(tree.Text(previous.Value))
-	}
-	return ""
+
+	return strings.ToLower(tree.Text(tree.Statements[lead].Value))
 }
 
 // resolveBlock returns the properties a clause gives its widget, and gathers its children, states and overlays.

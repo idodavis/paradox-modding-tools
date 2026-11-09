@@ -259,7 +259,7 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 	}
 	declared := 0
 	for _, command := range ws.Schema.Commands {
-		if slices.Contains(command.Declared, game.DeclaredEffect) {
+		if slices.Contains(command.Declared, game.DeclarationEffect) {
 			declared++
 		}
 	}

@@ -117,9 +117,9 @@ func listValues(
 	switch {
 	case context.Callee != nil:
 		values = lo.Map(game.Callables[context.Callee.Database].Values, makeConstant)
-	case expected.Type == schema.ValueBool:
+	case expected.Type == schema.ValueTypeBool:
 		values = lo.Map(game.Bools, makeConstant)
-	case expected.Type == schema.ValueChoice:
+	case expected.Type == schema.ValueTypeChoice:
 		values = lo.Map(expected.Choices, makeConstant)
 	}
 	for _, reference := range listTyped(context, expected, start, offset) {
@@ -134,7 +134,7 @@ func listValues(
 	if len(values) == 0 {
 		values = listWritten(vanilla, makeConstant)
 	}
-	if expected.Type == schema.ValueTarget && expected.Scope != "" {
+	if expected.Type == schema.ValueTypeTarget && expected.Scope != "" {
 		isScope := func(scope string) bool { return scope == expected.Scope }
 		values = append(values, listPrefixes(ws, expected.Scope)...)
 		values = append(values, listScopeLinks(context, isScope, rank)...)
@@ -148,7 +148,7 @@ func listValues(
 func findExpected(context *schema.Context) (schema.Expected, map[string]int) {
 	switch {
 	case context.Category == schema.CategoryLink:
-		return schema.Expected{Type: schema.ValueTarget, Scope: context.Scope}, nil
+		return schema.Expected{Type: schema.ValueTypeTarget, Scope: context.Scope}, nil
 	case context.Field == nil:
 		return schema.Expected{}, nil
 	}
@@ -163,7 +163,7 @@ func listTyped(context *schema.Context, expected schema.Expected, start, offset 
 	references := lo.Filter(context.References, func(reference schema.Reference, _ int) bool {
 		return reference.Span.Start >= start && reference.Span.Start <= offset && reference.Database != game.SavedScopes
 	})
-	claims := expected.Type == schema.ValueReference || expected.Type == schema.ValueTarget
+	claims := expected.Type == schema.ValueTypeReference || expected.Type == schema.ValueTypeTarget
 	if start == offset && len(references) == 0 && claims && expected.Database != "" {
 		references = []schema.Reference{{Database: expected.Database, Span: jomini.Span{Start: offset, End: offset}}}
 	}
@@ -195,8 +195,7 @@ func listNames(
 	case game.File:
 		for _, image := range mods.ListImages(reference.Name[:strings.LastIndex(reference.Name, "/")+1]) {
 			// script writes a path without the stage folder it sits in
-			_, rel := ws.Game.SplitStage(image.Rel)
-			offer(rel, image.Path)
+			offer(image.StageRel(), image.Path)
 		}
 	case game.Localization:
 		for _, key := range mods.ListKeys(cmp.Or(ws.Language, game.BaseLanguage), reference.Name, keyLimit) {
@@ -326,9 +325,9 @@ func countKey(commands map[string]*schema.Command, holder *schema.Context, key s
 }
 
 // isLinkShape reports whether a block of the given shape reads a key as a scope link.
-func isLinkShape(shape string) bool {
-	return slices.ContainsFunc(game.Shapes[shape].Rules, func(rule string) bool {
-		return rule == "link" || rule == "scope-link"
+func isLinkShape(shape game.Shape) bool {
+	return slices.ContainsFunc(game.Shapes[shape].KeyRules, func(rule game.KeyRule) bool {
+		return rule == game.KeyRuleLink || rule == game.KeyRuleScopeLink
 	})
 }
 
@@ -363,7 +362,7 @@ func listKeyLinks(language *schema.Schema, holder *schema.Context, rank func(str
 		command := language.Commands[key]
 		if _, ok := language.ResolveLink(key, holder.Scope); ok && command.Bare {
 			links = append(links, Completion{
-				Label: key, Category: schema.CategoryLink, Detail: findClass(game.DeclaredLink).ID, Blurb: command.Blurb,
+				Label: key, Category: schema.CategoryLink, Detail: findClass(game.DeclarationLink).ID, Blurb: command.Blurb,
 				Rank: rank(key),
 			})
 		}
@@ -413,7 +412,7 @@ func listOperators(row *game.Game, commands map[string]*schema.Command, holder *
 		return !strings.ContainsAny(keyword.Key, "/*<") && row.Matches(keyword.Games) &&
 			isOperatorFit(keyword, commands[keyword.Key], holder)
 	})
-	classes := lo.Uniq(lo.Map(fitting, func(keyword game.Keyword, _ int) string { return keyword.Class }))
+	classes := lo.Uniq(lo.Map(fitting, func(keyword game.Keyword, _ int) game.KeywordClass { return keyword.Class }))
 	slices.SortStableFunc(fitting, func(first, second game.Keyword) int {
 		return cmp.Compare(slices.Index(classes, first.Class), slices.Index(classes, second.Class))
 	})
@@ -425,20 +424,20 @@ func listOperators(row *game.Game, commands map[string]*schema.Command, holder *
 		}
 		block := isBlockShape(keyword.Shape) || isBlockField(claim) || command != nil && isBlockCommand(command)
 		return makeKey(Completion{
-			Label: keyword.Key, Category: schema.CategoryKeyword, Detail: keyword.Class, Blurb: keyword.Blurb,
+			Label: keyword.Key, Category: schema.CategoryKeyword, Detail: string(keyword.Class), Blurb: keyword.Blurb,
 			Rank: floor + len(fitting) - 1 - position,
 		}, block)
 	})
 }
 
 // isBlockShape reports whether the given shape can only be written as a block. A value or unknown shape may be plain.
-func isBlockShape(shape string) bool {
+func isBlockShape(shape game.Shape) bool {
 	return shape != "" && shape != game.ShapeValue && shape != game.ShapeUnknown
 }
 
 // isBlockField reports whether a field is written as a block. It is false for a nil field.
 func isBlockField(field *schema.Field) bool {
-	return field != nil && (field.Value.Value.Type == schema.ValueBlock || len(field.Children) > 0 ||
+	return field != nil && (field.Value.Value.Type == schema.ValueTypeBlock || len(field.Children) > 0 ||
 		field.Shape.IsStated() && isBlockShape(field.Shape.Value) ||
 		field.Vanilla.Blocks > 0 && field.Vanilla.Blocks == field.Vanilla.Count)
 }
@@ -474,7 +473,7 @@ func listCommands(commands map[string]*schema.Command, holder *schema.Context, r
 
 // findAllowed returns how the dumps declare a command, among the ways the given block takes it. It returns false if
 // the block does not take the command, or the command is a pattern that no written name matches.
-func findAllowed(command *schema.Command, holder *schema.Context) (string, bool) {
+func findAllowed(command *schema.Command, holder *schema.Context) (game.Declaration, bool) {
 	declaration, ok := holder.FindDeclaration(command)
 	return declaration, ok && !command.Wild
 }

@@ -201,7 +201,7 @@ func (ws *Session) DescribeMod(modID string) string {
 	switch {
 	case ok:
 		return cmp.Or(mod.Descriptor.Name, filepath.Base(mod.Dir))
-	case modID == game.OriginVanilla:
+	case modID == files.OriginVanilla:
 		return ws.Game.Name
 	}
 	return modID

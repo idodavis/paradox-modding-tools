@@ -703,7 +703,7 @@ func makeFinding(mods *index.Index, id string, facts map[string]string, sites []
 // listMods returns those of the given sources that are mods, each once, in load order. The game is not a mod.
 func listMods(mods *index.Index, origins []string) []string {
 	return lo.FilterMap(mods.Roots, func(root files.Root, _ int) (string, bool) {
-		return root.Origin, root.Origin != game.OriginVanilla && slices.Contains(origins, root.Origin)
+		return root.Origin, root.Origin != files.OriginVanilla && slices.Contains(origins, root.Origin)
 	})
 }
 
@@ -724,7 +724,7 @@ func findLineStatement(tree *jomini.Tree, line int) (int32, bool) {
 
 // isMod reports whether a site lies in a mod's file.
 func isMod(mods *index.Index, site index.Site) bool {
-	return mods.File(site).Origin != game.OriginVanilla
+	return mods.File(site).Origin != files.OriginVanilla
 }
 
 // listShippedPaths returns the paths the mods ship in the folders the game reads, each once, sorted without regard to
@@ -795,7 +795,7 @@ func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, wi
 		func(site index.Site) string { return mods.File(site).Origin })
 	var findings []Finding
 	for _, mod := range listMods(mods, slices.Collect(maps.Keys(byMod))) {
-		if lo.SomeBy(byMod[mod], winner.IsKept) {
+		if lo.SomeBy(byMod[mod], func(site index.Site) bool { return mods.ResolveSite(winner, site).Kept }) {
 			continue
 		}
 		facts := lsp.DescribeReference(reference)
@@ -810,7 +810,7 @@ func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, wi
 // message counts. The "definitions" fact names the kind of definition in the plural, such as "scripted triggers", or
 // is "entries" for several kinds.
 func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding, uses []Use) {
-	original, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Place.Origin == game.OriginVanilla })
+	original, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Place.Origin == files.OriginVanilla })
 	kept, _ := lo.Find(finding.Sites, func(site lsp.Site) bool { return site.Kept })
 	position, _ := mods.FindFile(original.Place.Path)
 	databases := lo.Uniq(lo.Map(listFileDefinitions(mods, position), func(occurrence index.Occurrence, _ int) string {
@@ -902,7 +902,7 @@ func listUnmounted(ws *workspace.Session, mods *index.Index) []Finding {
 	for _, position := range mods.ListOwnFiles() {
 		file := mods.Files[position]
 		name, _, nested := strings.Cut(file.Rel, "/")
-		if !nested || strings.HasPrefix(name, ".") || !ws.Game.IsUnmounted(file) {
+		if !nested || strings.HasPrefix(name, ".") || !mods.IsUnmounted(position) {
 			continue
 		}
 		key := folder{file.Origin, name}

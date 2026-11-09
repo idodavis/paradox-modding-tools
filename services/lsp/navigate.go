@@ -133,7 +133,7 @@ func (lsp *Service) PrepareRename(path string, line, column int) (*Range, error)
 	}
 	// a name the game also defines cannot be renamed, since its definition in the game's files stays
 	sites := mods.ResolveLocal(reference, place.Position)
-	if len(sites) == 0 || lo.SomeBy(sites, func(site index.Site) bool { return mods.File(site).Origin == game.OriginVanilla }) {
+	if len(sites) == 0 || lo.SomeBy(sites, func(site index.Site) bool { return mods.File(site).Origin == files.OriginVanilla }) {
 		return nil, nil
 	}
 	renamable := ToRange(tree.Src, tree.Lines, span)
@@ -163,7 +163,7 @@ func (lsp *Service) Rename(path string, line, column int, name string) (map[stri
 	edits := map[string][]Edit{}
 	for _, site := range listOccurrences(mods, place, reference) {
 		target := mods.File(site).Path
-		if mods.File(site).Origin == game.OriginVanilla {
+		if mods.File(site).Origin == files.OriginVanilla {
 			continue
 		}
 		modTree, err := ws.LoadTree(target)

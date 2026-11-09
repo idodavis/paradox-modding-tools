@@ -175,7 +175,7 @@ func (library *library) listFolderObjects(list PictureList) []string {
 	folder := strings.ToLower(list.Folder) + "/"
 	var objects []string
 	for _, image := range library.mods.ListImages(folder) {
-		_, rest := library.ws.Game.SplitStage(strings.ToLower(image.Rel))
+		rest := strings.ToLower(image.StageRel())
 		object, file, ok := strings.Cut(strings.TrimPrefix(rest, folder), "/")
 		if ok && strings.TrimSuffix(file, path.Ext(file)) == strings.ToLower(list.Argument) {
 			objects = append(objects, object)

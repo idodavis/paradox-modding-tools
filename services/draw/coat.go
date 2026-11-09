@@ -622,7 +622,7 @@ func (drw *Service) ListFrames() []Image {
 func listImages(ws *workspace.Session, mods *index.Index, folder string) []Image {
 	images := []Image{}
 	for _, file := range mods.ListImages(folder + "/") {
-		if _, rest := ws.Game.SplitStage(file.Rel); strings.EqualFold(path.Dir(rest), folder) {
+		if rest := file.StageRel(); strings.EqualFold(path.Dir(rest), folder) {
 			images = append(images, Image{Label: path.Base(rest), Place: ws.Locate(mods, file.Path)})
 		}
 	}

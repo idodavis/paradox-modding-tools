@@ -19,7 +19,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/app"
@@ -302,7 +301,7 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 		t.Errorf("a definition: %+v", card)
 	}
 	if card := hover(11, 19); card == nil || card.What != "event" || card.Title != "v.2" || len(card.Sites) != 1 ||
-		card.Sites[0].Place.Origin != game.OriginVanilla || !card.Sites[0].Place.ReadOnly {
+		card.Sites[0].Place.Origin != files.OriginVanilla || !card.Sites[0].Place.ReadOnly {
 		t.Errorf("a reference: %+v", card)
 	}
 	if card := hover(14, 5); card == nil || card.What != "effect" || card.Runs != "The game does not say" {

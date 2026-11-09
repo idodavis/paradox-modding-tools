@@ -173,19 +173,23 @@ export interface Place {
     "path": string;
 
     /**
-     * the one key two paths are compared by: cleaned, lower-cased, forward slashes
+     * Key is the one key two paths are compared by: the path cleaned,
+     * lower-cased and with forward slashes.
      */
     "key": string;
 
     /**
-     * from its root, forward slashes
+     * Rel is the path from the file's root, with forward slashes, and Origin
+     * is that root's.
      */
     "rel": string;
+    "origin": string;
 
     /**
-     * its root's
+     * Stage is the stage folder Rel opens with, as Rel writes it. It is ""
+     * for a file under no stage.
      */
-    "origin": string;
+    "stage": string;
     "format": files$0.Format;
     "name": string;
 

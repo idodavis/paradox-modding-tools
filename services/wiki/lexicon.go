@@ -106,7 +106,7 @@ func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Exam
 func listScripted(ws *workspace.Session, mods *index.Index, class string) []LexiconRow {
 	var rows []LexiconRow
 	for database, callable := range game.Callables {
-		if callable.Command != class {
+		if string(callable.Command) != class {
 			continue
 		}
 		for _, winner := range mods.ListKept(ws.Schema, database) {

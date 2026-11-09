@@ -206,7 +206,7 @@ language, else the base language, else the font's first group.
 
 `FindPictureFiles` finds the pictures Save as DDS saves for a path: the picture, or the images directly in a folder that
 are not DDS files. Each keeps the settings of the DDS beside it, else of the game's own DDS at the place its DDS will
-have. `WriteDDS` writes each picture beside itself as a DDS, compressed or not, with or without mip levels.
+have. `WriteDDS` writes each picture beside itself as a DDS in the given DXGI format, with or without mip levels.
 
 ## Files
 

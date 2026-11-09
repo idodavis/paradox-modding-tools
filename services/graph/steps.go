@@ -91,7 +91,7 @@ func findFiring(ws *workspace.Session, tree *jomini.Tree, statement int32) int32
 // isEffect reports whether a key is an effect the dumps declare.
 func isEffect(ws *workspace.Session, key string) bool {
 	command, ok := ws.Schema.FindCommand(key)
-	return ok && slices.Contains(command.Declared, game.DeclaredEffect)
+	return ok && slices.Contains(command.Declared, game.DeclarationEffect)
 }
 
 // findDelay returns the delay written for a firing, in words, or "" if none is written. It is the delay of the nearest
@@ -163,7 +163,7 @@ func makeStep(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, state
 		Key: key, Kind: kindBlock, When: findCondition(ws, mods, tree, statement), Line: toSourceLine(tree, current.Key),
 	}
 	switch {
-	case keyword.Class == "conditional":
+	case keyword.Class == game.KeywordClassConditional:
 		step.Kind = kindBranch
 	case keyword.Weighted:
 		step.Key, step.Kind, step.Weight = holder, kindWeight, key

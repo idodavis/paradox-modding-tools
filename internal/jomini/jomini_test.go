@@ -10,7 +10,8 @@ import (
 	"testing"
 )
 
-// outline writes one numbered line per statement of the tree after the file, indented by nesting, with a block as `{}`.
+// outline writes one numbered line per statement of the tree after the file,
+// indented by nesting, with a block as `{}`.
 func outline(tree *Tree) []string {
 	var lines []string
 	for i, statement := range tree.Statements[1:] {
@@ -93,11 +94,11 @@ func TestParseErrors(t *testing.T) {
 		want  []Error
 		shape []string
 	}{
-		{"a = { b = 1", []Error{{Code: "unclosed-block", Message: "{ is not closed", Span: Span{Start: 4, End: 5}}}, []string{"0:a = {}", "1:  b = 1"}},
-		{"a = 1 }\nb = 2", []Error{{Code: "unexpected-brace", Message: "} has no { to close", Span: Span{Start: 6, End: 7}}}, []string{"0:a = 1", "1:b = 2"}},
+		{"a = { b = 1", []Error{{Code: "unclosed-block", Message: "{ is not closed; its block runs to the end of the text", Span: Span{Start: 4, End: 5}}}, []string{"0:a = {}", "1:  b = 1"}},
+		{"a = 1 }\nb = 2", []Error{{Code: "unexpected-brace", Message: "} has no { to close; it is skipped", Span: Span{Start: 6, End: 7}}}, []string{"0:a = 1", "1:b = 2"}},
 		{"a = \"one\ntwo\"\nb = 2", nil, []string{"0:a = \"one\ntwo\"", "1:b = 2"}},
-		{"a = \"open\nb = 2", []Error{{Code: "unclosed-string", Message: "string is not closed", Span: Span{Start: 4, End: 15}}}, []string{"0:a = \"open\nb = 2"}},
-		{"a = \"", []Error{{Code: "unclosed-string", Message: "string is not closed", Span: Span{Start: 4, End: 5}}}, []string{`0:a = "`}},
+		{"a = \"open\nb = 2", []Error{{Code: "unclosed-string", Message: "string is not closed; it runs to the end of the text", Span: Span{Start: 4, End: 15}}}, []string{"0:a = \"open\nb = 2"}},
+		{"a = \"", []Error{{Code: "unclosed-string", Message: "string is not closed; it runs to the end of the text", Span: Span{Start: 4, End: 5}}}, []string{`0:a = "`}},
 	}
 	for _, test := range tests {
 		tree := Parse(test.text)
@@ -469,8 +470,9 @@ func TestIndentation(t *testing.T) {
 	}
 }
 
-// parseFiles parses every script, GUI and asset file under the root and returns the paths whose parse holds an
-// error, each with its first error, and how many files it read.
+// parseFiles parses every script, GUI and asset file under the root and
+// returns the paths whose parse holds an error, each with its first error,
+// and how many files it read.
 func parseFiles(t *testing.T, root string) (failures []string, count int) {
 	t.Helper()
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {

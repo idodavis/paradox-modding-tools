@@ -82,7 +82,7 @@ func (wsp *Service) openSession(workspaceID string, progress func(stage string, 
 	if err := ws.loadInstall(install.Path, resolveVersion(row, install), progress); err != nil {
 		return nil, err
 	}
-	ws.Effects, ws.Triggers = countDeclared(ws.Schema, game.DeclaredEffect), countDeclared(ws.Schema, game.DeclaredTrigger)
+	ws.Effects, ws.Triggers = countDeclared(ws.Schema, game.DeclarationEffect), countDeclared(ws.Schema, game.DeclarationTrigger)
 	// the caches of the game's other versions go; one that cannot be deleted now goes at a later open
 	_ = removeEntries(filepath.Dir(folder), filepath.Base(folder))
 	order := lo.Map(record.Mods, func(mod app.Mod, _ int) Mod { return readMod(row, mod) })
@@ -160,17 +160,17 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 		return nil
 	}
 	progress("Listing the game's files", -1)
-	roots, err := game.ListInstallRoots(installPath)
+	roots, err := ws.Game.ListInstallRoots(installPath)
 	if err != nil {
 		return err
 	}
-	listing, err := index.ListFiles(roots)
+	mounts, err := files.Mount(roots)
 	if err != nil {
 		return err
 	}
 	if !hasSchema {
 		progress("Reading the game's documentation", -1)
-		if language, err = schema.Build(ws.Game, installPath, listing, index.ParseFile); err != nil {
+		if language, err = schema.Build(ws.Game, installPath, mounts.Files, index.ParseFile); err != nil {
 			return err
 		}
 		language.Version = version
@@ -184,7 +184,7 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 		}
 	}
 	if !hasInstall {
-		install = index.Scan(language, roots, listing, progress)
+		install = index.Scan(language, mounts, progress)
 		if err = files.SaveGob(indexCache, install); err != nil {
 			return err
 		}
@@ -241,14 +241,14 @@ func (ws *Session) ScanOrder(modIDs []string, progress func(percent int)) (*inde
 		return nil, err
 	}
 	var roots []files.Root
-	var replaced [][]string
 	for _, mod := range ordered {
 		if !mod.Broken {
-			roots = append(roots, files.Root{Dir: mod.Dir, Origin: mod.ID})
-			replaced = append(replaced, mod.Descriptor.ReplacePaths)
+			roots = append(roots, files.Root{
+				Dir: mod.Dir, Origin: mod.ID, Stages: ws.Game.Stages, ReplacePaths: mod.Descriptor.ReplacePaths,
+			})
 		}
 	}
-	return index.ScanMods(ws.Schema, ws.Install, roots, replaced, progress)
+	return index.ScanMods(ws.Schema, ws.Install, roots, progress)
 }
 
 // Close stops the watcher and drops the open files' buffers and documents.
@@ -375,7 +375,7 @@ func (ws *Session) LookupText(mods *index.Index, key string) (text string, winne
 // has no such message.
 func (ws *Session) findText(mods *index.Index, site index.Site, language string) string {
 	file := mods.File(site)
-	if file.Origin != game.OriginVanilla || language == game.BaseLanguage {
+	if file.Origin != files.OriginVanilla || language == game.BaseLanguage {
 		return mods.Text(site)
 	}
 	tree, err := ws.LoadTree(file.Path)
@@ -464,7 +464,7 @@ func (ws *Session) Rescan(changes []FileChange) error {
 			changes[position].Descriptor = true
 		}
 		// the index skips the watched dot folders, as it skips every dot folder
-		if place.Root == "" || place.Origin == game.OriginVanilla || lo.Some(strings.Split(place.Rel, "/"), watchedFolders) {
+		if place.Root == "" || place.Origin == files.OriginVanilla || lo.Some(strings.Split(place.Rel, "/"), watchedFolders) {
 			continue
 		}
 		listed, err := ws.listChanged(mods, place, change.Deleted)

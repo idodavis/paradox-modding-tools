@@ -176,9 +176,11 @@ export function Reveal(path: string, name: string, picks: { [_ in string]?: stri
 }
 
 /**
- * WriteDDS writes each picture beside itself as a DDS, compressed in BC3 blocks or not, with or without mip levels,
- * replacing a DDS of that name. It returns the files written, and on an error the ones written before it.
+ * WriteDDS writes each picture beside itself as a DDS in the given DXGI
+ * format, such as 98 for BC7_UNORM, with or without mip levels. It replaces a
+ * DDS of that name. It returns the files written, and on an error the ones
+ * written before it.
  */
-export function WriteDDS(paths: string[] | null, compressed: boolean, mipmaps: boolean): $CancellablePromise<string[] | null> {
-    return $Call.ByID(3500940746, paths, compressed, mipmaps);
+export function WriteDDS(paths: string[] | null, dxgi: number, mipmaps: boolean): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3500940746, paths, dxgi, mipmaps);
 }

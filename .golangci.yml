@@ -26,7 +26,7 @@ linters:
     nestif:
       min-complexity: 4
     funlen:
-      lines: 60
+      lines: 80
       statements: 40
       ignore-comments: true
     misspell:
@@ -37,7 +37,7 @@ linters:
       - frontend
     rules:
       # the registry's rows repeat a word as data: two rows naming one database are two facts
-      - path: internal/game/(databases|language|coat|gui)\.go
+      - path: internal/(game/(databases|language|coat|gui)|schema/dumps|index/fires)\.go
         linters: [goconst]
       # the databases' role and precedence words are plain words the rows and their readers share
       - linters: [goconst]

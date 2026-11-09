@@ -142,7 +142,7 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 		key := tree.Text(tree.Statements[child].Key)
 		row, _ := ws.Game.LookupKeyword(game.ShapeDescription, "", key, "")
 		switch {
-		case row.Shows == "leaf" || key == game.DescriptionKey || key == game.OptionTitleKey:
+		case row.Shows == game.ShowLeaf || key == game.DescriptionKey || key == game.OptionTitleKey:
 			if version, ok := makeVersion(ws, mods, tree, child); ok {
 				version.When = findCondition(ws, mods, tree, child)
 				versions = append(versions, version)

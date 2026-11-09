@@ -481,7 +481,7 @@ func (gph *Service) ListOwnRoots() []Node {
 	}
 	mods := ws.Mods.Load()
 	own := lo.Filter(mods.ListDefinitions(ws.Schema.Events), func(site index.Site, _ int) bool {
-		return mods.File(site).Origin != game.OriginVanilla && isKept(ws, mods, site)
+		return mods.File(site).Origin != files.OriginVanilla && isKept(ws, mods, site)
 	})
 	return lo.Map(own, func(site index.Site, _ int) Node { return makeNode(ws, mods, site, 0) })
 }
@@ -493,7 +493,7 @@ func (gph *Service) Defaults() Filter {
 		return Filter{}
 	}
 	databases := listKinds(ws.Schema)
-	origins := []string{game.OriginVanilla}
+	origins := []string{files.OriginVanilla}
 	for _, mod := range *ws.Order.Load() {
 		origins = append(origins, mod.ID)
 	}

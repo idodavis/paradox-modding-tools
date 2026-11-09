@@ -57,7 +57,7 @@ const rows = computed(() => {
     ["Date", stamp && [stamp.date.day, stamp.month, stamp.date.year, stamp.era].filter(Boolean).join(" ")],
     ["Number", card?.number?.toString()],
     ["Weight", card?.weight ? `${card.weight}% of its siblings` : undefined],
-    ["Image", header && [size, header.compression, mips].filter(Boolean).join(", ")],
+    ["Image", header && [size, header.pixelFormat, mips].filter(Boolean).join(", ")],
   ];
   return all.filter((row): row is [string, string] => !!row[1]);
 });

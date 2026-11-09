@@ -18,7 +18,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/services/lsp"
@@ -144,7 +143,7 @@ func (sch *Service) ReplaceText(query Query, replacement string) (int, error) {
 	count, openFiles := 0, 0
 	var failure error
 	for _, file := range listFiles(ws.Mods.Load(), query) {
-		if file.Origin == game.OriginVanilla {
+		if file.Origin == files.OriginVanilla {
 			continue
 		}
 		if text, open := ws.LookupBuffer(file.Path); open {
@@ -329,7 +328,7 @@ func listFiles(mods *index.Index, query Query) []files.File {
 	matches := lo.Filter(mods.Files, func(file files.File, position int) bool {
 		return mods.IsListed(int32(position)) && isSearched(file)
 	})
-	own, vanilla := lo.FilterReject(matches, func(file files.File, _ int) bool { return file.Origin != game.OriginVanilla })
+	own, vanilla := lo.FilterReject(matches, func(file files.File, _ int) bool { return file.Origin != files.OriginVanilla })
 	return slices.Concat(own, vanilla)
 }
 
@@ -338,7 +337,7 @@ func listFiles(mods *index.Index, query Query) []files.File {
 func makeFilter(query Query) func(file files.File) bool {
 	include, exclude := parseGlobs(query.Include), parseGlobs(query.Exclude)
 	return func(file files.File) bool {
-		searched := file.Origin != game.OriginVanilla
+		searched := file.Origin != files.OriginVanilla
 		if len(query.Origins) > 0 {
 			searched = slices.Contains(query.Origins, file.Origin)
 		}

@@ -65,6 +65,7 @@ describe("the windows", () => {
       name: "m",
       folder: "",
       origin: "mod",
+      stage: "",
       format: Format.FormatScript,
       root: "/mod",
       database: "",

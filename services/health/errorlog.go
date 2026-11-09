@@ -164,7 +164,7 @@ func findLogSite(ws *workspace.Session, mods *index.Index, locations []*regexp.R
 		for _, match := range location.FindAllStringSubmatch(line, -1) {
 			file, _, ok := mods.FindLoaded(match[location.SubexpIndex("path")])
 			number, err := strconv.Atoi(match[location.SubexpIndex("line")])
-			if ok && err == nil && file.Origin != game.OriginVanilla {
+			if ok && err == nil && file.Origin != files.OriginVanilla {
 				return lsp.Site{Place: ws.Locate(mods, file.Path), Line: number, Range: lsp.ToLineRange(number)}, true
 			}
 		}
@@ -198,7 +198,7 @@ func findLogOwner(mods *index.Index, message string) (identifier, origin string,
 		for _, database := range mods.ListDatabases(candidate) {
 			sites := listLoaded(mods, mods.Resolve(schema.Reference{Database: database, Name: candidate}))
 			origins := lo.Uniq(lo.Map(sites, func(site index.Site, _ int) string { return mods.File(site).Origin }))
-			if len(origins) == 1 && origins[0] != game.OriginVanilla {
+			if len(origins) == 1 && origins[0] != files.OriginVanilla {
 				return candidate, origins[0], true
 			}
 		}

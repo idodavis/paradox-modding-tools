@@ -11,7 +11,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -194,7 +193,7 @@ func TestSearchFilesListsModsFirst(t *testing.T) {
 	if len(places) < 2 || places[0].Origin != fixtureModID {
 		t.Fatalf("places: %+v", places)
 	}
-	vanilla := slices.IndexFunc(places, func(place workspace.Place) bool { return place.Origin == game.OriginVanilla })
+	vanilla := slices.IndexFunc(places, func(place workspace.Place) bool { return place.Origin == files.OriginVanilla })
 	if vanilla < 0 || slices.ContainsFunc(places[vanilla:], func(place workspace.Place) bool {
 		return place.Origin == fixtureModID
 	}) {

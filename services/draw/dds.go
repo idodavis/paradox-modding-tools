@@ -11,7 +11,6 @@ import (
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/texture"
 	"paradox-modding-tools/services/lsp"
@@ -46,7 +45,7 @@ func (drw *Service) FindPictureFiles(path string) (PictureFiles, error) {
 			return PictureFiles{}, err
 		}
 	}
-	isGame := func(place workspace.Place) bool { return place.Origin == game.OriginVanilla }
+	isGame := func(place workspace.Place) bool { return place.Origin == files.OriginVanilla }
 	references := map[string]DDS{}
 	for _, picture := range pictures {
 		target := toDDSPath(picture.Path)
@@ -64,24 +63,31 @@ func (drw *Service) FindPictureFiles(path string) (PictureFiles, error) {
 	return PictureFiles{Pictures: pictures, References: references}, nil
 }
 
-// WriteDDS writes each picture beside itself as a DDS, compressed in BC3 blocks or not, with or without mip levels,
-// replacing a DDS of that name. It returns the files written, and on an error the ones written before it.
-func (drw *Service) WriteDDS(paths []string, compressed, mipmaps bool) ([]string, error) {
+// WriteDDS writes each picture beside itself as a DDS in the given DXGI
+// format, such as 98 for BC7_UNORM, with or without mip levels. It replaces a
+// DDS of that name. It returns the files written, and on an error the ones
+// written before it.
+func (drw *Service) WriteDDS(paths []string, dxgi uint32, mipmaps bool) ([]string, error) {
 	ddsPaths := []string{}
+
 	for _, path := range paths {
-		dds, err := encodePicture(path, compressed, mipmaps)
+		dds, err := encodePicture(path, dxgi, mipmaps)
 		if err == nil {
 			err = drw.Workspace.WriteBytes(toDDSPath(path), dds)
 		}
+
 		if err != nil {
 			failure := fmt.Errorf("%s was not saved: %w", filepath.Base(path), err)
 			if len(ddsPaths) > 0 {
 				failure = fmt.Errorf("%w (%s saved before it)", failure, lsp.Plural(len(ddsPaths), "picture", "pictures"))
 			}
+
 			return ddsPaths, failure
 		}
+
 		ddsPaths = append(ddsPaths, toDDSPath(path))
 	}
+
 	return ddsPaths, nil
 }
 
@@ -109,16 +115,19 @@ func toDDSPath(path string) string {
 	return strings.TrimSuffix(path, filepath.Ext(path)) + ".dds"
 }
 
-// encodePicture reads a picture file and encodes it as a DDS. It returns an error if the file cannot be read, decoded
-// or encoded.
-func encodePicture(path string, compressed, mipmaps bool) ([]byte, error) {
+// encodePicture reads a picture file and encodes it as a DDS in the given
+// DXGI format. It returns an error if the file cannot be read, decoded or
+// encoded.
+func encodePicture(path string, dxgi uint32, mipmaps bool) ([]byte, error) {
 	file, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+
 	picture, err := texture.Decode(file, 0)
 	if err != nil {
 		return nil, err
 	}
-	return texture.EncodeDDS(picture, compressed, mipmaps)
+
+	return texture.EncodeDDS(picture, dxgi, mipmaps)
 }

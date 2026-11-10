@@ -176,10 +176,10 @@ func (s *Schema) isKeyLink(key string) bool {
 // splitLinkHead returns the first link of a chain in lower case, or only the
 // prefix of one such as scope:target, with true.
 func splitLinkHead(key string) (string, bool) {
-	head := strings.ToLower(jomini.SplitChain(key)[0])
-	if prefix, _, ok := jomini.SplitPrefixed(head); ok {
-		return prefix, true
+	head := jomini.Links(key, 0)[0]
+	if !head.Prefix.IsEmpty() {
+		return strings.ToLower(key[head.Prefix.Start:head.Prefix.End]), true
 	}
 
-	return head, false
+	return strings.ToLower(key[head.Span.Start:head.Span.End]), false
 }

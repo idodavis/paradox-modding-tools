@@ -472,7 +472,7 @@ func FindLocalizationFile(row *game.Game, folder, name, language string) (string
 	if !ok {
 		return "", false
 	}
-	return files.Join(folder, path.Join(rel, language, files.ToSlug(name)+"_l_"+language+".yml")), true
+	return files.Join(folder, path.Join(rel, language, loc.ToLanguageFile(files.ToSlug(name), language))), true
 }
 
 // CreateLocalization writes a localization file of a mod with only its header, in the language its name ends in. It
@@ -514,8 +514,9 @@ func toSupportedVersion(version string) string {
 // source shows how the games match, such as a supported version with a * inside a part, or a build id.
 func MatchVersion(supported, version string) (matches, judged bool) {
 	wanted, actual := strings.Split(supported, "."), strings.Split(version, ".")
-	isWanted := func(part string) bool { return part == "*" || jomini.IsNumber(part) }
-	judged = supported != "" && lo.EveryBy(wanted, isWanted) && lo.EveryBy(actual, jomini.IsNumber)
+	isNumber := func(part string) bool { return jomini.Classify(part) == jomini.ClassNumber }
+	isWanted := func(part string) bool { return part == "*" || isNumber(part) }
+	judged = supported != "" && lo.EveryBy(wanted, isWanted) && lo.EveryBy(actual, isNumber)
 	for position, part := range wanted {
 		switch {
 		case part == "*":

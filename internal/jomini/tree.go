@@ -1,8 +1,9 @@
 // Package jomini parses Paradox script, GUI and asset files into a flat tree,
-// and tells what shape a written word has: a number, a date, a parameter, a
-// constant, a color or a data call. It answers only what the text says, such
-// as where each statement starts and ends and what its parts are. What a key
-// means is the schema's question, and this package knows no game.
+// and gives each key, tag and value its class: an identifier, a number, a
+// date, a chain of links, a parameter, a constant, a data call and so on. It
+// also reads colors and data calls. It answers only what the text says, such
+// as where each statement starts and ends and what its parts are written as.
+// What a key means is the schema's question, and this package knows no game.
 //
 // # The tree
 //
@@ -44,20 +45,38 @@
 //   - A # starts a comment, which runs to the end of its line.
 //   - A line ends at \n, \r\n or a lone \r.
 //
-// # Shapes
+// # Classes
 //
+// Parse gives each key, tag and value of a statement its Class, read inside
+// any quotes. Classify decides it by the first of these rules that fits:
+//
+//   - A text that holds a parameter anywhere is a parameter, as $TRAIT$ and
+//     has_$KIND$_flag are. A parameter is $NAME$ or $NAME|default$: its name
+//     is ASCII letters, digits and underscores, and its default runs to the
+//     next $.
+//   - @[…] is an expression of numbers, constants, the four operators and
+//     brackets, and @ before a name is a constant, as @size is. A constant
+//     stands for the value of the last @name = value written before it in
+//     the file.
+//   - A text that starts with [ and ends with ] is a data call, as
+//     [Root.GetName] is.
 //   - A number is an optional sign, digits, an optional fraction and an
-//     optional %, or a 0x hexadecimal value. A fraction may end in the f of a
-//     C float, as in 3.0f.
-//   - A date is year.month.day, as in 1066.9.15. The day may be left out.
-//   - A parameter is $NAME$, with or without a |default, anywhere in a word.
-//   - A constant is @name, or an expression @[…] of numbers, constants, the
-//     four operators and brackets. A constant stands for the value of the
-//     last @name = value written before it in the file.
-//   - A dotted chain such as scope:x.var:y.z splits at each dot outside
-//     brackets and quotes, and a prefixed name such as var:x at its colon.
-//   - A key path is segments joined by /, each a glob, <number> for a key
-//     written as a number or a date, or ** for any depth.
+//     optional %, or a 0x hexadecimal value. A fraction may end in the f of
+//     a C float, as in 3.0f.
+//   - A date is year.month.day, as in 1066.9.15. A year and a month alone,
+//     as in 1066.9, are a number.
+//   - A text of letters, digits, characters outside ASCII and the characters
+//     _ - . ' : is an event id where it is a namespace, a dot and a number,
+//     as feast.1001 is, else a chain where it holds a dot or a colon, as
+//     root.father and scope:x are, else an identifier, as brave is.
+//   - An identifier with one argument in parentheses that end it is
+//     parenthesized, as opinion(scope:ruler) is.
+//   - Anything else is text, such as a quoted text with spaces.
+//
+// A chain splits into its links at each dot outside brackets and quotes, as
+// scope:x.var:y.z does, and a link into its prefix and its name at its first
+// colon. A key path is segments joined by /, each a glob, <number> for a key
+// written as a number or a date, or ** for any depth.
 //
 // # Colors
 //
@@ -81,7 +100,7 @@
 // # Robustness
 //
 // Parse never fails. It keeps the statements it could read, and reports each
-// problem as an Error with one of these codes:
+// problem as a Problem with one of these codes:
 //
 //   - unclosed-block: a block is never closed, and runs to the end of the
 //     text.
@@ -126,8 +145,8 @@ type Position struct {
 	Column int `json:"column"`
 }
 
-// Error is one problem a parse found in a text.
-type Error struct {
+// Problem is one problem found in a text.
+type Problem struct {
 	// Code names the kind of problem: one of the codes the package doc lists,
 	// or one of the loc package's.
 	Code string `json:"code"`
@@ -222,6 +241,11 @@ type Statement struct {
 	// Block runs from the opening brace to the closing one. It is empty for
 	// a scalar.
 	Block Span
+
+	// KeyClass, TagClass and ValueClass are what the key, the tag and the
+	// value are written as, inside any quotes. Each is ClassNone where the
+	// statement does not write that part, or writes it as "".
+	KeyClass, TagClass, ValueClass Class
 }
 
 // IsBlock reports whether the statement's value is a block.
@@ -245,13 +269,13 @@ func (s Statement) ResolveValueSpan() Span {
 }
 
 // Tree is the parse of one text. Its statements are in document order, and a
-// block's children sit right after it. It also keeps the text's comments, its
-// parse errors and its line index.
+// block's children sit right after it. It also keeps the text's comments, the
+// problems its parse found and its line index.
 type Tree struct {
 	Src        string
 	Statements []Statement
 	Comments   []Span
-	Errors     []Error
+	Problems   []Problem
 	Lines      Lines
 }
 
@@ -404,4 +428,19 @@ func (t *Tree) FindComment(statement int32) string {
 	slices.Reverse(lines)
 
 	return strings.Join(lines, "\n")
+}
+
+// ListFolds returns the span of each block that runs over more than one line,
+// in the order the blocks open.
+func (t *Tree) ListFolds() []Span {
+	var folds []Span
+
+	for _, statement := range t.Statements {
+		block := statement.Block
+		if statement.IsBlock() && t.Lines.ToPosition(block.End).Line > t.Lines.ToPosition(block.Start).Line {
+			folds = append(folds, block)
+		}
+	}
+
+	return folds
 }

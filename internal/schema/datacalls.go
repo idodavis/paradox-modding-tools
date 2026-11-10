@@ -234,7 +234,7 @@ var textDatabases = map[loc.Markup]string{
 // message, an icon to a text icon and a part of a format to a text format.
 func (s *Schema) ListTextReferences(message loc.Message) []Reference {
 	var references []Reference
-	for _, segment := range loc.Segments(message.Text, message.TextSpan.Start) {
+	for _, segment := range message.Segments {
 		if segment.Markup == loc.MarkupCall {
 			references = append(references, s.listTextCall(segment)...)
 		}
@@ -258,12 +258,12 @@ const conceptFormat = "E"
 // step with no arguments and the concept format after its bar names one, as
 // [faith|E] names the concept faith. It returns nil if the text is no call.
 func (s *Schema) listTextCall(segment loc.Segment) []Reference {
-	call, ok := jomini.ParseCall(segment.Text, segment.TextSpan.Start)
-	if !ok {
+	call := segment.Call
+	if call == nil {
 		return nil
 	}
 
-	references := s.ListCallReferences(call, "")
+	references := s.ListCallReferences(*call, "")
 
 	step := call.Steps[0]
 	if len(call.Steps) == 1 && len(step.Arguments) == 0 && strings.EqualFold(call.Suffix, conceptFormat) {

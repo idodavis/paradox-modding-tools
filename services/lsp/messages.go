@@ -23,16 +23,15 @@ import (
 func (visitor *diagnoseVisitor) diagnoseMessages(document workspace.Document) []Diagnostic {
 	place, mods := visitor.place, visitor.index
 	tree, file := document.Tree, document.Messages
-	visitor.diagnostics = toDiagnostics(tree, file.Errors)
+	visitor.diagnostics = toDiagnostics(tree, file.Problems)
 	if visitor.parseOnly {
 		return visitor.diagnostics
 	}
 	visitor.diagnostics = append(visitor.diagnostics, diagnoseLocalizationFile(tree, file, place)...)
 	for _, message := range file.Messages {
-		segments := loc.Segments(message.Text, message.TextSpan.Start)
-		visitor.diagnostics = append(visitor.diagnostics, toDiagnostics(tree, loc.ListMarkupFaults(segments))...)
+		visitor.diagnostics = append(visitor.diagnostics, toDiagnostics(tree, loc.ListMarkupFaults(message.Segments))...)
 		visitor.diagnoseMissing(tree, visitor.ws.Schema.ListTextReferences(message))
-		visitor.diagnoseCalls(tree, segments, "")
+		visitor.diagnoseCalls(tree, message.Segments, "")
 	}
 	if _, replaces := visitor.ws.Game.FindLocReplacement(place.Rel, file.Language); replaces {
 		return visitor.diagnostics
@@ -89,8 +88,12 @@ func diagnoseFolders(tree *jomini.Tree, place workspace.Place) []Diagnostic {
 // before it, read in the given data context. A first step in lower case, or one a file saves a scope by, is a saved
 // scope, not a problem.
 func (visitor *diagnoseVisitor) diagnoseCalls(tree *jomini.Tree, segments []loc.Segment, datacontext string) {
-	for _, call := range loc.ListCalls(segments) {
-		step, before, ok := visitor.ws.Schema.FindUnlisted(call, datacontext)
+	for _, segment := range segments {
+		call := segment.Call
+		if call == nil {
+			continue
+		}
+		step, before, ok := visitor.ws.Schema.FindUnlisted(*call, datacontext)
 		if !ok {
 			continue
 		}

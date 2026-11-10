@@ -275,7 +275,7 @@ func describeMessage(ws *workspace.Session, tree *jomini.Tree, place workspace.P
 	key, span := message.Key, message.KeySpan
 	if !span.Contains(offset) {
 		segment := loc.Segment{}
-		for _, candidate := range loc.Segments(message.Text, message.TextSpan.Start) {
+		for _, candidate := range message.Segments {
 			if candidate.Span.Contains(offset) {
 				segment = candidate
 			}
@@ -284,9 +284,8 @@ func describeMessage(ws *workspace.Session, tree *jomini.Tree, place workspace.P
 		case loc.MarkupKey:
 			key, span = segment.Text, segment.TextSpan
 		case loc.MarkupCall:
-			call, ok := jomini.ParseCall(segment.Text, segment.TextSpan.Start)
 			card := &Card{}
-			if !ok || !describeFunction(card, ws, tree, call, "", offset) {
+			if segment.Call == nil || !describeFunction(card, ws, tree, *segment.Call, "", offset) {
 				return nil, schema.Reference{}
 			}
 			return card, schema.Reference{}
@@ -393,13 +392,10 @@ func findHit(visitor *hoverVisitor) (jomini.Span, schema.Reference) {
 	case current.Value.Contains(offset):
 		return current.Value, schema.Reference{}
 	case current.Key.Contains(offset) && context.Category == schema.CategoryLink:
-		start := current.Key.Start
-		for _, link := range jomini.SplitChain(visitor.tree.Text(current.Key)) {
-			span := jomini.Span{Start: start, End: start + len(link)}
-			if span.Contains(offset) {
-				return span, schema.Reference{}
+		for _, link := range jomini.Links(visitor.tree.Text(current.Key), current.Key.Start) {
+			if link.Span.Contains(offset) {
+				return link.Span, schema.Reference{}
 			}
-			start = span.End + 1
 		}
 	case current.Key.Contains(offset):
 		return current.Key, schema.Reference{}

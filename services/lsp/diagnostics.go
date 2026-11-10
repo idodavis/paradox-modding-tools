@@ -404,10 +404,11 @@ func (lsp *Service) listEnabled(workspaceID string, diagnostics []Diagnostic) []
 	})
 }
 
-// toDiagnostics returns a tree's parse errors as diagnostics. Each error's words are its fact why.
-func toDiagnostics(tree *jomini.Tree, errors []jomini.Error) []Diagnostic {
-	return lo.Map(errors, func(parseError jomini.Error, _ int) Diagnostic {
-		return makeDiagnostic(tree, parseError.Span, parseError.Code, map[string]string{"why": parseError.Message})
+// toDiagnostics returns the problems a parse found in a tree's text as
+// diagnostics. Each problem's words are its fact why.
+func toDiagnostics(tree *jomini.Tree, problems []jomini.Problem) []Diagnostic {
+	return lo.Map(problems, func(problem jomini.Problem, _ int) Diagnostic {
+		return makeDiagnostic(tree, problem.Span, problem.Code, map[string]string{"why": problem.Message})
 	})
 }
 
@@ -529,7 +530,7 @@ func (visitor *diagnoseVisitor) diagnoseTree(document workspace.Document) []Diag
 		// the game reads nothing under a misspelled folder, so only the folder is judged
 		return diagnoseFolders(tree, place)
 	}
-	diagnostics := toDiagnostics(tree, tree.Errors)
+	diagnostics := toDiagnostics(tree, tree.Problems)
 	if !visitor.parseOnly {
 		visitor.ws.Schema.Walk(tree, place.File, visitor)
 		diagnostics = append(diagnostics, visitor.diagnostics...)
@@ -671,9 +672,13 @@ func JoinList(texts []string, conjunction string) string {
 	return strings.Join(texts[:len(texts)-1], ", ") + " " + conjunction + " " + texts[len(texts)-1]
 }
 
-// canJudge reports whether a reference can be judged dangling. A saved name, such as a scope or a variable, never is.
+// canJudge reports whether a reference can be judged dangling. A saved name,
+// such as a scope or a variable, never is, nor is a name any of whose links
+// has a prefix.
 func canJudge(reference schema.Reference) bool {
-	_, _, prefixed := jomini.SplitPrefixed(reference.Name)
+	prefixed := slices.ContainsFunc(jomini.Links(reference.Name, 0), func(link jomini.Link) bool {
+		return !link.Prefix.IsEmpty()
+	})
 	return reference.Database != "" && !slices.Contains(game.Links, reference.Database) &&
 		reference.Caller != game.AnyCall && reference.Caller != game.GUI.TagCalls && !reference.Inferred && !prefixed &&
 		!strings.Contains(reference.Name, "$")
@@ -725,7 +730,7 @@ func (visitor *diagnoseVisitor) diagnoseKey(tree *jomini.Tree, statement int32, 
 		visitor.diagnoseFollows(tree, statement, context)
 	case current.Key.IsEmpty() || context.Category != schema.CategoryNone || context.Field != nil:
 		// a key with a meaning of its own is not an unknown key
-	case current.Parent == 0 && jomini.IsEventID(tree.Unquoted(current.Key)):
+	case current.Parent == 0 && current.KeyClass == jomini.ClassEventID:
 		visitor.diagnoseNamespace(tree, current, context)
 	case context.Definition != nil:
 		visitor.diagnoseUnknown(tree, statement, context)
@@ -754,7 +759,9 @@ func (visitor *diagnoseVisitor) diagnoseDefinition(tree *jomini.Tree, statement 
 		facts["key"] = database.Precedence.PriorityKey
 		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, definition.Span, "conflicting-priority", facts))
 	}
-	if key, ok := tree.FindChildValue(statement, game.TitleKey); ok && jomini.IsIdentifier(key) && !visitor.hasMessage(key) {
+	title, ok := tree.FindChild(statement, game.TitleKey)
+	key := tree.Unquoted(tree.Statements[title].Value)
+	if ok && tree.Statements[title].ValueClass.IsIdentifier() && !visitor.hasMessage(key) {
 		missing := DescribeReference(schema.Reference{Database: definition.Database, Name: definition.Name})
 		missing["key"] = key
 		visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, definition.Span, "missing-message", missing))
@@ -837,7 +844,7 @@ func (visitor *diagnoseVisitor) diagnoseFollows(tree *jomini.Tree, statement int
 // diagnoseUnknown records a key its block does not take. A key that is not a plain name is not judged.
 func (visitor *diagnoseVisitor) diagnoseUnknown(tree *jomini.Tree, statement int32, context *schema.Context) {
 	key := tree.Statements[statement].Key
-	if visitor.ws.Schema.Databases[context.Database] == nil || !jomini.IsIdentifier(tree.Unquoted(key)) {
+	if visitor.ws.Schema.Databases[context.Database] == nil || !tree.Statements[statement].KeyClass.IsIdentifier() {
 		return
 	}
 	holder := context.Parent
@@ -857,7 +864,7 @@ func (visitor *diagnoseVisitor) diagnoseScope(tree *jomini.Tree, statement int32
 	span := tree.Statements[statement].Key
 	key, command := tree.Unquoted(span), context.Command
 	if context.Category == schema.CategoryLink {
-		key = jomini.SplitChain(key)[0]
+		key = key[:jomini.Links(key, 0)[0].Span.End]
 	}
 	// a starting scope is stated, not followed, so only a followed scope counts
 	scope, followed := context.Parent.Scope, len(context.Parent.Previous)
@@ -893,7 +900,7 @@ func (visitor *diagnoseVisitor) diagnoseValue(tree *jomini.Tree, statement int32
 		return
 	}
 	// the game reads a script value, or a trigger that returns a number, where a number is expected
-	readsScriptValue := expected.Type == schema.ValueTypeNumber && jomini.IsIdentifier(tree.Unquoted(current.Value))
+	readsScriptValue := expected.Type == schema.ValueTypeNumber && current.ValueClass.IsIdentifier()
 	match := visitor.ws.Schema.MatchValue
 	if readsScriptValue || strings.ContainsAny(text, "[$@") || match(expected, text) ||
 		!lo.EveryBy(lo.Keys(field.Vanilla.Values), func(value string) bool { return match(expected, value) }) {
@@ -931,7 +938,7 @@ func describeExpected(expected schema.Expected) string {
 func (visitor *diagnoseVisitor) diagnoseDate(tree *jomini.Tree, statement int32, context *schema.Context) {
 	current := tree.Statements[statement]
 	spans := []jomini.Span{}
-	if key := tree.Unquoted(current.Key); !jomini.IsNumber(key) {
+	if current.KeyClass != jomini.ClassNumber {
 		spans = append(spans, current.Key)
 	}
 	if field := context.Field; field != nil && field.Value.Value.Type == schema.ValueTypeDate && field.Value.Source.CanAccuse() &&

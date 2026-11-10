@@ -44,11 +44,11 @@ func TestParseFile(t *testing.T) {
 			t.Errorf("message %d span covers %q", i, text[message.Span.Start:message.Span.End])
 		}
 	}
-	if len(file.Errors) != 1 || file.Errors[0].Code != "malformed-line" {
-		t.Fatalf("errors = %+v, want one malformed-line", file.Errors)
+	if len(file.Problems) != 1 || file.Problems[0].Code != "malformed-line" {
+		t.Fatalf("problems = %+v, want one malformed-line", file.Problems)
 	}
-	if got := text[file.Errors[0].Span.Start:file.Errors[0].Span.End]; got != "not a message" {
-		t.Errorf("error covers %q", got)
+	if got := text[file.Problems[0].Span.Start:file.Problems[0].Span.End]; got != "not a message" {
+		t.Errorf("problem covers %q", got)
 	}
 }
 
@@ -161,7 +161,7 @@ func TestEncodeMessages(t *testing.T) {
 	if got != want {
 		t.Errorf("encoded = %q, want %q", got, want)
 	}
-	if file := Parse(got, ""); len(file.Messages) != 2 || len(file.Errors) != 0 || file.Language != english {
+	if file := Parse(got, ""); len(file.Messages) != 2 || len(file.Problems) != 0 || file.Language != english {
 		t.Errorf("encoded text parses to %+v", file)
 	}
 }
@@ -198,10 +198,10 @@ func TestParseInstalls(t *testing.T) {
 					undecided++
 				}
 				for _, message := range file.Messages {
-					segments += len(Segments(message.Text, message.TextSpan.Start))
+					segments += len(message.Segments)
 				}
-				for _, parseError := range file.Errors {
-					malformed = append(malformed, fmt.Sprintf("%s:%d", listed.Path, file.Lines.ToPosition(parseError.Span.Start).Line+1))
+				for _, problem := range file.Problems {
+					malformed = append(malformed, fmt.Sprintf("%s:%d", listed.Path, file.Lines.ToPosition(problem.Span.Start).Line+1))
 				}
 				if count%2000 == 0 {
 					t.Logf("%s: %d files read", game, count)

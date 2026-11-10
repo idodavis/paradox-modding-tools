@@ -132,7 +132,7 @@ func (s *Schema) CountVanilla(listing []files.File, parse func(path string) (*jo
 				counters[worker].messages[strings.Clone(message.Key)] = true
 			}
 
-			counters[worker].countUnlisted(message.Text, "")
+			counters[worker].countUnlisted(message.Segments, "")
 		}
 	})
 
@@ -171,11 +171,11 @@ func (c *counter) Enter(tree *jomini.Tree, statement int32, context *Context) bo
 
 	c.countDefinition(context)
 	current := tree.Statements[statement]
-	for _, text := range []string{tree.Unquoted(current.Key), tree.Unquoted(current.Value)} {
-		for _, link := range jomini.SplitChain(text) {
-			prefix, label, ok := jomini.SplitPrefixed(link)
-			if ok && c.schema.isVoted(prefix) {
-				c.prefixed[prefix] = addCounts(c.prefixed[prefix], map[string]int{label: 1})
+	for _, span := range []jomini.Span{tree.UnquotedSpan(current.Key), tree.UnquotedSpan(current.Value)} {
+		for _, link := range jomini.Links(tree.Text(span), span.Start) {
+			prefix := tree.Text(link.Prefix)
+			if !link.Prefix.IsEmpty() && c.schema.isVoted(prefix) {
+				c.prefixed[prefix] = addCounts(c.prefixed[prefix], map[string]int{tree.Text(link.Name): 1})
 			}
 		}
 	}
@@ -183,7 +183,7 @@ func (c *counter) Enter(tree *jomini.Tree, statement int32, context *Context) bo
 	c.countCommand(tree, statement, context)
 	c.countCalls(tree, statement, context)
 	if value := tree.Unquoted(tree.Statements[statement].Value); c.gui && strings.Contains(value, "[") {
-		c.countUnlisted(value, context.Datacontext)
+		c.countUnlisted(loc.Segments(value, 0), context.Datacontext)
 	}
 
 	if parent.shaped {
@@ -318,12 +318,16 @@ func (c *counter) countCalls(tree *jomini.Tree, statement int32, context *Contex
 	}
 }
 
-// countUnlisted records the step of each data call in a text that no dump
-// declares, read in the given data context.
-func (c *counter) countUnlisted(text, datacontext string) {
-	for _, call := range loc.ListCalls(loc.Segments(text, 0)) {
-		if step, before, ok := c.schema.FindUnlisted(call, datacontext); ok {
-			c.unlisted[before+"."+call.Steps[step].Text] = true
+// countUnlisted records the step of each data call in the segments of a text
+// that no dump declares, read in the given data context.
+func (c *counter) countUnlisted(segments []loc.Segment, datacontext string) {
+	for _, segment := range segments {
+		if segment.Call == nil {
+			continue
+		}
+
+		if step, before, ok := c.schema.FindUnlisted(*segment.Call, datacontext); ok {
+			c.unlisted[before+"."+segment.Call.Steps[step].Text] = true
 		}
 	}
 }
@@ -484,7 +488,7 @@ func (c *counter) countField(parent holder, tree *jomini.Tree, statement int32, 
 	}
 
 	rawKey := key
-	if jomini.IsNumberKey(key) {
+	if current.KeyClass.IsNumberKey() {
 		key = jomini.NumberKey
 	}
 
@@ -799,9 +803,9 @@ func (c *counter) resolveClaims(field *Field, held bool) {
 	// beside character keys
 	expected, ok := c.resolveReference(vanilla.Values)
 	labels := slices.Collect(maps.Keys(c.listLabels(vanilla.Values)))
-	named := ok && slices.ContainsFunc(labels, func(label string) bool { return !jomini.IsNumber(label) })
+	named := ok && slices.ContainsFunc(labels, func(label string) bool { return jomini.Classify(label) != jomini.ClassNumber })
 	literal := slices.ContainsFunc(slices.Collect(maps.Keys(vanilla.Values)), func(value string) bool {
-		isName := named && jomini.IsNumber(value) && c.defined[expected.Database][value]
+		isName := named && jomini.Classify(value) == jomini.ClassNumber && c.defined[expected.Database][value]
 
 		return c.isLiteral(value) && !isName
 	})
@@ -990,7 +994,7 @@ func (c *counter) listLabels(values map[string]int) map[string]int {
 	labels := map[string]int{}
 	for value, count := range values {
 		label := strings.Trim(value, `"`)
-		if !jomini.IsParameter(label) && !c.schema.IsLink(label) {
+		if jomini.Classify(label) != jomini.ClassParameter && !c.schema.IsLink(label) {
 			labels[label] += count
 		}
 	}
@@ -1038,11 +1042,12 @@ func (c *counter) takesValues(values map[string]int) bool {
 	named := false
 	for value := range values {
 		text := strings.Trim(value, `"`)
+		class := jomini.Classify(text)
 		_, declared := c.schema.FindCommand(text)
 		switch {
 		case names[text]:
 			named = true
-		case jomini.IsNumber(text) || jomini.IsParameter(text) || c.schema.IsLink(text) || declared: // allowed
+		case class == jomini.ClassNumber || class == jomini.ClassParameter || c.schema.IsLink(text) || declared: // allowed
 		default:
 			return false
 		}

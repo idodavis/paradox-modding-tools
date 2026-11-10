@@ -1036,7 +1036,7 @@ func (s *Schema) MatchValue(expected Expected, text string) bool {
 		return slices.Contains(game.Bools, text)
 
 	case ValueTypeNumber:
-		return jomini.IsNumber(text)
+		return jomini.Classify(text) == jomini.ClassNumber
 
 	case ValueTypeDate:
 		_, ok := jomini.ParseDate(text)
@@ -1050,16 +1050,16 @@ func (s *Schema) MatchValue(expected Expected, text string) bool {
 		})
 
 	case ValueTypeReference:
-		return jomini.IsIdentifier(unquoted)
+		return jomini.Classify(unquoted).IsIdentifier()
 
 	case ValueTypeTarget:
-		return s.IsLink(unquoted) || expected.Database != "" && jomini.IsIdentifier(unquoted)
+		return s.IsLink(unquoted) || expected.Database != "" && jomini.Classify(unquoted).IsIdentifier()
 
 	case ValueTypeColor, ValueTypeBlock:
 		return false
 
 	case ValueTypeText:
-		return text != unquoted || jomini.IsIdentifier(text)
+		return text != unquoted || jomini.Classify(text).IsIdentifier()
 
 	case ValueTypeCall:
 		_, ok := jomini.ParseBracketed(unquoted, 0)
@@ -1150,9 +1150,10 @@ func (f *Field) claimsDatabase() bool {
 }
 
 // findNumberChild returns the field's child for a key, else its <number>
-// child if the key is a number or a date. It returns nil if there is none.
-func (f *Field) findNumberChild(key string) *Field {
-	if child := f.findChild(key); child != nil || !jomini.IsNumberKey(key) {
+// child if the key's class is a number or a date. It returns nil if there is
+// none.
+func (f *Field) findNumberChild(key string, class jomini.Class) *Field {
+	if child := f.findChild(key); child != nil || !class.IsNumberKey() {
 		return child
 	}
 
@@ -1160,8 +1161,8 @@ func (f *Field) findNumberChild(key string) *Field {
 }
 
 // findPatternChild returns the field's child for a key, else its <number>
-// child if the key is a number, else its <any> child. It returns nil if there
-// is none.
-func (f *Field) findPatternChild(key string) *Field {
-	return cmp.Or(f.findNumberChild(key), f.findChild(game.AnyKey))
+// child if the key's class is a number or a date, else its <any> child. It
+// returns nil if there is none.
+func (f *Field) findPatternChild(key string, class jomini.Class) *Field {
+	return cmp.Or(f.findNumberChild(key, class), f.findChild(game.AnyKey))
 }

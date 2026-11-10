@@ -170,8 +170,8 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	}
 	key := tree.Unquoted(value)
 	text, winner, ok := ws.LookupText(mods, key)
-	// A key that is not an identifier is shown as written, so it is never missing.
-	missing := jomini.IsIdentifier(key) && (!ok || mods.Language(winner.Site) != resolveLanguage(ws))
+	// A key that is no identifier is shown as written, so it is never missing.
+	missing := tree.Statements[label].ValueClass.IsIdentifier() && (!ok || mods.Language(winner.Site) != resolveLanguage(ws))
 	return Version{
 		Key: key, Text: text, Segments: describeCalls(ws, mods, text), Missing: missing,
 		Line: toSourceLine(tree, tree.Statements[label].Key),
@@ -183,8 +183,8 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.Segment {
 	segments := loc.Segments(text, 0)
 	for position, segment := range segments {
-		call, ok := jomini.ParseCall(segment.Text, 0)
-		if segment.Markup != loc.MarkupCall || !ok || len(call.Steps) == 0 {
+		call := segment.Call
+		if call == nil {
 			continue
 		}
 		step := call.Steps[len(call.Steps)-1]

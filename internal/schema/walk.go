@@ -264,9 +264,10 @@ type frame struct {
 	context *Context
 
 	// label is what the statement last read at this level is written under,
-	// and span where it is written.
+	// span where it is written, and class what it is written as.
 	label string
 	span  jomini.Span
+	class jomini.Class
 
 	// path is the keys that lead to the statement's children, from the
 	// definition that holds it or the top of the file.
@@ -475,7 +476,7 @@ func (w *walker) walkRunOrder(parent int32, level int, silent bool) map[int32][]
 	}
 
 	rank := func(child int32) int {
-		label, _ := w.findLabel(w.tree.Statements[child])
+		label, _, _ := w.findLabel(w.tree.Statements[child])
 		if position := slices.Index(database.Row.RunOrder, label); position >= 0 {
 			return position
 		}
@@ -534,8 +535,8 @@ func (w *walker) resolve(context *Context, statement int32, level int) {
 		Datacontext: parent.Datacontext, References: context.References[:0],
 	}
 
-	label, span := w.findLabel(w.tree.Statements[statement])
-	w.frames[level].label, w.frames[level].span, w.frames[level].wraps = label, span, false
+	label, span, class := w.findLabel(w.tree.Statements[statement])
+	w.frames[level].label, w.frames[level].span, w.frames[level].class, w.frames[level].wraps = label, span, class, false
 	definition, defines := w.findDefinition(statement, level)
 	if defines {
 		w.resolveDefinition(context, definition)
@@ -573,22 +574,23 @@ func (w *walker) resolve(context *Context, statement int32, level int) {
 }
 
 // findLabel returns what a statement is written under, its key or else the
-// tag of a block that has no key, and where that is written. It returns ""
-// and an empty span for a value written alone.
-func (w *walker) findLabel(current jomini.Statement) (string, jomini.Span) {
+// tag of a block that has no key, where that is written, and its class. It
+// returns "", an empty span and ClassNone for a value written alone.
+func (w *walker) findLabel(current jomini.Statement) (string, jomini.Span, jomini.Class) {
 	var span jomini.Span
+	var class jomini.Class
 	switch {
 	case !current.Key.IsEmpty():
-		span = current.Key
+		span, class = current.Key, current.KeyClass
 	case !current.Tag.IsEmpty() && current.IsBlock():
-		span = current.Tag
+		span, class = current.Tag, current.TagClass
 	default:
-		return "", jomini.Span{}
+		return "", jomini.Span{}, jomini.ClassNone
 	}
 
 	span = w.tree.UnquotedSpan(span)
 
-	return w.tree.Text(span), span
+	return w.tree.Text(span), span, class
 }
 
 // resolveDefinition fills the context of the statement that makes a
@@ -725,11 +727,11 @@ func (w *walker) resolveLead(context *Context, lead, label string, span jomini.S
 // makes its own references.
 func (w *walker) resolveKey(context *Context, statement int32, level int) {
 	parent := w.frames[level-1].context
-	key, span := w.frames[level].label, w.frames[level].span
+	key, span, class := w.frames[level].label, w.frames[level].span, w.frames[level].class
 
 	// a key with a parameter is unknown until the call is made, and so are
 	// its block's shape and scope
-	if jomini.IsParameter(key) {
+	if class == jomini.ClassParameter {
 		context.Category, context.Shape, context.Scope = CategoryParameter, game.ShapeUnknown, ""
 
 		return
@@ -737,7 +739,7 @@ func (w *walker) resolveKey(context *Context, statement int32, level int) {
 
 	step, command, isCall := w.schema.findStatementCall(w.tree, statement)
 	if isCall {
-		key, span = step.Text, step.Span
+		key, span, class = step.Text, step.Span, jomini.Classify(step.Text)
 	}
 
 	var keyword *game.Keyword
@@ -745,7 +747,7 @@ func (w *walker) resolveKey(context *Context, statement int32, level int) {
 		keyword = new(row)
 	}
 
-	fit, fits := w.findMatch(parent, key, w.tree.Statements[statement].IsBlock())
+	fit, fits := w.findMatch(parent, key, class, w.tree.Statements[statement].IsBlock())
 
 	// a case of a switch is a value of the switch's trigger, so no rule of
 	// the block explains its key
@@ -797,7 +799,7 @@ func (w *walker) resolveKey(context *Context, statement int32, level int) {
 	// an operator's value is a number or a script value, so it takes no
 	// field the game's files taught
 	if keyword != nil && keyword.Class != game.KeywordClassMath && context.Field == nil {
-		context.Field = parent.Field.findPatternChild(key)
+		context.Field = parent.Field.findPatternChild(key, class)
 	}
 
 	w.resolveSaved(context, statement, level)
@@ -829,8 +831,9 @@ func findEnclosing(context *Context) game.Shape {
 
 // ruleMatchers holds, by key rule, the function that tells what a key fits
 // under that rule and whether it fits. Each takes the context of the block
-// that holds the key, the key, and whether the key's statement is a block.
-var ruleMatchers = map[game.KeyRule]func(*walker, *Context, string, bool) (match, bool){
+// that holds the key, the key and its class, and whether the key's statement
+// is a block.
+var ruleMatchers = map[game.KeyRule]func(*walker, *Context, string, jomini.Class, bool) (match, bool){
 	game.KeyRuleKnownCall:    (*walker).matchKnownCall,
 	game.KeyRuleDeclared:     (*walker).matchDeclared,
 	game.KeyRuleDocumented:   (*walker).matchDocumented,
@@ -846,20 +849,20 @@ var ruleMatchers = map[game.KeyRule]func(*walker, *Context, string, bool) (match
 	game.KeyRuleCall:         (*walker).matchCall,
 }
 
-// findMatch returns what a key fits under the first rule of the parent
-// block's shape that it fits, and whether one does. A rule ruleMatchers does
-// not hold fits nothing. Where the rule gives no shape, the match takes its
-// field's stated shape, else unknown. A field's key in a block whose keys
-// name definitions also refers to one. The flag says whether the key's
-// statement is a block.
-func (w *walker) findMatch(parent *Context, key string, block bool) (match, bool) {
+// findMatch returns what a key of the given class fits under the first rule
+// of the parent block's shape that it fits, and whether one does. A rule
+// ruleMatchers does not hold fits nothing. Where the rule gives no shape, the
+// match takes its field's stated shape, else unknown. A field's key in a
+// block whose keys name definitions also refers to one. The flag says
+// whether the key's statement is a block.
+func (w *walker) findMatch(parent *Context, key string, class jomini.Class, block bool) (match, bool) {
 	for _, rule := range game.Shapes[findShape(parent)].KeyRules {
 		matcher, ok := ruleMatchers[rule]
 		if !ok {
 			continue
 		}
 
-		fit, fits := matcher(w, parent, key, block)
+		fit, fits := matcher(w, parent, key, class, block)
 		if !fits {
 			continue
 		}
@@ -888,7 +891,7 @@ func (w *walker) findMatch(parent *Context, key string, block bool) (match, bool
 // matchKnownCall fits a key that names a scripted definition the block
 // calls, the file's own first. The keys in its block are the definition's
 // parameters, else the fields of the definition's database.
-func (w *walker) matchKnownCall(parent *Context, key string, _ bool) (match, bool) {
+func (w *walker) matchKnownCall(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
 	callee, caller, ok := w.findCalledDefinition(parent.FindCaller(), key)
 	field := callee.Parameters
 	if database := w.schema.Databases[callee.Database]; field == nil && database != nil {
@@ -901,8 +904,8 @@ func (w *walker) matchKnownCall(parent *Context, key string, _ bool) (match, boo
 // matchDeclared fits a key that the block's field holds from a source other
 // than the game's own files. A number or a date fits the field's <number>
 // child.
-func (w *walker) matchDeclared(parent *Context, key string, _ bool) (match, bool) {
-	child := parent.Field.findNumberChild(key)
+func (w *walker) matchDeclared(parent *Context, key string, class jomini.Class, _ bool) (match, bool) {
+	child := parent.Field.findNumberChild(key, class)
 
 	return match{category: CategoryField, field: child}, child != nil && child.Source != game.SourceNone &&
 		child.Source != game.SourceVanilla
@@ -910,7 +913,7 @@ func (w *walker) matchDeclared(parent *Context, key string, _ bool) (match, bool
 
 // matchDocumented fits a key that the docs write for the definitions of the
 // block's database.
-func (w *walker) matchDocumented(parent *Context, key string, _ bool) (match, bool) {
+func (w *walker) matchDocumented(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
 	database := w.schema.Databases[parent.Database]
 
 	return match{category: CategoryField, field: parent.Field.findChild(key)}, database != nil && database.Documented[key]
@@ -920,7 +923,7 @@ func (w *walker) matchDocumented(parent *Context, key string, _ bool) (match, bo
 // and that the block takes. The match holds the command's arguments and the
 // shape of its block. It returns false if no command matches or the block
 // does not take the command.
-func (w *walker) matchCommand(parent *Context, key string, _ bool) (match, bool) {
+func (w *walker) matchCommand(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
 	command, ok := w.schema.FindCommand(key)
 	fit := match{category: CategoryCommand, command: command, patterns: w.schema.findPatterns(key)}
 	if !ok && len(fit.patterns) > 0 {
@@ -955,30 +958,30 @@ func (w *walker) matchCommand(parent *Context, key string, _ bool) (match, bool)
 
 // matchOperator fits an operator of a value block, such as add. Its block
 // holds arguments.
-func (w *walker) matchOperator(_ *Context, key string, _ bool) (match, bool) {
+func (w *walker) matchOperator(_ *Context, key string, _ jomini.Class, _ bool) (match, bool) {
 	return match{shape: game.ShapeArguments}, game.IsOperator(key)
 }
 
 // matchLink fits a key that starts with a scope link, as scope:target does.
 // Its block keeps the field of the block around it, in the shape a link
 // encloses there.
-func (w *walker) matchLink(parent *Context, key string, _ bool) (match, bool) {
+func (w *walker) matchLink(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
 	return match{category: CategoryLink, field: parent.Field, shape: findEnclosing(parent)}, w.schema.isKeyLink(key)
 }
 
 // matchScopeLink does what matchLink does, but refuses a plain name with a
 // plain value, which is an argument or a call.
-func (w *walker) matchScopeLink(parent *Context, key string, block bool) (match, bool) {
+func (w *walker) matchScopeLink(parent *Context, key string, class jomini.Class, block bool) (match, bool) {
 	if !block && !strings.ContainsAny(key, ":.") {
 		return match{}, false
 	}
 
-	return w.matchLink(parent, key, block)
+	return w.matchLink(parent, key, class, block)
 }
 
 // matchModifier fits a modifier the dumps declare. The key names a modifier
 // type, inferred, since nothing says that every modifier has a definition.
-func (w *walker) matchModifier(parent *Context, key string, _ bool) (match, bool) {
+func (w *walker) matchModifier(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
 	_, declared := w.schema.Modifiers[key]
 
 	return match{
@@ -989,42 +992,42 @@ func (w *walker) matchModifier(parent *Context, key string, _ bool) (match, bool
 
 // matchModifierType fits any identifier as the name of a modifier type, in a
 // game whose modifier types have a database.
-func (w *walker) matchModifierType(parent *Context, key string, _ bool) (match, bool) {
+func (w *walker) matchModifierType(parent *Context, key string, class jomini.Class, _ bool) (match, bool) {
 	return match{
 		category: CategoryReference, field: w.findModifierField(parent.Field, key), database: w.schema.ModifierTypes,
-	}, w.schema.ModifierTypes != "" && jomini.IsIdentifier(key)
+	}, w.schema.ModifierTypes != "" && class.IsIdentifier()
 }
 
 // matchObserved fits a key that only the game's own files write in the
 // block's field. A number or a date fits the field's <number> child. The
 // scope inside its block is not known.
-func (w *walker) matchObserved(parent *Context, key string, _ bool) (match, bool) {
-	child := parent.Field.findNumberChild(key)
+func (w *walker) matchObserved(parent *Context, key string, class jomini.Class, _ bool) (match, bool) {
+	child := parent.Field.findNumberChild(key, class)
 
 	return match{category: CategoryField, field: child, observed: true}, child != nil && child.Source == game.SourceVanilla
 }
 
 // matchField fits a key that the block's field has a child for: the key's
-// own, else the <number> child for a number, else the <any> child.
-func (w *walker) matchField(parent *Context, key string, _ bool) (match, bool) {
-	child := parent.Field.findPatternChild(key)
+// own, else the <number> child for a number or a date, else the <any> child.
+func (w *walker) matchField(parent *Context, key string, class jomini.Class, _ bool) (match, bool) {
+	child := parent.Field.findPatternChild(key, class)
 
 	return match{category: CategoryField, field: child}, child != nil
 }
 
 // matchFieldOrCall does what matchField does, else what matchCall does.
-func (w *walker) matchFieldOrCall(parent *Context, key string, block bool) (match, bool) {
-	if fit, ok := w.matchField(parent, key, block); ok {
+func (w *walker) matchFieldOrCall(parent *Context, key string, class jomini.Class, block bool) (match, bool) {
+	if fit, ok := w.matchField(parent, key, class, block); ok {
 		return fit, true
 	}
 
-	return w.matchCall(parent, key, block)
+	return w.matchCall(parent, key, class, block)
 }
 
-// matchCall fits any identifier that is no event id, as a call through the
-// caller of the block that holds the key.
-func (w *walker) matchCall(parent *Context, key string, _ bool) (match, bool) {
-	return match{category: CategoryCall, caller: parent.FindCaller()}, jomini.IsIdentifier(key) && !jomini.IsEventID(key)
+// matchCall fits an identifier or a chain, but no event id, as a call through
+// the caller of the block that holds the key.
+func (w *walker) matchCall(parent *Context, _ string, class jomini.Class, _ bool) (match, bool) {
+	return match{category: CategoryCall, caller: parent.FindCaller()}, class.IsIdentifier() && class != jomini.ClassEventID
 }
 
 // findCalledDefinition returns the scripted definition a key calls and the
@@ -1225,24 +1228,24 @@ func (w *walker) resolveCallReferences(context *Context, fit match, key string, 
 // a link cannot be followed.
 func (w *walker) resolveChain(chain string, parent *Context) string {
 	scope := parent.Scope
-	for _, rawLink := range jomini.SplitChain(chain) {
-		link := strings.ToLower(rawLink)
-		prefix, _, prefixed := jomini.SplitPrefixed(link)
+	for _, link := range jomini.Links(chain, 0) {
+		text := strings.ToLower(chain[link.Span.Start:link.Span.End])
+		prefix, prefixed := strings.ToLower(chain[link.Prefix.Start:link.Prefix.End]), !link.Prefix.IsEmpty()
 		switch {
-		case link == game.ScopeLinks.Root:
+		case text == game.ScopeLinks.Root:
 			scope = parent.Root
 
-		case link == game.ScopeLinks.This:
+		case text == game.ScopeLinks.This:
 			scope = parent.Scope
 
-		case link == game.ScopeLinks.Previous:
+		case text == game.ScopeLinks.Previous:
 			scope = ""
 			if len(parent.Previous) > 0 {
 				scope = parent.Previous[0]
 			}
 
 		case prefixed && prefix == game.SavedScopes:
-			_, label, _ := jomini.SplitPrefixed(rawLink)
+			label := chain[link.Name.Start:link.Name.End]
 			scope = ""
 			for _, saved := range slices.Backward(w.saved) {
 				if saved.Name == label {
@@ -1258,7 +1261,7 @@ func (w *walker) resolveChain(chain string, parent *Context) string {
 			}
 
 		default:
-			scope, _ = w.schema.ResolveLink(link, scope)
+			scope, _ = w.schema.ResolveLink(text, scope)
 		}
 
 		if scope == "" {
@@ -1325,7 +1328,7 @@ func (w *walker) resolveSaved(context *Context, statement int32, level int) {
 	current := w.tree.Statements[statement]
 	span := w.tree.UnquotedSpan(current.Value)
 	label := w.tree.Text(span)
-	if current.IsBlock() || label == "" || jomini.IsParameter(label) || strings.HasPrefix(label, "[") {
+	if current.IsBlock() || label == "" || current.ValueClass == jomini.ClassParameter || strings.HasPrefix(label, "[") {
 		return
 	}
 
@@ -1386,7 +1389,7 @@ func (w *walker) resolveAlias(context *Context, statement int32, level int) {
 
 	target, isAlias := database.Row.Aliases[w.frames[level].label]
 	span := w.tree.UnquotedSpan(current.Value)
-	if label := w.tree.Text(span); isAlias && label != "" && !jomini.IsParameter(label) {
+	if label := w.tree.Text(span); isAlias && label != "" && current.ValueClass != jomini.ClassParameter {
 		context.Definition = &Definition{
 			Database: cmp.Or(target, database.Name), Name: label, Span: span, Statement: statement, Alias: true,
 		}
@@ -1407,15 +1410,15 @@ func (w *walker) resolveValue(context *Context, statement int32, level int) {
 	span := w.tree.UnquotedSpan(current.Value)
 	text := w.tree.Text(span)
 	before := len(context.References)
-	switch {
-	case jomini.IsParameter(text):
+	switch current.ValueClass {
+	case jomini.ClassParameter:
 		context.ValueGroup = CategoryParameter
 
 		return
 
-	case jomini.IsConstant(text):
+	case jomini.ClassConstant, jomini.ClassExpression:
 		context.ValueGroup = CategoryConstant
-		if !strings.HasPrefix(text, "@[") {
+		if current.ValueClass == jomini.ClassConstant {
 			context.References = append(context.References, Reference{Database: game.Constant, Name: text, Span: span})
 		}
 
@@ -1470,7 +1473,7 @@ var locStems = map[string]string{
 // name with an argument in parentheses makes the references of its
 // argument.
 func (w *walker) resolveValueReferences(context *Context, statement int32, level int, span jomini.Span) {
-	text := w.tree.Text(span)
+	text, class := w.tree.Text(span), w.tree.Statements[statement].ValueClass
 	if text == "" || strings.ContainsAny(text, "[$") || isSavedName(context, span) {
 		return
 	}
@@ -1502,7 +1505,7 @@ func (w *walker) resolveValueReferences(context *Context, statement int32, level
 	// a value shaped like an event id names an event where its field claims
 	// events, and where its field claims nothing and an events file declares
 	// its namespace
-	if w.schema.Events != "" && w.file.Format == files.FormatScript && jomini.IsEventID(text) &&
+	if w.schema.Events != "" && w.file.Format == files.FormatScript && class == jomini.ClassEventID &&
 		(claim == w.schema.Events || claim == "" && w.hasNamespace(text)) {
 		databases = append(databases, w.schema.Events)
 	}
@@ -1529,7 +1532,7 @@ func (w *walker) resolveValueReferences(context *Context, statement int32, level
 		})
 	}
 
-	if value, ok := w.findScriptValue(context, span); ok {
+	if value, ok := w.findScriptValue(context, span, class); ok {
 		context.References = append(context.References, value)
 	}
 
@@ -1594,30 +1597,28 @@ func (w *walker) listClaimed(context *Context, text string) (string, []string) {
 	return claim, databases
 }
 
-// findScriptValue returns the reference a value makes to a script value. It
-// returns false if it makes none. The reference is inferred where only the
-// field makes it and the field learned so from the game's own files. A link
-// key's field is its holder's, so it gives the link's value none.
-func (w *walker) findScriptValue(context *Context, span jomini.Span) (Reference, bool) {
-	text := w.tree.Text(span)
-	links := jomini.SplitChain(text)
-	last := links[len(links)-1]
-	chained := len(links) > 1 && !jomini.IsEventID(text) &&
-		!slices.ContainsFunc(links[:len(links)-1], func(link string) bool { return !w.schema.IsLink(link) })
+// findScriptValue returns the reference a value of the given class makes to
+// a script value. It returns false if it makes none. The reference is
+// inferred where only the field makes it and the field learned so from the
+// game's own files. A link key's field is its holder's, so it gives the
+// link's value none.
+func (w *walker) findScriptValue(context *Context, span jomini.Span, class jomini.Class) (Reference, bool) {
+	links := jomini.Links(w.tree.Text(span), span.Start)
+	tail := links[len(links)-1].Span
+	last := w.tree.Text(tail)
+	chained := len(links) > 1 && class != jomini.ClassEventID &&
+		!slices.ContainsFunc(links[:len(links)-1], func(link jomini.Link) bool { return !w.schema.IsLink(w.tree.Text(link.Span)) })
 	operated := context.isMath()
 	valued := context.Category != CategoryLink && context.Field != nil && context.Field.Value.Value.Values
 	_, declared := w.schema.FindCommand(last)
-	if w.schema.Values == "" || !chained && !operated && !valued || !jomini.IsIdentifier(last) || declared ||
+	if w.schema.Values == "" || !chained && !operated && !valued || !jomini.Classify(last).IsIdentifier() || declared ||
 		w.schema.IsLink(last) || slices.Contains(game.Bools, last) {
 		return Reference{}, false
 	}
 
-	start := span.End - len(last)
 	inferred := !chained && !operated && !context.Field.Value.Source.CanAccuse()
 
-	return Reference{
-		Database: w.schema.Values, Name: last, Span: jomini.Span{Start: start, End: span.End}, Inferred: inferred,
-	}, true
+	return Reference{Database: w.schema.Values, Name: last, Span: tail, Inferred: inferred}, true
 }
 
 // findValueDatabase returns the database that a statement's value names by
@@ -1741,20 +1742,19 @@ func (w *walker) allowsUndefined(label string) bool {
 // called.
 func (w *walker) listPrefixed(chain string, base int) []Reference {
 	var references []Reference
-	offset := 0
-	for _, link := range jomini.SplitChain(chain) {
-		prefix, label, ok := jomini.SplitPrefixed(link)
-		start := base + offset + len(prefix) + 1
-		database := w.schema.Prefixes[prefix]
-		switch {
-		case !ok: // the link has no prefix
-		case !slices.Contains(game.Links, database) && w.schema.IsLink(label):
-			references = append(references, w.listPrefixed(label, start)...)
-		case database != "":
-			references = append(references, w.listLabelReferences(database, label, start)...)
+	for _, link := range jomini.Links(chain, base) {
+		if link.Prefix.IsEmpty() {
+			continue
 		}
 
-		offset += len(link) + 1
+		prefix, label := chain[link.Prefix.Start-base:link.Prefix.End-base], chain[link.Name.Start-base:link.Name.End-base]
+		database := w.schema.Prefixes[prefix]
+		switch {
+		case !slices.Contains(game.Links, database) && w.schema.IsLink(label):
+			references = append(references, w.listPrefixed(label, link.Name.Start)...)
+		case database != "":
+			references = append(references, w.listLabelReferences(database, label, link.Name.Start)...)
+		}
 	}
 
 	return references

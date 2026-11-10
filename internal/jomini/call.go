@@ -193,7 +193,7 @@ func parseArgument(text string, span Span, base int) (Argument, bool) {
 		argument.Span = Span{Start: argument.Span.Start + 1, End: argument.Span.End - 1}
 
 	// A number is its text alone.
-	case IsNumber(raw):
+	case isNumber(raw):
 
 	default:
 		if call, ok := ParseCall(raw, base+start); ok {

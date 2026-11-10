@@ -725,7 +725,7 @@ func (s *Schema) parseArguments(title, prose, usage string) (*Field, string) {
 		// the scope the usage runs in, as Vic3's "power_bloc =" is, and no
 		// argument
 		opens := len(tokens) == 2 && position+1 < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[position+1]), "{")
-		if len(tokens) > 1 && tokens[0] != title && jomini.IsIdentifier(tokens[0]) && tokens[1] == "=" && !opens {
+		if len(tokens) > 1 && tokens[0] != title && jomini.Classify(tokens[0]).IsIdentifier() && tokens[1] == "=" && !opens {
 			s.parseUsageStatement(tokens, 0, arguments, false)
 		}
 	}
@@ -734,7 +734,7 @@ func (s *Schema) parseArguments(title, prose, usage string) (*Field, string) {
 	for position := 0; position+2 < len(tokens); position++ {
 		if tokens[position] == title && tokens[position+1] == "=" && tokens[position+2] == "{" {
 			start := position + 3
-			if first == "" && start+1 < len(tokens) && jomini.IsIdentifier(tokens[start]) &&
+			if first == "" && start+1 < len(tokens) && jomini.Classify(tokens[start]).IsIdentifier() &&
 				slices.Contains(usageOperators, tokens[start+1]) {
 				first = tokens[start]
 			}
@@ -767,7 +767,7 @@ func (s *Schema) parseUsageStatement(tokens []string, cursor int, field *Field, 
 	for part := range strings.SplitSeq(tokens[cursor], "/") {
 		// a part that is no key still reads its value, into no field
 		argument := &Field{}
-		if jomini.IsIdentifier(part) {
+		if jomini.Classify(part).IsIdentifier() {
 			argument = field.buildChild(part, game.SourceDumps)
 		}
 

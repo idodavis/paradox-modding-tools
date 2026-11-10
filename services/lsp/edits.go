@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/samber/lo"
@@ -57,7 +56,7 @@ func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit,
 	if err != nil {
 		return nil, err
 	}
-	if place := ws.Locate(ws.Mods.Load(), path); place.ReadOnly || !place.Format.IsScript() || len(tree.Errors) > 0 {
+	if place := ws.Locate(ws.Mods.Load(), path); place.ReadOnly || !place.Format.IsScript() || len(tree.Problems) > 0 {
 		return []Edit{}, nil
 	}
 	unit := tree.Indentation()
@@ -67,7 +66,7 @@ func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit,
 			unit = strings.Repeat(" ", tabSize)
 		}
 	}
-	text := encodeTree(tree, listPieces(tree), unit)
+	text := tree.Format(unit)
 	if strings.Join(strings.Fields(text), "") != strings.Join(strings.Fields(tree.Src), "") {
 		return []Edit{}, nil
 	}
@@ -89,102 +88,6 @@ func (lsp *Service) DescribeIndentation(path string) (string, error) {
 	default:
 		return strconv.Itoa(len(unit)) + " spaces", nil
 	}
-}
-
-// A piece is one run of a file's text that formatting keeps whole, such as a key, an operator, a brace or a comment.
-type piece struct {
-	span  jomini.Span
-	kind  pieceKind
-	depth int
-}
-
-// A pieceKind says what a piece is, which decides the spacing around it.
-type pieceKind int
-
-// The kinds of piece.
-const (
-	pieceText pieceKind = iota // a key, a tag or a value
-	pieceOperator
-	pieceOpen // the brace that opens a block
-	pieceClose
-	pieceComment
-)
-
-// listPieces returns the pieces of a tree in the order they are written, each with its depth in blocks.
-func listPieces(tree *jomini.Tree) []piece {
-	var pieces []piece
-	for _, statement := range tree.Statements {
-		pieces = append(pieces, piece{statement.Key, pieceText, 0}, piece{statement.Op, pieceOperator, 0},
-			piece{statement.Tag, pieceText, 0}, piece{statement.Value, pieceText, 0})
-		if statement.IsBlock() {
-			pieces = append(pieces, piece{jomini.Span{Start: statement.Block.Start, End: statement.Block.Start + 1}, pieceOpen, 0},
-				piece{jomini.Span{Start: statement.Block.End - 1, End: statement.Block.End}, pieceClose, 0})
-		}
-	}
-	for _, comment := range tree.Comments {
-		pieces = append(pieces, piece{comment, pieceComment, 0})
-	}
-	pieces = slices.DeleteFunc(pieces, func(current piece) bool { return current.span.IsEmpty() })
-	slices.SortStableFunc(pieces, func(first, second piece) int { return first.span.Start - second.span.Start })
-	depth := 0
-	// a closing brace is outside the block it closes
-	for position := range pieces {
-		if pieces[position].kind == pieceClose {
-			depth--
-		}
-		pieces[position].depth = max(depth, 0)
-		if pieces[position].kind == pieceOpen {
-			depth++
-		}
-	}
-	return pieces
-}
-
-// encodeTree returns the text of a tree written again from its pieces, each line indented with the given unit for each
-// block it is inside. An operator is spaced as most of the file's operators are.
-func encodeTree(tree *jomini.Tree, pieces []piece, unit string) string {
-	gap := " "
-	tight, operators := 0, 0
-	for _, statement := range tree.Statements {
-		if !statement.Op.IsEmpty() {
-			operators++
-			if statement.Key.End == statement.Op.Start {
-				tight++
-			}
-		}
-	}
-	if tight > operators-tight {
-		gap = ""
-	}
-	eol := jomini.LineEnding(tree.Src)
-	var text strings.Builder
-	var before piece
-	end := 0
-	for position, current := range pieces {
-		spacing := tree.Src[end:current.span.Start]
-		switch {
-		case strings.TrimSpace(spacing) != "":
-			text.WriteString(spacing)
-		case strings.Contains(spacing, "\n"):
-			text.WriteString(strings.Repeat(eol, strings.Count(spacing, "\n")) + strings.Repeat(unit, current.depth))
-		case position > 0 && current.kind != pieceComment && (before.kind == pieceOperator || current.kind == pieceOperator):
-			text.WriteString(gap)
-		case position > 0:
-			text.WriteString(" ")
-		}
-		source := tree.Text(current.span)
-		if current.kind == pieceComment {
-			source = strings.TrimRightFunc(source, unicode.IsSpace)
-		}
-		text.WriteString(source)
-		before, end = current, current.span.End
-	}
-	if rest := tree.Src[end:]; strings.TrimSpace(rest) != "" {
-		text.WriteString(rest)
-	} else {
-		text.WriteString(strings.Repeat(eol, strings.Count(rest, "\n")))
-	}
-	return text.String()
 }
 
 // ListFixes returns the quick fixes for the given problems of a file, one for each problem that has a fix.

@@ -3,7 +3,7 @@
 // message's text into its markup and gives the plain text a player sees.
 //
 // It knows no game and no index: what a key names, and which message of a
-// key the game keeps, are the index's. Its spans, line index and errors are
+// key the game keeps, are the index's. Its spans, line index and problems are
 // jomini's, so a localization file and a script file share their offsets.
 //
 // # The format
@@ -59,7 +59,7 @@
 // # Robustness
 //
 // Parse never fails. It keeps every message it could read, and reports each
-// problem as a jomini.Error with one of these codes:
+// problem as a jomini.Problem with one of these codes:
 //
 //   - loc-content-before-header: a line above the header, which is not read.
 //   - malformed-line: a line that is no header, comment or message.
@@ -86,7 +86,7 @@ import (
 )
 
 // Message is one message of a localization file: a key, its version and the
-// text the game shows for it.
+// text the game shows for it, split into its markup.
 type Message struct {
 	Key  string `json:"key"`
 	Text string `json:"text"`
@@ -101,6 +101,9 @@ type Message struct {
 	Span     jomini.Span `json:"span"`
 	KeySpan  jomini.Span `json:"keySpan"`
 	TextSpan jomini.Span `json:"textSpan"`
+
+	// Segments is the text split into its markup, with spans in the file.
+	Segments []Segment `json:"segments"`
 }
 
 // File is one parsed localization file.
@@ -109,9 +112,9 @@ type File struct {
 	// It is "" where neither the header nor the path names one.
 	Language string `json:"language"`
 
-	Messages []Message      `json:"messages"`
-	Errors   []jomini.Error `json:"errors"`
-	Lines    jomini.Lines   `json:"-"`
+	Messages []Message        `json:"messages"`
+	Problems []jomini.Problem `json:"problems"`
+	Lines    jomini.Lines     `json:"-"`
 }
 
 // Language is one localization language: the folder the game keeps it in,
@@ -139,8 +142,8 @@ var languageLabels = map[string]string{
 
 // Parse parses the text of the localization file at the given path. A text
 // that breaks the format gives the messages Parse could read, and its
-// problems go into the file's Errors. The language is the header's, else the
-// file name's, else the folder's, and "" where none of them names one.
+// problems go into the file's Problems. The language is the header's, else
+// the file name's, else the folder's, and "" where none of them names one.
 func Parse(text, path string) *File {
 	file := &File{Lines: jomini.NewLines(text)}
 	header := ""
@@ -164,18 +167,18 @@ func Parse(text, path string) *File {
 
 		switch {
 		case header == "":
-			file.Errors = append(file.Errors, problem("loc-content-before-header",
+			file.Problems = append(file.Problems, problem("loc-content-before-header",
 				"line is above the header; it is not read", span))
 
 		case !ok:
-			file.Errors = append(file.Errors, problem("malformed-line",
+			file.Problems = append(file.Problems, problem("malformed-line",
 				"line is not a header, a comment or a message; it is not read", span))
 
 		// A message with no closing quote ends where its text does.
 		case message.Span.End == message.TextSpan.End:
 			unclosed := jomini.Span{Start: message.TextSpan.Start - 1, End: span.End}
 			file.Messages = append(file.Messages, message)
-			file.Errors = append(file.Errors, problem("loc-unterminated-value",
+			file.Problems = append(file.Problems, problem("loc-unterminated-value",
 				"message has no closing quote; its text runs to the end of the line", unclosed))
 
 		default:
@@ -221,10 +224,10 @@ func isBlank(r rune) bool { return r == ' ' || r == '\t' }
 // letter a to z in either case, or an underscore.
 func isLanguageRune(r rune) bool { return r == '_' || 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' }
 
-// ParseMessage parses one message line. The given offset is where the line
-// starts in its file, so the spans are the file's. A message with no closing
-// quote runs to the end of the line. It returns false if the line is no
-// message.
+// ParseMessage parses one message line, its text's markup included. The given
+// offset is where the line starts in its file, so the spans are the file's. A
+// message with no closing quote runs to the end of the line. It returns false
+// if the line is no message.
 func ParseMessage(line string, base int) (Message, bool) {
 	start := skip(line, 0, isBlank)
 	colon := skip(line, start, isKeyRune)
@@ -246,14 +249,16 @@ func ParseMessage(line string, base int) (Message, bool) {
 	}
 
 	version, _ := strconv.Atoi(digits)
+	text, textStart := line[opening+1:closing], base+opening+1
 
 	return Message{
 		Key:      line[start:colon],
-		Text:     line[opening+1 : closing],
+		Text:     text,
 		Version:  version,
 		Span:     jomini.Span{Start: base + start, End: base + min(closing+1, len(line))},
 		KeySpan:  jomini.Span{Start: base + start, End: base + colon},
-		TextSpan: jomini.Span{Start: base + opening + 1, End: base + closing},
+		TextSpan: jomini.Span{Start: textStart, End: base + closing},
+		Segments: Segments(text, textStart),
 	}, true
 }
 
@@ -265,10 +270,10 @@ func isKeyRune(r rune) bool {
 
 func isDigit(r rune) bool { return '0' <= r && r <= '9' }
 
-// problem returns the error of the given code over a span of the file, with
+// problem returns the problem of the given code over a span of the file, with
 // the message that says what is wrong.
-func problem(code, message string, span jomini.Span) jomini.Error {
-	return jomini.Error{Code: code, Message: message, Span: span}
+func problem(code, message string, span jomini.Span) jomini.Problem {
+	return jomini.Problem{Code: code, Message: message, Span: span}
 }
 
 // FindSuffixLanguage returns the language in the _l_<language>.yml ending of
@@ -340,6 +345,13 @@ func ToLanguageRel(rel, language string) string {
 	}
 
 	return strings.Join(folders, "/")
+}
+
+// ToLanguageFile returns the file name of a localization file in the given
+// language: the given stem, _l_, the language and .yml, as
+// events_l_english.yml for the stem events in english.
+func ToLanguageFile(stem, language string) string {
+	return stem + "_" + ToLanguageKey(language) + ".yml"
 }
 
 // Encode returns the text of a localization file for one language: the

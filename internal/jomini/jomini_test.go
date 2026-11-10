@@ -88,22 +88,22 @@ func TestParseList(t *testing.T) {
 	}
 }
 
-func TestParseErrors(t *testing.T) {
+func TestParseProblems(t *testing.T) {
 	tests := []struct {
 		text  string
-		want  []Error
+		want  []Problem
 		shape []string
 	}{
-		{"a = { b = 1", []Error{{Code: "unclosed-block", Message: "{ is not closed; its block runs to the end of the text", Span: Span{Start: 4, End: 5}}}, []string{"0:a = {}", "1:  b = 1"}},
-		{"a = 1 }\nb = 2", []Error{{Code: "unexpected-brace", Message: "} has no { to close; it is skipped", Span: Span{Start: 6, End: 7}}}, []string{"0:a = 1", "1:b = 2"}},
+		{"a = { b = 1", []Problem{{Code: "unclosed-block", Message: "{ is not closed; its block runs to the end of the text", Span: Span{Start: 4, End: 5}}}, []string{"0:a = {}", "1:  b = 1"}},
+		{"a = 1 }\nb = 2", []Problem{{Code: "unexpected-brace", Message: "} has no { to close; it is skipped", Span: Span{Start: 6, End: 7}}}, []string{"0:a = 1", "1:b = 2"}},
 		{"a = \"one\ntwo\"\nb = 2", nil, []string{"0:a = \"one\ntwo\"", "1:b = 2"}},
-		{"a = \"open\nb = 2", []Error{{Code: "unclosed-string", Message: "string is not closed; it runs to the end of the text", Span: Span{Start: 4, End: 15}}}, []string{"0:a = \"open\nb = 2"}},
-		{"a = \"", []Error{{Code: "unclosed-string", Message: "string is not closed; it runs to the end of the text", Span: Span{Start: 4, End: 5}}}, []string{`0:a = "`}},
+		{"a = \"open\nb = 2", []Problem{{Code: "unclosed-string", Message: "string is not closed; it runs to the end of the text", Span: Span{Start: 4, End: 15}}}, []string{"0:a = \"open\nb = 2"}},
+		{"a = \"", []Problem{{Code: "unclosed-string", Message: "string is not closed; it runs to the end of the text", Span: Span{Start: 4, End: 5}}}, []string{`0:a = "`}},
 	}
 	for _, test := range tests {
 		tree := Parse(test.text)
-		if !slices.Equal(tree.Errors, test.want) {
-			t.Errorf("Parse(%q).Errors = %+v, want %+v", test.text, tree.Errors, test.want)
+		if !slices.Equal(tree.Problems, test.want) {
+			t.Errorf("Parse(%q).Problems = %+v, want %+v", test.text, tree.Problems, test.want)
 		}
 		if got := outline(tree); !slices.Equal(got, test.shape) {
 			t.Errorf("Parse(%q) = %q, want %q", test.text, got, test.shape)
@@ -213,67 +213,25 @@ func TestNewLines(t *testing.T) {
 	}
 }
 
-func TestIsIdentifier(t *testing.T) {
-	for _, text := range []string{"a", "is_adult", "scope:target", "v.1", "k_x", "c:FRA", "x0974E5", "d'Este", "été", "-x"} {
-		if !IsIdentifier(text) {
-			t.Errorf("IsIdentifier(%q) = false", text)
-		}
+func TestClassify(t *testing.T) {
+	tests := map[Class][]string{
+		ClassNone:       {""},
+		ClassIdentifier: {"a", "is_adult", "k_x", "x0974E5", "d'Este", "été", "-x", "-", "0x", "1e3", "abc", "v", "x"},
+		ClassNumber:     {"0", "5", "-1", "+1", "1.5", "-1.5", "-0.25", "100%", "-5%", "0xFF", "0xff0000", "1066.9", "867.1"},
+		ClassDate:       {"1066.9.15", "1.2.3", "867.1.1"},
+		ClassEventID:    {"v.1", "my_ns.1001", "ns2.0"},
+		ClassChain:      {"scope:target", "c:FRA", ".5", "5.", "v.", ".1", "v.1.t", "scope:x.1", "v.a", "v-x.1"},
+		ClassParameter:  {"$X$", "$AMOUNT$", "$TARGET|root$", "$x$", "$X|$", "$X$Y$"},
+		ClassConstant:   {"@x", "@my_value"},
+		ClassExpression: {"@[x * 2]", "@[a < b]"},
+		ClassCall:       {"[x]"},
+		ClassText:       {`"x"`, "a b", "a{", "5%%", "$", "$$", "$X", "X$", "$a b$", "$|x$", "@", "@5", "@[x", `@"x"`},
 	}
-	for _, text := range []string{"", "5", "-1.5", "1066.9.15", "1066.9", `"x"`, "a b", "[x]", "@x", "$X$", "a{"} {
-		if IsIdentifier(text) {
-			t.Errorf("IsIdentifier(%q) = true", text)
-		}
-	}
-}
-
-func TestIsNumber(t *testing.T) {
-	for _, text := range []string{"0", "5", "-1", "+1", "1.5", "-0.25", "100%", "-5%", "0xFF", "0xff0000"} {
-		if !IsNumber(text) {
-			t.Errorf("IsNumber(%q) = false", text)
-		}
-	}
-	for _, text := range []string{"", "-", ".5", "5.", "1.2.3", "0x", "1e3", "abc", "5%%", "867.1.1"} {
-		if IsNumber(text) {
-			t.Errorf("IsNumber(%q) = true", text)
-		}
-	}
-}
-
-func TestIsEventID(t *testing.T) {
-	for _, text := range []string{"v.1", "my_ns.1001", "ns2.0"} {
-		if !IsEventID(text) {
-			t.Errorf("IsEventID(%q) = false", text)
-		}
-	}
-	for _, text := range []string{"v", "v.", ".1", "v.1.t", "867.1", "scope:x.1", "v.a", "v-x.1"} {
-		if IsEventID(text) {
-			t.Errorf("IsEventID(%q) = true", text)
-		}
-	}
-}
-
-func TestIsParameter(t *testing.T) {
-	for _, text := range []string{"$AMOUNT$", "$TARGET|root$", "$x$", "$X|$", "$X$Y$"} {
-		if !IsParameter(text) {
-			t.Errorf("IsParameter(%q) = false", text)
-		}
-	}
-	for _, text := range []string{"$", "$$", "$X", "X$", "$a b$", "$|x$"} {
-		if IsParameter(text) {
-			t.Errorf("IsParameter(%q) = true", text)
-		}
-	}
-}
-
-func TestIsConstant(t *testing.T) {
-	for _, text := range []string{"@x", "@my_value", "@[x * 2]", "@[a < b]"} {
-		if !IsConstant(text) {
-			t.Errorf("IsConstant(%q) = false", text)
-		}
-	}
-	for _, text := range []string{"@", "@5", "@[x", "x", "@\"x\""} {
-		if IsConstant(text) {
-			t.Errorf("IsConstant(%q) = true", text)
+	for want, texts := range tests {
+		for _, text := range texts {
+			if got := Classify(text); got != want {
+				t.Errorf("Classify(%q) = %d, want %d", text, got, want)
+			}
 		}
 	}
 }
@@ -302,28 +260,8 @@ func TestParseDate(t *testing.T) {
 	}
 }
 
-func TestSplitPrefixed(t *testing.T) {
-	tests := []struct {
-		text         string
-		prefix, name string
-		ok           bool
-	}{
-		{"var:x", "var", "x", true},
-		{"scope:y:z", "scope", "y:z", true},
-		{"plain", "", "", false},
-		{":x", "", "", false},
-		{"scope:", "", "", false},
-	}
-	for _, test := range tests {
-		prefix, name, ok := SplitPrefixed(test.text)
-		if prefix != test.prefix || name != test.name || ok != test.ok {
-			t.Errorf("SplitPrefixed(%q) = %q %q %v, want %q %q %v", test.text, prefix, name, ok, test.prefix, test.name, test.ok)
-		}
-	}
-}
-
-func TestSplitChain(t *testing.T) {
-	tests := []struct {
+func TestLinks(t *testing.T) {
+	chains := []struct {
 		text string
 		want []string
 	}{
@@ -334,9 +272,30 @@ func TestSplitChain(t *testing.T) {
 		{`"a.b".c`, []string{`"a.b"`, "c"}},
 		{"", []string{""}},
 	}
-	for _, test := range tests {
-		if got := SplitChain(test.text); !slices.Equal(got, test.want) {
-			t.Errorf("SplitChain(%q) = %q, want %q", test.text, got, test.want)
+	for _, test := range chains {
+		var got []string
+		for _, link := range Links(test.text, 10) {
+			got = append(got, test.text[link.Span.Start-10:link.Span.End-10])
+		}
+		if !slices.Equal(got, test.want) {
+			t.Errorf("Links(%q) = %q, want %q", test.text, got, test.want)
+		}
+	}
+	prefixed := []struct {
+		text         string
+		prefix, name string
+	}{
+		{"var:x", "var", "x"},
+		{"scope:y:z", "scope", "y:z"},
+		{"plain", "", ""},
+		{":x", "", ""},
+		{"scope:", "", ""},
+	}
+	for _, test := range prefixed {
+		link := Links(test.text, 0)[0]
+		prefix, name := test.text[link.Prefix.Start:link.Prefix.End], test.text[link.Name.Start:link.Name.End]
+		if prefix != test.prefix || name != test.name {
+			t.Errorf("Links(%q) splits into %q and %q, want %q and %q", test.text, prefix, name, test.prefix, test.name)
 		}
 	}
 }
@@ -470,8 +429,15 @@ func TestIndentation(t *testing.T) {
 	}
 }
 
+func TestFormat(t *testing.T) {
+	stray, fixed := "x = {\r\r\n\ta = 1\r\n}\r\n", "x = {\r\n\ta = 1\r\n}\r\n"
+	if got := Parse(stray).Format("\t"); got != fixed {
+		t.Errorf("a stray carriage return: %q, want %q", got, fixed)
+	}
+}
+
 // parseFiles parses every script, GUI and asset file under the root and
-// returns the paths whose parse holds an error, each with its first error,
+// returns the paths whose parse holds a problem, each with its first problem,
 // and how many files it read.
 func parseFiles(t *testing.T, root string) (failures []string, count int) {
 	t.Helper()
@@ -484,9 +450,9 @@ func parseFiles(t *testing.T, root string) (failures []string, count int) {
 			return err
 		}
 		count++
-		if tree := Parse(string(text)); len(tree.Errors) > 0 {
-			position := tree.Lines.ToPosition(tree.Errors[0].Span.Start)
-			failures = append(failures, fmt.Sprintf("%s:%d:%d: %s", path, position.Line+1, position.Column+1, tree.Errors[0].Code))
+		if tree := Parse(string(text)); len(tree.Problems) > 0 {
+			position := tree.Lines.ToPosition(tree.Problems[0].Span.Start)
+			failures = append(failures, fmt.Sprintf("%s:%d:%d: %s", path, position.Line+1, position.Column+1, tree.Problems[0].Code))
 		}
 		return nil
 	})

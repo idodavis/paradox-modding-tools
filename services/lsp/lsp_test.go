@@ -417,11 +417,6 @@ func TestFormatKeepsLinesAndStaysIdempotent(t *testing.T) {
 	if again := format(want); again != want {
 		t.Errorf("a second format changed %q to %q", want, again)
 	}
-	stray, fixed := "x = {\r\r\n\ta = 1\r\n}\r\n", "x = {\r\n\ta = 1\r\n}\r\n"
-	strayTree := jomini.Parse(stray)
-	if got := encodeTree(strayTree, listPieces(strayTree), "\t"); got != fixed {
-		t.Errorf("a stray carriage return: %q, want %q", got, fixed)
-	}
 }
 
 // toByteEdits converts Monaco edits over a tree's text back to byte edits.

@@ -805,13 +805,13 @@ func (resolver *resolver) makeProperty(field clause) Property {
 		span := current.ResolveValueSpan()
 		var edits []jomini.Edit
 		for _, inner := range field.tree.Statements[field.statement+1 : current.Last] {
-			if resolved, ok := resolver.resolveSpan(field.tree, inner.Value); ok {
+			if resolved, ok := resolver.resolveSpan(field.tree, inner.Value, inner.ValueClass); ok {
 				shifted := jomini.Span{Start: inner.Value.Start - span.Start, End: inner.Value.End - span.Start}
 				edits = append(edits, jomini.Edit{Span: shifted, Text: resolved})
 			}
 		}
 		value = jomini.ApplyEdits(field.tree.Text(span), edits)
-	} else if resolved, ok := resolver.resolveSpan(field.tree, current.Value); ok {
+	} else if resolved, ok := resolver.resolveSpan(field.tree, current.Value, current.ValueClass); ok {
 		value = resolved
 	}
 	return Property{
@@ -821,10 +821,12 @@ func (resolver *resolver) makeProperty(field clause) Property {
 	}
 }
 
-// resolveSpan returns what the game reads for a value written in a span: the number of a constant or an expression, or
-// the value of the define a GetDefine call names. It returns false for any other value.
-func (resolver *resolver) resolveSpan(tree *jomini.Tree, span jomini.Span) (string, bool) {
-	if number, ok := tree.ResolveNumber(span); ok && !jomini.IsNumber(tree.Text(span)) {
+// resolveSpan returns what the game reads for a value written in a span: the
+// number of a constant or an expression, or the value of the define a
+// GetDefine call names. It returns false for a plain number, which the given
+// class says the value is, and for any other value.
+func (resolver *resolver) resolveSpan(tree *jomini.Tree, span jomini.Span, class jomini.Class) (string, bool) {
+	if number, ok := tree.ResolveNumber(span); ok && class != jomini.ClassNumber {
 		return strconv.FormatFloat(number, 'f', -1, 64), true
 	}
 	call, ok := tree.ParseBracketed(span)

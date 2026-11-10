@@ -80,7 +80,7 @@ func findFiring(ws *workspace.Session, tree *jomini.Tree, statement int32) int32
 		current := tree.Statements[statement]
 		key := tree.Text(current.Key)
 		isField := isEffect(ws, tree.Text(tree.Statements[current.Parent].Key)) && !isEffect(ws, key)
-		isHeld := current.IsListed() || jomini.IsNumberKey(key) || isField
+		isHeld := current.IsListed() || current.KeyClass.IsNumberKey() || isField
 		if current.Parent == 0 || !isHeld {
 			return statement
 		}

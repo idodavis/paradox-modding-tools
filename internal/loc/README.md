@@ -7,7 +7,7 @@ splits a message's text into its markup, and gives the plain text a player sees.
 rule, the markups and what it does with a file that breaks them are its package doc, in [loc.go](loc.go).
 
 It knows no game and no index: what a key names, and which message the game keeps, are the
-[index](../index/README.md)'s. It shares [jomini](../jomini/README.md)'s spans, line index and errors, so a
+[index](../index/README.md)'s. It shares [jomini](../jomini/README.md)'s spans, line index and problems, so a
 localization file and a script file are read with the same offsets.
 
 **Uses** [jomini](../jomini/README.md) · **Used by** [schema](../schema/README.md), [index](../index/README.md) and the
@@ -15,12 +15,11 @@ services that read localization.
 
 ```mermaid
 flowchart LR
-  text["File text"] -->|Parse| file["File: language, messages, errors"]
-  file -->|a message's text| segments["Segments"]
+  text["File text"] -->|Parse| file["File: language, messages, problems"]
+  file -->|each message's text| segments["Segments, each data call parsed"]
   segments --> plain["ToPlain: the text a player reads"]
-  segments --> calls["ListCalls: jomini Calls"]
   segments --> names["ListNames: the keys, icons and formats a segment writes"]
-  segments --> faults["ListMarkupFaults: errors"]
+  segments --> faults["ListMarkupFaults: problems"]
 ```
 
 A file's language is decided by the first of three that names one:
@@ -61,13 +60,13 @@ Measured on the three installs, over every localization file:
 | file | what it holds |
 |---|---|
 | `loc.go` | The package doc, messages and files, the parser, the language rule and the writer. |
-| `markup.go` | Splitting a message's text into markup, the plain text, the data calls, the names and the markup faults. |
+| `markup.go` | Splitting a message's text into markup with each data call parsed, the plain text, the names and the markup faults. |
 
 ## Terms
 
 - **File**: one parsed localization file.
-- **Message**: one line of a localization file: a key, its version and its text.
+- **Message**: one line of a localization file: a key, its version and its text, split into segments.
 - **Language**: the language a file is for, as the game names it without its `l_`; as a type, that name's folder and its
   name in English.
-- **Segment**: one piece of a message's text, with its spans.
+- **Segment**: one piece of a message's text, with its spans, and its parsed call where it is a data call.
 - **Markup**: what a segment is: text, key, call, format, icon or break.

@@ -38,7 +38,7 @@ type parser struct {
 // Parse parses a text into its tree. Statement 0 is the file itself, and the
 // statements at the top of the text are its children. A text that breaks the
 // syntax gives the statements Parse could read, and its problems go into the
-// tree's Errors.
+// tree's Problems.
 func Parse(text string) *Tree {
 	tree := NewTree(text)
 
@@ -202,7 +202,7 @@ func CountBrackets(text string, offset int) int {
 
 // report records a problem the parse found.
 func (t *Tree) report(code, message string, span Span) {
-	t.Errors = append(t.Errors, Error{Code: code, Message: message, Span: span})
+	t.Problems = append(t.Problems, Problem{Code: code, Message: message, Span: span})
 }
 
 // parseStatements parses the children of a statement from the cursor on,
@@ -230,8 +230,9 @@ func (p *parser) parseStatements(parent int32) {
 	}
 }
 
-// parseStatement parses one statement from the cursor. A key and an operator
-// with no value after them are reported at the operator.
+// parseStatement parses one statement from the cursor, and gives its key, its
+// tag and its value their classes. A key and an operator with no value after
+// them are reported at the operator.
 func (p *parser) parseStatement(parent int32) {
 	statement := int32(len(p.tree.Statements))
 	first, second := p.peek(0), p.peek(1)
@@ -249,6 +250,10 @@ func (p *parser) parseStatement(parent int32) {
 	if keyed && current.ResolveValueSpan().IsEmpty() {
 		p.tree.report("missing-value", "a key with an operator has no value; the statement is kept without one", current.Op)
 	}
+
+	current.KeyClass = Classify(p.tree.Unquoted(current.Key))
+	current.TagClass = Classify(p.tree.Unquoted(current.Tag))
+	current.ValueClass = Classify(p.tree.Unquoted(current.Value))
 
 	current.Last = int32(len(p.tree.Statements))
 	current.Span.End = p.tokens[p.cursor-1].span.End

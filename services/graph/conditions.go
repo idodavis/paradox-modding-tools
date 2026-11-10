@@ -43,9 +43,10 @@ func listConditions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree,
 	})
 }
 
-// makeCondition returns one statement of a block of triggers in words. A value written prefix:name also has the in-game
-// name of the definition it names, if the game keeps one. A block holds its statements, and one that only wraps one of
-// them folds into it.
+// makeCondition returns one statement of a block of triggers in words. A
+// value of one prefixed link, as title:k_france, also has the in-game name of
+// the definition it names, if the game keeps one. A block holds its
+// statements, and one that only wraps one of them folds into it.
 func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Condition {
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)
@@ -61,7 +62,7 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	case keyword.Says != "":
 		rest := strings.TrimPrefix(strings.ToLower(key), strings.TrimSuffix(keyword.Key, "*"))
 		condition.Text = strings.Replace(keyword.Says, "*", toWords(rest), 1)
-	case ws.Schema.IsLink(key) || jomini.IsParameter(key):
+	case ws.Schema.IsLink(key) || current.KeyClass == jomini.ClassParameter:
 		condition.Subject = key
 	default:
 		condition.Text = toWords(key)
@@ -76,8 +77,10 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 			condition.Negated, condition.Value = true, ""
 		}
 	}
-	prefix, label, isPrefixed := jomini.SplitPrefixed(condition.Value)
-	if database := ws.Schema.Prefixes[prefix]; isPrefixed && database != "" {
+	links := jomini.Links(condition.Value, 0)
+	link := links[0]
+	prefix, label := condition.Value[link.Prefix.Start:link.Prefix.End], condition.Value[link.Name.Start:link.Name.End]
+	if database := ws.Schema.Prefixes[prefix]; len(links) == 1 && !link.Prefix.IsEmpty() && database != "" {
 		if winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: database, Name: label}); ok {
 			condition.Title = toTitle(ws, mods, ws.LookupDefinitionText(mods, winner.Site, game.TitleKey))
 		}

@@ -5,7 +5,6 @@ package schema
 
 import (
 	"maps"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -51,10 +50,6 @@ type body struct {
 
 	scripted ScriptedDefinition
 }
-
-// parameterRe matches a parameter in a scripted definition's body, with its
-// default if it has one.
-var parameterRe = regexp.MustCompile(`\$([A-Za-z0-9_]+)(?:\|([^$]*))?\$`)
 
 // SetScripted reads, with the given parser, the scripted definitions,
 // modifier types and event namespaces that the given files of the
@@ -349,17 +344,21 @@ func (d *declarer) Enter(tree *jomini.Tree, statement int32, context *Context) b
 }
 
 // listTypings returns the typings that one statement of a scripted
-// definition's body writes. A key or a value that is one parameter after a
-// link prefix is one. So is a value that is one parameter at a key with a
-// field of its own. A link's key has its holder's field, and an argument of
-// a call is the call's relay, so neither is one.
+// definition's body writes. A key or a value that is one prefixed link whose
+// name is one parameter, as scope:$TARGET$, is one. So is a value that is one
+// parameter at a key with a field of its own. A link's key has its holder's
+// field, and an argument of a call is the call's relay, so neither is one.
 func listTypings(tree *jomini.Tree, statement int32, context *Context) []typing {
 	current := tree.Statements[statement]
 	var typings []typing
-	for _, span := range []jomini.Span{current.Key, current.Value} {
-		prefix, label, prefixed := jomini.SplitPrefixed(tree.Unquoted(span))
-		if parameter, whole := findParameter(label); prefixed && whole {
-			typings = append(typings, typing{Parameter: parameter, Prefix: prefix})
+	for _, span := range []jomini.Span{tree.UnquotedSpan(current.Key), tree.UnquotedSpan(current.Value)} {
+		links := jomini.Links(tree.Text(span), span.Start)
+		if len(links) != 1 || links[0].Prefix.IsEmpty() {
+			continue
+		}
+
+		if parameter, whole := findParameter(tree.Text(links[0].Name)); whole {
+			typings = append(typings, typing{Parameter: parameter, Prefix: tree.Text(links[0].Prefix)})
 		}
 	}
 
@@ -371,15 +370,17 @@ func listTypings(tree *jomini.Tree, statement int32, context *Context) []typing 
 	return typings
 }
 
-// findParameter returns the parameter that a text is, written whole, and
-// true. It returns false for a text that is not one parameter.
+// findParameter returns the name of the parameter that a text is, written
+// whole, and true. It returns false for a text that is not one parameter.
 func findParameter(text string) (string, bool) {
-	parameter := parameterRe.FindStringSubmatch(text)
-	if parameter == nil || parameter[0] != text {
+	parameters := jomini.Parameters(text, 0)
+	if len(parameters) == 0 || parameters[0].Span != (jomini.Span{End: len(text)}) {
 		return "", false
 	}
 
-	return parameter[1], true
+	name := parameters[0].Name
+
+	return text[name.Start:name.End], true
 }
 
 // declare records a definition that is called by name. For each caller of
@@ -468,16 +469,20 @@ func ListParameters(tree *jomini.Tree, statement int32) *Field {
 	for position := statement + 1; position < tree.Statements[statement].Last; position++ {
 		current := tree.Statements[position]
 		for _, span := range []jomini.Span{current.Key, current.Tag, current.Value} {
-			for _, parameter := range parameterRe.FindAllStringSubmatch(tree.Text(span), -1) {
-				argument := parameters.buildChild(parameter[1], game.SourceDefinitions)
+			for _, parameter := range jomini.Parameters(tree.Text(span), span.Start) {
+				name := tree.Text(parameter.Name)
+				argument := parameters.buildChild(name, game.SourceDefinitions)
 				argument.Vanilla.Count++
+
+				// a closing $ right after the name writes no default; a bar
+				// writes one, even an empty one
 				switch {
-				case !strings.Contains(parameter[0], "|"):
-					undefaulted[parameter[1]] = true
+				case parameter.Span.End == parameter.Name.End+1:
+					undefaulted[name] = true
 					argument.Default = Claim[string]{}
 
-				case !undefaulted[parameter[1]] && !argument.Default.IsStated():
-					argument.Default = Claim[string]{Value: parameter[2], Source: game.SourceVanilla}
+				case !undefaulted[name] && !argument.Default.IsStated():
+					argument.Default = Claim[string]{Value: tree.Text(parameter.Default), Source: game.SourceVanilla}
 				}
 			}
 		}

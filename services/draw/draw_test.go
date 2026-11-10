@@ -332,8 +332,8 @@ func applyEdits(t *testing.T, text string, edits []lsp.Edit, err error) (string,
 	})
 	edited := jomini.ApplyEdits(text, converted)
 	tree := jomini.Parse(edited)
-	if len(tree.Errors) != 0 {
-		t.Fatalf("the edited file has errors %v: %s", tree.Errors, edited)
+	if len(tree.Problems) != 0 {
+		t.Fatalf("the edited file has problems %v: %s", tree.Problems, edited)
 	}
 	return edited, tree
 }

@@ -2,9 +2,10 @@
 
 [Architecture](../../docs/ARCHITECTURE.md) › [Engine](../../docs/ARCHITECTURE.md#the-engine) › jomini
 
-The jomini package parses Paradox script, GUI and asset files into a flat tree, and tells what shape a written word
-has: a number, a date, a parameter, a constant, a color or a data call. The rules it reads by, and what it does with a
-text that breaks them, are its package doc in [tree.go](tree.go).
+The jomini package parses Paradox script, GUI and asset files into a flat tree, and gives each key, tag and value its
+class: a word, a number, a date, a chain of links, a parameter, a constant, a data call and so on. It also reads colors
+and data calls, and writes a tree's text again in an even layout. The rules it reads by, and what it does with a text
+that breaks them, are its package doc in [tree.go](tree.go).
 
 What a key means is the [schema](../schema/README.md)'s question, and what a game reads is [game](../game/README.md)'s.
 This package never imports `game`.
@@ -17,7 +18,7 @@ flowchart LR
   text["Text"] --> lexer["Lexer"]
   lexer -->|tokens| parser["Parser"]
   parser --> tree["Tree"]
-  tree --- parts["Statements, comments,<br/>errors, lines"]
+  tree --- parts["Statements and their classes,<br/>comments, problems, lines"]
 ```
 
 ## Evidence
@@ -47,22 +48,25 @@ Measured on the three installs, over every script, GUI, GFX and asset file under
 
 | file | what it holds |
 |---|---|
-| `tree.go` | The package doc, and the tree: spans, positions, errors, the line index, statements and the lookups over them. |
+| `tree.go` | The package doc, and the tree: spans, positions, problems, the line index, statements and the lookups over them. |
 | `parse.go` | The lexer and the parser. |
-| `shapes.go` | The shapes of a word, dates, dotted chains, key paths, and constants with the numbers they stand for. |
+| `shapes.go` | The class of a written word, the links of a chain, the parameters of a text, dates, key paths, and constants with the numbers they stand for. |
 | `colors.go` | The color blocks script writes: reading them, and writing a color back. |
 | `call.go` | Data calls and filling in a macro's call. |
-| `edit.go` | Edits to a text, the diff between two texts, and inserting lines into a block. |
+| `edit.go` | Edits to a text, the diff between two texts, writing a tree's text again in an even layout, and inserting lines into a block. |
 
 ## Terms
 
 - **Tree**: one parse of one text.
 - **Statement**: one statement: `key op value`, a value alone inside a block, or a block with or without a tag.
+- **Class**: what a key, a tag or a value is written as, inside any quotes: an identifier, a number, a chain and so on.
 - **Lead**: the value written alone just before a statement in its block, such as `template` in `template x { }`.
+- **Link**: one link of a chain, such as `scope:x` in `scope:x.father`, with its prefix and name or its argument.
+- **Parameter**: a `$NAME$` or `$NAME|default$` written in a text.
 - **Span**: a half-open range of bytes in a text.
 - **Lines**: the line index of a text.
 - **Position**: a line and a column, both from zero, the column in UTF-8 bytes.
-- **Error**: one problem a parse found, with its code and its span.
+- **Problem**: one problem found in a text, with its code and its span.
 - **Edit**: a span and the text that replaces it.
 - **Date**: a date as the game writes one, `year.month.day`.
 - **Color**: one way script writes a color, such as an rgb block or a hex number.

@@ -481,7 +481,7 @@ var keywordPositions = func() map[string][]int {
 func (g *Game) LookupKeyword(shape Shape, command, key, outer string) (Keyword, bool) {
 	command, key = strings.ToLower(command), strings.ToLower(key)
 	candidates := []string{key, AnyKey}
-	if jomini.IsNumberKey(key) {
+	if jomini.Classify(key).IsNumberKey() {
 		candidates = append(candidates, jomini.NumberKey)
 	}
 

@@ -1,6 +1,6 @@
 // markup.go splits the text of a localization message into plain text, keys,
-// data calls, formats, icons and line breaks, each with its spans in the
-// file, and gives the text a player reads.
+// data calls, formats, icons and line breaks, each with its spans in the file
+// and each data call parsed, and gives the text a player reads.
 
 package loc
 
@@ -44,6 +44,10 @@ type Segment struct {
 	// holds a sample of that value in place of the call. It is "" for a call
 	// as written and for any other piece.
 	Kind string `json:"kind"`
+
+	// Call is the data call of a call piece, parsed. It is nil for any other
+	// piece, and for a call piece whose text is no call, such as ['x'].
+	Call *jomini.Call `json:"-"`
 }
 
 // Segments splits a message's text into its pieces, in order. The given
@@ -85,6 +89,7 @@ func parseMarkup(text string, start, base int) []Segment {
 	var markup Markup
 	var inner string
 	var end int
+	var call *jomini.Call
 	opening := 1
 
 	switch text[start] {
@@ -112,6 +117,9 @@ func parseMarkup(text string, start, base int) []Segment {
 		}
 
 		markup, inner, end = MarkupCall, text[start+1:closing-1], closing
+		if parsed, ok := jomini.ParseCall(inner, base+start+1); ok {
+			call = &parsed
+		}
 
 	case '#':
 		return parseFormat(text, start, base)
@@ -135,6 +143,7 @@ func parseMarkup(text string, start, base int) []Segment {
 		Text:     inner,
 		Span:     jomini.Span{Start: base + start, End: base + end},
 		TextSpan: jomini.Span{Start: textStart, End: textStart + len(inner)},
+		Call:     call,
 	}}
 }
 
@@ -230,28 +239,10 @@ func makeText(text string, start, end, base int) Segment {
 	return Segment{Markup: MarkupText, Text: text[start:end], Span: span, TextSpan: span}
 }
 
-// ListCalls parses the call segments among the segments, those inside
-// formats included. A segment whose text is no call is passed over.
-func ListCalls(segments []Segment) []jomini.Call {
-	var calls []jomini.Call
-
-	for _, segment := range segments {
-		if segment.Markup != MarkupCall {
-			continue
-		}
-
-		if call, ok := jomini.ParseCall(segment.Text, segment.TextSpan.Start); ok {
-			calls = append(calls, call)
-		}
-	}
-
-	return calls
-}
-
 // ListNames returns the names that one segment of a text writes, each as a
 // segment with its markup, its text and its TextSpan. A key and an icon write
-// their own name. A format writes each of its parts that is an identifier,
-// so #bold;italic writes bold and italic. A data call writes the keys inside
+// their own name. A format writes each of its parts that is an identifier, so
+// #bold;italic writes bold and italic. A data call writes the keys inside
 // its text. A format's part has no markers, so its Span is its TextSpan. Any
 // other segment writes no name, and ListNames returns nil for it.
 func ListNames(segment Segment) []Segment {
@@ -264,7 +255,7 @@ func ListNames(segment Segment) []Segment {
 		start := segment.TextSpan.Start
 
 		for part := range strings.SplitSeq(segment.Text, ";") {
-			if jomini.IsIdentifier(part) {
+			if jomini.Classify(part).IsIdentifier() {
 				span := jomini.Span{Start: start, End: start + len(part)}
 				formats = append(formats, Segment{Markup: MarkupFormat, Text: part, Span: span, TextSpan: span})
 			}
@@ -283,11 +274,11 @@ func ListNames(segment Segment) []Segment {
 	return nil
 }
 
-// ListMarkupFaults returns a loc-markup error for each markup mistake in the
-// plain text of the segments: a [ that starts a call but has no closing ],
+// ListMarkupFaults returns a loc-markup problem for each markup mistake in
+// the plain text of the segments: a [ that starts a call but has no closing ],
 // and a format ended with #. or #, where the game ends one with #!.
-func ListMarkupFaults(segments []Segment) []jomini.Error {
-	var faults []jomini.Error
+func ListMarkupFaults(segments []Segment) []jomini.Problem {
+	var faults []jomini.Problem
 
 	for _, segment := range segments {
 		if segment.Markup != MarkupText {

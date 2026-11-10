@@ -1,5 +1,6 @@
-// edit.go applies edits to a text, finds the edits between two texts and
-// builds the edit that adds lines to a block.
+// edit.go applies edits to a text, finds the edits between two texts, writes
+// a tree's text again in an even layout and builds the edit that adds lines
+// to a block.
 
 package jomini
 
@@ -7,6 +8,7 @@ import (
 	"cmp"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
@@ -81,6 +83,113 @@ func LineEnding(text string) string {
 	}
 
 	return "\n"
+}
+
+// Format returns the tree's text written again in an even layout. Each line
+// starts with the given unit of indentation once for each block it is inside,
+// the tokens on a line are one space apart, and an operator is spaced as most
+// of the tree's operators are. The line breaks stay where they are, each
+// written with the tree's line ending, and so does any other text between
+// tokens, such as a comma. A comment loses the white space at its end.
+func (t *Tree) Format(unit string) string {
+	gap, ending := t.operatorGap(), LineEnding(t.Src)
+
+	var text strings.Builder
+	var before token
+	end, depth := 0, 0
+
+	for position, current := range t.listTokens() {
+		// a closing brace is outside the block it closes
+		if current.class == tokenClassClose {
+			depth--
+		}
+
+		spacing := t.Src[end:current.span.Start]
+		switch {
+		case strings.TrimSpace(spacing) != "":
+			text.WriteString(spacing)
+		case strings.Contains(spacing, "\n"):
+			text.WriteString(strings.Repeat(ending, strings.Count(spacing, "\n")))
+			text.WriteString(strings.Repeat(unit, max(depth, 0)))
+		case position > 0 && current.class != tokenClassComment &&
+			(before.class == tokenClassOperator || current.class == tokenClassOperator):
+			text.WriteString(gap)
+		case position > 0:
+			text.WriteString(" ")
+		}
+
+		source := t.Text(current.span)
+		if current.class == tokenClassComment {
+			source = strings.TrimRightFunc(source, unicode.IsSpace)
+		}
+
+		text.WriteString(source)
+		before, end = current, current.span.End
+
+		if current.class == tokenClassOpen {
+			depth++
+		}
+	}
+
+	if rest := t.Src[end:]; strings.TrimSpace(rest) != "" {
+		text.WriteString(rest)
+	} else {
+		text.WriteString(strings.Repeat(ending, strings.Count(rest, "\n")))
+	}
+
+	return text.String()
+}
+
+// operatorGap returns what an operator is spaced from its key and its value
+// with: nothing where most of the tree's operators are written right after
+// their key, else a space.
+func (t *Tree) operatorGap() string {
+	tight, operators := 0, 0
+
+	for _, statement := range t.Statements {
+		if statement.Op.IsEmpty() {
+			continue
+		}
+
+		operators++
+		if statement.Key.End == statement.Op.Start {
+			tight++
+		}
+	}
+
+	if tight > operators-tight {
+		return ""
+	}
+
+	return " "
+}
+
+// listTokens returns the tokens of the tree's statements and of its comments,
+// in the order they are written. A block gives its two braces. Text that no
+// statement holds, such as an operator the parse dropped, gives none.
+func (t *Tree) listTokens() []token {
+	var tokens []token
+
+	for _, statement := range t.Statements {
+		tokens = append(tokens,
+			token{class: tokenClassScalar, span: statement.Key}, token{class: tokenClassOperator, span: statement.Op},
+			token{class: tokenClassScalar, span: statement.Tag}, token{class: tokenClassScalar, span: statement.Value})
+
+		if block := statement.Block; statement.IsBlock() {
+			tokens = append(tokens,
+				token{class: tokenClassOpen, span: Span{Start: block.Start, End: block.Start + 1}},
+				token{class: tokenClassClose, span: Span{Start: block.End - 1, End: block.End}})
+		}
+	}
+
+	for _, comment := range t.Comments {
+		tokens = append(tokens, token{class: tokenClassComment, span: comment})
+	}
+
+	tokens = slices.DeleteFunc(tokens, func(current token) bool { return current.span.IsEmpty() })
+	slices.SortStableFunc(tokens, func(first, second token) int { return cmp.Compare(first.span.Start, second.span.Start) })
+
+	return tokens
 }
 
 // Indentation returns the string one level of nesting is indented with in the

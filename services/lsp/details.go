@@ -63,14 +63,8 @@ func (lsp *Service) ListFolds(path string) ([]Fold, error) {
 		return nil, err
 	}
 	folds := []Fold{}
-	for _, statement := range tree.Statements {
-		if !statement.IsBlock() {
-			continue
-		}
-		start, end := tree.Lines.ToPosition(statement.Block.Start).Line, tree.Lines.ToPosition(statement.Block.End).Line
-		if end > start {
-			folds = append(folds, Fold{Start: start + 1, End: end + 1})
-		}
+	for _, block := range tree.ListFolds() {
+		folds = append(folds, Fold{Start: tree.Lines.ToPosition(block.Start).Line + 1, End: tree.Lines.ToPosition(block.End).Line + 1})
 	}
 	return folds, nil
 }

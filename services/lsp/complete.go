@@ -215,7 +215,9 @@ func listWritten(vanilla map[string]int, makeConstant func(string, int) Completi
 	var values []Completion
 	for _, value := range slices.Sorted(maps.Keys(vanilla)) {
 		text := strings.Trim(value, `"`)
-		if !jomini.IsNumberKey(text) && !jomini.IsParameter(text) && !jomini.IsConstant(text) {
+		class := jomini.Classify(text)
+		if !class.IsNumberKey() && class != jomini.ClassParameter && class != jomini.ClassConstant &&
+			class != jomini.ClassExpression {
 			values = append(values, makeConstant(text, 0))
 		}
 	}

@@ -453,7 +453,7 @@ func (d *docReader) readStatement(key, value, text string, opens int) {
 	field := holder
 	if key != "" && !entry && !isStandIn(key) {
 		step := key
-		if jomini.IsNumberKey(step) || step == docDateKey {
+		if jomini.Classify(step).IsNumberKey() || step == docDateKey {
 			step = jomini.NumberKey
 		}
 
@@ -737,7 +737,7 @@ func (d *docReader) resolveValue(field *Field, value string) {
 	case placeholder || known:
 		resolveDocType(field, inner, game.SourceDocs)
 
-	case jomini.IsNumber(value):
+	case jomini.Classify(value) == jomini.ClassNumber:
 		resolveDocType(field, "number", game.SourceDocs)
 
 	case slices.Contains(game.Bools, value):

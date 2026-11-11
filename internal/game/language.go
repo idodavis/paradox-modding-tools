@@ -10,83 +10,6 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// ShapeSpec is how a block of one shape reads its keys.
-type ShapeSpec struct {
-	// KeyRules are the key rules tried in order. The first that fits wins.
-	KeyRules []KeyRule
-
-	// Caller is the caller a call here is looked up by, among
-	// Callable.Callers. AnyCall means every callable.
-	Caller string
-
-	// Allows are the declarations a command in the block may have, so that a
-	// trigger block holds no effect.
-	Allows []Declaration
-
-	// Values is the database every value in the block names. It is "" for
-	// none.
-	Values string
-
-	// Blocks is the shape of a block written in it where its key gives none.
-	// It is "" where the key's rule decides.
-	Blocks Shape
-
-	// Encloses is the shape of the block that a link or an enclosing keyword
-	// in it holds. It is "" for the shape itself.
-	Encloses Shape
-}
-
-// KeyRule is one way a block reads a key that is no keyword: as a call, a
-// field, a command, a link and so on.
-type KeyRule string
-
-// The key rules, each with the key it fits.
-const (
-	// KeyRuleKnownCall fits a key that names a scripted definition the block
-	// calls, the file's own first.
-	KeyRuleKnownCall KeyRule = "known-call"
-
-	// KeyRuleDeclared fits a key that the block's field holds from any source
-	// but the game's own files.
-	KeyRuleDeclared KeyRule = "declared"
-
-	// KeyRuleDocumented fits a key that the docs write for the block's database.
-	KeyRuleDocumented KeyRule = "documented"
-
-	// KeyRuleCommand fits a command that the dumps declare, or a pattern makes,
-	// and the block takes.
-	KeyRuleCommand KeyRule = "command"
-
-	// KeyRuleLink fits a key that starts with a scope link, as scope:target
-	// does.
-	KeyRuleLink KeyRule = "link"
-
-	// KeyRuleScopeLink fits what KeyRuleLink fits, but not a plain name with a
-	// plain value, which is an argument or a call.
-	KeyRuleScopeLink KeyRule = "scope-link"
-
-	// KeyRuleModifier fits a modifier the dumps declare.
-	KeyRuleModifier KeyRule = "modifier"
-
-	// KeyRuleModifierType fits any identifier, as a modifier type's name, in a
-	// game whose modifier types have a database.
-	KeyRuleModifierType KeyRule = "modifier-type"
-
-	// KeyRuleObserved fits a key the game's own files write in the block's
-	// field.
-	KeyRuleObserved KeyRule = "observed"
-
-	// KeyRuleField fits a key that the block's field has a child for.
-	KeyRuleField KeyRule = "field"
-
-	// KeyRuleFieldOrCall fits what KeyRuleField fits, else what KeyRuleCall fits.
-	KeyRuleFieldOrCall KeyRule = "field-or-call"
-
-	// KeyRuleCall fits any identifier that is no event id, as a call of the
-	// block's caller.
-	KeyRuleCall KeyRule = "call"
-)
-
 // Keyword is a fixed word of the script language, such as if, limit, and or
 // add. It means the same in every game. The walk recognizes it by the block
 // it is written in, before it looks the key up as a name. Where the dumps
@@ -161,16 +84,15 @@ const AnyCall = "*"
 // switch's cases.
 const AnyKey = "<any>"
 
-// Declaration is what the dumps declare a command as: an effect, a trigger or
-// a link.
-type Declaration string
-
-// The declarations a command can have, as the dumps call them. Each is
-// declared in its own log: effects.log, triggers.log and event_targets.log.
+// The databases the dumps fill, each from its own log: the effects
+// (effects.log), the triggers (triggers.log), the links, which the dumps
+// call event targets (event_targets.log), and the types of scope
+// (event_scopes.log).
 const (
-	DeclarationEffect  Declaration = "effect"
-	DeclarationTrigger Declaration = "trigger"
-	DeclarationLink    Declaration = "event target"
+	DumpEffects  = "effects"
+	DumpTriggers = "triggers"
+	DumpLinks    = "links"
+	DumpTypes    = "types"
 )
 
 // The databases of the names script saves and reads back: saved scopes
@@ -195,12 +117,10 @@ var Links = []string{SavedScopes, Variables, LocalVariables, GlobalVariables, Li
 // the current one. The dumps declare them as links with no target.
 var ScopeLinks = struct{ Root, Previous, This string }{"root", "prev", "this"}
 
-// Shape is what a block holds, which decides how its keys are read. It is a
-// key of Shapes, or ShapeEnclosing for a keyword's block.
+// Shape is what a block holds, which decides how its keys are read.
 type Shape string
 
-// The shapes a block can hold. Each but ShapeEnclosing is the key of its row
-// in Shapes.
+// The shapes a block can hold.
 const (
 	// ShapeUnknown is a block whose keys may be fields, commands, links or
 	// calls.
@@ -240,50 +160,6 @@ const (
 	// holder encloses: the Encloses of the holder's shape, else that shape.
 	ShapeEnclosing Shape = "enclosing"
 )
-
-// Shapes is the shapes a block can hold, each with how it reads a key that
-// is no keyword. A description block's keys are all keywords.
-var Shapes = map[Shape]ShapeSpec{
-	ShapeFields: {KeyRules: []KeyRule{KeyRuleField}},
-	ShapeTriggers: {
-		KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall},
-		Caller:   callTrigger, Allows: []Declaration{DeclarationTrigger},
-	},
-	ShapeEffects: {
-		KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleScopeLink, KeyRuleCall},
-		Caller:   callEffect, Allows: []Declaration{DeclarationEffect},
-	},
-	ShapeArguments: {
-		KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall},
-		Caller:   AnyCall, Allows: []Declaration{DeclarationEffect, DeclarationTrigger},
-	},
-	// A key no rule explains in a command's block is a call of any callable,
-	// never judged: it may be an argument no dump or file writes.
-	ShapeEffectArguments: {
-		KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleScopeLink, KeyRuleCall},
-		Caller:   AnyCall, Allows: []Declaration{DeclarationEffect}, Encloses: ShapeEffects,
-	},
-	ShapeTriggerArguments: {
-		KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleScopeLink, KeyRuleCall},
-		Caller:   AnyCall, Allows: []Declaration{DeclarationTrigger}, Encloses: ShapeTriggers,
-	},
-	ShapeValue: {
-		KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall},
-		Caller:   callValue, Allows: []Declaration{DeclarationEffect, DeclarationTrigger},
-	},
-	ShapeUnknown: {
-		KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleFieldOrCall},
-		Caller:   AnyCall, Allows: []Declaration{DeclarationEffect, DeclarationTrigger},
-	},
-	ShapeSetup: {
-		KeyRules: []KeyRule{KeyRuleDeclared, KeyRuleDocumented, KeyRuleKnownCall, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall},
-		Caller:   callEffect, Allows: []Declaration{DeclarationEffect},
-	},
-	ShapeWidget:    {KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleField, KeyRuleCall}, Caller: guiTagCalls, Blocks: ShapeWidget},
-	ShapeModifiers: {KeyRules: []KeyRule{KeyRuleModifier, KeyRuleDeclared, KeyRuleObserved, KeyRuleModifierType}},
-	// _events.info:313-318 writes a description's texts as localization keys
-	ShapeDescription: {Values: Localization},
-}
 
 // scriptShapes are the shapes of the blocks that hold script, where a
 // keyword with no Parent and no Holders is written.

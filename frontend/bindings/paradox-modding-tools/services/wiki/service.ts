@@ -19,8 +19,10 @@ import * as lsp$0 from "../lsp/models.js";
 import * as $models from "./models.js";
 
 /**
- * BuildLexicon returns the rows of the given class (effect, trigger, link, scope or function), sorted by name. Effects
- * and triggers include the scripted ones. It returns an error if no workspace is open or the class is unknown.
+ * BuildLexicon returns the rows of the given class (effect, trigger, link,
+ * scope or function), sorted by name. Effects and triggers include the
+ * scripted ones. It returns an error if no workspace is open or the class is
+ * unknown.
  */
 export function BuildLexicon($class: string): $CancellablePromise<$models.LexiconRow[] | null> {
     return $Call.ByID(2321752544, $class);

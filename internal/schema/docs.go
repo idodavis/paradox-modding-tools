@@ -233,7 +233,7 @@ func (s *Schema) parseDoc(text, rel string, row game.Database) (*docReader, bool
 // install. It never replaces a claim already stated. A database of triggers,
 // effects or a value takes no fields from a doc.
 func (d *docReader) build(database *Database, readme string) {
-	definition := database.Definition
+	definition := database.Field
 	if blurb := strings.Join(d.blurb, " "); blurb != "" && !definition.Blurb.IsStated() {
 		definition.Blurb.resolve(blurb, game.SourceDocs)
 		database.Readme = readme
@@ -811,12 +811,12 @@ func findTerm(text string) string {
 func (s *Schema) buildDocBlurbs() {
 	for _, database := range s.Databases {
 		blurbs := map[string]string{}
-		walkField(database.Definition, func(key string, field *Field) {
+		walkField(database.Field, func(key string, field *Field) {
 			if field.Blurb.Source == game.SourceDocs && blurbs[key] == "" {
 				blurbs[key] = field.Blurb.Value
 			}
 		})
-		walkField(database.Definition, func(key string, field *Field) {
+		walkField(database.Field, func(key string, field *Field) {
 			if blurb := blurbs[key]; blurb != "" && !field.Blurb.IsStated() {
 				field.Blurb.resolve(blurb, game.SourceDocs)
 			}

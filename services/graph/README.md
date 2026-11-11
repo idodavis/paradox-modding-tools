@@ -76,7 +76,8 @@ An `Edge` is one firing, from a firer to what it fires. It holds where it is wri
 ("7 days", "10–30 days"), the effect that writes it and that effect's title. Its `Steps` are the blocks around it from
 the top of the definition: a branch of an if's chain, a weighted branch, a list, a link to another scope, an option or
 another block. Each has its condition in words and, for an option, its name. A firing written as an entry that an
-on_action's `random_events` picks by weight has that entry as its last step.
+on_action's `random_events` picks by weight has that entry as its last step. What kind a step is, and which
+statement is the effect that fires, are read from what the walk decided at each statement, not decided again here.
 
 ## Conditions in words
 

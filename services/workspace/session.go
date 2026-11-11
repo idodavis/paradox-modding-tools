@@ -86,7 +86,7 @@ func (wsp *Service) openSession(workspaceID string, progress func(stage string, 
 	if err := ws.loadInstall(install.Path, resolveVersion(row, install), progress); err != nil {
 		return nil, err
 	}
-	ws.Effects, ws.Triggers = countDeclared(ws.Schema, game.DeclarationEffect), countDeclared(ws.Schema, game.DeclarationTrigger)
+	ws.Effects, ws.Triggers = len(ws.Schema.ListKeys(game.DumpEffects)), len(ws.Schema.ListKeys(game.DumpTriggers))
 	// the caches of the game's other versions go; one that cannot be deleted now goes at a later open
 	_ = removeEntries(filepath.Dir(folder), filepath.Base(folder))
 	order := lo.Map(record.Mods, func(mod app.Mod, _ int) Mod { return readMod(row, mod) })
@@ -406,9 +406,9 @@ func (ws *Session) LookupText(mods *index.Index, key string) (text string, winne
 		winner = index.Winner{Site: slices.MinFunc(candidates, func(first, second index.Site) int { return cmp.Compare(rank(first), rank(second)) })}
 		switch {
 		case lo.CountBy(candidates, func(candidate index.Site) bool { return rank(candidate) == rank(winner.Site) }) > 1:
-			winner.Reason = index.ReasonUnsettled
+			winner.Reason = game.ReasonUnsettled
 		case rank(winner.Site) < unreplaced:
-			winner.Reason = index.ReasonReplaceFolder
+			winner.Reason = game.ReasonReplaceFolder
 		}
 		return ws.findText(mods, winner.Site, language), winner, true
 	}

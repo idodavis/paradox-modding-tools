@@ -19,6 +19,9 @@ Nuxt UI's props, Steam's Workshop item). Each package's README lists the terms o
 | **keyword** | A fixed word of the script language, such as `if`, `limit` or `add`. It is recognized by the block it is written in. |
 | **type** | A scope type or a data type, with the members that may follow it. |
 | **member** | A link or a data function that may follow a type in a chain or a call. |
+| **chain** | Links written with dots, each in the scope the one before it leads to: `root.father.culture`. |
+| **pattern** | A command the dumps declare once for each definition of a database, as `has_relation_*` is for the scripted relations. |
+| **copy** | One writing of a key in a file, with what decides whether the game keeps it: its entry mode, its priority and whether only its file sees it. |
 | **class** | What a key, a tag or a value is written as, such as a number, a date or an identifier. |
 | **segment** | One piece of a localization text: plain text, a data call, an icon or a format. |
 | **channel** | One of a color's numbers. |

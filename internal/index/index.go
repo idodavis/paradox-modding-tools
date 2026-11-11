@@ -254,6 +254,10 @@ type Index struct {
 	// row is the game's row, looked up once when the index is made or loaded.
 	row *game.Game
 
+	// unread holds the keys of the files the game does not read, as they
+	// were when a file was last listed or dropped. Only a mods' index has it.
+	unread map[string]bool
+
 	// postings holds the sites of each posting's occurrences, by the ordinal
 	// of their name.
 	postings map[Posting]map[uint32][]Site

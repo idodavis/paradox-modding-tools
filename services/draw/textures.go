@@ -311,7 +311,7 @@ func (library *library) canShowMany(list PictureList) bool {
 // writesField reports whether the definitions of a list's database write the field its binding reads.
 func (library *library) writesField(list PictureList) bool {
 	database := library.ws.Schema.Databases[list.Database]
-	return database != nil && database.Definition != nil && database.Definition.Children[list.Field] != nil
+	return database != nil && database.Field != nil && database.Field.Children[list.Field] != nil
 }
 
 // lookupDefine returns the value of the define with a key in a group, or "" if the game has none.

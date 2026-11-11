@@ -65,7 +65,7 @@ copy `FindKept` returns.
 | `index.go` | The package doc, and the index and its parts: occurrences, tables, sites and postings, and what a site points at. |
 | `scan.go` | Scanning an install, scanning the mods on top of it, rescanning changed files, and loading the cache. |
 | `lookup.go` | Lookups by name: what a reference resolves to, what uses a name, what a database defines. |
-| `combine.go` | What the game keeps: the winning definition of a name, the reason, and what hides a copy. |
+| `combine.go` | What the game keeps: the winning definition of a name, found by [game](../game/README.md)'s rule over the copies in files the game reads, and what hides a copy. |
 | `fires.go` | What fires what, and the rule that marks a reference as firing, with the fields it lists. |
 
 ## Terms
@@ -76,8 +76,7 @@ copy `FindKept` returns.
 - **Role**: what an occurrence does with its name: defines it, refers to it or localizes it.
 - **Table**: the interned texts of one kind, each given one ordinal.
 - **Posting**: one group of occurrences: those of one role in one database.
-- **Winner**: the definition the game keeps when several share a name, and why.
-- **Reason**: why the game keeps a copy, why it does not read one, or that no source says which it keeps.
-- **Cause**: what leaves an unsettled choice open.
+- **Winner**: the definition the game keeps when several share a name, and why. The reason and the cause are
+  [game](../game/README.md)'s.
 - **Unsettled**: the reason of a winner where no source says which copy the game keeps.
 - **Fire**: one firing: a source, a target, the reference that names the target, and the scripted effects between.

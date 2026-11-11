@@ -133,7 +133,7 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	links := jomini.Links(condition.Value, 0)
 	link := links[0]
 	prefix, label := condition.Value[link.Prefix.Start:link.Prefix.End], condition.Value[link.Name.Start:link.Name.End]
-	if database := ws.Schema.Prefixes[prefix]; len(links) == 1 && !link.Prefix.IsEmpty() && database != "" {
+	if database, _ := ws.Schema.LookupPrefix(prefix); len(links) == 1 && !link.Prefix.IsEmpty() && database != "" {
 		if winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: database, Name: label}); ok {
 			condition.Title = toTitle(ws, mods, ws.LookupDefinitionText(mods, winner.Site, game.TitleKey))
 		}

@@ -9,10 +9,12 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"unicode/utf8"
 
@@ -171,40 +173,78 @@ func WriteAtomic(path string, content []byte) error {
 }
 
 // LoadGob loads a value from a gob cache file. It returns the zero value and
-// false if the file is missing or does not decode. A file that makes the
-// decoder panic does not decode either: gob panics, rather than returning an
-// error, where a field of a cache saved by an older type reaches through a
-// nil embedded pointer.
-func LoadGob[T any](path string) (value T, ok bool) {
-	var zero T
+// false if the file is missing, does not decode, or was saved by a build
+// whose type had another shape. gob fills what it can of such a file and
+// leaves the rest empty, which reads as a cache with holes, so the file is
+// refused and its owner builds it again.
+func LoadGob[T any](path string) (T, bool) {
+	var zero, value T
 
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return zero, false
 	}
 
-	defer func() {
-		if recover() != nil {
-			value, ok = zero, false
-		}
-	}()
+	decoder := gob.NewDecoder(bytes.NewReader(content))
+	var shape uint64
+	if err := decoder.Decode(&shape); err != nil || shape != hashShape(reflect.TypeFor[T]()) {
+		return zero, false
+	}
 
-	if err := gob.NewDecoder(bytes.NewReader(content)).Decode(&value); err != nil {
+	if err := decoder.Decode(&value); err != nil {
 		return zero, false
 	}
 
 	return value, true
 }
 
-// SaveGob saves a value as a gob cache file at the given path. It writes as
-// WriteAtomic does.
-func SaveGob(path string, value any) error {
+// SaveGob saves a value as a gob cache file at the given path, with the
+// shape of its type before it. It writes as WriteAtomic does.
+func SaveGob[T any](path string, value T) error {
 	var buffer bytes.Buffer
-	if err := gob.NewEncoder(&buffer).Encode(value); err != nil {
+	encoder := gob.NewEncoder(&buffer)
+	if err := errors.Join(encoder.Encode(hashShape(reflect.TypeFor[T]())), encoder.Encode(value)); err != nil {
 		return err
 	}
 
 	return WriteAtomic(path, buffer.Bytes())
+}
+
+// hashShape returns a number that changes when what gob stores of a type
+// changes: the type's name and kind, the names and types of its exported
+// fields, and the same of every type those hold.
+func hashShape(root reflect.Type) uint64 {
+	hash := fnv.New64a()
+	visited := map[reflect.Type]bool{}
+
+	var write func(current reflect.Type)
+	write = func(current reflect.Type) {
+		_, _ = io.WriteString(hash, current.String()+" "+current.Kind().String()+";")
+		if visited[current] {
+			return
+		}
+
+		visited[current] = true
+		switch current.Kind() {
+		case reflect.Pointer, reflect.Slice, reflect.Array:
+			write(current.Elem())
+
+		case reflect.Map:
+			write(current.Key())
+			write(current.Elem())
+
+		case reflect.Struct:
+			for position := range current.NumField() {
+				if field := current.Field(position); field.IsExported() {
+					_, _ = io.WriteString(hash, field.Name+":")
+					write(field.Type)
+				}
+			}
+		}
+	}
+	write(root)
+
+	return hash.Sum64()
 }
 
 // The mark between the columns of a table file's row, and the mark that opens

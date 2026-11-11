@@ -51,7 +51,7 @@ type Database struct {
 	// run after them, as written.
 	RunOrder []string
 
-	// Shape is what a definition's block holds, a Shapes key. It is "" for
+	// Shape is what a definition's block holds. It is "" for
 	// the definition's own fields.
 	Shape Shape
 
@@ -149,7 +149,7 @@ type Callable struct {
 	// a value block, or a GUI key.
 	Callers []string
 
-	// Shape is what a definition's block holds, a Shapes key. It is "" for
+	// Shape is what a definition's block holds. It is "" for
 	// the caller's shape.
 	Shape Shape
 
@@ -165,9 +165,9 @@ type Callable struct {
 	// have.
 	Proves []Shape
 
-	// Command is the command a definition acts as where it is called, an
-	// effect or a trigger. It is "" for neither.
-	Command Declaration
+	// Command is the database of the commands a definition acts as where it
+	// is called: DumpEffects or DumpTriggers. It is "" for neither.
+	Command string
 
 	// Values are what a call writes as its value where it passes no
 	// parameters. None means a call writes none.
@@ -185,7 +185,7 @@ type FileType struct {
 	// color. It is "" for none.
 	ColorSuffix string
 
-	// Shape is what a top block holds, a Shapes key. It is "" for the
+	// Shape is what a top block holds. It is "" for the
 	// database's.
 	Shape Shape
 }
@@ -495,9 +495,9 @@ const SetupFolder = "setup/start"
 // The callers of the scripted databases' definitions: a trigger block, an
 // effect block and a value block.
 const (
-	callTrigger = "trigger"
-	callEffect  = "effect"
-	callValue   = "value"
+	CallTrigger = "trigger"
+	CallEffect  = "effect"
+	CallValue   = "value"
 )
 
 // The blocks of an on_action and of an event in the order they run, as the
@@ -656,7 +656,7 @@ var Callables = map[string]Callable{
 	// a call writes yes and never no, as CK3
 	// events/activities/activity_system_events.txt:151 does
 	"scripted_effects": {
-		Callers: []string{callEffect}, Shape: ShapeEffects, Parameters: true, Proves: []Shape{ShapeEffects}, Command: DeclarationEffect,
+		Callers: []string{CallEffect}, Shape: ShapeEffects, Parameters: true, Proves: []Shape{ShapeEffects}, Command: DumpEffects,
 		Values: []string{"yes"},
 	},
 	// A value block calls them too. A call writes yes, or no to test the
@@ -664,15 +664,15 @@ var Callables = map[string]Callable{
 	// events/activities/chariot_race_activity/chariot_ongoing_events_jp.txt
 	// :189 does.
 	"scripted_triggers": {
-		Callers: []string{callTrigger, callValue}, Shape: ShapeTriggers, Parameters: true, Proves: []Shape{ShapeTriggers, ShapeValue},
-		Command: DeclarationTrigger, Values: Bools,
+		Callers: []string{CallTrigger, CallValue}, Shape: ShapeTriggers, Parameters: true, Proves: []Shape{ShapeTriggers, ShapeValue},
+		Command: DumpTriggers, Values: Bools,
 	},
 	// CK3 common/activities/activity_types/camp_party.txt:638
 	"scripted_modifiers": {
-		Callers: []string{callValue}, Shape: ShapeValue, Parameters: true, Proves: []Shape{ShapeValue},
+		Callers: []string{CallValue}, Shape: ShapeValue, Parameters: true, Proves: []Shape{ShapeValue},
 		Values: []string{"yes"},
 	},
-	"script_values": {Callers: []string{callTrigger, callValue}, Shape: ShapeValue, Proves: []Shape{ShapeTriggers, ShapeValue}},
+	"script_values": {Callers: []string{CallTrigger, CallValue}, Shape: ShapeValue, Proves: []Shape{ShapeTriggers, ShapeValue}},
 	// a widget key naming a type
 	"gui.type":           {Callers: []string{guiTagCalls}, FoldsCase: true},
 	"gui.local_type":     {Callers: []string{guiTagCalls}, Local: true},
@@ -1053,9 +1053,8 @@ var Precedences = []Precedence{
 			"father", "mother", "disallow_random_traits", "obscured", "birth",
 		},
 	},
-	// the CK3 wiki's Modding page: types in UI files use FIOS, and ck3.exe
-	// "Type '%s' already registered at '%s'" and "Template '%s' already
-	// registered at '%s'"; Vic3 GUI types: the one loaded first wins
+	// the CK3 wiki's Modding page: types in UI files use FIOS; Vic3 GUI
+	// types: the one loaded first wins
 	{Games: ck3AndVic3, Databases: []string{"gui.type", "gui.template"}, Keeps: KeepFirst},
 	// EU5 l.155: the last by playlist position
 	{Games: []string{EU5}, Databases: []string{"gui.type", "gui.template"}, Keeps: KeepLast, ByPlayset: true},
@@ -1094,8 +1093,7 @@ var Precedences = []Precedence{
 	// the Vic3 wiki's list of folders: REPLACE only; it does not say whether
 	// INJECT is refused or acts as REPLACE
 	{Games: []string{Vic3}, Databases: []string{"scripted_rules", "script_values"}, Keeps: KeepFirst, Modes: ModePlaceEntry, Injection: InjectionUnsettled},
-	// modes at the second level: the Vic3 wiki's Genes and victoria3.exe's
-	// "If you're replacing or injecting this error is shown"; EU5
+	// modes at the second level: the Vic3 wiki's Genes; EU5
 	// D008_genes_accessories.txt:1-3 writes INJECT_OR_CREATE inside
 	// accessory_genes
 	{Games: vic3AndEU5, Databases: []string{"genes"}, Keeps: KeepFirst, Modes: ModePlaceWrapped},

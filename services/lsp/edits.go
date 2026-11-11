@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"maps"
 	"path"
 	"path/filepath"
 	"slices"
@@ -191,10 +190,11 @@ func buildReferenceFix(
 			return mods.ToReference(site).Name
 		})
 		if database := language.Databases[reference.Database]; database != nil && database.Callable.Command != "" {
-			keys = slices.Concat(keys, lo.Filter(slices.Sorted(maps.Keys(language.Commands)), func(key string, _ int) bool {
-				_, ok := findAllowed(language.Commands[key], cursor.context.Parent)
-				return ok
-			}))
+			for _, dump := range commandDatabases {
+				if cursor.context.Parent.Takes(dump) {
+					keys = slices.Concat(keys, language.ListKeys(dump))
+				}
+			}
 		}
 		for _, key := range lo.Uniq(keys) {
 			// names that differ in length by the best distance so far or more are that far apart
@@ -220,10 +220,10 @@ func buildMissingFix(schema *schema.Schema, cursor cursor, diagnostic Diagnostic
 		return "", nil
 	}
 	database := schema.Databases[definition.Database]
-	if database == nil || database.Definition.Children[key] == nil || !database.Definition.Children[key].Default.IsStated() {
+	if database == nil || database.Field.Children[key] == nil || !database.Field.Children[key].Default.IsStated() {
 		return "", nil
 	}
-	statement := key + " = " + database.Definition.Children[key].Default.Value
+	statement := key + " = " + database.Field.Children[key].Default.Value
 	insertion := tree.BuildInsertion(definition.Statement, []string{statement})
 	return "Add " + statement, ToEdits(tree.Src, tree.Lines, []jomini.Edit{insertion})
 }
@@ -402,7 +402,7 @@ func (lsp *Service) BuildOverride(path string, line, column int, modID string) (
 // override: the innermost one that holds the offset, if it is written in a
 // folder of its database. A name script saves on the way, such as a scope,
 // is no entry. It returns nil if the offset is in none.
-func findEntry(ws *workspace.Session, document workspace.Document, offset int) *schema.Definition {
+func findEntry(ws *workspace.Session, document workspace.Document, offset int) *schema.Copy {
 	context := findCursor(document, offset).context
 	for context != nil && (!context.Defines || context.Category != schema.CategoryDefinition) {
 		context = context.Parent
@@ -491,7 +491,7 @@ func findPrefix(
 
 // buildModeCopy returns an entry written with the REPLACE entry mode. Where the game writes the mode inside a block,
 // the copy is wrapped in the block that holds the entry.
-func buildModeCopy(tree *jomini.Tree, definition *schema.Definition, precedence game.Precedence) string {
+func buildModeCopy(tree *jomini.Tree, definition *schema.Copy, precedence game.Precedence) string {
 	statement := tree.Statements[definition.Statement]
 	entry := "REPLACE:" + tree.Src[definition.Span.Start:statement.Span.End]
 	if precedence.Modes != game.ModePlaceWrapped || statement.Parent == 0 {
@@ -503,7 +503,7 @@ func buildModeCopy(tree *jomini.Tree, definition *schema.Definition, precedence 
 
 // buildPriorityCopy returns a copy of an entry that sets the key holding its override priority to the given number.
 // Where a higher priority replaces only some of the entry's keys, the copy holds those and no others.
-func buildPriorityCopy(tree *jomini.Tree, definition *schema.Definition, precedence game.Precedence, priority int) string {
+func buildPriorityCopy(tree *jomini.Tree, definition *schema.Copy, precedence game.Precedence, priority int) string {
 	statement := tree.Statements[definition.Statement]
 	if len(precedence.Overrides) > 0 {
 		unit := cmp.Or(tree.Indentation(), "\t")

@@ -73,19 +73,23 @@ func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, progres
 		return nil, err
 	}
 
-	schema.SetScripted(mounts.Files[len(install.Files):], ParseFile)
+	unread := listUnread(mounts)
+	schema.SetScripted(mounts.Files[len(install.Files):], unread, ParseFile)
 
 	index := newIndex(schema, install, mounts)
+	index.unread = unread
 	index.scanFiles(schema, progress)
 	index.buildPostings()
 
 	return index, nil
 }
 
-// ScanFiles scans the given changed files again, reading each from disk, and
-// first gives the schema the scripted definitions they declare now. A file
-// that no longer exists is dropped with its occurrences. It returns an error,
-// and changes nothing, if any of the files is the install's.
+// ScanFiles scans the given changed files again, reading each from disk. A
+// file that no longer exists is dropped with its occurrences. The schema
+// gets the scripted definitions the files declare now once the files are
+// listed or dropped, so that it knows which files the game reads, and
+// before any is scanned. It returns an error, and changes nothing, if any of
+// the files is the install's.
 func (i *Index) ScanFiles(schema *schema.Schema, changed []files.File) error {
 	installFiles := i.countInstallFiles()
 	for _, file := range changed {
@@ -94,9 +98,8 @@ func (i *Index) ScanFiles(schema *schema.Schema, changed []files.File) error {
 		}
 	}
 
-	schema.SetScripted(changed, ParseFile)
-
-	var lock sync.RWMutex
+	var positions []int32
+	relisted := false
 
 	for _, file := range changed {
 		position, known := i.FindFile(file.Path)
@@ -114,17 +117,45 @@ func (i *Index) ScanFiles(schema *schema.Schema, changed []files.File) error {
 			}
 		}
 
+		relisted = relisted || !known || deleted
 		i.Occurrences[position], i.Texts[position] = nil, nil
 		if deleted {
 			i.Unlist(file.Key)
 		} else {
-			i.buildFile(&lock, schema, position)
+			positions = append(positions, position)
 		}
+	}
+
+	// which files the game reads changes only when one is listed or dropped
+	if relisted {
+		i.unread = listUnread(i.Mounts)
+	}
+
+	schema.SetScripted(changed, i.unread, ParseFile)
+
+	var lock sync.RWMutex
+
+	for _, position := range positions {
+		i.buildFile(&lock, schema, position)
 	}
 
 	i.buildPostings()
 
 	return nil
+}
+
+// listUnread returns the keys of the mounted files the game does not read: a
+// file that another at its path hides, one that a replace_path drops, and
+// one in a folder the game never mounts.
+func listUnread(mounts *files.Mounts) map[string]bool {
+	unread := map[string]bool{}
+	for position, file := range mounts.Files {
+		if !mounts.IsLoaded(int32(position)) || mounts.IsUnmounted(int32(position)) {
+			unread[file.Key] = true
+		}
+	}
+
+	return unread
 }
 
 // Clone returns a copy of an index that ScanFiles can change while the

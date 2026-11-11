@@ -58,6 +58,17 @@ func (lsp *Service) Definition(path string, line, column int) ([]Site, error) {
 	if reference.Name == "" {
 		return []Site{}, nil
 	}
+
+	// an effect, a trigger or a link is defined by its line of the game's
+	// dump, where the install has the dump
+	if declared := ws.Schema.LookupDefinition(reference.Database, reference.Name); declared != nil {
+		if declared.Path == "" {
+			return []Site{}, nil
+		}
+
+		return []Site{{Place: ws.Locate(mods, declared.Path), Line: declared.Line, Range: ToLineRange(declared.Line)}}, nil
+	}
+
 	sites, _ := listSites(ws, mods, place, reference)
 	return locateSites(ws, mods, reference, sites, false), nil
 }

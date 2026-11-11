@@ -42,7 +42,7 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 			findings = append(findings, finding)
 		}
 	}
-	if winner.Reason == index.ReasonUnsettled {
+	if winner.Reason == game.ReasonUnsettled {
 		if finding, ok := makeUndecided(ws, mods, sites, describeCause(mods, sites, winner, precedence)); ok {
 			findings = append(findings, finding)
 		}
@@ -130,12 +130,12 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 // describeCause returns the words that say why the sources leave a winner open.
 func describeCause(mods *index.Index, sites []index.Site, winner index.Winner, precedence game.Precedence) string {
 	switch winner.Cause {
-	case index.CausePriority:
+	case game.CausePriority:
 		return "both have the same override priority; give one a higher " + precedence.PriorityKey
-	case index.CauseKeyword:
+	case game.CauseKeyword:
 		prefix := findModePrefix(mods, sites, func(game.EntryMode) bool { return true })
 		return "no source says that the folder takes the " + prefix + " keyword, or what the game does with it"
-	case index.CauseInject:
+	case game.CauseInject:
 		prefix := findModePrefix(mods, sites, func(mode game.EntryMode) bool { return !mode.Replaces })
 		return "the folder takes REPLACE only, and whether " + prefix + " is refused or replaces is not documented"
 	}
@@ -155,7 +155,7 @@ func findModePrefix(mods *index.Index, sites []index.Site, accepts func(game.Ent
 // makeUndecided returns the finding for copies of a name whose kept copy no source names. It returns false if they
 // lie in fewer than two of the mods and the game.
 func makeUndecided(ws *workspace.Session, mods *index.Index, definitions []index.Site, why string) (Finding, bool) {
-	sites := lsp.MakeSites(ws, mods, definitions, &index.Winner{Reason: index.ReasonUnsettled})
+	sites := lsp.MakeSites(ws, mods, definitions, &index.Winner{Reason: game.ReasonUnsettled})
 	parties := listParties(sites)
 	if len(parties) < 2 {
 		return Finding{}, false
@@ -231,7 +231,7 @@ func resolveContest(ws *workspace.Session, finding *Finding, forgiven map[[2]str
 // winner, and a reason with no long form.
 func splitWhy(finding Finding) []lsp.Part {
 	winner, ok := lo.Find(finding.Sites, func(site lsp.Site) bool {
-		return site.Kept && index.Reasons[site.Reason].Why != ""
+		return site.Kept && game.Reasons[site.Reason].Why != ""
 	})
 	if !ok || finding.Facts["winner"] == "" || finding.Database == game.File {
 		return nil
@@ -243,7 +243,7 @@ func splitWhy(finding Finding) []lsp.Part {
 	})
 	facts := maps.Clone(finding.Facts)
 	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, lsp.JoinList(beaten, "and")
-	return lsp.SplitMessage(index.Reasons[winner.Reason].Why, facts)
+	return lsp.SplitMessage(game.Reasons[winner.Reason].Why, facts)
 }
 
 // resolveForgiven sets a finding's level to info if every pair of the mods and the game among its sites is forgiven.
@@ -267,7 +267,7 @@ func listEveryPair(ids []string) [][2]string {
 // kept.
 func findWinner(finding Finding) string {
 	site, ok := lo.Find(finding.Sites, func(site lsp.Site) bool {
-		return site.Kept && site.Reason != index.ReasonInjected && site.Reason != index.ReasonCombined
+		return site.Kept && site.Reason != game.ReasonInjected && site.Reason != game.ReasonCombined
 	})
 	return lo.Ternary(ok, site.Place.Origin, finding.Origin)
 }
@@ -300,7 +300,7 @@ func resolveOrder(finding *Finding, order []string, declared map[[2]string]bool)
 // the load order.
 func isOrderDecided(finding Finding) bool {
 	return finding.Code == fileContestCode ||
-		lo.SomeBy(finding.Sites, func(site lsp.Site) bool { return site.Kept && site.Reason == index.ReasonPlayset })
+		lo.SomeBy(finding.Sites, func(site lsp.Site) bool { return site.Kept && site.Reason == game.ReasonPlayset })
 }
 
 // listDefinitionChanges lists the names whose kept copy moves to another mod than in the workspace's own order.

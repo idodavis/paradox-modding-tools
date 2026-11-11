@@ -35,21 +35,22 @@
 //     sections, and the links bring the targets saved from code.
 //   - A dump correction fixes a dump line that contradicts its own text. It
 //     wins over the dump.
-//   - A name that several dumps list is one command, which takes the
-//     arguments each dump gives it where that dump declares it. Its scopes
-//     are the union of its dumps', and none if any dump names none. Its
-//     target is the one scope a dump says it leads to, and none where the
-//     dump names several.
+//   - The effects, the triggers, the links and the types of scope are four
+//     databases, and each dump entry is a definition in its dump's database.
+//     A name that two dumps list is a definition in each, with that dump's
+//     scopes, target and keys. A definition's target is the one scope its
+//     entry says it leads to, and none where the entry names several.
 //   - A command's arguments are the keys of the usage blocks written under
 //     its name, and of the lines of its prose that open with key = value. A
 //     statement in [ ] or < > is optional, [a|b] gives choices, and a
 //     placeholder such as <triggers> gives the block that shape. A trigger's
 //     Traits line says what its value takes, and outranks a value the dump
 //     writes after the command's name, as add_trait = <trait_key> does.
-//   - A command declared as both an effect and a trigger keeps each one's
-//     keys, and a union of the two for a block that allows either. The union
-//     keeps a shape only where both state it, or where the shape allows
-//     effects and triggers alike.
+//   - A name declared as both an effect and a trigger keeps each one's keys,
+//     and a union of the two for a block that takes either. The union keeps
+//     a shape only where both state it, or where the shape takes effects and
+//     triggers alike. Six words whose two entries differ only in what their
+//     block holds, such as switch and debug_log, share one field instead.
 //   - The commands of one list family, such as any_x, every_x, random_x and
 //     ordered_x, share the keys of their arguments.
 //   - A keyword row written under a command, such as random_list's numbered
@@ -138,12 +139,14 @@
 //
 // # The walk
 //
-//   - A statement either defines a name, or its key fits the first rule of
-//     its block's shape that it fits. A keyword of the language adjusts what
-//     the rule gave. A key with a parameter is not known until the call is
-//     made, and neither are its block's shape and scope.
-//   - A command fits only where the block's shape allows what it is declared
-//     as, so an effect never fits in a trigger block. A key written with an
+//   - A statement either defines a name, or its key is a keyword of the
+//     language where it is written, or it is the first thing its block's
+//     shape takes that has the key. A key with a parameter is not known
+//     until the call is made, and neither are its block's shape and scope.
+//   - A command fits only where the block's shape takes its database, so an
+//     effect never fits in a trigger block. Each use of an effect, a trigger
+//     or a link is a reference to it, and each link of a chain is its own.
+//     A key written with an
 //     argument in parentheses, as aptitude(court_jester_court_position), is
 //     read as the command, and its argument as the command's ArgumentKey. A
 //     math keyword's value written so, as opinion(scope:ruler) is, makes the
@@ -326,74 +329,71 @@ type Field struct {
 	Vanilla Vanilla
 }
 
-// Command is one effect, trigger or link the dumps declare.
-type Command struct {
-	// Declared is what the dumps declare it as, in dump order.
-	Declared []game.Declaration
+// Definition is one key a database declares outside the index: an effect, a
+// trigger, a link or a scope type of the dumps.
+type Definition struct {
+	// Database is the database that declares it.
+	Database string
 
-	// Scopes are the scopes the dumps say it runs in. They are none if the
-	// dumps name none.
-	Scopes []string
-
-	// Target is the scope a link leads to. It is "" for none.
-	Target string
-
-	// Arguments are the keys it takes, as fields, by declaration: an effect
-	// and a trigger of one name each take their own.
-	Arguments map[game.Declaration]*Field
-
-	// Union is the keys of its effect and its trigger together, which it
-	// takes in a block that allows either. It is nil unless the dumps declare
-	// it as both.
-	Union *Field
-
-	// ArgumentKey is the key that the argument in parentheses after its name
-	// stands for. It is "" if none.
-	ArgumentKey string
-
+	Key   string
 	Blurb string
 
-	// Usage is the dump's usage lines. It is "" if none.
+	// Usage is the dump's usage lines. It is "" for none.
 	Usage string
 
-	// Examples are the first places the game's own files write it, by path
-	// and then line, and Count is how often they write it.
-	Examples []Example
-	Count    int
+	// Field is what its block and its value take: a command's keys, or the
+	// name written after a link's colon. It is nil where no source says.
+	Field *Field
 
-	// Wild is whether it is a link that is a pattern, so that a written name
-	// never matches it.
-	Wild bool
+	// Union is the keys of an effect and a trigger of one name together, for
+	// a block that takes either. It is nil unless the dumps declare the name
+	// as both and each entry keeps its own keys.
+	Union *Field
 
-	// Bare is whether it is a link that script may write as its name alone,
-	// not only as name:data.
-	Bare bool
+	// Scopes are the scope types it is written in, none for any. Target is
+	// the scope type it leads to, "" for none.
+	Scopes []string
+	Target string
 
-	// Lists is whether it iterates a list and has no target, so the scope
-	// inside its block is unknown.
-	Lists bool
+	// Saves holds, by parameter of a scripted definition, the link its body
+	// saves the argument's name under, such as scope. Any other definition
+	// has none.
+	Saves map[string]string
 
-	// Patterned is whether some pattern lists it.
-	Patterned bool
+	// Path and Line are the dump file that declares it and its line there,
+	// from 1. They are "" and 0 for one from the shipped backup or a row.
+	Path string
+	Line int
+
+	// Star is the databases whose names fill the * of a key that is a
+	// pattern, as scripted relations fill has_relation_*. Patterns are the
+	// patterns that make a plain key. Each is none for any other key.
+	Star     []string
+	Patterns []*Definition
+
+	// ArgumentKey is the key that an argument in parentheses after its name
+	// stands for, as in aptitude(court_jester_court_position). It is "" for
+	// none.
+	ArgumentKey string
+
+	// Prefixed is whether a link is written with a name after a colon and not
+	// alone; its key ends in the colon. Wild is whether the dumps call it a
+	// wild card, which no written name matches.
+	Prefixed, Wild bool
+
+	// Iterates is whether it runs its block on each item of a list whose
+	// scope the dumps do not name.
+	Iterates bool
+
+	// Runs is whether script runs in a scope type.
+	Runs bool
 }
 
-// Example is one place where the game's own files write a command or call a
-// data function. Its line counts from zero.
+// Example is one place where the game's own files call a data function. Its
+// line counts from zero.
 type Example struct {
 	Path string
 	Line int
-}
-
-// CommandPattern is a family of commands that the dumps declare once for each
-// definition of a database, as has_relation_* is for the scripted relations.
-type CommandPattern struct {
-	// Key is the commands' name with a star in the place of a definition's
-	// name, and Database the database whose definitions' names fill the star.
-	Key      string
-	Database string
-
-	// Commands are the commands the dumps declare by it, sorted.
-	Commands []string
 }
 
 // Database is one database of the game: the field tree of its definitions and
@@ -401,10 +401,23 @@ type CommandPattern struct {
 type Database struct {
 	Name string
 
+	// Definitions are the keys it declares outside the index, by key: what
+	// the dumps list, and for a database whose definitions script calls, the
+	// copy of each name that the game keeps among its own files, in lower
+	// case where the database ignores case. Any other database of files has
+	// none.
+	Definitions map[string]*Definition
+
+	// Keys are the keys of Definitions, sorted, and Patterns its pattern
+	// definitions, sorted by key.
+	Keys     []string
+	Patterns []*Definition
+
 	// Nested are the databases whose definitions are keys inside its own.
 	Nested []string
 
-	Definition *Field
+	// Field is what a definition's block takes.
+	Field *Field
 
 	// Row is where its definitions are written and how each is named.
 	Row game.Database
@@ -466,26 +479,6 @@ type OnAction struct {
 	Hardcoded bool
 }
 
-// ScriptedDefinition is a scripted effect, trigger, value or list the game or
-// a mod defines, with the parameters it takes.
-type ScriptedDefinition struct {
-	Database string
-
-	// Parameters are the parameters it takes, as fields. It is nil if the
-	// database's definitions take none.
-	Parameters *Field
-
-	// Saves holds, by parameter, the link its body saves the argument's name
-	// under, such as scope.
-	Saves map[string]string
-
-	// relays are the parameters its body passes on to calls of other scripted
-	// definitions, and typings the places its body writes a parameter where a
-	// database's name goes, in order.
-	relays  []relay
-	typings []typing
-}
-
 // relay is one parameter that a scripted definition's body passes on as an
 // argument of a call to another one.
 type relay struct {
@@ -512,15 +505,48 @@ type typing struct {
 	Field *Field
 }
 
+// ScriptedCopy is one copy of a scripted definition as a file declares it,
+// with where its file comes in the load order.
+type ScriptedCopy struct {
+	Copy Copy
+
+	// File is the key of its file and Rel the file's path from its stage.
+	// Sequence is the file's place among the files that declare, the game's
+	// before the mods'.
+	File     string
+	Rel      string
+	Sequence int
+
+	// Definition is what a call of it takes: its field holds its parameters,
+	// nil where its database's definitions take none.
+	Definition *Definition
+
+	// relays are the parameters its body passes on to calls of other scripted
+	// definitions, and typings the places its body writes a parameter where a
+	// database's name goes, in order. The pass that declares it reads them,
+	// and no cache keeps them.
+	relays  []relay
+	typings []typing
+}
+
 // modScripted is what the files of the workspace's mods declare, by file and
 // all together.
 type modScripted struct {
-	// byFile holds the declarers by a file's key.
-	byFile map[string]*declarer
+	// byFile holds the declarers by a file's key, and sequence counts the
+	// files given a place so far. unread holds the keys of the files the
+	// game does not read, as they were when the winners were last picked.
+	byFile   map[string]*declarer
+	sequence int
+	unread   map[string]bool
 
-	// all, modifiers and namespaces hold what the files declare, as
-	// ScriptedDefinitions, ModifierFields and Namespaces hold the game's.
-	all        map[string]ScriptedDefinition
+	// winners holds, by database and name, the scripted definition a call
+	// finds where the workspace changes what the game's files give: the
+	// winner among the mods' copies and the game's, or nil where no copy is
+	// left. A name it lacks is the game's own.
+	winners map[string]*Definition
+
+	// modifiers and namespaces hold what the mods' files declare, as
+	// ModifierFields and Namespaces hold the game's.
 	modifiers  map[string]*Field
 	namespaces map[string]bool
 }
@@ -566,9 +592,6 @@ type Schema struct {
 	// Callees holds, by caller, the databases a call through it resolves in.
 	Callees map[string][]string
 
-	Commands map[string]*Command
-	Scopes   map[string]ScopeType
-
 	// Customs holds the customizable localizations the dumps name, though the
 	// game's files may define none.
 	Customs map[string]bool
@@ -579,10 +602,6 @@ type Schema struct {
 
 	OnActions map[string]OnAction
 	DataTypes map[string]DataType
-
-	// Prefixes holds, by link prefix, the database its names are in. It holds
-	// "" for none.
-	Prefixes map[string]string
 
 	// TypeDatabases holds, by the phrase of a data type, the database of its
 	// names. It holds "" where several databases have the phrase.
@@ -596,8 +615,11 @@ type Schema struct {
 	// takes in a modifiers block.
 	ModifierFields map[string]*Field
 
-	ScriptedDefinitions map[string]ScriptedDefinition
-	WidgetTypes         map[string]bool
+	// ScriptedCopies holds every copy of a scripted definition the game's
+	// files declare, by database and name. The copy of each that the game
+	// keeps among them is a definition of its database.
+	ScriptedCopies map[string][]ScriptedCopy
+	WidgetTypes    map[string]bool
 
 	// Namespaces holds the event namespaces the game's events files declare.
 	Namespaces map[string]bool
@@ -606,10 +628,6 @@ type Schema struct {
 	// declares for the type before them, though the game's own localization
 	// and GUI text write them.
 	UnlistedCalls map[string]bool
-
-	// CommandPatterns are the patterns the dumps name commands by, sorted by
-	// key and database.
-	CommandPatterns []CommandPattern
 
 	// TopFolders holds the first folder of each of the game's files in lower
 	// case, without the stage folder: the folders under which the game reads
@@ -646,22 +664,16 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 	})
 
 	schema := &Schema{
-		Game:      row.ID,
-		Databases: map[string]*Database{},
-		Callees:   map[string][]string{},
-		Commands:  map[string]*Command{},
-		Prefixes: map[string]string{
-			game.SavedScopes: game.SavedScopes, game.Variables: game.Variables,
-			game.LocalVariables: game.LocalVariables, game.GlobalVariables: game.GlobalVariables,
-		},
-		TypeDatabases:       map[string]string{},
-		InlineDatabases:     map[string]string{},
-		ModifierFields:      map[string]*Field{},
-		ScriptedDefinitions: map[string]ScriptedDefinition{},
-		WidgetTypes:         map[string]bool{},
-		Namespaces:          map[string]bool{},
-		UnlistedCalls:       map[string]bool{},
-		TopFolders:          map[string]bool{},
+		Game:            row.ID,
+		Databases:       map[string]*Database{},
+		Callees:         map[string][]string{},
+		TypeDatabases:   map[string]string{},
+		InlineDatabases: map[string]string{},
+		ModifierFields:  map[string]*Field{},
+		WidgetTypes:     map[string]bool{},
+		Namespaces:      map[string]bool{},
+		UnlistedCalls:   map[string]bool{},
+		TopFolders:      map[string]bool{},
 	}
 	for _, file := range listing {
 		if folder, _, nested := strings.Cut(strings.ToLower(file.StageRel()), "/"); nested {
@@ -820,10 +832,6 @@ func (s *Schema) buildDatabases(row *game.Game, folders []string) {
 		case database.Callable.Shape == game.ShapeValue && (s.Values == "" || label < s.Values):
 			s.Values = label
 		}
-
-		for _, prefix := range database.Row.Prefixes {
-			s.Prefixes[prefix] = label
-		}
 	}
 
 	findOnly := func(contents game.Contents) string {
@@ -858,7 +866,7 @@ func (s *Schema) buildDatabase(row *game.Game, label string, databaseRow game.Da
 	}
 
 	s.Databases[label] = &Database{
-		Name: label, Definition: &Field{}, Row: databaseRow, Callable: game.Callables[label],
+		Name: label, Field: &Field{}, Row: databaseRow, Callable: game.Callables[label],
 		Precedence: row.LookupPrecedence(label, databaseRow.Folder), Documented: map[string]bool{},
 	}
 	for _, key := range databaseRow.DeclaringKeys {
@@ -893,7 +901,7 @@ func (s *Schema) buildFields(row *game.Game) {
 			continue
 		}
 
-		field := database.Definition
+		field := database.Field
 		for key := range strings.SplitSeq(entry.KeyPath, "/") {
 			field = field.buildChild(key, game.SourceRegistry)
 		}

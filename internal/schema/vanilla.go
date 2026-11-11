@@ -38,9 +38,9 @@ type counter struct {
 	// fields holds, by the schema's field, what this worker counted at it.
 	fields map[*Field]*Field
 
-	// arguments holds, by command and declaration, what this worker counted
-	// in the command's arguments.
-	arguments map[argumentsKey]*Field
+	// arguments holds, by command, what this worker counted in the command's
+	// keys.
+	arguments map[*Definition]*Field
 
 	// definitions holds, by database, what this worker counted in its
 	// definitions, and defined the names each database defines.
@@ -62,19 +62,9 @@ type counter struct {
 	// it.
 	prefixed map[string]map[string]int
 
-	// examples holds, by the name written, the first places it is written: a
-	// command's name, or a data function's as Type.Function.
+	// examples holds, by a data function's name as Type.Function, the first
+	// places it is called.
 	examples map[string][]Example
-
-	// commands holds, by a command's name, how often the files write it.
-	commands map[string]int
-}
-
-// argumentsKey is one command under one declaration, whose arguments a
-// worker counts apart.
-type argumentsKey struct {
-	command     *Command
-	declaration game.Declaration
 }
 
 // holder is where the keys of one statement are counted while the counter is
@@ -111,16 +101,14 @@ func (s *Schema) CountVanilla(listing []files.File, parse func(path string) (*jo
 	// the files that declare callables are read first, so a key under a call
 	// counts as a call
 	declaring := slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool { return !s.declares(file) })
-	s.declareFiles(declaring, parse)
-	s.resolveRelays(s.ScriptedDefinitions, nil)
+	s.resolveRelays(s.declareFiles(declaring, parse), nil)
 
 	counters := make([]*counter, files.Workers)
 	for worker := range counters {
 		counters[worker] = &counter{
-			schema: s, fields: map[*Field]*Field{}, arguments: map[argumentsKey]*Field{},
+			schema: s, fields: map[*Field]*Field{}, arguments: map[*Definition]*Field{},
 			definitions: map[string]*Field{}, defined: map[string]map[string]bool{}, messages: map[string]bool{},
 			unlisted: map[string]bool{}, prefixed: map[string]map[string]int{}, examples: map[string][]Example{},
-			commands: map[string]int{},
 		}
 	}
 
@@ -156,9 +144,9 @@ func (s *Schema) CountVanilla(listing []files.File, parse func(path string) (*jo
 
 	// read again, so a parameter's typings see the fields the count made and
 	// the calls the files declare
-	s.declareFiles(declaring, parse)
-	s.typeParameters(s.ScriptedDefinitions)
-	s.resolveRelays(s.ScriptedDefinitions, nil)
+	winners := s.declareFiles(declaring, parse)
+	s.typeParameters(winners)
+	s.resolveRelays(winners, nil)
 	if len(failures) == len(listing) && len(failures) > 0 {
 		return errors.Join(failures...)
 	}
@@ -201,7 +189,6 @@ func (c *counter) countStatement(tree *jomini.Tree, statement int32, context *Co
 		}
 	}
 
-	c.countCommand(tree, statement, context)
 	c.countCalls(tree, statement, context)
 	if value := tree.Unquoted(tree.Statements[statement].Value); c.gui && strings.Contains(value, "[") {
 		c.countUnlisted(loc.Segments(value, 0), context.Datacontext)
@@ -240,7 +227,7 @@ func (c *counter) countStatement(tree *jomini.Tree, statement int32, context *Co
 
 	case context.Category == CategoryCommand && block:
 		// a command's block holds its arguments and has no shape of its own
-		next.field = mirror(c.arguments, toArgumentsKey(context))
+		next.field = mirror(c.arguments, context.Command)
 		block = false
 
 	case context.Category == CategoryKeyword && block && context.Field != nil:
@@ -268,10 +255,9 @@ func (c *counter) countDefinition(context *Context) {
 // its database: only if it has none yet and its link leads to no literal, as
 // flag:the_boss's does.
 func (s *Schema) isVoted(prefix string) bool {
-	database, exists := s.Prefixes[prefix]
-	command := s.Commands[prefix]
+	database, exists := s.LookupPrefix(prefix)
 
-	return exists && database == "" && (command == nil || command.Target != dumpPhrases.Literal)
+	return exists && database == "" && s.lookupLink(prefix, true).Target != dumpPhrases.Literal
 }
 
 // addCounts adds each count of the second map to the first and returns the
@@ -286,22 +272,6 @@ func addCounts[K comparable](total, added map[K]int) map[K]int {
 	}
 
 	return total
-}
-
-// countCommand counts a statement whose key is a command or a link the dumps
-// declare, and keeps its place. A chain of links counts as its first link, a
-// prefixed link as its prefix, each in lower case, and a command's name with
-// an argument in parentheses as the name.
-func (c *counter) countCommand(tree *jomini.Tree, statement int32, context *Context) {
-	if context.Command == nil || context.Category != CategoryCommand && context.Category != CategoryLink {
-		return
-	}
-
-	key := tree.Statements[statement].Key
-	name, _ := splitLinkHead(c.schema.findCallee(tree, statement))
-	example := Example{Path: c.path, Line: tree.Lines.ToPosition(key.Start).Line}
-	c.examples[name] = keepExample(c.examples[name], example)
-	c.commands[name]++
 }
 
 // ExampleCount is how many places of a name are kept as its examples.
@@ -389,13 +359,12 @@ func (c *counter) countShape(field *Field, tree *jomini.Tree, statement int32, c
 func (c *counter) resolveProofs(key string) (string, bool) {
 	var shapes []game.Shape
 	defined := false
-	for caller := range c.schema.Callees {
-		scripted, ok := c.schema.ScriptedDefinitions[caller+":"+key]
-		if !ok {
+	for database, callable := range game.Callables {
+		if len(callable.Callers) == 0 || c.schema.lookupScripted(nil, database, key) == nil {
 			continue
 		}
 
-		proves := game.Callables[scripted.Database].Proves
+		proves := callable.Proves
 		if defined {
 			shapes = slices.DeleteFunc(shapes, func(shape game.Shape) bool { return !slices.Contains(proves, shape) })
 		} else {
@@ -450,7 +419,7 @@ func (c *counter) resolveKeywordShape(key string) (game.Shape, bool) {
 			continue
 		}
 
-		command := c.schema.Commands[key]
+		command := c.schema.FindCommand(key)
 		switch {
 		case keyword.Class == "":
 		case len(keyword.Holders) == 1:
@@ -470,20 +439,19 @@ func (c *counter) resolveKeywordShape(key string) (game.Shape, bool) {
 // also a modifier and one written in a case the dumps do not use give
 // shapeAmbiguous. A list iterator, a command declared as neither and one
 // declared as both give "": a block of either may hold it.
-func (c *counter) resolveCommandShape(key string, command *Command) game.Shape {
+func (c *counter) resolveCommandShape(key string, command *Definition) game.Shape {
 	if _, iterator := game.MatchListIterator(key); iterator {
 		return ""
 	}
 
-	triggers := slices.Contains(command.Declared, game.DeclarationTrigger)
-	effects := slices.Contains(command.Declared, game.DeclarationEffect)
+	effects, triggers := c.schema.Databases[game.DumpEffects].Definitions, c.schema.Databases[game.DumpTriggers].Definitions
 	_, modifier := c.schema.Modifiers[key]
 	switch {
-	case triggers == effects:
+	case command.Database == game.DumpLinks, effects[command.Key] != nil && triggers[command.Key] != nil:
 		return ""
-	case modifier, c.schema.Commands[key] == nil:
+	case modifier, effects[key] == nil && triggers[key] == nil:
 		return shapeAmbiguous
-	case triggers:
+	case command.Database == game.DumpTriggers:
 		return game.ShapeTriggers
 	}
 
@@ -512,7 +480,7 @@ func (c *counter) isUnexplained(key string, context *Context) bool {
 // a command too.
 func (c *counter) resolveFieldShape(key string) game.Shape {
 	_, modifier := c.schema.Modifiers[key]
-	_, command := c.schema.FindCommand(key)
+	command := c.schema.FindCommand(key) != nil
 	switch {
 	case modifier && command:
 		return shapeAmbiguous
@@ -582,18 +550,12 @@ func (c *counter) findValueField(parent holder, field *Field, current jomini.Sta
 	case field != nil:
 		return field
 	case context.Category == CategoryCommand && context.Command != nil:
-		return mirror(c.arguments, toArgumentsKey(context))
+		return mirror(c.arguments, context.Command)
 	case current.IsListed():
 		return parent.field
 	}
 
 	return nil
-}
-
-// toArgumentsKey returns the key of the arguments that a statement's command
-// takes.
-func toArgumentsKey(context *Context) argumentsKey {
-	return argumentsKey{command: context.Command, declaration: context.Command.resolveDeclaration(context.Declaration)}
 }
 
 // mirror returns the field that a worker counts into for the given key,
@@ -621,7 +583,7 @@ func mirrorSet(sets map[string]map[string]bool, key string) map[string]bool {
 func (c *counter) isFrame(context *Context) bool {
 	database := c.schema.Databases[context.Database]
 
-	return database != nil && context.Field == database.Definition && context.Definition == nil
+	return database != nil && context.Field == database.Field && context.Definition == nil
 }
 
 // add adds the counts of another worker to this one's.
@@ -653,8 +615,6 @@ func (c *counter) add(other *counter) {
 			c.examples[name] = keepExample(c.examples[name], example)
 		}
 	}
-
-	c.commands = addCounts(c.commands, other.commands)
 }
 
 // add adds the counts of another field and its children to this field's. A
@@ -686,10 +646,6 @@ func (c *counter) resolveCounts() {
 		field.add(counted)
 	}
 
-	for name, command := range c.schema.Commands {
-		command.Examples, command.Count = c.examples[name], c.commands[name]
-	}
-
 	for typeName, dataType := range c.schema.DataTypes {
 		for name, function := range dataType.Functions {
 			function.Examples = c.examples[typeName+"."+name]
@@ -697,8 +653,8 @@ func (c *counter) resolveCounts() {
 		}
 	}
 
-	for key, counted := range c.arguments {
-		key.command.makeArguments(key.declaration, game.SourceVanilla).add(counted)
+	for command, counted := range c.arguments {
+		command.makeField(game.SourceVanilla).add(counted)
 	}
 
 	for _, database := range slices.Sorted(maps.Keys(c.defined)) {
@@ -707,7 +663,7 @@ func (c *counter) resolveCounts() {
 
 	for database, counted := range c.definitions {
 		c.schema.buildDatabase(row, database, game.Database{})
-		c.schema.Databases[database].Definition.add(counted)
+		c.schema.Databases[database].Field.add(counted)
 	}
 
 	c.resolvePatterns()
@@ -730,16 +686,19 @@ func (c *counter) resolvePatterns() {
 		}
 	}
 
-	type patternKey struct{ pattern, database string }
+	type patternKey struct{ dump, pattern, database string }
 
-	// members holds the commands that fit each pattern with a name of the
-	// database in its star
-	members := map[patternKey][]string{}
-	for _, command := range slices.Sorted(maps.Keys(c.schema.Commands)) {
-		for pattern, label := range splitPattern(command) {
-			for _, database := range owners[label] {
-				key := patternKey{pattern, database}
-				members[key] = append(members[key], command)
+	// members holds the commands of one dump that fit each pattern with a
+	// name of the database in its star
+	members := map[patternKey][]*Definition{}
+	for _, dump := range commandDatabases {
+		owner := c.schema.Databases[dump]
+		for _, command := range owner.Keys {
+			for pattern, label := range splitPattern(command) {
+				for _, database := range owners[label] {
+					key := patternKey{dump, pattern, database}
+					members[key] = append(members[key], owner.Definitions[command])
+				}
 			}
 		}
 	}
@@ -747,18 +706,30 @@ func (c *counter) resolvePatterns() {
 	for key, commands := range members {
 		// one command for each definition: a name written twice, or in an
 		// entry mode, makes no pattern
-		if len(commands) >= 2 && len(commands) == c.schema.Databases[key.database].Definition.Vanilla.Definitions {
-			c.schema.CommandPatterns = append(c.schema.CommandPatterns,
-				CommandPattern{Key: key.pattern, Database: key.database, Commands: commands})
-			for _, command := range commands {
-				c.schema.Commands[command].Patterned = true
-			}
+		if len(commands) < 2 || len(commands) != c.schema.Databases[key.database].Field.Vanilla.Definitions {
+			continue
+		}
+
+		// the pattern has the facts and the keys of its first command
+		pattern := *commands[0]
+		pattern.Key, pattern.Star, pattern.Patterns = key.pattern, []string{key.database}, nil
+		owner := c.schema.Databases[key.dump]
+		owner.Patterns = append(owner.Patterns, &pattern)
+		for _, command := range commands {
+			command.Patterns = append(command.Patterns, &pattern)
 		}
 	}
 
-	slices.SortFunc(c.schema.CommandPatterns, func(first, second CommandPattern) int {
-		return cmp.Or(strings.Compare(first.Key, second.Key), strings.Compare(first.Database, second.Database))
-	})
+	order := func(first, second *Definition) int {
+		return cmp.Or(strings.Compare(first.Key, second.Key), strings.Compare(first.Star[0], second.Star[0]))
+	}
+	for _, dump := range commandDatabases {
+		owner := c.schema.Databases[dump]
+		slices.SortFunc(owner.Patterns, order)
+		for _, command := range owner.Definitions {
+			slices.SortFunc(command.Patterns, order)
+		}
+	}
 }
 
 // splitPattern yields each way a command's name splits into a pattern, with
@@ -787,12 +758,17 @@ func (s *Schema) walkFields(visit func(field *Field, held bool)) {
 		walkField(root, func(_ string, field *Field) { visit(field, held) })
 	}
 	for _, database := range s.Databases {
-		each(database.Definition, false)
+		each(database.Field, false)
 	}
 
-	for _, command := range s.Commands {
-		for _, arguments := range command.Arguments {
-			each(arguments, true)
+	// the effect and the trigger of a shared word hold one field
+	visited := map[*Field]bool{}
+	for _, dump := range commandDatabases {
+		for _, command := range s.Databases[dump].Definitions {
+			if command.Field != nil && !visited[command.Field] {
+				visited[command.Field] = true
+				each(command.Field, true)
+			}
 		}
 	}
 }
@@ -947,7 +923,8 @@ func resolveShapeClaim(vanilla Vanilla) game.Shape {
 // files write there into the <any> field. A stated database is kept; else
 // the keys name one only if every key is a definition of it.
 func (c *counter) resolveKeys(field *Field) {
-	if len(game.Shapes[field.Shape.Value].Allows) > 0 {
+	takes := shapeRows[field.Shape.Value].takes
+	if slices.Contains(takes, game.DumpEffects) || slices.Contains(takes, game.DumpTriggers) {
 		return
 	}
 
@@ -1089,7 +1066,7 @@ func (c *counter) takesValues(values map[string]int) bool {
 	for value := range values {
 		text := strings.Trim(value, `"`)
 		class := jomini.Classify(text)
-		_, declared := c.schema.FindCommand(text)
+		declared := c.schema.FindCommand(text) != nil
 		_, _, called := c.schema.findKeyCall(text, 0)
 		switch {
 		case names[text]:
@@ -1114,13 +1091,7 @@ func (c *counter) resolvePrefix(prefix string, labels map[string]int) {
 		expected, ok = c.resolveReference(labels)
 	}
 
-	c.schema.Prefixes[prefix] = expected.Database
-	command := c.schema.Commands[prefix]
-	if command == nil {
-		return
-	}
-
-	arguments := command.makeArguments(game.DeclarationLink, game.SourceVanilla)
+	arguments := c.schema.lookupLink(prefix, true).makeField(game.SourceVanilla)
 	arguments.Vanilla = Vanilla{Values: labels}
 	for _, count := range labels {
 		arguments.Vanilla.Count += count
@@ -1136,7 +1107,7 @@ func (c *counter) resolvePrefix(prefix string, labels map[string]int) {
 // database of the type the scope's own getter gives, else of the scope's
 // phrase. It returns "" for any other prefix, and where neither gives one.
 func (s *Schema) findScopeDatabase(prefix string) string {
-	command := s.Commands[prefix]
+	command := s.lookupLink(prefix, true)
 	if command == nil || len(command.Scopes) > 0 || !s.isScope(command.Target) {
 		return ""
 	}

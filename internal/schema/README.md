@@ -39,13 +39,13 @@ flowchart TD
 |---|---|
 | `schema.go` | The package doc, the types, `Build` and the databases: their folders, their data types' phrases, nested names and what a field's value must be. |
 | `datacalls.go` | The data calls: the type each step leads to, macros, data contexts and the names a call's arguments hold. |
-| `commands.go` | The commands, the links and the command patterns, and the scopes they run in. |
+| `commands.go` | The lookups of what the dumps declare: the effects, the triggers, the links, the patterns that make commands, a chain of links and the types of scope. |
 | `dumps.go` | The dumps reader, and the commands, arguments and prefixes built from the dumps. |
 | `docs.go` | The docs reader: which files are docs, and the blurbs, types, requirements and defaults they state. |
 | `vanilla.go` | The count of the game's own files, the claims it supports and the command patterns it finds. |
-| `scripted.go` | The scripted definitions, modifier types and event namespaces that files declare, the mods' included. |
+| `scripted.go` | The scripted definitions, modifier types and event namespaces that files declare, the mods' included, and of the copies of each scripted definition the one the game keeps. |
 | `definitions.go` | What a statement defines, found during a walk. |
-| `walk.go` | The walk: `Walk`, `WalkDeclarations`, `Context`, what each key is (a keyword, or the first key rule of its block's shape that fits), and the shape of its block. |
+| `walk.go` | The walk: `Walk`, `WalkDeclarations`, `Context`, what each key is (a keyword, or the first thing its block's shape takes that has it, by `shapeRows`), and the shape of its block. |
 | `values.go` | What a statement's value refers to: by its class, its field's claim, the place it is written in, and as a formula's number. Also each reference's verdict, `Inferred`. |
 | `shipped.go` | The shipped backup of each game's dumps, embedded from `shipped/*.gob`. |
 
@@ -60,21 +60,21 @@ flowchart TD
 - **Expected**: what a field's value must be.
 - **ValueType**: the type of value a field takes.
 - **Vanilla**: what the game's own files write at a field, counted.
-- **Command**: one effect, trigger or link the dumps declare.
-- **CommandPattern**: a family of commands the dumps declare once for each definition of a database.
-- **ScopeType**: one type of scope, with whether triggers and effects run in it.
+- **Definition**: one key a database declares outside the index: an effect, a trigger, a link or a scope type of the
+  dumps, a pattern that makes commands, or the copy of a scripted definition that the game keeps.
+- **ScriptedCopy**: one copy of a scripted definition as a file declares it, with where its file comes in the load
+  order.
+- **ScopeType**: one type of scope as the dumps list it, with whether triggers and effects run in it.
 - **DataType**: one type of the data binding language, with its functions.
 - **DataFunction**: one function of a data type.
 - **OnAction**: one on_action the dumps declare, with its scope and whether the game calls it from its own code.
-- **ScriptedDefinition**: a scripted effect, trigger, value or list the game or a mod defines, with the parameters it
-  takes.
 - **Example**: one place the game's own files write a command or call a data function.
 - **SourceState**: where one source's data came from and how fresh it is.
 - **Dumps**: everything the dumps declare.
 - **DumpCommand**: one effect, trigger or link as its dump lists it.
 - **Context**: everything the walk has decided at the statement it is on.
 - **Visitor**: what the walk calls at each statement it enters and leaves.
-- **Definition**: a name a statement defines, with the facts that decide which definition the game keeps.
+- **Copy**: one copy of a key, a name a statement defines, with the facts that decide which copy the game keeps.
 - **Reference**: a name a key or a value refers to, in a database.
 - **Saved**: one scope the definition saved, with its type.
 - **Category**: the color category of a key or a value.

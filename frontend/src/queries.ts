@@ -25,16 +25,18 @@ export function fileUrl(path: string): string {
 }
 
 /**
- * loadQuery reads a query outside a component, from the cache if it is fresh. A read that a refresh cancels runs
- * again, so a query that has never had data always gets its answer. It throws if Go fails.
+ * loadQuery reads a query outside a component, from the cache if it is fresh. A query with no answer yet always
+ * gets one from Go: one a closing workspace emptied, and one whose read a refresh cancelled. It throws if Go fails.
  */
 export async function loadQuery<T>(options: UseQueryOptions<T>): Promise<T | undefined> {
   const cache = useQueryCache();
   const entry = cache.ensure(options);
   let state = await cache.refresh(entry);
 
-  // A cancelled read's answer never reaches the entry, which stays pending.
-  while (state.status === "pending") state = await cache.refresh(entry);
+  // An emptied entry is pending and still fresh, so the cache would answer
+  // "pending" again at once, with no pause for the page, until the entry went
+  // stale. Each turn here waits on Go: the read under way, else a new one.
+  while (state.status === "pending") state = await (entry.pending?.refreshCall ?? cache.fetch(entry));
   return state.data;
 }
 

@@ -132,7 +132,7 @@ func (f *fireWalk) backward(current Site, effects []Site, use Site) {
 			}
 
 			source := winner.Site
-			if winner.Reason == ReasonUnsettled {
+			if winner.Reason == game.ReasonUnsettled {
 				source = parent
 			}
 
@@ -183,7 +183,7 @@ func (i *Index) ListActing(schema *schema.Schema, reference schema.Reference, fi
 func (i *Index) isActing(winner Winner, site Site) bool {
 	outcome := i.ResolveSite(winner, site)
 
-	return outcome.Kept || outcome.Reason == ReasonUnsettled
+	return outcome.Kept || outcome.Reason == game.ReasonUnsettled
 }
 
 // firingFields holds the key paths in the games' definitions where a name
@@ -249,7 +249,7 @@ func (c *collector) isFiring(context *schema.Context, reference schema.Reference
 // isEffect reports whether a statement is an effect or a call of a scripted
 // effect.
 func isEffect(context *schema.Context, effects string) bool {
-	return context.Declaration == game.DeclarationEffect ||
+	return context.Command != nil && context.Command.Database == game.DumpEffects ||
 		slices.ContainsFunc(context.References, func(reference schema.Reference) bool {
 			return reference.Database == effects || reference.Database == game.AnyCall
 		})

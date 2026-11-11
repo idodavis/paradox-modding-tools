@@ -102,6 +102,12 @@ func (i *Index) ListUses(database, name string) []Site {
 	return slices.SortedFunc(slices.Values(slices.Concat(uses, calls)), compareSites)
 }
 
+// CountUses returns how many references the index holds to a name in a
+// database.
+func (i *Index) CountUses(database, name string) int {
+	return len(i.listPosting(RoleRefers, database, name))
+}
+
 // IsUsedByGame reports whether the game's own files refer to a name in a
 // database. For a database whose definitions script calls, the calls that
 // may be to any callable database count too.
@@ -146,17 +152,28 @@ func (i *Index) ListMessages(key string) []Site {
 
 // ListKeys returns up to the given limit of the localization keys that
 // contain the given text, in any case, and have a loaded message in the given
-// language. The keys that start with the text come before the ones that only
-// contain it. Each key comes once, and within each of the two the keys come
-// in the order the index first met them.
-func (i *Index) ListKeys(language, text string, limit int) []string {
+// language. A key that is the text itself comes first, then the keys that
+// start with the text, then the ones that only contain it. Each key comes
+// once, and within each of the two the keys come in the order the index
+// first met them. It also reports whether the list is cut: it holds as many
+// keys as the limit allows, so more may match.
+func (i *Index) ListKeys(language, text string, limit int) ([]string, bool) {
 	databaseOrdinal, ok := i.Databases.Lookup(game.Localization)
 	if !ok {
-		return nil
+		return nil, false
 	}
 
 	posting, lower := Posting{Role: RoleLocalizes, Database: uint16(databaseOrdinal)}, strings.ToLower(text)
+	isWritten := func(nameOrdinal uint32) bool {
+		return slices.ContainsFunc(i.listKey(posting, nameOrdinal), func(site Site) bool {
+			return i.IsLoaded(site.File) && i.Language(site) == language
+		})
+	}
+
 	var starting, containing []string
+	if nameOrdinal, ok := i.Names.Lookup(text); ok && isWritten(nameOrdinal) {
+		starting = append(starting, text)
+	}
 
 	for nameOrdinal, key := range i.Names.Texts {
 		if len(starting) == limit {
@@ -166,15 +183,14 @@ func (i *Index) ListKeys(language, text string, limit int) []string {
 		folded := strings.ToLower(key)
 		starts := strings.HasPrefix(folded, lower)
 
-		// A key that only contains the text is kept only while the keys that
-		// start with it leave room.
-		if !starts && (len(starting)+len(containing) >= limit || !strings.Contains(folded, lower)) {
+		// The key that is the text is listed already. A key that only
+		// contains the text is kept only while the keys that start with it
+		// leave room.
+		if key == text || !starts && (len(starting)+len(containing) >= limit || !strings.Contains(folded, lower)) {
 			continue
 		}
 
-		if !slices.ContainsFunc(i.listKey(posting, uint32(nameOrdinal)), func(site Site) bool {
-			return i.IsLoaded(site.File) && i.Language(site) == language
-		}) {
+		if !isWritten(uint32(nameOrdinal)) {
 			continue
 		}
 
@@ -187,7 +203,7 @@ func (i *Index) ListKeys(language, text string, limit int) []string {
 
 	keys := slices.Concat(starting, containing)
 
-	return keys[:min(len(keys), limit)]
+	return keys[:min(len(keys), limit)], len(keys) >= limit
 }
 
 // ListNamed returns the sites of the occurrences with the given role whose

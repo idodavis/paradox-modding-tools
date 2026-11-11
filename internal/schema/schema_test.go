@@ -134,7 +134,7 @@ func TestReadDumpsFixtures(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if !slices.ContainsFunc(dumps.Commands, func(command DumpCommand) bool { return command.Declared == game.DeclarationEffect }) {
+		if !slices.ContainsFunc(dumps.Commands, func(command DumpCommand) bool { return command.Declared == declaredEffect }) {
 			t.Errorf("%s: no effect read", gameID)
 		}
 	}
@@ -352,7 +352,9 @@ func TestBuildInstalls(t *testing.T) {
 			}
 
 			elapsed := time.Since(start)
-			if len(built.Commands) == 0 {
+			commands := len(built.Databases[game.DumpEffects].Keys) + len(built.Databases[game.DumpTriggers].Keys) +
+				len(built.Databases[game.DumpLinks].Keys)
+			if commands == 0 {
 				t.Fatal("no commands")
 			}
 
@@ -371,8 +373,8 @@ func TestBuildInstalls(t *testing.T) {
 			})
 
 			t.Logf("%d files in %s: %d databases, %d commands, %d scripted definitions",
-				len(paths), elapsed.Round(time.Millisecond), len(built.Databases), len(built.Commands),
-				len(built.ScriptedDefinitions))
+				len(paths), elapsed.Round(time.Millisecond), len(built.Databases), commands,
+				len(built.ScriptedCopies))
 			t.Logf("fields by source: %d none, %d dumps, %d docs, %d vanilla; docs facts: %v",
 				sources[game.SourceNone], sources[game.SourceDumps], sources[game.SourceDocs], sources[game.SourceVanilla], facts)
 

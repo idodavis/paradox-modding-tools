@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/services/workspace"
@@ -43,7 +44,7 @@ type Site struct {
 	Range   Range           `json:"range"`          // the zero range where the answer has none
 	Text    string          `json:"text,omitempty"` // the text of the line, where the answer read the file
 	Kept    bool            `json:"kept"`
-	Reason  index.Reason    `json:"reason,omitempty"` // as index.ResolveSite gives it; unsettled where no source says
+	Reason  game.Reason     `json:"reason,omitempty"` // as index.ResolveSite gives it; unsettled where no source says
 	Label   string          `json:"label,omitempty"`  // the reason in words, naming the mod that hides a copy
 	Defines []string        `json:"defines,omitempty"`
 	Holder  string          `json:"holder,omitempty"` // the name of the definition that holds a copy the game keeps whole
@@ -69,7 +70,7 @@ func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Sit
 		} else {
 			site.Reason, hider = mods.FindHider(definition.File)
 		}
-		site.Label = strings.ReplaceAll(index.Reasons[site.Reason].Label, "{mod}", ws.DescribeMod(hider))
+		site.Label = strings.ReplaceAll(game.Reasons[site.Reason].Label, "{mod}", ws.DescribeMod(hider))
 		return site
 	})
 }

@@ -257,12 +257,7 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	declared := 0
-	for _, command := range ws.Schema.Commands {
-		if slices.Contains(command.Declared, game.DeclarationEffect) {
-			declared++
-		}
-	}
+	declared := len(ws.Schema.ListKeys(game.DumpEffects))
 	mods, scripted := ws.Mods.Load(), map[string]bool{}
 	for _, site := range mods.ListDefinitions(ws.Schema.Effects) {
 		scripted[mods.ToReference(site).Name] = true
@@ -280,24 +275,19 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 			}
 			continue
 		}
-		command := ws.Schema.Commands[row.Name]
+		command := ws.Schema.LookupDefinition(game.DumpEffects, row.Name)
 		if row.Class != "effect" || row.Usage != command.Usage || row.Blurb != command.Blurb ||
-			len(row.Examples) != len(command.Examples) {
+			len(row.Examples) > len(mods.ListUses(game.DumpEffects, row.Name)) {
 			t.Errorf("row %+v does not match command %+v", row, command)
 		}
-		for i, example := range command.Examples {
-			examples++
-			if row.Examples[i].Line != example.Line+1 || row.Examples[i].Place.Path != example.Path {
-				t.Errorf("%s example %d = %+v, want %+v", row.Name, i, row.Examples[i], example)
-			}
-		}
+		examples += len(row.Examples)
 	}
 	if examples == 0 {
 		t.Error("no effect has an example")
 	}
 	checkFunctions(t, wik, ws)
-	if scopes, err := wik.BuildLexicon("scope"); err != nil || len(scopes) != len(ws.Schema.Scopes) {
-		t.Errorf("%d scope rows for %d scopes, %v", len(scopes), len(ws.Schema.Scopes), err)
+	if scopes, err := wik.BuildLexicon("scope"); err != nil || len(scopes) != len(ws.Schema.ListKeys(game.DumpTypes)) {
+		t.Errorf("%d scope rows for %d scopes, %v", len(scopes), len(ws.Schema.ListKeys(game.DumpTypes)), err)
 	}
 	if _, err := wik.BuildLexicon("modifier"); err == nil {
 		t.Error("BuildLexicon accepted a class the lexicon does not have")

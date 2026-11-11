@@ -1,4 +1,7 @@
-<!-- The card shown when the pointer rests on a word in the editor, with the word's facts and problems. -->
+<!--
+  The card shown when the pointer rests on a word in the editor, with the
+  word's facts and problems.
+-->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -28,7 +31,7 @@ const { data: codes } = useQuery(codesQuery);
 const { data: levels } = useQuery(levelsQuery);
 const short = computed(() => settings.isHidden("hover.details"));
 
-/** describeProblem returns the label and text of a problem's cost and its advice. */
+/** describeProblem returns a problem's cost and its advice, each labelled. */
 function describeProblem(problem: Diagnostic): [string, string][] {
   const all = [
     ["What it costs", levels.value?.find((level) => level.id === problem.level)?.cost],
@@ -37,31 +40,6 @@ function describeProblem(problem: Diagnostic): [string, string][] {
   return all.filter((row): row is [string, string] => !!row[1]);
 }
 
-// What a block holds and the scope it runs in, as "effects, on a landed_title".
-const inside = computed(() => {
-  const scope = card?.leads && `on ${/^[aeio]/.test(card.leads) ? "an" : "a"} ${card.leads}`;
-  return [card?.holds, scope].filter(Boolean).join(", ");
-});
-const rows = computed(() => {
-  const stamp = card?.date;
-  const header = card?.image;
-  const size = header && `${header.width}×${header.height} ${header.format}`;
-  const mips = header && header.mipmaps > 1 && `${header.mipmaps} mip levels`;
-  const all: [string, string | null | undefined][] = [
-    ["Given to", card?.callee],
-    ["Needed", card?.need],
-    ["Supported scopes", card?.runs],
-    ["Takes", card?.takes || card?.target || card?.parameters?.join(", ")],
-    ["Usually", card?.writes?.join(", ")],
-    ["Returns", card?.returns],
-    ["Inside its block", inside.value],
-    ["Date", stamp && [stamp.date.day, stamp.month, stamp.date.year, stamp.era].filter(Boolean).join(" ")],
-    ["Number", card?.number?.toString()],
-    ["Weight", card?.weight ? `${card.weight}% of its siblings` : undefined],
-    ["Image", header && [size, header.pixelFormat, mips].filter(Boolean).join(", ")],
-  ];
-  return all.filter((row): row is [string, string] => !!row[1]);
-});
 const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
 // The label takes the color the editor gives the word, on a faint wash of
 // it. A word with no color of its own keeps the plain label.
@@ -117,11 +95,11 @@ const tint = computed(() => {
           </UTooltip>
         </div>
       </div>
-      <div v-if="!short && (rows.length || card.color)" class="px-3.5 py-2.5">
+      <div v-if="!short && (card.rows?.length || card.color)" class="px-3.5 py-2.5">
         <div class="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-1 text-12">
-          <template v-for="[label, value] in rows" :key="label">
-            <span class="text-dimmed">{{ label }}</span>
-            <span class="line-clamp-3 font-mono text-11 break-words text-toned" :title="value">{{ value }}</span>
+          <template v-for="row in card.rows ?? []" :key="row.label">
+            <span class="text-dimmed">{{ row.label }}</span>
+            <span class="line-clamp-3 font-mono text-11 break-words text-toned" :title="row.text">{{ row.text }}</span>
           </template>
           <template v-if="card.color">
             <span class="text-dimmed">Color</span>

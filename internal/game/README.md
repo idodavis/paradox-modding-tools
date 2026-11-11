@@ -27,7 +27,7 @@ flowchart TD
   database --> nestings["Nestings<br/>definitions inside its definitions"]
   database --> precedences["Precedences, EntryModes<br/>which copy the game keeps"]
   database --> references["References<br/>keys that name other definitions"]
-  databases -->|a block's shape| shapes["Shapes, Keywords<br/>how each block reads its keys"]
+  databases -->|a block's shape| shapes["Shape, Keywords<br/>what a block holds, and the language's fixed words"]
 ```
 
 ## Files
@@ -36,7 +36,8 @@ flowchart TD
 |---|---|
 | `game.go` | The package doc, the three games' rows, `Source`, and the lookups on a game, such as `LookupGame` and `FindLocReplacement`. |
 | `databases.go` | The database tables, such as `Databases`, `Nestings`, `Precedences`, `References` and `DatabaseFields`, and the words their rows take, such as `Keep` and `ModePlace`. |
-| `language.go` | The language's own rules, such as `Shapes` and their key rules, `Keywords`, and the names script saves and reads back. |
+| `keep.go` | Which copy of a name the game keeps when several files define it (`Precedence.FindWinner`), and the reasons in words. |
+| `language.go` | The language's own rules, such as the shapes a block can hold, `Keywords`, the databases the dumps fill, and the names script saves and reads back. |
 | `gui.go` | The rules for GUI files and the Visual view. |
 | `coat.go` | The rules for coats of arms. |
 | `install.go` | Finding an install, its version, the folders it mounts, its user-data, dump and Workshop folders, and the program that starts it. |
@@ -51,13 +52,13 @@ flowchart TD
 - **Nesting**: a database whose definitions are written inside another database's definitions.
 - **Callable**: a database whose definitions script calls by name, such as scripted effects.
 - **Precedence**: how definitions of one name combine, and which copy the game keeps.
+- **Winner**: the copy of a name that the game keeps among the copies in load order, and why.
+- **Reason**, **Cause**: why the game keeps a copy or does not read one, and what leaves a choice open.
 - **Entry mode**: a prefix before a definition's name, such as `REPLACE:`, that changes a copy already loaded.
 - **Reference**: a key path whose values name other definitions.
 - **Shape**: what a block holds, which decides how its keys are read.
-- **Key rule**: one way a block reads a key, such as a call, a command or a field. A shape tries its rules in order.
 - **Database field**: one field of a database's definitions with what no dump states about it, such as the weight
   that an on_action's `random_events` entry is written under.
 - **Keyword**: a fixed word of the script language, such as `if`, `limit` or `add`, with the blocks it is written
   in and what its own block holds. A command or a field of one database is no keyword.
-- **Declaration**: what the dumps declare a command as: an effect, a trigger or a link.
 - **Source**: where a fact the schema learned came from, ranked.

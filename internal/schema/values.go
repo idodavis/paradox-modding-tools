@@ -70,6 +70,7 @@ func (w *walker) lookupValue(context *Context, statement int32, level int) {
 		context.ValueGroup = CategoryChoice
 	case !slices.Contains(game.Bools, text) && w.schema.IsLink(text) && w.schema.isChain(text):
 		context.ValueGroup = CategoryLink
+		context.References = append(context.References, w.schema.listLinkUses(text, span.Start)...)
 	}
 }
 
@@ -107,7 +108,7 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 	// a math keyword's value such as opinion(scope:ruler) stands for the
 	// command's number, so its argument makes the references
 	if step, command, ok := w.schema.findKeyCall(text, span.Start); ok && context.isMath() {
-		return w.listArgumentReferences(command, command.ArgumentsOf(""), step.Arguments[0])
+		return w.listArgumentReferences(command, command.Field, step.Arguments[0])
 	}
 
 	claim, databases := w.listClaimed(context, text)
@@ -117,7 +118,7 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 	}
 
 	// a value with a space is literal text, since a message key has none
-	if database := game.Shapes[findShape(context)].Values; database != "" && !isPlaced && !strings.Contains(text, " ") {
+	if database := shapeRows[findShape(context)].values; database != "" && !isPlaced && !strings.Contains(text, " ") {
 		databases = append(databases, database)
 	}
 
@@ -169,7 +170,7 @@ func (c *Context) isMath() bool {
 // ArgumentKey, one of the given keys the command takes. Where that key takes
 // a name from a database, the argument is such a name, unless it is a link.
 // Any other argument is read as a chain of links.
-func (w *walker) listArgumentReferences(command *Command, arguments *Field, argument jomini.Argument) []Reference {
+func (w *walker) listArgumentReferences(command *Definition, arguments *Field, argument jomini.Argument) []Reference {
 	field := arguments.findChild(command.ArgumentKey)
 	if field != nil && field.Value.Value.Type == ValueTypeReference && field.Value.Value.Database != "" &&
 		!w.schema.IsLink(argument.Text) {
@@ -197,8 +198,8 @@ func (w *walker) listClaimed(context *Context, text string) (string, []string) {
 	}
 
 	claim := field.Value.Value.Database
-	step, _, isCall := w.schema.findKeyCall(text, 0)
-	linked := w.schema.IsLink(text) || isCall && w.schema.IsLink(step.Text)
+	_, command, isCall := w.schema.findKeyCall(text, 0)
+	linked := w.schema.IsLink(text) || isCall && command.Database == game.DumpLinks
 	if linked && (claim != game.Localization || w.schema.isChain(text)) {
 		return "", nil
 	}
@@ -228,7 +229,7 @@ func (w *walker) findScriptValue(context *Context, span jomini.Span, class jomin
 		!slices.ContainsFunc(links[:len(links)-1], func(link jomini.Link) bool { return !w.schema.IsLink(w.tree.Text(link.Span)) })
 	operated := context.isMath()
 	valued := context.Category != CategoryLink && context.Field != nil && context.Field.Value.Value.Values
-	_, declared := w.schema.FindCommand(last)
+	declared := w.schema.FindCommand(last) != nil
 	switch {
 	case w.schema.Values == "" || !chained && !operated && !valued:
 		return Reference{}, false
@@ -395,7 +396,7 @@ func (w *walker) listPrefixed(chain string, base int) []Reference {
 		}
 
 		prefix, label := chain[link.Prefix.Start-base:link.Prefix.End-base], chain[link.Name.Start-base:link.Name.End-base]
-		database := w.schema.Prefixes[prefix]
+		database, _ := w.schema.LookupPrefix(prefix)
 		switch {
 		case !slices.Contains(game.Links, database) && w.schema.IsLink(label):
 			references = append(references, w.listPrefixed(label, link.Name.Start)...)

@@ -7,8 +7,10 @@ notes, finds the pages that belong to a file, and builds the lexicon of the game
 wiki. The [Wiki pane](../../frontend/src/README.md) shows the pages and the lexicon, and the Patch Notes page shows the
 notes.
 
-The lexicon reads the [schema](../../internal/schema/README.md)'s commands, scopes and data functions with the places
-the game's own files use them, and the [workspace](../workspace/README.md) places each one. The
+The lexicon reads the definitions the dumps fill in the [schema](../../internal/schema/README.md) (the effects, the
+triggers, the links and the scope types) and its data functions. The examples of an effect, a trigger and a link are
+its first uses in the [index](../../internal/index/README.md), and the [workspace](../workspace/README.md) places each
+one. The
 [lsp](../lsp/README.md) service owns the table of lexicon classes.
 
 **Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),

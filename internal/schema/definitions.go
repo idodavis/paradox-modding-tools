@@ -16,9 +16,9 @@ import (
 // findDefinition returns the definition that a statement makes: a constant,
 // a name that a nesting defines, or what the file's format and database say
 // is defined there. It returns false if the statement defines nothing.
-func (w *walker) findDefinition(statement int32, level int) (Definition, bool) {
+func (w *walker) findDefinition(statement int32, level int) (Copy, bool) {
 	if label := w.frames[level].label; strings.HasPrefix(label, "@") {
-		return Definition{Database: game.Constant, Name: label, Span: w.frames[level].span, Statement: statement, Local: true}, true
+		return Copy{Database: game.Constant, Name: label, Span: w.frames[level].span, Statement: statement, Local: true}, true
 	}
 
 	if definition, ok := w.findNested(statement, level); ok {
@@ -39,7 +39,7 @@ func (w *walker) findDefinition(statement int32, level int) (Definition, bool) {
 // its key, or the value it writes alone, or the value of the nesting's name
 // key, joined to its holder's name where it has a holder. It returns false
 // if it makes none.
-func (w *walker) findNested(statement int32, level int) (Definition, bool) {
+func (w *walker) findNested(statement int32, level int) (Copy, bool) {
 	current := w.tree.Statements[statement]
 	label, span := w.frames[level].label, w.frames[level].span
 	if label == "" && current.IsListed() {
@@ -48,7 +48,7 @@ func (w *walker) findNested(statement int32, level int) (Definition, bool) {
 	}
 
 	if label == "" {
-		return Definition{}, false
+		return Copy{}, false
 	}
 
 	for _, nesting := range w.nestings {
@@ -66,7 +66,7 @@ func (w *walker) findNested(statement int32, level int) (Definition, bool) {
 			continue
 		}
 
-		definition := Definition{Database: database, Name: label, Span: span, Statement: statement}
+		definition := Copy{Database: database, Name: label, Span: span, Statement: statement}
 		if nesting.NameKey != "" {
 			name, ok := w.findNameSpan(statement, nesting.NameKey)
 			if !ok {
@@ -83,7 +83,7 @@ func (w *walker) findNested(statement int32, level int) (Definition, bool) {
 		return definition, true
 	}
 
-	return Definition{}, false
+	return Copy{}, false
 }
 
 // findNestedDatabase returns the database that a nesting defines in, and
@@ -125,7 +125,7 @@ func (w *walker) findNameSpan(statement int32, nameKey string) (jomini.Span, boo
 // findGUIDefinition returns the definition a statement of a GUI file makes:
 // a name a declaring lead or key gives, the value of a GUI name key, or a
 // window at the top of the file. It returns false if it makes none.
-func (w *walker) findGUIDefinition(statement int32, level int) (Definition, bool) {
+func (w *walker) findGUIDefinition(statement int32, level int) (Copy, bool) {
 	current := w.tree.Statements[statement]
 	label, span := w.frames[level].label, w.frames[level].span
 	lead := w.findLead(statement)
@@ -145,20 +145,20 @@ func (w *walker) findGUIDefinition(statement int32, level int) (Definition, bool
 		return w.makeGUIDefinition(game.GUI.WidgetDatabase, w.findWindowLabel(statement), span, statement)
 	}
 
-	return Definition{}, false
+	return Copy{}, false
 }
 
 // makeGUIDefinition returns a definition in a GUI database. Where that
 // database's definitions are local to their file, the rest of the file can
 // call the definition. It returns false if the label is empty.
-func (w *walker) makeGUIDefinition(database, label string, span jomini.Span, statement int32) (Definition, bool) {
+func (w *walker) makeGUIDefinition(database, label string, span jomini.Span, statement int32) (Copy, bool) {
 	owner := w.schema.Databases[database]
 	local := owner != nil && owner.Callable.Local
 	if local && label != "" {
-		w.inline[label] = makeScripted(owner, w.tree, statement)
+		w.inline[label], _ = makeScripted(owner, label, w.tree, statement)
 	}
 
-	return Definition{Database: database, Name: label, Span: span, Statement: statement, Local: local}, label != ""
+	return Copy{Database: database, Name: label, Span: span, Statement: statement, Local: local}, label != ""
 }
 
 // findWindowLabel returns the name of a window at the top of a GUI file, or
@@ -183,11 +183,11 @@ func (w *walker) findWindowLabel(statement int32) string {
 // block's key, and its name is the value of the key that the file type
 // names. It returns false if the statement is no keyed top block or its name
 // is empty.
-func (w *walker) findAssetDefinition(statement int32, level int) (Definition, bool) {
+func (w *walker) findAssetDefinition(statement int32, level int) (Copy, bool) {
 	current := w.tree.Statements[statement]
 	key, span := w.frames[level].label, w.frames[level].span
 	if level != 1 || key == "" || !current.IsBlock() {
-		return Definition{}, false
+		return Copy{}, false
 	}
 
 	label := key
@@ -197,7 +197,7 @@ func (w *walker) findAssetDefinition(statement int32, level int) (Definition, bo
 
 	database := strings.TrimPrefix(strings.ToLower(path.Ext(w.rel)), ".") + "." + key
 
-	return Definition{Database: database, Name: label, Span: span, Statement: statement}, label != ""
+	return Copy{Database: database, Name: label, Span: span, Statement: statement}, label != ""
 }
 
 // findScriptDefinition returns the definition a statement of a script file
@@ -205,25 +205,25 @@ func (w *walker) findAssetDefinition(statement int32, level int) (Definition, bo
 // by its key or by the value of its name key, after any entry mode. An
 // event's name opens with a namespace the file declares above it. It
 // returns false if the statement makes none.
-func (w *walker) findScriptDefinition(statement int32, level int) (Definition, bool) {
+func (w *walker) findScriptDefinition(statement int32, level int) (Copy, bool) {
 	label, span := w.frames[level].label, w.frames[level].span
 	if owner := w.schema.Databases[w.declaring[w.findLead(statement)]]; owner != nil && label != "" {
-		return Definition{Database: owner.Name, Name: label, Span: span, Statement: statement, Local: true}, true
+		return Copy{Database: owner.Name, Name: label, Span: span, Statement: statement, Local: true}, true
 	}
 
 	database := w.database
 	if database == nil || !w.frames[level-1].wraps {
-		return Definition{}, false
+		return Copy{}, false
 	}
 
 	switch {
 	case database.Row.DefinedBy != "":
-		return Definition{}, false
+		return Copy{}, false
 
 	case database.Row.NameKey != "":
 		name, ok := w.findNameSpan(statement, database.Row.NameKey)
 		if !ok {
-			return Definition{}, false
+			return Copy{}, false
 		}
 
 		// a macro's name is written before its parameters
@@ -232,12 +232,12 @@ func (w *walker) findScriptDefinition(statement int32, level int) (Definition, b
 	}
 
 	if label == "" || slices.Contains(database.Row.WrapperKeys, label) {
-		return Definition{}, false
+		return Copy{}, false
 	}
 
 	mode, label := w.row.SplitMode(label)
 	if database.Row.Contents == game.ContentsEvents && !w.isEvent(label, statement) {
-		return Definition{}, false
+		return Copy{}, false
 	}
 
 	// the name follows the mode and its colon
@@ -245,7 +245,7 @@ func (w *walker) findScriptDefinition(statement int32, level int) (Definition, b
 	value, _ := w.tree.FindChildValue(statement, database.Precedence.PriorityKey)
 	priority, _ := strconv.Atoi(value)
 
-	return Definition{
+	return Copy{
 		Database: database.Name, Name: label, Span: span, Statement: statement, Mode: mode,
 		Priority: priority, Local: database.Callable.Local,
 	}, true

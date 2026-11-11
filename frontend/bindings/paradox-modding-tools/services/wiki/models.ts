@@ -6,9 +6,10 @@
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * A LexiconRow is one effect, trigger, link, scope or data function the game's dumps declare, or one scripted effect or
- * trigger. Its examples are the first places the game's own files write it, as the schema keeps them. A scripted row's
- * are the first uses the index finds.
+ * A LexiconRow is one effect, trigger, link, scope or data function the
+ * game's dumps declare, or one scripted effect or trigger. Its examples are
+ * the first uses the index finds; a data function's are the first places the
+ * game's own files call it, as the schema keeps them.
  */
 export interface LexiconRow {
     /**

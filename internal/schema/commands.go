@@ -1,9 +1,10 @@
-// commands.go looks up the commands, the links and the command patterns that
-// the dumps declare, and the scopes they run in.
+// commands.go looks up what the dumps declare: the effects, the triggers,
+// the links, the patterns that make commands and the types of scope.
 
 package schema
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
@@ -11,32 +12,64 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// ArgumentsOf returns the keys a command takes under the given declaration,
-// or under its first one if the dumps do not declare it as the given one. It
-// returns nil if it takes none there.
-func (c *Command) ArgumentsOf(declaration game.Declaration) *Field {
-	return c.Arguments[c.resolveDeclaration(declaration)]
+// A ChainLink is one link of a chain, as ResolveChain read it.
+type ChainLink struct {
+	// Definition is the link the dumps declare. It is nil for a link they do
+	// not declare.
+	Definition *Definition
+
+	// Scope is the scope type the chain is in after the link. It is "" where
+	// it is not known.
+	Scope string
 }
 
-// resolveDeclaration returns the given declaration if the dumps declare the
-// command as it or as nothing, else the first one they declare it as.
-func (c *Command) resolveDeclaration(declaration game.Declaration) game.Declaration {
-	if slices.Contains(c.Declared, declaration) || len(c.Declared) == 0 {
-		return declaration
+// commandDatabases are the databases of the dumps' commands, in the order a
+// name is looked up in them.
+var commandDatabases = []string{game.DumpEffects, game.DumpTriggers, game.DumpLinks}
+
+// LookupDefinition returns the definition a database declares for a key, as
+// written or else in lower case. It returns nil if the database declares
+// none, or the schema has no such database.
+func (s *Schema) LookupDefinition(database, key string) *Definition {
+	owner := s.Databases[database]
+	if owner == nil {
+		return nil
 	}
 
-	return c.Declared[0]
+	return cmp.Or(owner.Definitions[key], owner.Definitions[strings.ToLower(key)])
 }
 
-// FindCommand returns the command a key names, as written or else in lower
-// case. It returns false if the dumps declare none.
-func (s *Schema) FindCommand(key string) (*Command, bool) {
-	command, ok := s.Commands[key]
-	if !ok {
-		command, ok = s.Commands[strings.ToLower(key)]
+// ListKeys returns the keys a database declares outside the index, sorted. It
+// returns none for a database that declares none, or that the schema lacks.
+func (s *Schema) ListKeys(database string) []string {
+	owner := s.Databases[database]
+	if owner == nil {
+		return nil
 	}
 
-	return command, ok
+	return owner.Keys
+}
+
+// FindCommand returns the first effect, trigger or link that a key names, in
+// that order. It returns nil if the dumps declare none.
+func (s *Schema) FindCommand(key string) *Definition {
+	for _, database := range commandDatabases {
+		if definition := s.LookupDefinition(database, key); definition != nil {
+			return definition
+		}
+	}
+
+	return nil
+}
+
+// makeField returns the definition's field. If it has none, it adds an empty
+// one from the given source.
+func (d *Definition) makeField(source game.Source) *Field {
+	if d.Field == nil {
+		d.Field = &Field{Source: source}
+	}
+
+	return d.Field
 }
 
 // findKeyCall parses a key written as a command's name with one argument in
@@ -44,7 +77,7 @@ func (s *Schema) FindCommand(key string) (*Command, bool) {
 // and the command. The step's spans are offsets in the file, where the key
 // starts at the given offset. It returns false for any other key, and when
 // the name is no command.
-func (s *Schema) findKeyCall(key string, start int) (jomini.Step, *Command, bool) {
+func (s *Schema) findKeyCall(key string, start int) (jomini.Step, *Definition, bool) {
 	if !strings.HasSuffix(key, ")") {
 		return jomini.Step{}, nil, false
 	}
@@ -54,13 +87,15 @@ func (s *Schema) findKeyCall(key string, start int) (jomini.Step, *Command, bool
 		return jomini.Step{}, nil, false
 	}
 
-	command, ok := s.FindCommand(call.Steps[0].Text)
+	// a link that takes a name after a colon takes it in parentheses too
+	label := call.Steps[0].Text
+	command := cmp.Or(s.FindCommand(label), s.lookupLink(label, true))
 
-	return call.Steps[0], command, ok
+	return call.Steps[0], command, command != nil
 }
 
 // findStatementCall does what findKeyCall does for a statement's key.
-func (s *Schema) findStatementCall(tree *jomini.Tree, statement int32) (jomini.Step, *Command, bool) {
+func (s *Schema) findStatementCall(tree *jomini.Tree, statement int32) (jomini.Step, *Definition, bool) {
 	span := tree.UnquotedSpan(tree.Statements[statement].Key)
 
 	return s.findKeyCall(tree.Text(span), span.Start)
@@ -88,40 +123,40 @@ func (s *Schema) findCallee(tree *jomini.Tree, statement int32) string {
 }
 
 // findStar returns the start and end of the text in a lower-case key that
-// fills the pattern's star. It returns false if the key does not fit the
-// pattern, leaves nothing for the star, or has a dot there. A dot means a
-// chain of links, and no definition's name holds one.
-func (c CommandPattern) findStar(key string) (start, end int, fits bool) {
-	prefix, suffix, _ := strings.Cut(c.Key, "*")
+// fills the star of a pattern's key. It returns false if the key does not
+// fit the pattern, leaves nothing for the star, or has a dot there. A dot
+// means a chain of links, and no definition's name holds one.
+func (d *Definition) findStar(key string) (start, end int, fits bool) {
+	prefix, suffix, _ := strings.Cut(d.Key, "*")
 	start, end = len(prefix), len(key)-len(suffix)
 
 	return start, end, end > start && !strings.Contains(key[start:end], ".") && strings.HasPrefix(key, prefix) &&
 		strings.HasSuffix(key, suffix)
 }
 
-// findPatterns returns the command patterns that make a key, or none. A
-// command the dumps declare is made by the patterns that list it, and any
+// findPatterns returns the patterns of a database that make a key, or none.
+// A command the dumps declare is made by the patterns that list it, and any
 // other key by the fitting pattern with the shortest star, the first on a
-// tie, in every database that has it.
-func (s *Schema) findPatterns(key string) []CommandPattern {
+// tie.
+func (s *Schema) findPatterns(database, key string) []*Definition {
+	owner := s.Databases[database]
 	key = strings.ToLower(key)
-	command := s.Commands[key]
-	if !strings.Contains(key, "_") || command != nil && !command.Patterned {
+	if owner == nil || !strings.Contains(key, "_") {
 		return nil
 	}
 
-	var best []CommandPattern
+	if definition := owner.Definitions[key]; definition != nil {
+		return definition.Patterns
+	}
+
+	var best []*Definition
 	shortest := len(key)
-	for _, pattern := range s.CommandPatterns {
+	for _, pattern := range owner.Patterns {
 		start, end, fits := pattern.findStar(key)
 		switch {
 		case !fits: // the key does not fit this pattern
-		case command != nil:
-			if _, listed := slices.BinarySearch(pattern.Commands, key); listed {
-				best = append(best, pattern)
-			}
 		case end-start < shortest:
-			best, shortest = []CommandPattern{pattern}, end-start
+			best, shortest = []*Definition{pattern}, end-start
 		case end-start == shortest && pattern.Key == best[0].Key:
 			best = append(best, pattern)
 		}
@@ -130,68 +165,147 @@ func (s *Schema) findPatterns(key string) []CommandPattern {
 	return best
 }
 
-// ResolveLink returns the scope that a link leads to from the given scope. It
-// returns false if the link is unknown, wild, leads nowhere or does not run in
-// that scope.
-func (s *Schema) ResolveLink(link, scope string) (string, bool) {
-	command, ok := s.Commands[link]
-	if !ok || command.Wild || !slices.Contains(command.Declared, game.DeclarationLink) || command.Target == "" {
-		return "", false
-	}
-
-	if scope != "" && len(command.Scopes) > 0 && !slices.Contains(command.Scopes, scope) {
-		return "", false
-	}
-
-	return command.Target, true
-}
-
-// isScope reports whether a name is a scope type that script runs in, meaning
-// the dumps declare triggers or effects for it. It is false for names the
-// dumps use for no scope, such as none, though they declare them like one.
-func (s *Schema) isScope(scope string) bool {
-	scopeType := s.Scopes[scope]
-
-	return (scopeType.Triggers || scopeType.Effects) && !slices.Contains(dumpPhrases.NoScope, scope)
-}
-
-// IsLink reports whether a key or a value starts with a scope link, ignoring
-// case, as scope:target and prev do.
-func (s *Schema) IsLink(key string) bool {
-	head, prefixed := splitLinkHead(key)
-	command := s.Commands[head]
+// lookupLink returns the link the dumps declare for a key as it is written:
+// with a name after a colon, as the flag says, or alone. The dumps list some
+// links both ways, as culture:norse and root.culture are, each with its own
+// text, scopes and target, so a link written with a colon is kept under its
+// key and the colon. It returns nil if the dumps declare none.
+func (s *Schema) lookupLink(key string, prefixed bool) *Definition {
 	if prefixed {
-		_, reserved := s.Prefixes[head]
-		return reserved || command != nil && command.Wild
+		key += ":"
 	}
 
-	return command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclarationLink)
+	return s.LookupDefinition(game.DumpLinks, key)
 }
+
+// FindLink returns the link that a key or a value starts with, in any case:
+// its first link, or that link's prefix where it is written with a name
+// after a colon, as scope:target is. A wild card fits only as a prefix. It
+// returns nil if the text starts with no link.
+func (s *Schema) FindLink(text string) *Definition {
+	head := jomini.Links(text, 0)[0]
+	if !head.Prefix.IsEmpty() {
+		prefix := text[head.Prefix.Start:head.Prefix.End]
+		if link := s.lookupLink(prefix, true); link != nil {
+			return link
+		}
+
+		if link := s.lookupLink(prefix, false); link != nil && link.Wild {
+			return link
+		}
+
+		return nil
+	}
+
+	link := s.lookupLink(text[head.Span.Start:head.Span.End], false)
+	if link == nil || link.Wild {
+		return nil
+	}
+
+	return link
+}
+
+// IsLink reports whether a key or a value starts with a scope link, as
+// FindLink finds one.
+func (s *Schema) IsLink(text string) bool { return s.FindLink(text) != nil }
 
 // isChain reports whether every step of a value written with dots is a scope
 // link, as owner.ruler is and a text key such as war.0051.start is not.
 func (s *Schema) isChain(text string) bool {
 	return !slices.ContainsFunc(jomini.Links(text, 0), func(link jomini.Link) bool {
-		return !s.IsLink(text[link.Span.Start:link.Span.End])
+		return s.FindLink(text[link.Span.Start:link.Span.End]) == nil
 	})
 }
 
-// isKeyLink reports whether a key starts with a scope link, as IsLink does,
-// but a link that requires data, as EU5's modifier:<key> does, is none when
-// written alone.
-func (s *Schema) isKeyLink(key string) bool {
-	head, prefixed := splitLinkHead(key)
-
-	return s.IsLink(key) && (prefixed || s.Commands[head].Bare)
-}
-
-// splitLinkHead returns the first link of a chain in lower case, or only the
-// prefix of one such as scope:target, with true.
-func splitLinkHead(key string) (string, bool) {
-	head := jomini.Links(key, 0)[0]
-	if !head.Prefix.IsEmpty() {
-		return strings.ToLower(key[head.Prefix.Start:head.Prefix.End]), true
+// LookupPrefix returns the database of the names written after a link
+// prefix, as scope:x names a saved scope, and whether the text is a link
+// prefix at all. The database is "" where none is known.
+func (s *Schema) LookupPrefix(prefix string) (string, bool) {
+	link := s.lookupLink(prefix, true)
+	if link == nil {
+		return "", false
 	}
 
-	return strings.ToLower(key[head.Span.Start:head.Span.End]), false
+	if !link.Field.claimsDatabase() {
+		return "", true
+	}
+
+	return link.Field.Value.Value.Database, true
+}
+
+// ResolveChain returns each link of a chain written in the block of the
+// given context, with the scope type the chain is in after it. root, this
+// and prev name the scopes the context holds, and a saved scope has the type
+// it was saved with, among the given scopes saved before the chain. The
+// scope after a link that cannot be followed is "", and so is every scope
+// after it.
+func (s *Schema) ResolveChain(text string, holder *Context, saved []Saved) []ChainLink {
+	links := jomini.Links(text, 0)
+	chain := make([]ChainLink, len(links))
+	scope, followed := holder.Scope, true
+	for position, link := range links {
+		label := strings.ToLower(text[link.Span.Start:link.Span.End])
+		prefix := strings.ToLower(text[link.Prefix.Start:link.Prefix.End])
+		definition := s.lookupLink(cmp.Or(prefix, label), prefix != "")
+		chain[position].Definition = definition
+		if !followed {
+			continue
+		}
+
+		switch {
+		case label == game.ScopeLinks.Root:
+			scope = holder.Root
+		case label == game.ScopeLinks.This:
+			scope = holder.Scope
+		case label == game.ScopeLinks.Previous:
+			scope = ""
+			if len(holder.Previous) > 0 {
+				scope = holder.Previous[0]
+			}
+
+		case prefix == game.SavedScopes:
+			scope = findSavedType(saved, text[link.Name.Start:link.Name.End])
+		case prefix != "":
+			scope = definition.ResolveTarget("")
+		default:
+			scope = definition.ResolveTarget(scope)
+		}
+
+		chain[position].Scope = scope
+		followed = scope != ""
+	}
+
+	return chain
+}
+
+// findSavedType returns the type of the scope last saved under a label. It
+// returns "" if none is, or its type is not known.
+func findSavedType(saved []Saved, label string) string {
+	for _, scope := range slices.Backward(saved) {
+		if scope.Name == label {
+			return scope.Type
+		}
+	}
+
+	return ""
+}
+
+// ResolveTarget returns the scope a link leads to from the given scope. It
+// returns "" for no link, a wild card, a link that leads nowhere and one
+// that does not run in that scope. Any link runs in a scope that is "".
+func (d *Definition) ResolveTarget(scope string) string {
+	if d == nil || d.Wild || scope != "" && len(d.Scopes) > 0 && !slices.Contains(d.Scopes, scope) {
+		return ""
+	}
+
+	return d.Target
+}
+
+// isScope reports whether a name is a scope type that script runs in. It is
+// false for the names the dumps use for no scope, such as none, though they
+// declare them like one.
+func (s *Schema) isScope(scope string) bool {
+	definition := s.LookupDefinition(game.DumpTypes, scope)
+
+	return definition != nil && definition.Runs && !slices.Contains(dumpPhrases.NoScope, scope)
 }

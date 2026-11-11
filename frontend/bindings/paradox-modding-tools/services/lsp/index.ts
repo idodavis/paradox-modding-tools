@@ -8,11 +8,12 @@ export {
 
 export type {
     Card,
-    CardDate,
+    CardRow,
     Class,
     Code,
     ColorSite,
     Completion,
+    CompletionList,
     Diagnostic,
     Draft,
     Edit,

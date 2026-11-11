@@ -51,11 +51,13 @@ export function ColorText(path: string, format: files$0.Format, text: string): $
 }
 
 /**
- * Complete returns the completion candidates at a position in a file: at a key the language's operators, commands and
- * fields, at a value what may be written there. A word written alone in a block may be a value or a key typed before
- * its equals sign, so it gets both. It returns an empty list for a file that is not script.
+ * Complete returns the completion candidates at a position in a file: at a
+ * key the language's keywords, commands and fields, at a value what may be
+ * written there. A word written alone in a block may be a value or a key
+ * typed before its equals sign, so it gets both. It returns an empty list for
+ * a file that is not script.
  */
-export function Complete(path: string, line: number, column: number): $CancellablePromise<$models.Completion[] | null> {
+export function Complete(path: string, line: number, column: number): $CancellablePromise<$models.CompletionList> {
     return $Call.ByID(2419173360, path, line, column);
 }
 
@@ -112,8 +114,8 @@ export function Format(path: string, tabSize: number, insertSpaces: boolean): $C
 }
 
 /**
- * Hover returns the hover card for the key or value at a position in a file. It returns nil if the position is on
- * nothing.
+ * Hover returns the hover card for the key or value at a position in a file.
+ * It returns nil if the position is on nothing.
  */
 export function Hover(path: string, line: number, column: number): $CancellablePromise<$models.Card | null> {
     return $Call.ByID(3832061187, path, line, column);

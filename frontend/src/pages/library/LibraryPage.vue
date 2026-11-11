@@ -45,14 +45,12 @@ const rows = computed(() =>
   })),
 );
 const active = computed(() => rows.value.find((row) => row.record.id === store.activeId()));
-// A game's group counts all its workspaces and lists the cards of those but the active one, which has the hero above.
+// A game's group lists the cards of all its workspaces. The active one keeps
+// its card there, marked, and also has the hero above.
 const groups = computed(() =>
   [...(games.value ?? []), undefined]
-    .map((game) => {
-      const own = rows.value.filter((row) => row.game?.id === game?.id);
-      return { game, count: own.length, cards: own.filter((row) => row !== active.value) };
-    })
-    .filter((group) => group.count),
+    .map((game) => ({ game, cards: rows.value.filter((row) => row.game?.id === game?.id) }))
+    .filter((group) => group.cards.length),
 );
 const summary = computed(
   () => `${plural(rows.value.length, "workspace")} across ${plural(groups.value.length, "game")}.`,
@@ -293,7 +291,7 @@ function describeMenu(record: Workspace): DropdownMenuItem[] {
         <div class="flex items-center gap-2.5">
           <img v-if="group.game" :src="gameIcon(group.game.id)" :alt="group.game.name" class="size-4.5 rounded-sm" />
           <span class="text-13 font-semibold">{{ group.game?.name ?? "No game" }}</span>
-          <span class="text-12 text-dimmed">{{ plural(group.count, "workspace") }}</span>
+          <span class="text-12 text-dimmed">{{ plural(group.cards.length, "workspace") }}</span>
           <span class="grow" />
           <UButton
             label="New workspace"
@@ -303,7 +301,7 @@ function describeMenu(record: Workspace): DropdownMenuItem[] {
             :to="{ name: 'wizard', query: { game: group.game?.id } }"
           />
         </div>
-        <div v-if="group.cards.length" class="grid grid-cols-3 gap-4">
+        <div class="grid grid-cols-3 gap-4">
           <div
             v-for="row in group.cards"
             :key="row.record.id"
@@ -315,6 +313,7 @@ function describeMenu(record: Workspace): DropdownMenuItem[] {
           >
             <div class="flex min-w-0 items-center gap-2">
               <span class="truncate text-13 font-semibold">{{ row.record.name }}</span>
+              <UBadge v-if="row === active" label="Active" color="primary" size="sm" />
               <span class="grow" />
               <UDropdownMenu :items="describeMenu(row.record)">
                 <UButton icon="i-lucide-ellipsis" variant="ghost" size="sm" square aria-label="More" @click.stop />

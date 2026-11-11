@@ -11,6 +11,7 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
@@ -52,7 +53,7 @@ func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	}
 	tree := document.Tree
 	use := tree.FindStatement(mods.Occurrence(fire.Use).Span.Start)
-	firing := findFiring(ws, tree, use)
+	firing := findFiring(document, use)
 	edge.Effect = tree.Text(tree.Statements[firing].Key)
 	edge.Delay = findDelay(tree, firing)
 	edge.Title = findTitle(ws, mods, tree, firing, game.TitleKey)
@@ -77,23 +78,23 @@ func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []E
 
 // findFiring returns the statement that writes a firing, given the statement its reference sits in. That is the block
 // around it where the reference is a list value, a numbered branch or a field of an effect, such as trigger_event's id.
-func findFiring(ws *workspace.Session, tree *jomini.Tree, statement int32) int32 {
+func findFiring(document workspace.Document, statement int32) int32 {
 	for {
-		current := tree.Statements[statement]
-		key := tree.Text(current.Key)
-		isField := isEffect(ws, tree.Text(tree.Statements[current.Parent].Key)) && !isEffect(ws, key)
+		current := document.Tree.Statements[statement]
+		isField := isEffect(&document.Contexts[current.Parent]) && !isEffect(&document.Contexts[statement])
 		isHeld := current.IsListed() || current.KeyClass.IsNumberKey() || isField
 		if current.Parent == 0 || !isHeld {
 			return statement
 		}
+
 		statement = current.Parent
 	}
 }
 
-// isEffect reports whether a key is an effect the dumps declare.
-func isEffect(ws *workspace.Session, key string) bool {
-	command, ok := ws.Schema.FindCommand(key)
-	return ok && slices.Contains(command.Declared, game.DeclarationEffect)
+// isEffect reports whether the walk decided a statement's key is an effect
+// the dumps declare.
+func isEffect(context *schema.Context) bool {
+	return context.Command != nil && context.Command.Database == game.DumpEffects
 }
 
 // findDelay returns the delay written for a firing, in words, or "" if none is written. It is the delay of the nearest
@@ -182,7 +183,7 @@ func makeStep(ws *workspace.Session, mods *index.Index, document workspace.Docum
 		})
 	case context.Iterates:
 		step.Kind = kindList
-	case ws.Schema.IsLink(key):
+	case context.Category == schema.CategoryLink:
 		step.Kind = kindScope
 	case key == game.OptionKey && current.Parent == definition:
 		step.Kind, step.Title = kindOption, findTitle(ws, mods, tree, statement, game.OptionTitleKey)

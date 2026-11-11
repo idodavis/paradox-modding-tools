@@ -210,7 +210,7 @@ func (mcp *Service) addEditorTools(server *sdk.Server) {
 		}))
 	sdk.AddTool(server, &sdk.Tool{Name: "complete", Title: "List what fits at a position", Annotations: readsOnly,
 		Description: "Lists what can be written at a position: the keys, values and names that fit there."},
-		answer(func(request position) ([]lsp.Completion, error) {
+		answer(func(request position) (lsp.CompletionList, error) {
 			return mcp.LSP.Complete(request.Path, request.Line, request.Column)
 		}))
 	sdk.AddTool(server, &sdk.Tool{Name: "hover", Title: "Look up a name", Annotations: readsOnly,

@@ -17,7 +17,6 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -179,7 +178,7 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	findings := listFindings(report)
 	contest := findFinding(t, findings, "contest", "shared", "trait")
 	if contest.Question != lsp.QuestionCompatibility || len(contest.Sites) != 2 || !contest.Sites[0].Kept ||
-		contest.Sites[1].Kept || contest.Sites[0].Reason != index.ReasonLast || contest.Sites[0].Place.Origin != modB {
+		contest.Sites[1].Kept || contest.Sites[0].Reason != game.ReasonLast || contest.Sites[0].Place.Origin != modB {
 		t.Errorf("contest of shared: %+v", contest)
 	}
 	shipped := findFinding(t, findings, "file-contest", "common/traits/m_traits.txt", game.File)
@@ -193,7 +192,7 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	// the game's own v_traits.txt loads after the mods' m_traits.txt
 	unused := findFinding(t, findings, "unused-copy", "brave", "trait")
 	if unused.Facts["beaten"] != titleB || unused.Facts["winner"] == "" || len(unused.Sites) != 2 ||
-		unused.Sites[0].Reason != index.ReasonLast || !unused.Sites[0].Place.ReadOnly || !unused.Sites[0].Kept || unused.Sites[1].Kept {
+		unused.Sites[0].Reason != game.ReasonLast || !unused.Sites[0].Place.ReadOnly || !unused.Sites[0].Kept || unused.Sites[1].Kept {
 		t.Errorf("unused copy of brave: %+v", unused)
 	}
 	replaced := findFinding(t, findings, "override", "events/v_events.txt", game.File)

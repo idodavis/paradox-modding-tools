@@ -1,9 +1,11 @@
 // scripted.go reads the scripted definitions, the modifier types and the
-// event namespaces that the workspace's files declare.
+// event namespaces that the workspace's files declare, and keeps of each
+// scripted definition the copy the game keeps.
 
 package schema
 
 import (
+	"cmp"
 	"maps"
 	"slices"
 	"strings"
@@ -21,9 +23,8 @@ import (
 type declarer struct {
 	schema *Schema
 
-	// scripted holds the scripted definitions the file declares, by caller
-	// and name.
-	scripted map[string]ScriptedDefinition
+	// copies are the scripted definitions the file declares, as written.
+	copies []ScriptedCopy
 
 	// widgets are the widget types the file defines or builds on.
 	widgets []string
@@ -39,62 +40,244 @@ type declarer struct {
 	body *body
 }
 
-// body is a scripted definition that a declarer is reading, with the keys it
-// is recorded under once it is read.
+// body is a scripted definition that a declarer is reading, kept once it is
+// read.
 type body struct {
 	statement int32
-
-	// keys are the keys it is recorded under, each a caller and a name.
-	keys []string
-
-	scripted ScriptedDefinition
+	scripted  ScriptedCopy
 }
+
+// modSequence is the place of the first file of a mod among the files that
+// declare: after every file of the game.
+const modSequence = 1 << 30
 
 // SetScripted reads, with the given parser, the scripted definitions,
 // modifier types and event namespaces that the given files of the
 // workspace's mods declare, in place of what those files declared before, so
 // calls to them are known calls. A file that cannot be parsed, or is gone,
-// declares nothing.
-func (s *Schema) SetScripted(changed []files.File, parse func(path string) (*jomini.Tree, error)) {
+// declares nothing, and neither does a file the game does not read: unread
+// holds the keys of those, the game's own among them. The winners are picked
+// again only when a changed file declares a scripted definition, or declared
+// one, or the unread files differ: any other save leaves every copy as it
+// was.
+func (s *Schema) SetScripted(changed []files.File, unread map[string]bool, parse func(path string) (*jomini.Tree, error)) {
 	declaring := slices.DeleteFunc(slices.Clone(changed), func(file files.File) bool {
 		return file.Format != files.FormatScript || !s.declares(file)
 	})
 	declarers := s.listDeclarers(declaring, parse)
 	next := &modScripted{
-		byFile: map[string]*declarer{}, all: map[string]ScriptedDefinition{}, modifiers: map[string]*Field{},
-		namespaces: map[string]bool{},
+		byFile: map[string]*declarer{}, unread: unread, modifiers: map[string]*Field{}, namespaces: map[string]bool{},
 	}
-	if previous := s.mods.Load(); previous != nil {
-		next.byFile = maps.Clone(previous.byFile)
+
+	previous := s.mods.Load()
+	stale := previous == nil || !maps.Equal(unread, previous.unread)
+	if previous != nil {
+		next.byFile, next.sequence, next.winners = maps.Clone(previous.byFile), previous.sequence, previous.winners
 	}
 
 	for _, file := range changed {
+		stale = stale || next.byFile[file.Key] != nil && len(next.byFile[file.Key].copies) > 0
 		delete(next.byFile, file.Key)
 	}
 
 	for position, declarer := range declarers {
 		if declarer != nil {
+			next.sequence++
+			declarer.place(declaring[position], modSequence+next.sequence)
 			next.byFile[declaring[position].Key] = declarer
+			stale = stale || len(declarer.copies) > 0
 		}
 	}
 
-	// each definition gets its own copy of its saves and parameters, which
-	// only this table's typings and relays add to
-	for _, key := range slices.Sorted(maps.Keys(next.byFile)) {
-		for name, scripted := range next.byFile[key].scripted {
-			scripted.Saves, scripted.Parameters = maps.Clone(scripted.Saves), cloneParameters(scripted.Parameters)
-			next.all[name] = scripted
+	for key, declarer := range next.byFile {
+		if unread[key] {
+			continue
 		}
 
-		maps.Copy(next.modifiers, next.byFile[key].modifiers)
-		for _, namespace := range next.byFile[key].namespaces {
+		maps.Copy(next.modifiers, declarer.modifiers)
+		for _, namespace := range declarer.namespaces {
 			next.namespaces[namespace] = true
 		}
 	}
 
-	s.typeParameters(next.all)
-	s.resolveRelays(next.all, next.all)
+	if stale {
+		next.winners = s.resolveModded(next)
+	}
+
 	s.mods.Store(next)
+}
+
+// resolveModded returns the scripted definitions that the open workspace
+// changes, by database and name: the winner of each name a mod declares,
+// among the mods' copies and the game's, and of each name the game declares
+// in a file it does not read, among the copies left. A name with no copy
+// left has nil. A mod's copy never takes the place of a command the dumps
+// declare by its name. A mod's winners get their parameters typed and their
+// relays passed on.
+func (s *Schema) resolveModded(mods *modScripted) map[string]*Definition {
+	groups := map[string][]ScriptedCopy{}
+	for key, copies := range s.ScriptedCopies {
+		if slices.ContainsFunc(copies, func(scripted ScriptedCopy) bool { return mods.unread[scripted.File] }) {
+			groups[key] = nil
+		}
+	}
+
+	for _, key := range slices.Sorted(maps.Keys(mods.byFile)) {
+		if mods.unread[key] {
+			continue
+		}
+
+		for _, scripted := range mods.byFile[key].copies {
+			if s.FindCommand(scripted.Copy.Name) != nil {
+				continue
+			}
+
+			// each copy gets its own saves and parameters, which only this
+			// table's typings and relays add to
+			definition := *scripted.Definition
+			definition.Saves, definition.Field = maps.Clone(definition.Saves), cloneParameters(definition.Field)
+			scripted.Definition = &definition
+			groups[s.toScriptedKey(scripted.Copy)] = append(groups[s.toScriptedKey(scripted.Copy)], scripted)
+		}
+	}
+
+	winners := make(map[string]*Definition, len(groups))
+	var modded []ScriptedCopy
+	for key, group := range groups {
+		for _, scripted := range s.ScriptedCopies[key] {
+			if !mods.unread[scripted.File] {
+				group = append(group, scripted)
+			}
+		}
+
+		winner, ok := s.findScriptedWinner(group)
+		winners[key] = winner.Definition
+		if ok && winner.Sequence >= modSequence {
+			modded = append(modded, winner)
+		}
+	}
+
+	s.typeParameters(modded)
+	s.resolveRelays(modded, winners)
+
+	return winners
+}
+
+// findScriptedWinner returns the copy the game keeps among the copies of one
+// scripted definition's name, by its database's precedence. It returns false
+// if the game keeps none.
+func (s *Schema) findScriptedWinner(copies []ScriptedCopy) (ScriptedCopy, bool) {
+	if len(copies) == 0 {
+		return ScriptedCopy{}, false
+	}
+
+	precedence := game.Precedence{}
+	if database := s.Databases[copies[0].Copy.Database]; database != nil {
+		precedence = database.Precedence
+	}
+
+	ordered := slices.SortedStableFunc(slices.Values(copies), func(first, second ScriptedCopy) int {
+		return compareCopies(first, second, precedence)
+	})
+	modes, priorities := make([]string, len(ordered)), make([]int, len(ordered))
+	for position, scripted := range ordered {
+		modes[position], priorities[position] = scripted.Copy.Mode, scripted.Copy.Priority
+	}
+
+	winner, ok := precedence.FindWinner(modes, priorities)
+	if !ok {
+		return ScriptedCopy{}, false
+	}
+
+	return ordered[winner.Copy], true
+}
+
+// compareCopies orders two copies of a name the way the game loads them: by
+// their files' paths, or by the order their files were listed in where the
+// precedence says the playset decides, and within one file as written.
+func compareCopies(first, second ScriptedCopy, precedence game.Precedence) int {
+	if !precedence.ByPlayset {
+		if order := files.CompareLoadOrder(first.Rel, second.Rel); order != 0 {
+			return order
+		}
+	}
+
+	return cmp.Or(cmp.Compare(first.Sequence, second.Sequence), cmp.Compare(first.Copy.Statement, second.Copy.Statement))
+}
+
+// toScriptedKey returns the key a copy of a scripted definition is kept
+// under: its database, a colon and its name, in lower case where the
+// database ignores case.
+func (s *Schema) toScriptedKey(definition Copy) string {
+	label := definition.Name
+	if database := s.Databases[definition.Database]; database != nil && database.Callable.FoldsCase {
+		label = strings.ToLower(label)
+	}
+
+	return definition.Database + ":" + label
+}
+
+// lookupScripted returns the scripted definition of a name in a database:
+// the open workspace's winner where the given winners hold one for the name,
+// else the copy the game keeps. A name in another case finds it only if the
+// database ignores case. It returns nil if there is none.
+func (s *Schema) lookupScripted(winners map[string]*Definition, database, key string) *Definition {
+	owner := s.Databases[database]
+	if owner == nil {
+		return nil
+	}
+
+	if owner.Callable.FoldsCase {
+		key = strings.ToLower(key)
+	}
+
+	if winner, changed := winners[database+":"+key]; changed {
+		return winner
+	}
+
+	return owner.Definitions[key]
+}
+
+// lookupCall returns the scripted definition that a call of a name through
+// the given caller finds, in the first of the caller's databases that has
+// one. It returns nil if none has.
+func (s *Schema) lookupCall(winners map[string]*Definition, caller, key string) *Definition {
+	for _, database := range s.Callees[caller] {
+		if callee := s.lookupScripted(winners, database, key); callee != nil {
+			return callee
+		}
+	}
+
+	return nil
+}
+
+// findScripted returns the scripted definition of a name and the caller it
+// is called through, for a name written in a file of the given format. It
+// tries the callers that format has, in alphabetical order: a GUI file's
+// keys call the GUI's types, templates and blocks, and script calls the
+// rest, so a name in script never finds a GUI type. It returns false if no
+// caller finds one.
+func (s *Schema) findScripted(winners map[string]*Definition, key string, format files.Format) (*Definition, string, bool) {
+	gui := []string{game.GUI.TagCalls, game.GUI.TemplateCalls, game.GUI.BlockCalls}
+	for _, caller := range slices.Sorted(maps.Keys(s.Callees)) {
+		if slices.Contains(gui, caller) != (format == files.FormatGUI) {
+			continue
+		}
+
+		if callee := s.lookupCall(winners, caller, key); callee != nil {
+			return callee, caller, true
+		}
+	}
+
+	return nil, "", false
+}
+
+// place gives the copies a file declares the facts of the file: its key, its
+// path from its stage, and its place among the files listed.
+func (d *declarer) place(file files.File, sequence int) {
+	for position := range d.copies {
+		d.copies[position].File, d.copies[position].Rel, d.copies[position].Sequence = file.Key, file.StageRel(), sequence
+	}
 }
 
 // declares reports whether a file declares definitions that script or GUI
@@ -119,7 +302,7 @@ func (s *Schema) listDeclarers(declaring []files.File, parse func(path string) (
 	declarers := make([]*declarer, len(declaring))
 	contexts := make([][]Context, files.Workers)
 	eachParsed(declaring, parse, func(worker, index int, tree *jomini.Tree) {
-		declarers[index] = &declarer{schema: s, scripted: map[string]ScriptedDefinition{}, modifiers: map[string]*Field{}}
+		declarers[index] = &declarer{schema: s, modifiers: map[string]*Field{}}
 		contexts[worker] = s.WalkDeclarations(tree, declaring[index], contexts[worker])
 		declarers[index].record(tree, contexts[worker])
 	})
@@ -169,15 +352,22 @@ func cloneParameters(parameters *Field) *Field {
 	return clone
 }
 
-// typeParameters gives each parameter of the scripted definitions in a
-// table the claim its typings make, as isBetterClaim picks among them.
-func (s *Schema) typeParameters(table map[string]ScriptedDefinition) {
-	for _, scripted := range table {
-		for _, typing := range scripted.typings {
-			argument, claim := scripted.Parameters.findChild(typing.Parameter), s.findTypingClaim(typing)
-			if argument != nil && isBetterClaim(claim, argument.Value) {
-				argument.Value = claim
-			}
+// typeParameters gives each parameter of the given copies of scripted
+// definitions the claim its typings make.
+func (s *Schema) typeParameters(copies []ScriptedCopy) {
+	for _, scripted := range copies {
+		s.typeDefinition(scripted.Definition, scripted.typings)
+	}
+}
+
+// typeDefinition gives each parameter of a scripted definition the claim
+// that the given typings of its body make, as isBetterClaim picks among
+// them. A typing of a parameter the definition lacks gives nothing.
+func (s *Schema) typeDefinition(scripted *Definition, typings []typing) {
+	for _, typing := range typings {
+		argument, claim := scripted.Field.findChild(typing.Parameter), s.findTypingClaim(typing)
+		if argument != nil && isBetterClaim(claim, argument.Value) {
+			argument.Value = claim
 		}
 	}
 }
@@ -189,7 +379,7 @@ func (s *Schema) typeParameters(table map[string]ScriptedDefinition) {
 // value is written. It is unstated where neither says.
 func (s *Schema) findTypingClaim(typing typing) Claim[Expected] {
 	if typing.Field == nil {
-		database := s.Prefixes[typing.Prefix]
+		database, _ := s.LookupPrefix(typing.Prefix)
 		if database == "" {
 			return Claim[Expected]{}
 		}
@@ -216,18 +406,18 @@ func isBetterClaim(claim, current Claim[Expected]) bool {
 	return !current.IsStated() || claim.Value.namesDatabase() && !current.Value.namesDatabase()
 }
 
-// resolveRelays fills in what the parameters of each scripted definition in
-// a table take from the calls of other definitions it passes them on to: the
-// link a name is saved under, and the claim on what it names. It repeats
-// until nothing is added. A call finds the game's definitions, then the
-// given mods'.
-func (s *Schema) resolveRelays(table, mods map[string]ScriptedDefinition) {
+// resolveRelays fills in what the parameters of the given copies of scripted
+// definitions take from the calls of other definitions they pass them on to:
+// the link a name is saved under, and the claim on what it names. It repeats
+// until nothing is added. A call finds its definition as a walk does, with
+// the given winners of the open workspace.
+func (s *Schema) resolveRelays(copies []ScriptedCopy, winners map[string]*Definition) {
 	for added := true; added; {
 		added = false
-		for _, scripted := range table {
+		for _, scripted := range copies {
 			for _, relay := range scripted.relays {
-				if callee, _, ok := s.findScripted(mods, relay.Callee); ok {
-					added = passRelay(scripted, callee, relay) || added
+				if callee, _, ok := s.findScripted(winners, relay.Callee, files.FormatScript); ok {
+					added = passRelay(scripted.Definition, callee, relay) || added
 				}
 			}
 		}
@@ -237,7 +427,7 @@ func (s *Schema) resolveRelays(table, mods map[string]ScriptedDefinition) {
 // passRelay gives the parameter that a relay passes on the save that it
 // lacks, and the claim of the callee's argument where isBetterClaim picks
 // it. It reports whether it gave either.
-func passRelay(scripted, callee ScriptedDefinition, relay relay) bool {
+func passRelay(scripted, callee *Definition, relay relay) bool {
 	added := false
 	_, saved := scripted.Saves[relay.Parameter]
 	if link, saves := callee.Saves[relay.Argument]; saves && !saved {
@@ -245,7 +435,7 @@ func passRelay(scripted, callee ScriptedDefinition, relay relay) bool {
 		added = true
 	}
 
-	parameter, argument := scripted.Parameters.findChild(relay.Parameter), callee.Parameters.findChild(relay.Argument)
+	parameter, argument := scripted.Field.findChild(relay.Parameter), callee.Field.findChild(relay.Argument)
 	if parameter != nil && argument != nil && isBetterClaim(argument.Value, parameter.Value) {
 		parameter.Value = argument.Value
 		added = true
@@ -254,71 +444,52 @@ func passRelay(scripted, callee ScriptedDefinition, relay relay) bool {
 	return added
 }
 
-// findScripted returns the scripted definition of a name and the caller it
-// is called through, trying each caller in alphabetical order. It returns
-// false if no caller finds one.
-func (s *Schema) findScripted(mods map[string]ScriptedDefinition, key string) (ScriptedDefinition, string, bool) {
-	for _, caller := range slices.Sorted(maps.Keys(s.Callees)) {
-		if callee, ok := s.lookupScripted(mods, caller, key); ok {
-			return callee, caller, true
+// declareFiles gives the schema what the given files of the game declare, in
+// place of what it held: every copy of each scripted definition, and in each
+// database the copy of each name that the game keeps. It returns those
+// winners, for their parameters to be typed and their relays passed on.
+func (s *Schema) declareFiles(declaring []files.File, parse func(path string) (*jomini.Tree, error)) []ScriptedCopy {
+	s.ScriptedCopies = map[string][]ScriptedCopy{}
+	for _, database := range s.Databases {
+		if len(database.Callable.Callers) > 0 {
+			database.Definitions = map[string]*Definition{}
 		}
 	}
 
-	return ScriptedDefinition{}, "", false
-}
+	for position, declarer := range s.listDeclarers(declaring, parse) {
+		if declarer == nil {
+			continue
+		}
 
-// lookupScripted returns the scripted definition of a name called by the
-// given caller, from the game or else from the given mods. A mod's never
-// takes the place of a command the dumps declare by that name. Case matters
-// as in lookupDefinition.
-func (s *Schema) lookupScripted(mods map[string]ScriptedDefinition, caller, key string) (ScriptedDefinition, bool) {
-	if callee, ok := s.lookupDefinition(s.ScriptedDefinitions, caller, key); ok {
-		return callee, true
-	}
+		declarer.place(declaring[position], position)
+		for _, scripted := range declarer.copies {
+			key := s.toScriptedKey(scripted.Copy)
+			s.ScriptedCopies[key] = append(s.ScriptedCopies[key], scripted)
+		}
 
-	if _, command := s.FindCommand(key); command {
-		return ScriptedDefinition{}, false
-	}
+		maps.Copy(s.ModifierFields, declarer.modifiers)
+		for _, widget := range declarer.widgets {
+			s.WidgetTypes[widget] = true
+		}
 
-	return s.lookupDefinition(mods, caller, key)
-}
-
-// lookupDefinition returns the scripted definition of a name called by the
-// given caller in one table. A name in another case finds it only if its
-// database ignores case.
-func (s *Schema) lookupDefinition(table map[string]ScriptedDefinition, caller, key string) (ScriptedDefinition, bool) {
-	if callee, ok := table[caller+":"+key]; ok {
-		return callee, true
-	}
-
-	callee, ok := table[caller+":"+strings.ToLower(key)]
-	database := s.Databases[callee.Database]
-
-	return callee, ok && database != nil && database.Callable.FoldsCase
-}
-
-// declareFiles gives the schema the definitions that the given files
-// declare, a later one in place of an earlier.
-func (s *Schema) declareFiles(declaring []files.File, parse func(path string) (*jomini.Tree, error)) {
-	for _, declarer := range s.listDeclarers(declaring, parse) {
-		if declarer != nil {
-			declarer.build()
+		for _, namespace := range declarer.namespaces {
+			s.Namespaces[namespace] = true
 		}
 	}
-}
 
-// build gives the schema what the walked file declared. A later definition
-// of a name replaces an earlier one.
-func (d *declarer) build() {
-	maps.Copy(d.schema.ScriptedDefinitions, d.scripted)
-	maps.Copy(d.schema.ModifierFields, d.modifiers)
-	for _, widget := range d.widgets {
-		d.schema.WidgetTypes[widget] = true
+	var winners []ScriptedCopy
+	for key, copies := range s.ScriptedCopies {
+		winner, ok := s.findScriptedWinner(copies)
+		if !ok {
+			continue
+		}
+
+		database := s.Databases[winner.Copy.Database]
+		database.Definitions[strings.TrimPrefix(key, database.Name+":")] = winner.Definition
+		winners = append(winners, winner)
 	}
 
-	for _, namespace := range d.namespaces {
-		d.schema.Namespaces[namespace] = true
-	}
+	return winners
 }
 
 // record records what a file declares, from the contexts WalkDeclarations
@@ -329,7 +500,7 @@ func (d *declarer) record(tree *jomini.Tree, contexts []Context) {
 	for position := range contexts {
 		statement, context := int32(position), &contexts[position]
 		if d.body != nil && tree.Statements[d.body.statement].Last <= statement {
-			d.keep(d.body)
+			d.copies = append(d.copies, d.body.scripted)
 			d.body = nil
 		}
 
@@ -349,27 +520,30 @@ func (d *declarer) record(tree *jomini.Tree, contexts []Context) {
 	}
 
 	if d.body != nil {
-		d.keep(d.body)
+		d.copies = append(d.copies, d.body.scripted)
 		d.body = nil
 	}
 }
 
 // listTypings returns the typings that one statement of a scripted
-// definition's body writes. A key or a value that is one prefixed link whose
-// name is one parameter, as scope:$TARGET$, is one. So is a value that is one
-// parameter at a key with a field of its own. A link's key has its holder's
-// field, and an argument of a call is the call's relay, so neither is one.
+// definition's body writes. Each link of a key or a value that is written
+// with a prefix and one parameter as its name is one, as scope:$TARGET$ is,
+// and court_position:$POS$ in $LIEGE$.court_position:$POS$. So is a value
+// that is one parameter at a key with a field of its own. A link's key has
+// its holder's field, and an argument of a call is the call's relay, so
+// neither is one.
 func listTypings(tree *jomini.Tree, statement int32, context *Context) []typing {
 	current := tree.Statements[statement]
 	var typings []typing
 	for _, span := range []jomini.Span{tree.UnquotedSpan(current.Key), tree.UnquotedSpan(current.Value)} {
-		links := jomini.Links(tree.Text(span), span.Start)
-		if len(links) != 1 || links[0].Prefix.IsEmpty() {
-			continue
-		}
+		for _, link := range jomini.Links(tree.Text(span), span.Start) {
+			if link.Prefix.IsEmpty() {
+				continue
+			}
 
-		if parameter, whole := findParameter(tree.Text(links[0].Name)); whole {
-			typings = append(typings, typing{Parameter: parameter, Prefix: tree.Text(links[0].Prefix)})
+			if parameter, whole := findParameter(tree.Text(link.Name)); whole {
+				typings = append(typings, typing{Parameter: parameter, Prefix: tree.Text(link.Prefix)})
+			}
 		}
 	}
 
@@ -389,18 +563,17 @@ func findParameter(text string) (string, bool) {
 		return "", false
 	}
 
-	name := parameters[0].Name
+	label := parameters[0].Name
 
-	return text[name.Start:name.End], true
+	return text[label.Start:label.End], true
 }
 
-// declare records a definition that is called by name. For each caller of
-// its database it records the scripted definition with the parameters its
-// body writes; one that takes parameters is recorded when the walk leaves
-// its body. If a widget calls it, it also records the widget type, and the
-// type that widget is built on. It also records what the name of a modifier
-// type takes.
-func (d *declarer) declare(definition Definition, tree *jomini.Tree, statement int32) {
+// declare records a definition that is called by name: a copy of a scripted
+// definition, with the parameters its body writes. One that takes
+// parameters is recorded when the walk leaves its body. If a widget calls
+// it, it also records the widget type, and the type that widget is built
+// on. It also records what the name of a modifier type takes.
+func (d *declarer) declare(definition Copy, tree *jomini.Tree, statement int32) {
 	database := d.schema.Databases[definition.Database]
 	if database == nil {
 		return
@@ -415,29 +588,23 @@ func (d *declarer) declare(definition Definition, tree *jomini.Tree, statement i
 		d.widgets = append(d.widgets, base)
 	}
 
-	if definition.Local {
+	if definition.Local || len(database.Callable.Callers) == 0 {
 		return
 	}
 
-	pending := &body{statement: statement, scripted: makeScripted(database, tree, statement)}
-	for _, caller := range database.Callable.Callers {
-		pending.keys = append(pending.keys, caller+":"+definition.Name)
-		if database.Callable.FoldsCase {
-			pending.keys = append(pending.keys, caller+":"+strings.ToLower(definition.Name))
-		}
-
-		if caller == game.GUI.TagCalls {
-			d.widgets = append(d.widgets, definition.Name)
-		}
+	if slices.Contains(database.Callable.Callers, game.GUI.TagCalls) {
+		d.widgets = append(d.widgets, definition.Name)
 	}
 
+	pending := &body{statement: statement, scripted: ScriptedCopy{Copy: definition}}
+	pending.scripted.Definition, pending.scripted.relays = makeScripted(database, definition.Name, tree, statement)
 	if database.Callable.Parameters {
 		d.body = pending
 
 		return
 	}
 
-	d.keep(pending)
+	d.copies = append(d.copies, pending.scripted)
 }
 
 // modifierBoolKey is the key whose yes makes a modifier type take yes or no
@@ -456,17 +623,21 @@ func makeModifierField(tree *jomini.Tree, statement int32) *Field {
 	return &Field{Value: Claim[Expected]{Value: expected, Source: game.SourceDefinitions}}
 }
 
-// makeScripted returns the scripted definition that a statement makes, with
-// its parameters and saves where the database's definitions take
-// parameters.
-func makeScripted(database *Database, tree *jomini.Tree, statement int32) ScriptedDefinition {
-	scripted := ScriptedDefinition{Database: database.Name}
-	if database.Callable.Parameters {
-		scripted.Parameters = ListParameters(tree, statement)
-		scripted.Saves, scripted.relays = listSaves(tree, statement)
+// makeScripted returns the scripted definition that a statement makes under
+// the given key, and the parameters its body passes on to other calls. Its
+// field holds its parameters, and it has its saves, where the database's
+// definitions take parameters.
+func makeScripted(database *Database, key string, tree *jomini.Tree, statement int32) (*Definition, []relay) {
+	scripted := &Definition{Database: database.Name, Key: key}
+	if !database.Callable.Parameters {
+		return scripted, nil
 	}
 
-	return scripted
+	scripted.Field = ListParameters(tree, statement)
+	saves, relays := listSaves(tree, statement)
+	scripted.Saves = saves
+
+	return scripted, relays
 }
 
 // ListParameters returns the parameters a scripted definition's body writes
@@ -481,18 +652,18 @@ func ListParameters(tree *jomini.Tree, statement int32) *Field {
 		current := tree.Statements[position]
 		for _, span := range []jomini.Span{current.Key, current.Tag, current.Value} {
 			for _, parameter := range jomini.Parameters(tree.Text(span), span.Start) {
-				name := tree.Text(parameter.Name)
-				argument := parameters.buildChild(name, game.SourceDefinitions)
+				label := tree.Text(parameter.Name)
+				argument := parameters.buildChild(label, game.SourceDefinitions)
 				argument.Vanilla.Count++
 
 				// a closing $ right after the name writes no default; a bar
 				// writes one, even an empty one
 				switch {
 				case parameter.Span.End == parameter.Name.End+1:
-					undefaulted[name] = true
+					undefaulted[label] = true
 					argument.Default = Claim[string]{}
 
-				case !undefaulted[name] && !argument.Default.IsStated():
+				case !undefaulted[label] && !argument.Default.IsStated():
 					argument.Default = Claim[string]{Value: tree.Text(parameter.Default), Source: game.SourceVanilla}
 				}
 			}
@@ -525,11 +696,4 @@ func listSaves(tree *jomini.Tree, statement int32) (map[string]string, []relay) 
 	}
 
 	return saves, relays
-}
-
-// keep records a scripted definition under each of its keys.
-func (d *declarer) keep(pending *body) {
-	for _, key := range pending.keys {
-		d.scripted[key] = pending.scripted
-	}
 }

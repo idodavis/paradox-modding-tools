@@ -304,13 +304,13 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 		card.Sites[0].Place.Origin != files.OriginVanilla || !card.Sites[0].Place.ReadOnly {
 		t.Errorf("a reference: %+v", card)
 	}
-	if card := hover(14, 5); card == nil || card.What != "effect" || card.Runs != "The game does not say" {
+	if card := hover(14, 5); card == nil || card.What != "effect" || findRow(card, rowScopes) != "The game does not say" {
 		t.Errorf("an effect: %+v", card)
 	}
 	if card := hover(7, 3); card == nil || card.What != "keyword" || card.Class != "logical" || card.Blurb == "" {
 		t.Errorf("a keyword: %+v", card)
 	}
-	if card := hover(4, 3); card == nil || card.What != "field" || card.Takes == "" || !card.Inferred {
+	if card := hover(4, 3); card == nil || card.What != "field" || findRow(card, rowTakes) == "" || !card.Inferred {
 		t.Errorf("a field: %+v", card)
 	}
 	if card := hover(15, 10); card == nil || card.What != "saved scope" || card.Title != "made" || len(card.Sites) != 0 {
@@ -320,9 +320,25 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 		t.Errorf("a position on nothing: %+v", card)
 	}
 	window := filepath.Join(resolveFixture(t, ck3), "game", "gui", "v_window.gui")
-	if card, err := ide.Hover(window, 20, 16); err != nil || card == nil || card.Image == nil || card.Image.Format != "dds" {
+	if card, err := ide.Hover(window, 20, 16); err != nil || card == nil || !strings.Contains(findRow(card, rowImage), " dds") {
 		t.Errorf("a written path: %+v, %v", card, err)
 	}
+}
+
+// findRow returns the text of the row of a card with the given label. It
+// returns "" for a nil card and a card with no such row.
+func findRow(card *Card, label string) string {
+	if card == nil {
+		return ""
+	}
+
+	for _, row := range card.Rows {
+		if row.Label == label {
+			return row.Text
+		}
+	}
+
+	return ""
 }
 
 // TestHoverReadsDatesAndColors checks that a date is read in the calendar of the mod that owns the file and that a
@@ -339,11 +355,10 @@ func TestHoverReadsDatesAndColors(t *testing.T) {
 		t.Fatal(err)
 	}
 	card, err := ide.Hover(target, 2, 12)
-	want := CardDate{Date: jomini.Date{Year: 1066, Month: 9, Day: 15}, Era: "New", Month: "I"}
-	if err != nil || card == nil || card.Date == nil || *card.Date != want {
-		t.Errorf("a date: %+v, %v, want %+v", card, err, want)
+	if want := "15 I 1066 New"; err != nil || findRow(card, rowDate) != want {
+		t.Errorf("a date: %+v, %v, want %q", card, err, want)
 	}
-	if card, err = ide.Hover(target, 4, 10); err != nil || card != nil && card.Date != nil {
+	if card, err = ide.Hover(target, 4, 10); err != nil || findRow(card, rowDate) != "" {
 		t.Errorf("a number that reads as a date: %+v, %v", card, err)
 	}
 	if card, err = ide.Hover(target, 3, 3); err != nil || card == nil || card.Color != "rgba(255, 0, 0, 1)" {
@@ -446,7 +461,7 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, err := artifacts.Complete(things, 2, 24)
-	if labels := lo.Map(paths, func(candidate Completion, _ int) string { return candidate.Label }); err != nil ||
+	if labels := lo.Map(paths.Candidates, func(candidate Completion, _ int) string { return candidate.Label }); err != nil ||
 		!slices.Contains(labels, "gfx/interface/v_bg.dds") || slices.Contains(labels, "gfx/coat_of_arms/patterns/v_pattern.dds") {
 		t.Errorf("image paths: %v, %v", labels, err)
 	}
@@ -455,7 +470,7 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	choices, _ := ide.Complete(traits, 2, 13)
-	if labels := lo.Map(choices, func(candidate Completion, _ int) string { return candidate.Label }); !slices.Equal(labels, []string{"personality", "education"}) &&
+	if labels := lo.Map(choices.Candidates, func(candidate Completion, _ int) string { return candidate.Label }); !slices.Equal(labels, []string{"personality", "education"}) &&
 		!slices.Equal(labels, []string{"education", "personality"}) {
 		t.Errorf("choices: %v", labels)
 	}
@@ -464,14 +479,15 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	inline, _ := ide.Complete(traits, 1, 20)
-	if labels := lo.Map(inline, func(candidate Completion, _ int) string { return candidate.Label }); len(labels) != 2 {
+	if labels := lo.Map(inline.Candidates, func(candidate Completion, _ int) string { return candidate.Label }); len(labels) != 2 {
 		t.Errorf("choices in a block on one line: %v", labels)
 	}
 	events := filepath.Join(dir, "events", "t_events.txt")
 	if _, err := ide.SetText(events, "namespace = t\nt.1 = {\n\timmediate = {\n\t\t\n\t}\n}\n"); err != nil {
 		t.Fatal(err)
 	}
-	keys, err := ide.Complete(events, 4, 3)
+	list, err := ide.Complete(events, 4, 3)
+	keys := list.Candidates
 	if err != nil || len(keys) == 0 || keys[0].Category != schema.CategoryKeyword ||
 		!lo.ContainsBy(keys, func(candidate Completion) bool {
 			return candidate.Label == "add_gold" && candidate.Category == schema.CategoryCommand

@@ -55,9 +55,9 @@ const (
 	CategoryChoice Category = "choice"
 )
 
-// Definition is a name that a statement defines in a database, with the
-// facts that decide which definition of that name the game keeps.
-type Definition struct {
+// Copy is one copy of a key: a name that a statement defines in a database,
+// with the facts that decide which copy of that name the game keeps.
+type Copy struct {
 	Database string `json:"database"`
 	Name     string `json:"name"`
 
@@ -125,7 +125,7 @@ type Context struct {
 	// Definition that definition, or the one the statement makes. They are ""
 	// and nil outside any definition.
 	Database   string
-	Definition *Definition
+	Definition *Copy
 
 	// Defines is whether the statement itself defines Definition.
 	Defines bool
@@ -167,15 +167,13 @@ type Context struct {
 	// Category is the key's color category.
 	Category Category
 
-	// Command is the command the key names. It is nil if it names none.
-	Command *Command
+	// Command is the effect, the trigger or the link of the dumps that the
+	// key names, as its block takes it. It is nil if the key names none.
+	Command *Definition
 
 	// Callee is the scripted definition the key calls. It is nil for any
 	// other key.
-	Callee *ScriptedDefinition
-
-	// Declaration is how the dumps declare Command in this block.
-	Declaration game.Declaration
+	Callee *Definition
 
 	// ValueGroup is the value's color category.
 	ValueGroup Category
@@ -236,12 +234,13 @@ type walker struct {
 
 	// inline holds the names the file declares for itself: every one of an
 	// events file, and those a GUI file has declared so far.
-	inline map[string]ScriptedDefinition
+	inline map[string]*Definition
 
-	// mods, modifiers and namespaces hold the mods' scripted definitions,
-	// what their modifier types take and the event namespaces they declare,
-	// as they were when the walk began.
-	mods       map[string]ScriptedDefinition
+	// winners holds the scripted definitions the open workspace changes, as
+	// lookupScripted reads them. modifiers and namespaces hold what the
+	// mods' modifier types take and the event namespaces the mods declare.
+	// All are as they were when the walk began.
+	winners    map[string]*Definition
 	modifiers  map[string]*Field
 	namespaces map[string]bool
 
@@ -272,43 +271,172 @@ type frame struct {
 	wraps bool
 }
 
-// match is what a key fits under one rule of its block's shape.
+// match is what a key that is no keyword is in its block.
 type match struct {
-	category Category
-
 	// field is the field the keys inside the key's block come from.
 	field *Field
 
-	// shape is the block's shape where the rule decides it. It is "" for a
-	// claim, which findMatch fills.
-	shape game.Shape
+	// definition is the effect, the trigger, the link or the pattern of the
+	// dumps that has the key. It is nil where none does.
+	definition *Definition
 
-	// observed is whether the key fits only because the game's own files
-	// write it, so the scope inside its block is not known.
-	observed bool
-
-	// command is the command that fits, and declaration what declares it.
-	command     *Command
-	declaration game.Declaration
+	// mark is the take mark of the rule that has the key where no dump's
+	// database does. It is "" otherwise.
+	mark string
 
 	// callee is the scripted definition that a known call names, and caller
 	// the caller it is called through.
-	callee *ScriptedDefinition
+	callee *Definition
 	caller string
 
-	// iterator is the list iterator that the key starts.
+	// patterns are the patterns that make the key.
+	patterns []*Definition
+
+	// iterator is the list iterator that the key starts, nil for none.
 	iterator *game.Keyword
 
 	// target is the scope that the command or the link leads to.
 	target string
+}
 
-	// database is the database the key itself names, and inferred whether
-	// only the game's own files say so, so that it never accuses.
-	database string
-	inferred bool
+// isLink reports whether the key is a link.
+func (m match) isLink() bool {
+	return m.definition != nil && m.definition.Database == game.DumpLinks
+}
 
-	// patterns are the command patterns that make the key.
-	patterns []CommandPattern
+// moves reports whether the key moves the scope inside its block: an
+// iterator, a link, or a command that leads to a scope or walks a list.
+func (m match) moves() bool {
+	return m.iterator != nil || m.definition != nil && (m.isLink() || m.target != "" || m.definition.Iterates)
+}
+
+// category returns the color category of the key: a link or a command for a
+// definition of the dumps, else what its mark says.
+func (m match) category() Category {
+	switch {
+	case m.isLink():
+		return CategoryLink
+	case m.definition != nil:
+		return CategoryCommand
+	case m.mark == takeCalls, m.mark == takeUnknown:
+		return CategoryCall
+	case m.mark == takeModifierTypes:
+		return CategoryReference
+	case m.mark != "":
+		return CategoryField
+	}
+
+	return CategoryNone
+}
+
+// shapeRow is how a block of one shape reads its keys and values.
+type shapeRow struct {
+	// takes are what a key that is no keyword is tried as, in order: a
+	// database of the dumps by its name, or a take mark. The first that has
+	// the key wins.
+	takes []string
+
+	// caller is the caller a call here is looked up by, among
+	// game.Callable.Callers. game.AnyCall means every callable.
+	caller string
+
+	// values is the database every value in the block names. It is "" for
+	// none.
+	values string
+
+	// blocks is the shape of a block written in it where nothing takes its
+	// key. It is "" for none.
+	blocks game.Shape
+
+	// encloses is the shape of the block that a link or an enclosing keyword
+	// in it holds. It is "" for the shape itself.
+	encloses game.Shape
+}
+
+// The take marks: what a block takes a key as, beside the names of the
+// dumps' databases.
+const (
+	// takeCalls is a scripted definition the block calls, the file's own
+	// first.
+	takeCalls = "calls"
+
+	// takeDeclared is a key the block's field holds from any source but the
+	// game's own files, and takeObserved one only those files write.
+	takeDeclared = "declared"
+	takeObserved = "observed"
+
+	// takeDocumented is a key the docs write for the block's database.
+	takeDocumented = "documented"
+
+	// takeOwn is any key the block's field has a child for.
+	takeOwn = "own"
+
+	// takeBareLinks is a link, but no plain name with a plain value, which is
+	// an argument or a call.
+	takeBareLinks = "bare links"
+
+	// takeModifiers is a modifier the dumps declare, and takeModifierTypes
+	// any identifier, as a modifier type's name.
+	takeModifiers     = "modifiers"
+	takeModifierTypes = "modifier types"
+
+	// takeUnknown is any identifier that is no event id, as a call of the
+	// block's caller to a name nothing defines.
+	takeUnknown = "unknown"
+)
+
+// shapeRows holds the row of each shape a block can have. A description
+// block's keys are all keywords. A key that nothing explains in a command's
+// block is a call of any callable, never judged: it may be an argument no
+// dump or file writes.
+var shapeRows = map[game.Shape]shapeRow{
+	game.ShapeFields: {takes: []string{takeOwn}},
+	game.ShapeTriggers: {
+		takes:  []string{takeCalls, takeDeclared, game.DumpTriggers, takeObserved, game.DumpLinks, takeUnknown},
+		caller: game.CallTrigger,
+	},
+	game.ShapeEffects: {
+		takes:  []string{takeCalls, takeDeclared, game.DumpEffects, takeObserved, takeBareLinks, takeUnknown},
+		caller: game.CallEffect,
+	},
+	game.ShapeArguments: {
+		takes: []string{
+			takeCalls, takeDeclared, game.DumpEffects, game.DumpTriggers, takeObserved, game.DumpLinks, takeUnknown,
+		},
+		caller: game.AnyCall,
+	},
+	game.ShapeEffectArguments: {
+		takes:  []string{takeCalls, takeDeclared, game.DumpEffects, takeObserved, takeBareLinks, takeUnknown},
+		caller: game.AnyCall, encloses: game.ShapeEffects,
+	},
+	game.ShapeTriggerArguments: {
+		takes:  []string{takeCalls, takeDeclared, game.DumpTriggers, takeObserved, takeBareLinks, takeUnknown},
+		caller: game.AnyCall, encloses: game.ShapeTriggers,
+	},
+	game.ShapeValue: {
+		takes: []string{
+			takeCalls, takeDeclared, game.DumpEffects, game.DumpTriggers, takeObserved, game.DumpLinks, takeUnknown,
+		},
+		caller: game.CallValue,
+	},
+	game.ShapeUnknown: {
+		takes: []string{
+			takeCalls, takeDeclared, game.DumpEffects, game.DumpTriggers, game.DumpLinks, takeOwn, takeUnknown,
+		},
+		caller: game.AnyCall,
+	},
+	game.ShapeSetup: {
+		takes: []string{
+			takeDeclared, takeDocumented, takeCalls, game.DumpEffects, takeObserved, game.DumpLinks, takeUnknown,
+		},
+		caller: game.CallEffect,
+	},
+	game.ShapeWidget: {
+		takes: []string{takeCalls, takeOwn, takeUnknown}, caller: game.GUI.TagCalls, blocks: game.ShapeWidget,
+	},
+	game.ShapeModifiers: {takes: []string{takeModifiers, takeDeclared, takeObserved, takeModifierTypes}},
+	// _events.info:313-318 writes a description's texts as localization keys
+	game.ShapeDescription: {values: game.Localization},
 }
 
 // linkMakers holds the commands that save a name for one of game.Links. A
@@ -403,8 +531,8 @@ func (s *Schema) newWalker(tree *jomini.Tree, file files.File, contexts []Contex
 
 	contexts = contexts[:len(tree.Statements)]
 	walker := &walker{
-		schema: s, row: row, tree: tree, file: file, contexts: contexts, inline: map[string]ScriptedDefinition{},
-		mods: mods.all, modifiers: mods.modifiers, namespaces: mods.namespaces,
+		schema: s, row: row, tree: tree, file: file, contexts: contexts, inline: map[string]*Definition{},
+		winners: mods.winners, modifiers: mods.modifiers, namespaces: mods.namespaces,
 	}
 	walker.rel = file.StageRel()
 	walker.stem = strings.TrimSuffix(path.Base(walker.rel), path.Ext(walker.rel))
@@ -421,6 +549,7 @@ func (s *Schema) newWalker(tree *jomini.Tree, file files.File, contexts []Contex
 	// the walk writes every other context of the list as it reaches it
 	root := &contexts[0]
 	*root = Context{Shape: game.ShapeUnknown, References: root.References[:0]}
+	walker.frames = []frame{{context: root, wraps: true}, {}}
 	if database := walker.database; database != nil {
 		if database.Row.Contents == game.ContentsEvents {
 			root.Namespaces = listNamespaces(tree)
@@ -429,26 +558,39 @@ func (s *Schema) newWalker(tree *jomini.Tree, file files.File, contexts []Contex
 		}
 
 		if database.Row.DefinedBy == game.DefinedByFile && len(tree.Statements) > 1 {
-			walker.resolveDefinition(root, Definition{Database: database.Name, Name: walker.stem, Local: database.Callable.Local})
+			walker.resolveDefinition(root, Copy{Database: database.Name, Name: walker.stem, Local: database.Callable.Local})
 		}
 	}
-
-	walker.frames = []frame{{context: root, wraps: true}}
 
 	return walker
 }
 
 // declareInline records each definition that an events file declares inline
-// at its top. The games call such a definition above the line that declares
-// it, as CK3's events under events/dlc/ep3 do, so the names are read before
-// any script.
+// at its top, with what its parameters take. The games call such a
+// definition above the line that declares it, as CK3's events under
+// events/dlc/ep3 do, so the names and the parameters are read before any
+// script.
 func (w *walker) declareInline() {
+	var bodies []int32
 	for statement := range w.tree.Children(0) {
 		label, _, _ := w.findLabel(w.tree.Statements[statement])
 		if owner := w.schema.Databases[w.declaring[w.findLead(statement)]]; owner != nil && label != "" {
-			w.inline[label] = makeScripted(owner, w.tree, statement)
+			w.inline[label], _ = makeScripted(owner, label, w.tree, statement)
+			bodies = append(bodies, statement)
 		}
 	}
+
+	// each body is walked once before the file is, so that a call above its
+	// definition already finds what the parameters take
+	for _, statement := range bodies {
+		label, _, _ := w.findLabel(w.tree.Statements[statement])
+		w.walkStatement(statement, 1)
+		for position := statement + 1; position < w.tree.Statements[statement].Last; position++ {
+			w.schema.typeDefinition(w.inline[label], listTypings(w.tree, position, &w.contexts[position]))
+		}
+	}
+
+	w.saved = nil
 }
 
 // listNamespaces returns the top statements of a tree that declare an event
@@ -619,14 +761,14 @@ func (w *walker) findLabel(current jomini.Statement) (string, jomini.Span, jomin
 
 // resolveDefinition fills the context of the statement that makes a
 // definition. The definition starts with no saved scopes.
-func (w *walker) resolveDefinition(context *Context, definition Definition) {
+func (w *walker) resolveDefinition(context *Context, definition Copy) {
 	database := w.schema.Databases[definition.Database]
 	*context = Context{
 		Parent: context.Parent, Database: definition.Database, Definition: &definition, Defines: true,
 		Category: CategoryDefinition, Shape: w.findDefinitionShape(database), References: context.References[:0],
 	}
 	if database != nil {
-		context.Field = database.Definition
+		context.Field = database.Field
 	}
 
 	context.Root = w.findRootScope(database, definition)
@@ -649,7 +791,7 @@ func (w *walker) findDefinitionShape(database *Database) game.Shape {
 // its root key names, else its event type's scope, or its on_action's scope
 // in the dumps. It returns "" if nothing says, or if the root key names no
 // scope.
-func (w *walker) findRootScope(database *Database, definition Definition) string {
+func (w *walker) findRootScope(database *Database, definition Copy) string {
 	if database == nil {
 		return ""
 	}
@@ -700,7 +842,7 @@ func (w *walker) resolveStatement(context *Context, statement int32, level int) 
 	}
 
 	if database := w.database; level == 1 && database != nil && database.Row.DefinedBy == game.DefinedByNothing {
-		context.Database, context.Field, context.Shape = database.Name, database.Definition, w.findDefinitionShape(database)
+		context.Database, context.Field, context.Shape = database.Name, database.Field, w.findDefinitionShape(database)
 	}
 }
 
@@ -770,21 +912,18 @@ func (w *walker) resolveKey(context *Context, statement int32, level int) {
 	block := w.tree.Statements[statement].IsBlock()
 	keyword := w.findKeyword(parent, w.frames[level-1].label, key, block)
 	fit, fits := w.findFit(parent, keyword, key, class, block, isCall)
-	w.resolveMatch(context, parent, fit, fits, keyword, isCompared(w.tree, statement))
-
-	// a conditional keyword such as limit is read in the scope of the
-	// command that holds it, any other argument in a scope the command makes
-	if isArgument(parent, key) && (keyword == nil || keyword.Class != game.KeywordClassConditional) {
-		context.Scope = ""
-	}
-
+	w.resolveMatch(context, parent, fit, fits, keyword, key, isCompared(w.tree, statement))
 	if keyword == nil {
-		w.resolveCallReferences(context, fit, key, span)
+		w.resolveCallReferences(context, parent, fit, key, span)
 	}
+
+	// a use covers the whole key, so it comes after the names inside the key
+	context.References = append(context.References, listUses(w.schema, fit, key, span)...)
 
 	if isCall {
+		command = cmp.Or(context.Command, command)
 		context.References = append(context.References,
-			w.listArgumentReferences(command, parent.FindArguments(command, context.Declaration), step.Arguments[0])...)
+			w.listArgumentReferences(command, parent.FindArguments(command), step.Arguments[0])...)
 	}
 
 	// a math keyword's value is a number or a script value, so it takes no
@@ -797,12 +936,12 @@ func (w *walker) resolveKey(context *Context, statement int32, level int) {
 	w.resolveAlias(context, statement, level)
 }
 
-// findFit returns what a key fits in the block of a context, given the
-// keyword the key is there, nil for none, and whether it fits anything. No
-// rule of the block runs for a keyword: where the dumps declare its own key
-// a command, as they declare if, their entry gives its arguments, and a
-// keyword that stands for any key, as a switch's case does, has none. Any
-// other key fits the first rule of the block's shape. The flags say whether
+// findFit returns what a key is in the block of a context, given the
+// keyword the key is there, nil for none, and whether it is anything. A
+// keyword takes only the command of its own key: where the dumps declare
+// one, as they declare if, their entry gives its keys, and a keyword that
+// stands for any key, as a switch's case does, has none. Any other key is
+// the first thing the block's shape takes that has it. The flags say whether
 // the key's statement is a block and whether the key is written with an
 // argument in parentheses. The match names the scope a link or a command
 // leads to, and the iterator a key that is no keyword starts.
@@ -811,38 +950,52 @@ func (w *walker) findFit(parent *Context, keyword *game.Keyword, key string, cla
 	fits := false
 	switch {
 	case keyword == nil:
-		fit, fits = w.findMatch(parent, key, class, block)
+		fit, fits = w.lookupKey(parent, key, class, block)
 	case strings.EqualFold(keyword.Key, key):
-		if entry, ok := w.matchCommand(parent, key, class, block); ok {
-			fit, fits = entry, true
-		}
+		fit, fits = w.findCommand(parent, key)
 	}
 
 	// a link that requires data takes it in parentheses too, as
 	// relations(scope:overlord) does, though its name alone is no link
-	if isCall && fit.category == CategoryCall && fit.callee == nil && w.schema.IsLink(key) {
-		fit, fits = match{category: CategoryLink, field: parent.Field, shape: findEnclosing(parent)}, true
+	if link := w.schema.lookupLink(key, true); isCall && fit.mark == takeUnknown && link != nil {
+		fit, fits = match{definition: link, field: parent.Field}, true
 	}
 
 	// a key that starts an iterator and is no keyword runs its block in the
 	// scope of the list's item
 	iterator, isIterator := game.MatchListIterator(key)
-	unknownCall := fit.category == CategoryCall && fit.callee == nil
-	if isIterator && keyword == nil && (fit.command != nil || unknownCall && w.schema.Lists != "") {
+	command := fit.definition != nil && !fit.isLink()
+	if isIterator && keyword == nil && (command || fit.mark == takeUnknown && w.schema.Lists != "") {
 		fit.iterator = new(iterator)
 	}
 
 	switch {
-	case fit.category == CategoryLink:
-		head, _ := splitLinkHead(key)
-		fit.command, fit.declaration = w.schema.Commands[head], game.DeclarationLink
-		fit.target = w.resolveChain(key, parent)
+	case fit.isLink():
+		chain := w.schema.ResolveChain(key, parent, w.saved)
+		fit.target = chain[len(chain)-1].Scope
 
-	case fit.command != nil:
-		fit.target = fit.command.Target
+	case fit.definition != nil:
+		fit.target = fit.definition.Target
 	}
 
 	return fit, fits
+}
+
+// findCommand returns the effect or the trigger that a key names and the
+// block of a context takes, in the order the block's shape tries the two.
+// It returns false if the dumps declare none, or the block takes neither.
+func (w *walker) findCommand(parent *Context, key string) (match, bool) {
+	for _, entry := range shapeRows[findShape(parent)].takes {
+		if entry != game.DumpEffects && entry != game.DumpTriggers {
+			continue
+		}
+
+		if fit, ok := w.takeCommand(entry, parent, key); ok {
+			return fit, true
+		}
+	}
+
+	return match{}, false
 }
 
 // findKeywordField returns the field of a keyword that no rule gave one: the
@@ -855,7 +1008,7 @@ func findKeywordField(parent *Context, key string, class jomini.Class) *Field {
 		return field
 	}
 
-	return parent.Command.ArgumentsOf(parent.Declaration).findChild(key)
+	return parent.Command.Field.findChild(key)
 }
 
 // findShape returns the shape of the block that a context holds, or
@@ -885,127 +1038,147 @@ func (w *walker) findKeyword(parent *Context, holder, key string, block bool) *g
 // keyword holds, written in the block of a context: the Encloses of the
 // context's shape, else the context's own shape.
 func findEnclosing(context *Context) game.Shape {
-	return cmp.Or(game.Shapes[findShape(context)].Encloses, findShape(context))
+	return cmp.Or(shapeRows[findShape(context)].encloses, findShape(context))
 }
 
-// ruleMatchers holds, by key rule, the function that tells what a key fits
-// under that rule and whether it fits. Each takes the context of the block
-// that holds the key, the key and its class, and whether the key's statement
-// is a block.
-var ruleMatchers = map[game.KeyRule]func(*walker, *Context, string, jomini.Class, bool) (match, bool){
-	game.KeyRuleKnownCall:    (*walker).matchKnownCall,
-	game.KeyRuleDeclared:     (*walker).matchDeclared,
-	game.KeyRuleDocumented:   (*walker).matchDocumented,
-	game.KeyRuleCommand:      (*walker).matchCommand,
-	game.KeyRuleLink:         (*walker).matchLink,
-	game.KeyRuleScopeLink:    (*walker).matchScopeLink,
-	game.KeyRuleModifier:     (*walker).matchModifier,
-	game.KeyRuleModifierType: (*walker).matchModifierType,
-	game.KeyRuleObserved:     (*walker).matchObserved,
-	game.KeyRuleField:        (*walker).matchField,
-	game.KeyRuleFieldOrCall:  (*walker).matchFieldOrCall,
-	game.KeyRuleCall:         (*walker).matchCall,
-}
-
-// findMatch returns what a key of the given class fits under the first rule
-// of the parent block's shape that it fits, and whether one does. A rule
-// ruleMatchers does not hold fits nothing. Where the rule gives no shape, the
-// match takes what findBlockShape gives its field, else unknown. A field's
-// key in a block whose keys name definitions also refers to one. The flag
-// says whether the key's statement is a block.
-func (w *walker) findMatch(parent *Context, key string, class jomini.Class, block bool) (match, bool) {
-	for _, rule := range game.Shapes[findShape(parent)].KeyRules {
-		matcher, ok := ruleMatchers[rule]
-		if !ok {
-			continue
+// lookupKey returns what a key that is no keyword is in the block of a
+// context: the first thing the block's shape takes, in order, that has the
+// key. It returns false if nothing takes the key. The flag says whether the
+// key's statement is a block.
+func (w *walker) lookupKey(parent *Context, key string, class jomini.Class, block bool) (match, bool) {
+	for _, entry := range shapeRows[findShape(parent)].takes {
+		if fit, ok := w.take(entry, parent, key, class, block); ok {
+			return fit, true
 		}
-
-		fit, fits := matcher(w, parent, key, class, block)
-		if !fits {
-			continue
-		}
-
-		fit.shape = cmp.Or(fit.shape, findBlockShape(fit.field), game.ShapeUnknown)
-
-		// a key the dumps declare is an argument, as stress_impact's base is,
-		// and none of the names
-		declared := fit.field != nil && fit.field.Source == game.SourceDumps
-		if fit.category == CategoryField && fit.database == "" && parent.Field != nil && !declared {
-			fit.database, fit.inferred = parent.Field.Keys.Value, !parent.Field.Keys.Source.CanAccuse()
-		}
-
-		return fit, true
 	}
 
 	return match{}, false
 }
 
-// matchKnownCall fits a key that names a scripted definition the block
-// calls, the file's own first. The keys in its block are the definition's
-// parameters, else the fields of the definition's database.
-func (w *walker) matchKnownCall(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
-	callee, caller, ok := w.findCalledDefinition(parent.FindCaller(), key)
-	field := callee.Parameters
-	if database := w.schema.Databases[callee.Database]; field == nil && database != nil {
-		field = database.Definition
-	}
-
-	return match{category: CategoryCall, field: field, callee: &callee, caller: caller}, ok
-}
-
-// matchDeclared fits a key that the block's field holds from a source other
-// than the game's own files. A number or a date fits the field's <number>
-// child.
-func (w *walker) matchDeclared(parent *Context, key string, class jomini.Class, _ bool) (match, bool) {
-	child := parent.Field.findNumberChild(key, class)
-
-	return match{category: CategoryField, field: child}, child != nil && child.Source != game.SourceNone &&
-		child.Source != game.SourceVanilla
-}
-
-// matchDocumented fits a key that the docs write for the definitions of the
-// block's database.
-func (w *walker) matchDocumented(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
-	database := w.schema.Databases[parent.Database]
-
-	return match{category: CategoryField, field: parent.Field.findChild(key)}, database != nil && database.Documented[key]
-}
-
-// matchCommand fits a command that the dumps declare, or a pattern makes,
-// and that the block takes. The match holds the command's arguments and the
-// shape of its block. It returns false if no command matches or the block
-// does not take the command.
-func (w *walker) matchCommand(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
-	command, ok := w.schema.FindCommand(key)
-	fit := match{category: CategoryCommand, command: command, patterns: w.schema.findPatterns(key)}
-	if !ok && len(fit.patterns) > 0 {
-		fit.command = w.schema.Commands[fit.patterns[0].Commands[0]]
-
-		// a list iterator a pattern makes takes the plain iterator of its
-		// scope, as any_character, for its arguments
-		if iterator, listed := game.MatchListIterator(key); listed {
-			fit.command = cmp.Or(w.schema.Commands[strings.TrimSuffix(iterator.Key, "*")+fit.command.Target], fit.command)
+// take returns what a key is under one entry of a shape's takes, a database
+// of the dumps or a take mark, and whether that entry has the key. A number
+// or a date fits a field's <number> child, and under takeOwn its <any>
+// child too. A key of takeUnknown calls through the block's caller.
+func (w *walker) take(entry string, parent *Context, key string, class jomini.Class, block bool) (match, bool) {
+	switch entry {
+	case takeCalls:
+		// the keys in a call's block are the definition's parameters, else
+		// the fields of its database
+		callee, caller, ok := w.findCalledDefinition(parent.FindCaller(), key)
+		if !ok {
+			return match{}, false
 		}
+
+		field := callee.Field
+		if database := w.schema.Databases[callee.Database]; field == nil && database != nil {
+			field = database.Field
+		}
+
+		return match{mark: entry, field: field, callee: callee, caller: caller}, true
+
+	case takeDeclared:
+		child := parent.Field.findNumberChild(key, class)
+
+		return match{mark: entry, field: child}, child != nil && child.Source != game.SourceNone &&
+			child.Source != game.SourceVanilla
+
+	case takeObserved:
+		child := parent.Field.findNumberChild(key, class)
+
+		return match{mark: entry, field: child}, child != nil && child.Source == game.SourceVanilla
+
+	case takeDocumented:
+		database := w.schema.Databases[parent.Database]
+
+		return match{mark: entry, field: parent.Field.findChild(key)}, database != nil && database.Documented[key]
+
+	case takeOwn:
+		child := parent.Field.findPatternChild(key, class)
+
+		return match{mark: entry, field: child}, child != nil
+
+	case takeModifiers:
+		_, declared := w.schema.Modifiers[key]
+
+		return match{mark: entry, field: w.findModifierField(parent.Field, key)}, declared
+
+	case takeModifierTypes:
+		return match{mark: entry, field: w.findModifierField(parent.Field, key)},
+			w.schema.ModifierTypes != "" && class.IsIdentifier()
+
+	case takeUnknown:
+		return match{mark: entry, caller: parent.FindCaller()}, class.IsIdentifier() && class != jomini.ClassEventID
+
+	case game.DumpLinks, takeBareLinks:
+		return w.takeLink(entry, parent, key, block)
 	}
 
-	if fit.command == nil {
+	return w.takeCommand(entry, parent, key)
+}
+
+// takeLink returns the link that a key starts with, as scope:target does.
+// Under takeBareLinks a plain name with a plain value is none: it is an
+// argument or a call. A link's block keeps the field of the block around
+// it.
+func (w *walker) takeLink(entry string, parent *Context, key string, block bool) (match, bool) {
+	if entry == takeBareLinks && !block && !strings.ContainsAny(key, ":.") {
 		return match{}, false
 	}
 
-	fit.declaration, ok = parent.FindDeclaration(fit.command)
-	fit.field = parent.FindArguments(fit.command, fit.declaration)
-	switch shape := findBlockShape(fit.field); {
-	case shape != "":
-		fit.shape = shape
-	case fit.field != nil && fit.field == fit.command.Union:
-		fit.shape = game.ShapeUnknown
-	case fit.declaration == game.DeclarationTrigger:
-		fit.shape = game.ShapeTriggerArguments
-	default:
-		fit.shape = game.ShapeEffectArguments
+	link := w.schema.FindLink(key)
+
+	return match{definition: link, field: parent.Field}, link != nil
+}
+
+// takeCommand returns the effect or the trigger of the given database that a
+// key names: the one the dumps declare, else the one a pattern makes. It
+// returns false if there is none, and for an effect in a block of triggers.
+// The match holds the keys the command takes in the block.
+func (w *walker) takeCommand(database string, parent *Context, key string) (match, bool) {
+	if !parent.Takes(database) {
+		return match{}, false
 	}
 
-	return fit, ok
+	fit := match{definition: w.schema.LookupDefinition(database, key), patterns: w.schema.findPatterns(database, key)}
+	if fit.definition == nil && len(fit.patterns) > 0 {
+		fit.definition = fit.patterns[0]
+
+		// a list iterator a pattern makes takes the plain iterator of its
+		// scope, as any_character, for its keys
+		if iterator, listed := game.MatchListIterator(key); listed {
+			plain := strings.TrimSuffix(iterator.Key, "*") + fit.definition.Target
+			fit.definition = cmp.Or(w.schema.LookupDefinition(database, plain), fit.definition)
+		}
+	}
+
+	if fit.definition == nil {
+		return match{}, false
+	}
+
+	fit.field = parent.FindArguments(fit.definition)
+
+	return fit, true
+}
+
+// findMatchShape returns the shape of the block of a key that fits: for a
+// link, what a link encloses in the block around it; for a command, what its
+// keys' field says, else unknown for the keys of an effect and a trigger
+// together, else the arguments of its own kind; for anything else, what its
+// field says, else unknown.
+func findMatchShape(parent *Context, fit match) game.Shape {
+	shape := findBlockShape(fit.field)
+	switch {
+	case fit.isLink():
+		return findEnclosing(parent)
+	case shape != "" || fit.definition == nil:
+		return cmp.Or(shape, game.ShapeUnknown)
+	case fit.field != nil && fit.field == fit.definition.Union:
+		return game.ShapeUnknown
+	case fit.definition.Database == game.DumpTriggers:
+		return game.ShapeTriggerArguments
+	}
+
+	return game.ShapeEffectArguments
 }
 
 // findBlockShape returns the shape of a field's own block where no rule
@@ -1026,78 +1199,10 @@ func findBlockShape(field *Field) game.Shape {
 	return ""
 }
 
-// matchLink fits a key that starts with a scope link, as scope:target does.
-// Its block keeps the field of the block around it, in the shape a link
-// encloses there.
-func (w *walker) matchLink(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
-	return match{category: CategoryLink, field: parent.Field, shape: findEnclosing(parent)}, w.schema.isKeyLink(key)
-}
-
-// matchScopeLink does what matchLink does, but refuses a plain name with a
-// plain value, which is an argument or a call.
-func (w *walker) matchScopeLink(parent *Context, key string, class jomini.Class, block bool) (match, bool) {
-	if !block && !strings.ContainsAny(key, ":.") {
-		return match{}, false
-	}
-
-	return w.matchLink(parent, key, class, block)
-}
-
-// matchModifier fits a modifier the dumps declare. The key names a modifier
-// type, inferred, since nothing says that every modifier has a definition.
-func (w *walker) matchModifier(parent *Context, key string, _ jomini.Class, _ bool) (match, bool) {
-	_, declared := w.schema.Modifiers[key]
-
-	return match{
-		category: CategoryField, field: w.findModifierField(parent.Field, key), database: w.schema.ModifierTypes,
-		inferred: true,
-	}, declared
-}
-
-// matchModifierType fits any identifier as the name of a modifier type, in a
-// game whose modifier types have a database.
-func (w *walker) matchModifierType(parent *Context, key string, class jomini.Class, _ bool) (match, bool) {
-	return match{
-		category: CategoryReference, field: w.findModifierField(parent.Field, key), database: w.schema.ModifierTypes,
-	}, w.schema.ModifierTypes != "" && class.IsIdentifier()
-}
-
-// matchObserved fits a key that only the game's own files write in the
-// block's field. A number or a date fits the field's <number> child. The
-// scope inside its block is not known.
-func (w *walker) matchObserved(parent *Context, key string, class jomini.Class, _ bool) (match, bool) {
-	child := parent.Field.findNumberChild(key, class)
-
-	return match{category: CategoryField, field: child, observed: true}, child != nil && child.Source == game.SourceVanilla
-}
-
-// matchField fits a key that the block's field has a child for: the key's
-// own, else the <number> child for a number or a date, else the <any> child.
-func (w *walker) matchField(parent *Context, key string, class jomini.Class, _ bool) (match, bool) {
-	child := parent.Field.findPatternChild(key, class)
-
-	return match{category: CategoryField, field: child}, child != nil
-}
-
-// matchFieldOrCall does what matchField does, else what matchCall does.
-func (w *walker) matchFieldOrCall(parent *Context, key string, class jomini.Class, block bool) (match, bool) {
-	if fit, ok := w.matchField(parent, key, class, block); ok {
-		return fit, true
-	}
-
-	return w.matchCall(parent, key, class, block)
-}
-
-// matchCall fits an identifier or a chain, but no event id, as a call through
-// the caller of the block that holds the key.
-func (w *walker) matchCall(parent *Context, _ string, class jomini.Class, _ bool) (match, bool) {
-	return match{category: CategoryCall, caller: parent.FindCaller()}, class.IsIdentifier() && class != jomini.ClassEventID
-}
-
 // findCalledDefinition returns the scripted definition a key calls and the
 // caller it is called through, trying the file's inline definitions first.
 // A GUI widget type calls an empty one. It returns false if there is none.
-func (w *walker) findCalledDefinition(caller, key string) (ScriptedDefinition, string, bool) {
+func (w *walker) findCalledDefinition(caller, key string) (*Definition, string, bool) {
 	if scripted, ok := w.inline[key]; ok {
 		callers := w.schema.Databases[scripted.Database].Callable.Callers
 		if len(callers) > 0 && (caller == game.AnyCall || slices.Contains(callers, caller)) {
@@ -1105,16 +1210,16 @@ func (w *walker) findCalledDefinition(caller, key string) (ScriptedDefinition, s
 		}
 	}
 
-	if caller != game.AnyCall {
-		callee, ok := w.schema.lookupScripted(w.mods, caller, key)
-		if !ok && caller == game.GUI.TagCalls && w.schema.WidgetTypes[key] {
-			return ScriptedDefinition{}, caller, true
-		}
-
-		return callee, caller, ok && caller != ""
+	if caller == game.AnyCall {
+		return w.schema.findScripted(w.winners, key, w.file.Format)
 	}
 
-	return w.schema.findScripted(w.mods, key)
+	callee := w.schema.lookupCall(w.winners, caller, key)
+	if callee == nil && caller == game.GUI.TagCalls && w.schema.WidgetTypes[key] {
+		return &Definition{}, caller, true
+	}
+
+	return callee, caller, callee != nil && caller != ""
 }
 
 // findModifierField returns the field of a key in a modifiers block: what
@@ -1131,37 +1236,34 @@ func (c *Context) FindCaller() string {
 		return c.Keyword.Caller
 	}
 
-	return game.Shapes[findShape(c)].Caller
+	return shapeRows[findShape(c)].caller
 }
 
-// FindDeclaration returns how the dumps declare a command, among the
-// declarations this context's block allows. It returns false if the block
-// does not take the command.
-func (c *Context) FindDeclaration(command *Command) (game.Declaration, bool) {
-	position := slices.IndexFunc(command.Declared, c.Allows)
-	if position < 0 {
-		return "", false
-	}
-
-	return command.Declared[position], true
-}
-
-// FindArguments returns the keys a command takes in this context's block
-// under the given declaration. A command declared as both an effect and a
-// trigger takes the keys of both in a block that allows either.
-func (c *Context) FindArguments(command *Command, declaration game.Declaration) *Field {
-	if command.Union != nil && c.Allows(game.DeclarationEffect) && c.Allows(game.DeclarationTrigger) {
+// FindArguments returns the keys a command takes in this context's block: its
+// own, or the keys of its effect and its trigger together in a block that
+// takes either. It returns nil for no command, and for one that takes none.
+func (c *Context) FindArguments(command *Definition) *Field {
+	switch {
+	case command == nil:
+		return nil
+	case command.Union != nil && c.Takes(game.DumpEffects) && c.Takes(game.DumpTriggers):
 		return command.Union
 	}
 
-	return command.ArgumentsOf(declaration)
+	return command.Field
 }
 
-// Allows reports whether this context's block takes a command with the
-// given declaration. An effect never fits in a block of triggers.
-func (c *Context) Allows(declaration game.Declaration) bool {
-	return slices.Contains(game.Shapes[findShape(c)].Allows, declaration) &&
-		(declaration != game.DeclarationEffect || !c.holdsConditions())
+// TakesLinks reports whether a key in this context's block may be a link.
+func (c *Context) TakesLinks() bool {
+	return c.Takes(game.DumpLinks) || c.Takes(takeBareLinks)
+}
+
+// Takes reports whether this context's block takes the keys of the given
+// database of the dumps, or the keys a take mark stands for. An effect never
+// fits in a block of triggers.
+func (c *Context) Takes(entry string) bool {
+	return slices.Contains(shapeRows[findShape(c)].takes, entry) &&
+		(entry != game.DumpEffects || !c.holdsConditions())
 }
 
 // holdsConditions reports whether the statements in the block of a context
@@ -1172,68 +1274,93 @@ func (c *Context) holdsConditions() bool {
 		c.Conditional && c.Shape != game.ShapeValue
 }
 
-// resolveMatch sets the context of a keyed statement from the rule its key
-// fits, or from its block's shape if none does. A keyword's block holds what
-// its row says. An enclosing keyword's block is the block around it again,
-// with the same field and shape. A list's block inside a value block, and a
-// block the key is compared with, as the flag says, are value blocks.
-func (w *walker) resolveMatch(context *Context, parent *Context, fit match, fits bool, keyword *game.Keyword, compared bool) {
-	context.Field, context.Shape, context.Category = fit.field, fit.shape, fit.category
-	if !fits {
-		context.Shape = game.Shapes[findShape(parent)].Blocks
-	}
-
-	context.Command, context.Declaration, context.Callee = fit.command, fit.declaration, fit.callee
-	keepsScope := fits && !fit.observed
+// resolveMatch sets the context of a keyed statement from what its key fits
+// in the block around it, the keyword it is there, nil for none, and whether
+// its block is compared with the key. A keyword that encloses keeps the
+// field of the block around it.
+func (w *walker) resolveMatch(
+	context, parent *Context, fit match, fits bool, keyword *game.Keyword, key string, compared bool,
+) {
+	context.Field, context.Category = fit.field, fit.category()
+	context.Command, context.Callee = fit.definition, fit.callee
+	context.Iterates = fit.iterator != nil
 	if keyword != nil {
 		if keyword.Shape == game.ShapeEnclosing {
-			context.Field, context.Shape = parent.Field, findEnclosing(parent)
-		} else {
-			context.Shape = cmp.Or(keyword.Shape, context.Shape)
+			context.Field = parent.Field
 		}
 
-		context.Keyword = keyword
-		context.Category = CategoryKeyword
+		context.Keyword, context.Category = keyword, CategoryKeyword
 		context.Preview = context.Preview || keyword.Preview
-		keepsScope = keepsScope || !fits && keyword.Shape != ""
 	}
 
-	if fit.iterator != nil {
-		context.Shape, context.Iterates = fit.iterator.Shape, true
+	context.Shape = findKeyShape(parent, fit, fits, keyword, compared)
+	context.Scope = w.findKeyScope(context, parent, fit, fits, keyword, key)
+	if fit.moves() {
+		context.Previous = slices.Concat([]string{parent.Scope}, parent.Previous)
 	}
-
-	// CK3 _script_values.info, "Lists": a list written in a formula holds the
-	// formula's math, as add_gold = { every_child = { add = 1 } } does. A
-	// block a key is compared with is a formula too.
-	if fit.iterator != nil && findShape(parent) == game.ShapeValue || compared {
-		context.Shape = game.ShapeValue
-	}
-
-	w.resolveScope(context, parent, fit, keepsScope)
 }
 
-// resolveScope sets the scope inside a block. A link, an iterator or a
-// command that leads to a scope moves it there. Any other block keeps the
-// scope it is written in where keepsScope is set and its shape is known,
-// else has none.
-func (w *walker) resolveScope(context *Context, parent *Context, fit match, keepsScope bool) {
-	moves := fit.iterator != nil || fit.category == CategoryLink ||
-		fit.command != nil && (fit.command.Target != "" || fit.command.Lists)
+// findKeyShape returns the shape of the block that a keyed statement holds.
+// The first rule that holds decides.
+func findKeyShape(parent *Context, fit match, fits bool, keyword *game.Keyword, compared bool) game.Shape {
 	switch {
-	case moves:
-		context.Scope = ""
-		if w.schema.isScope(fit.target) {
-			context.Scope = fit.target
-		}
+	// a block a key is compared with is a formula
+	case compared:
+		return game.ShapeValue
 
-		context.Previous = slices.Concat([]string{parent.Scope}, parent.Previous)
+	// CK3 _script_values.info, "Lists": a list written in a formula holds the
+	// formula's math, as add_gold = { every_child = { add = 1 } } does
+	case fit.iterator != nil && findShape(parent) == game.ShapeValue:
+		return game.ShapeValue
 
-	case keepsScope && context.Shape != "" && context.Shape != game.ShapeUnknown:
-		context.Scope = parent.Scope
+	case fit.iterator != nil:
+		return fit.iterator.Shape
 
-	default:
-		context.Scope = ""
+	// an enclosing keyword's block is the block around it again
+	case keyword != nil && keyword.Shape == game.ShapeEnclosing:
+		return findEnclosing(parent)
+
+	// any other keyword's block holds what its row says, where it says
+	case keyword != nil && keyword.Shape != "":
+		return keyword.Shape
+
+	case fits:
+		return findMatchShape(parent, fit)
 	}
+
+	return shapeRows[findShape(parent)].blocks
+}
+
+// findKeyScope returns the scope script runs in inside the block of a keyed
+// statement, whose shape the context already holds. It is "" where it is not
+// known. The first rule that holds decides.
+func (w *walker) findKeyScope(
+	context, parent *Context, fit match, fits bool, keyword *game.Keyword, key string,
+) string {
+	known := context.Shape != "" && context.Shape != game.ShapeUnknown
+	explained := fits && fit.mark != takeObserved
+	shaped := keyword != nil && !fits && keyword.Shape != ""
+	switch {
+	// an argument is read in a scope the command makes, but a conditional
+	// keyword such as limit in the scope of the command that holds it
+	case isArgument(parent, key) && (keyword == nil || keyword.Class != game.KeywordClassConditional):
+		return ""
+
+	// a link, an iterator or a command that leads to a scope moves it there
+	case fit.moves() && w.schema.isScope(fit.target):
+		return fit.target
+
+	case fit.moves():
+		return ""
+
+	// a key that a source other than the game's own files explains keeps the
+	// scope it is written in, and so does a keyword whose row says what its
+	// block holds
+	case known && (explained || shaped):
+		return parent.Scope
+	}
+
+	return ""
 }
 
 // isArgument reports whether a key in the block of a command is one of the
@@ -1250,37 +1377,55 @@ func isArgument(parent *Context, key string) bool {
 func (c *Context) HoldsArguments() bool {
 	command := c.Command
 
-	return c.Category == CategoryCommand && (command == nil || command.Target == "" && !command.Lists)
+	return c.Category == CategoryCommand && (command == nil || command.Target == "" && !command.Iterates)
 }
 
-// resolveCallReferences adds the references a key makes, by what it fits:
-// a name of the database the match names, the star of each command pattern
-// that makes it, the names after a link's prefixes, or the name a call
-// calls. A call to an unknown name refers to it in each database of its
-// caller, or in the lists for an iterator.
-func (w *walker) resolveCallReferences(context *Context, fit match, key string, span jomini.Span) {
+// resolveCallReferences adds the references a key makes, by what it is: the
+// command or each link of the dumps it uses, the star of each pattern that
+// makes it, the names after a link's prefixes, the name a call calls, a
+// modifier's type, or a name of the database that the keys of the block
+// around it name. A call to an unknown name refers to it in each database
+// of its caller, or in the lists for an iterator.
+func (w *walker) resolveCallReferences(context, parent *Context, fit match, key string, span jomini.Span) {
+	// a key the dumps declare is an argument, as stress_impact's base is, and
+	// names nothing
+	keys := Claim[string]{}
+	if declared := fit.field != nil && fit.field.Source == game.SourceDumps; parent.Field != nil && !declared {
+		keys = parent.Field.Keys
+	}
+
+	modifies := fit.mark == takeModifiers || fit.mark == takeModifierTypes
 	switch {
-	case fit.database != "":
+	case modifies && w.schema.ModifierTypes != "":
+		// nothing says that every modifier the dumps declare has a definition
 		context.References = append(context.References,
-			Reference{Database: fit.database, Name: key, Span: span, Inferred: fit.inferred})
+			Reference{Database: w.schema.ModifierTypes, Name: key, Span: span, Inferred: fit.mark == takeModifiers})
+
+	// a modifier in a game whose modifier types have no database of their
+	// own names what the keys of its block name, as any field does
+	case fit.category() == CategoryField && keys.Value != "":
+		context.References = append(context.References,
+			Reference{Database: keys.Value, Name: key, Span: span, Inferred: !keys.Source.CanAccuse()})
 
 	case len(fit.patterns) > 0:
 		lower := strings.ToLower(key)
 		for _, pattern := range fit.patterns {
 			start, end, _ := pattern.findStar(lower)
-			context.References = append(context.References, Reference{
-				Database: pattern.Database, Name: key[start:end],
-				Span: jomini.Span{Start: span.Start + start, End: span.Start + end},
-			})
+			for _, database := range pattern.Star {
+				context.References = append(context.References, Reference{
+					Database: database, Name: key[start:end],
+					Span: jomini.Span{Start: span.Start + start, End: span.Start + end},
+				})
+			}
 		}
 
-	case fit.category == CategoryLink:
+	case fit.isLink():
 		context.References = append(context.References, w.listPrefixed(key, span.Start)...)
 
 	case fit.callee != nil && fit.callee.Database != "":
 		context.References = append(context.References, Reference{Database: fit.callee.Database, Name: key, Span: span, Caller: fit.caller})
 
-	case fit.category != CategoryCall || fit.callee != nil: // not a call to an unknown name
+	case fit.mark != takeUnknown: // not a call to an unknown name
 
 	case fit.iterator != nil:
 		prefix := strings.TrimSuffix(fit.iterator.Key, "*")
@@ -1297,52 +1442,37 @@ func (w *walker) resolveCallReferences(context *Context, fit match, key string, 
 	}
 }
 
-// resolveChain returns the scope a chain of links leads to. It returns "" if
-// a link cannot be followed.
-func (w *walker) resolveChain(chain string, parent *Context) string {
-	scope := parent.Scope
-	for _, link := range jomini.Links(chain, 0) {
-		text := strings.ToLower(chain[link.Span.Start:link.Span.End])
-		prefix, prefixed := strings.ToLower(chain[link.Prefix.Start:link.Prefix.End]), !link.Prefix.IsEmpty()
-		switch {
-		case text == game.ScopeLinks.Root:
-			scope = parent.Root
+// listUses returns the uses of the dumps' names that a key makes: one of its
+// command, or one of each link of its chain.
+func listUses(language *Schema, fit match, key string, span jomini.Span) []Reference {
+	switch {
+	case fit.isLink():
+		return language.listLinkUses(key, span.Start)
+	case fit.definition != nil:
+		return []Reference{{Database: fit.definition.Database, Name: fit.definition.Key, Span: span, Inferred: true}}
+	}
 
-		case text == game.ScopeLinks.This:
-			scope = parent.Scope
+	return nil
+}
 
-		case text == game.ScopeLinks.Previous:
-			scope = ""
-			if len(parent.Previous) > 0 {
-				scope = parent.Previous[0]
-			}
-
-		case prefixed && prefix == game.SavedScopes:
-			label := chain[link.Name.Start:link.Name.End]
-			scope = ""
-			for _, saved := range slices.Backward(w.saved) {
-				if saved.Name == label {
-					scope = saved.Type
-					break
-				}
-			}
-
-		case prefixed:
-			scope = ""
-			if command := w.schema.Commands[prefix]; command != nil {
-				scope = command.Target
-			}
-
-		default:
-			scope, _ = w.schema.ResolveLink(text, scope)
+// listLinkUses returns a use of each link of a chain that the dumps declare,
+// with where the link is written: its name, or its prefix where it has one.
+// The chain starts at the given offset of the file. A use is never an error.
+func (s *Schema) listLinkUses(chain string, start int) []Reference {
+	var uses []Reference
+	for _, link := range jomini.Links(chain, start) {
+		span := link.Span
+		if !link.Prefix.IsEmpty() {
+			span = link.Prefix
 		}
 
-		if scope == "" {
-			return ""
+		definition := s.lookupLink(chain[span.Start-start:span.End-start], !link.Prefix.IsEmpty())
+		if definition != nil {
+			uses = append(uses, Reference{Database: game.DumpLinks, Name: definition.Key, Span: span, Inferred: true})
 		}
 	}
 
-	return scope
+	return uses
 }
 
 // linkUsers holds the triggers and lists that read a name saved for one of
@@ -1427,7 +1557,7 @@ func (w *walker) resolveSaved(context *Context, statement int32, level int) {
 		return
 	}
 
-	context.Definition = &Definition{Database: link, Name: label, Span: span, Statement: statement}
+	context.Definition = &Copy{Database: link, Name: label, Span: span, Statement: statement}
 	context.Defines = true
 	if link == game.SavedScopes {
 		w.saved = append(w.saved, Saved{Name: label, Type: scope})
@@ -1463,7 +1593,7 @@ func (w *walker) resolveAlias(context *Context, statement int32, level int) {
 	target, isAlias := database.Row.Aliases[w.frames[level].label]
 	span := w.tree.UnquotedSpan(current.Value)
 	if label := w.tree.Text(span); isAlias && label != "" && current.ValueClass != jomini.ClassParameter {
-		context.Definition = &Definition{
+		context.Definition = &Copy{
 			Database: cmp.Or(target, database.Name), Name: label, Span: span, Statement: statement, Alias: true,
 		}
 		context.Defines = true

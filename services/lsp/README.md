@@ -58,21 +58,26 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
 
 ## The answers
 
-- **Hover.** `Hover` walks to the position and returns a `Card`: what the key or value is, what it takes, where it
-  leads, a date in the mod's calendar, a color, an image's header, a localization key's text and the sites that
-  define the name, the one the game keeps first. What a value takes is worded in the game's words. A definition's card
-  also has its localized name and description, the comment lines just above it and, for a scripted effect or trigger,
-  its parameters. A key in a call of one is a parameter, and its card names the definition it is given to
-  (`Card.Callee`). A value that is one of the choices its key takes, such as an event's type, is named by the key,
-  with the choices and the key's own text. A command's card shows the scopes the dumps give it, or says they name
-  none. A fact learned only
-  from the game's files marks the card inferred. `Classes` are the wiki lexicon's, in the
-  order of its tabs, and `Card.Lexicon` names the one that lists what the card is about. `Card.Token` is the token
-  type the editor colors the word by, so the page draws the card's label in the word's own color.
-- **Completion.** `Complete` returns what fits at a key: the language's keywords for the block, then its commands,
-  the scripted definitions the block's caller calls and, where the block reads links, the links written alone that
-  run in its scope, `this`, `root`, `prev` and the scopes saved earlier, each ranked by how often the game writes it,
-  then its fields and the names of the database its keys name. A block whose caller is any call, such as a command's
+- **Hover.** `Hover` walks to the position and returns a `Card`: what the key or value is, a localization key's
+  text, a color, the sites that define the name, the one the game keeps first, and its facts as `Card.Rows`. A row is
+  a label and the fact in words, worded here and kept in the one order `rowLabels` lists: what the word takes, where
+  it leads, a date in the mod's calendar, an image's size and format. The page draws the rows as given. A scope is
+  worded one way on every row (`describeScope`), and a date as the date hint words it (`describeDate`). A definition's
+  card also has its localized name and description, the comment lines just above it and, for a scripted effect or
+  trigger, its parameters. A key in a call of one is a parameter, and its card names the definition it is given to. A
+  value that is one of the choices its key takes, such as an event's type, is named by the key, with the choices and
+  the key's own text. A command's card shows the scopes the dumps give it, or says they name none. Each link of a
+  chain has its own card, and so has a link written as a value: it says the scope the link leads to. A fact learned
+  only from the game's files marks the card inferred. `Classes` are the wiki lexicon's, in the order of its tabs, and
+  `Card.Lexicon` names the one that lists what the card is about. `Card.Token` is the token type the editor colors
+  the word by, so the page draws the card's label in the word's own color.
+- **Completion.** `Complete` returns a `CompletionList`: the candidates, and whether a limit cut them short. Only the
+  localization keys have a limit, and a key typed in full is listed first, before the cut. The editor asks again as
+  typing narrows a list that is cut, and filters any other itself. At a key it returns what fits: the language's
+  keywords for the block, then its commands, the scripted definitions the block's caller calls and, where the block
+  reads links, the links written alone that run in its scope, `this`, `root`, `prev` and the scopes saved earlier,
+  each ranked by its uses in the index, then its fields and the names of the database its keys name. The commands
+  and the links are listed from each database's keys, which the schema sorts once. A block whose caller is any call, such as a command's
   block or a random list's branch, gets the definitions that act as a command it allows: scripted effects among
   effects, scripted triggers among triggers. At a value it returns what a call's row says it
   writes, yes and no or the field's choices, and the names of each database the walk finds the value refers to: its
@@ -155,8 +160,9 @@ write otherwise.
 - **Site**: one place in a file that an answer points at, with its range, the text of its line and whether the game
   keeps it where the answer has them.
 - **Edit**: one change to a file's text, as a range and the text that replaces it.
-- **Card**: a hover card, the facts about a key or a value for the page to lay out.
-- **CardDate**: a date read in the mod's calendar.
+- **Card**: a hover card: what a key or a value is, and the facts about it in the words and the order the page shows.
+- **CardRow**: one fact of a card, a label and the fact in words.
+- **CompletionList**: what can be written at a position, with whether a limit cut the list short.
 - **Class**: one class of the wiki's lexicon, which lists the commands the game declares in one way.
 - **Completion**: one candidate in the completion list.
 - **Symbol**: one entry of a file's outline.

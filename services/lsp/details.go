@@ -109,19 +109,7 @@ func (h *hintList) addStatement(tree *jomini.Tree, statement int32, context *sch
 		}
 	}
 	if date, ok := findDate(tree, statement, context); ok {
-		card := resolveDate(h.calendar, date)
-		parts := []string{}
-		if card.Date.Day > 0 {
-			parts = append(parts, fmt.Sprint(card.Date.Day))
-		}
-		if card.Month != "" {
-			parts = append(parts, card.Month)
-		}
-		parts = append(parts, fmt.Sprint(card.Date.Year))
-		if card.Era != "" {
-			parts = append(parts, card.Era)
-		}
-		h.add(tree, tree.Statements[statement].Value.End, HintDate, strings.Join(parts, " "))
+		h.add(tree, tree.Statements[statement].Value.End, HintDate, describeDate(h.calendar, date))
 	}
 }
 

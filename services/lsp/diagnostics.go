@@ -589,7 +589,7 @@ func (visitor *diagnoseVisitor) diagnoseRequired(tree *jomini.Tree, statement in
 		return
 	}
 	database := visitor.ws.Schema.Databases[definition.Database]
-	if database == nil || context.Field != database.Definition {
+	if database == nil || context.Field != database.Field {
 		return
 	}
 	var missing []string
@@ -736,7 +736,7 @@ func (visitor *diagnoseVisitor) diagnoseKey(tree *jomini.Tree, statement int32, 
 
 // diagnoseDefinition records the problems of a definition's entry mode, of a name it shares, and of a title key with
 // no message in the base language.
-func (visitor *diagnoseVisitor) diagnoseDefinition(tree *jomini.Tree, statement int32, definition *schema.Definition) {
+func (visitor *diagnoseVisitor) diagnoseDefinition(tree *jomini.Tree, statement int32, definition *schema.Copy) {
 	database := visitor.ws.Schema.Databases[definition.Database]
 	if database == nil || definition.Alias {
 		return
@@ -773,7 +773,7 @@ func (visitor *diagnoseVisitor) hasMessage(key string) bool {
 
 // isOrphan reports whether a definition written with an entry mode has nothing to change. An optional mode, or one
 // that creates, never is.
-func (visitor *diagnoseVisitor) isOrphan(definition *schema.Definition) bool {
+func (visitor *diagnoseVisitor) isOrphan(definition *schema.Copy) bool {
 	mode, _ := game.LookupEntryMode(definition.Mode)
 	if mode.Optional || mode.Creates {
 		return false
@@ -784,13 +784,13 @@ func (visitor *diagnoseVisitor) isOrphan(definition *schema.Definition) bool {
 }
 
 // isOwn reports whether a site is a definition as written in the file being walked.
-func (visitor *diagnoseVisitor) isOwn(site index.Site, definition *schema.Definition) bool {
+func (visitor *diagnoseVisitor) isOwn(site index.Site, definition *schema.Copy) bool {
 	return site.File == visitor.place.Position && visitor.index.Occurrence(site).Span == definition.Span
 }
 
 // isPriorityTied reports whether a definition has the same override priority as another loaded plain copy of its
 // name, in a database where the game keeps the copy with the highest priority. It is false in any other database.
-func (visitor *diagnoseVisitor) isPriorityTied(definition *schema.Definition, precedence game.Precedence) bool {
+func (visitor *diagnoseVisitor) isPriorityTied(definition *schema.Copy, precedence game.Precedence) bool {
 	if precedence.Keeps != game.KeepHighest {
 		return false
 	}
@@ -852,25 +852,43 @@ func (visitor *diagnoseVisitor) diagnoseUnknown(tree *jomini.Tree, statement int
 	visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, key, "unknown-key", facts))
 }
 
-// diagnoseScope records a command or a link written in a scope the dumps do not list for it. It records none for a
-// command whose dumps list no scope.
+// diagnoseScope records a command written in a scope the dumps do not list
+// for it, and each link of a chain written in one: the scope the chain is
+// written in for its first link, and the scope the link before it leads to
+// for every other. A scope the definition starts in is stated, not followed,
+// so only a scope that script moved to counts.
 func (visitor *diagnoseVisitor) diagnoseScope(tree *jomini.Tree, statement int32, context *schema.Context) {
-	if context.Category != schema.CategoryLink && context.Category != schema.CategoryCommand {
+	if context.Category != schema.CategoryLink && context.Category != schema.CategoryCommand || !isScripted(context) {
 		return
 	}
-	span := tree.Statements[statement].Key
-	key, command := tree.Unquoted(span), context.Command
-	if context.Category == schema.CategoryLink {
-		key = key[:jomini.Links(key, 0)[0].Span.End]
-	}
-	// a starting scope is stated, not followed, so only a followed scope counts
-	scope, followed := context.Parent.Scope, len(context.Parent.Previous)
-	if command == nil || len(command.Scopes) == 0 || scope == "" || followed == 0 ||
-		slices.Contains(command.Scopes, scope) || !isScripted(context) {
+
+	span := tree.UnquotedSpan(tree.Statements[statement].Key)
+	scope, followed := context.Parent.Scope, len(context.Parent.Previous) > 0
+	if context.Category == schema.CategoryCommand {
+		visitor.checkScope(tree, span, context.Command, scope, followed)
+
 		return
 	}
+
+	key := tree.Text(span)
+	links := jomini.Links(key, span.Start)
+	for position, link := range visitor.ws.Schema.ResolveChain(key, context.Parent, context.Saved) {
+		visitor.checkScope(tree, links[position].Span, link.Definition, scope, followed)
+		scope, followed = link.Scope, true
+	}
+}
+
+// checkScope records a command or a link, written at the given span, that
+// the dumps do not list for the scope it is written in. It records none for
+// a name the dumps do not declare or list no scope for, for a scope that is
+// not known, and for one that script did not move to.
+func (visitor *diagnoseVisitor) checkScope(tree *jomini.Tree, span jomini.Span, command *schema.Definition, scope string, followed bool) {
+	if command == nil || len(command.Scopes) == 0 || scope == "" || !followed || slices.Contains(command.Scopes, scope) {
+		return
+	}
+
 	visitor.diagnostics = append(visitor.diagnostics, makeDiagnostic(tree, span, "wrong-scope", map[string]string{
-		"name": key, "scope": scope, "allowed": strings.Join(command.Scopes, ", "),
+		"name": tree.Text(span), "scope": scope, "allowed": strings.Join(command.Scopes, ", "),
 	}))
 }
 
@@ -920,7 +938,7 @@ func describeExpected(expected schema.Expected) string {
 	case expected.Type == schema.ValueTypeTarget:
 		description := "a link"
 		if expected.Scope != "" {
-			description += " to a " + schema.ToPhrase(expected.Scope)
+			description += " to " + describeScope(expected.Scope)
 		}
 		if expected.Database != "" {
 			description += ", or the name of a " + game.DescribeDefinition(expected.Database, false)
@@ -985,21 +1003,21 @@ func (visitor *diagnoseVisitor) diagnoseCall(tree *jomini.Tree, statement int32,
 // listCalleeParameters returns the parameters of the scripted definition a call names, read from the copy the game
 // keeps, else those the walk knows. A copy read once in the run is not read again. It returns nil if the call names
 // no scripted definition that takes parameters.
-func (visitor *diagnoseVisitor) listCalleeParameters(key string, callee *schema.ScriptedDefinition) *schema.Field {
-	if callee == nil || callee.Parameters == nil {
+func (visitor *diagnoseVisitor) listCalleeParameters(key string, callee *schema.Definition) *schema.Field {
+	if callee == nil || callee.Field == nil {
 		return nil
 	}
 	reference := schema.Reference{Database: callee.Database, Name: key}
 	winner, ok := findKept(visitor.ws, visitor.index, reference, visitor.place.Position)
 	if !ok {
-		return callee.Parameters
+		return callee.Field
 	}
 	if parameters, ok := visitor.parameters.Load(winner.Site); ok {
 		return parameters.(*schema.Field)
 	}
 	tree, statement, err := visitor.ws.FindStatement(visitor.index, winner.Site)
 	if err != nil {
-		return callee.Parameters
+		return callee.Field
 	}
 	parameters := schema.ListParameters(tree, statement)
 	visitor.parameters.Store(winner.Site, parameters)
@@ -1008,7 +1026,7 @@ func (visitor *diagnoseVisitor) listCalleeParameters(key string, callee *schema.
 
 // listEnclosingParameters returns the parameters of the definition a call is written in, read from the file being
 // judged. A definition read once is not read again. It returns no parameters if the call is in no definition.
-func (visitor *diagnoseVisitor) listEnclosingParameters(tree *jomini.Tree, definition *schema.Definition) *schema.Field {
+func (visitor *diagnoseVisitor) listEnclosingParameters(tree *jomini.Tree, definition *schema.Copy) *schema.Field {
 	if definition == nil {
 		return &schema.Field{}
 	}
@@ -1021,7 +1039,7 @@ func (visitor *diagnoseVisitor) listEnclosingParameters(tree *jomini.Tree, defin
 }
 
 // isWritten reports whether a definition that a winner merges, other than the one walked, writes a key.
-func (visitor *diagnoseVisitor) isWritten(winner index.Winner, definition *schema.Definition, key string) bool {
+func (visitor *diagnoseVisitor) isWritten(winner index.Winner, definition *schema.Copy, key string) bool {
 	return slices.ContainsFunc(winner.Merged, func(site index.Site) bool {
 		if visitor.isOwn(site, definition) {
 			return false

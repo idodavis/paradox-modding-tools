@@ -381,8 +381,7 @@ var games = map[string]*Game{
 		// the wiki's Localization page: localization/replace/english takes
 		// precedence over localization/english/replace
 		LocReplaceFolders: []string{"localization/replace/%s", "localization/%s/replace"},
-		// the wiki's Modding page; ck3.exe "Duplicate localization key. Key
-		// '%s' is defined in both '%s' and '%s'."
+		// the wiki's Modding page
 		LogsRepeatedKey: true,
 		// effects.log: "execute_decision - Execute the specified decision for
 		// the scoped character"
@@ -455,8 +454,7 @@ var games = map[string]*Game{
 			}},
 		}},
 		TakesModes: true,
-		// victoria3.exe matches the path part /replace/; no source says which
-		// form wins
+		// no source says which form wins
 		LocReplaceFolders: []string{"localization/%s/replace", "localization/replace/%s"},
 		GUI: GameGUI{
 			Undeclared:  []string{"overlappingitembox", "treemapchart", "portrait_button", "axis"},

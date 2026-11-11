@@ -672,7 +672,7 @@ func listModSites(mods *index.Index, keep func(site index.Site) bool) []index.Si
 // copy the game keeps. It is false for a database the schema lacks.
 func hasWinner(ws *workspace.Session, reference schema.Reference, winner index.Winner) bool {
 	database := ws.Schema.Databases[reference.Database]
-	return database != nil && !database.Precedence.KeepsEvery() && winner.Reason != index.ReasonUnsettled
+	return database != nil && !database.Precedence.KeepsEvery() && winner.Reason != game.ReasonUnsettled
 }
 
 // listLoaded returns the sites that lie in files the game reads, in the order given.
@@ -762,7 +762,7 @@ func makeFileSites(ws *workspace.Session, mods *index.Index, path string) []lsp.
 		return makeFileSite(ws, mods, position)
 	})
 	if ok && len(sites) > 1 {
-		sites[len(sites)-1].Reason, sites[len(sites)-1].Label = index.ReasonPath, index.Reasons[index.ReasonPath].Label
+		sites[len(sites)-1].Reason, sites[len(sites)-1].Label = game.ReasonPath, game.Reasons[game.ReasonPath].Label
 	}
 	return sites
 }

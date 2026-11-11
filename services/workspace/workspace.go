@@ -477,19 +477,8 @@ func (wsp *Service) State() State {
 	return State{
 		Open: true, ID: ws.ID, Game: ws.Game, Install: install, InstallFound: files.IsFolder(install.Path),
 		UpdatedFrom: ws.updatedFrom, Dumps: ws.Schema.Dumps,
-		Effects: ws.Effects, Triggers: ws.Triggers, Scopes: len(ws.Schema.Scopes),
+		Effects: ws.Effects, Triggers: ws.Triggers, Scopes: len(ws.Schema.ListKeys(game.DumpTypes)),
 	}
-}
-
-// countDeclared returns how many of a schema's commands are declared as one kind, such as effects.
-func countDeclared(language *schema.Schema, declaration game.Declaration) int {
-	count := 0
-	for _, command := range language.Commands {
-		if slices.Contains(command.Declared, declaration) {
-			count++
-		}
-	}
-	return count
 }
 
 // LookupMod returns a mod of the open workspace. It returns false if none is open or it has no such mod.

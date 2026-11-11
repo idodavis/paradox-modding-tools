@@ -6,7 +6,7 @@
 import * as files$0 from "../../internal/files/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as index$0 from "../../internal/index/models.js";
+import * as game$0 from "../../internal/game/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as jomini$0 from "../../internal/jomini/models.js";
@@ -15,143 +15,75 @@ import * as jomini$0 from "../../internal/jomini/models.js";
 import * as schema$0 from "../../internal/schema/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as texture$0 from "../../internal/texture/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Card is a hover card: the facts about a key or a value, for the page to lay out.
+ * A Card is a hover card: what a key or a value is, and the facts about it
+ * in the words and the order the page shows them.
  */
 export interface Card {
     "title": string;
 
     /**
-     * what it is: the database's singular, "effect", "keyword"
+     * What is what the word is: its database's singular, "effect" or
+     * "keyword". Class is an operator's class, "" for any other word.
      */
     "what": string;
-
-    /**
-     * an operator's class
-     */
     "class"?: string;
     "blurb"?: string;
 
     /**
-     * the game's own text for the word, in the workspace's language: a localization key's text, or the title of a definition
+     * Quote is the game's own text for the word in the workspace's language:
+     * a localization key's text, or the title of a definition.
      */
     "quote"?: string;
 
     /**
-     * what the key's value may be, in words
-     */
-    "takes"?: string;
-
-    /**
-     * whether a field is required: optional, always or conditional
-     */
-    "need"?: string;
-
-    /**
-     * the text the game shows as an entry's description
+     * Description is the text the game shows as a definition's description.
+     * Comment is the comment lines just above the definition, without their
+     * hashes.
      */
     "description"?: string;
-
-    /**
-     * the comment lines just above an entry, without their hashes
-     */
     "comment"?: string;
 
     /**
-     * the parameters a scripted effect or trigger takes, without dollars
+     * Rows are the card's facts, in the order rowLabels lists their labels.
      */
-    "parameters"?: string[] | null;
+    "rows"?: CardRow[] | null;
 
     /**
-     * the scripted effect or trigger a parameter is given to; "" for any other key
-     */
-    "callee"?: string;
-
-    /**
-     * the game's eight most written values for an undeclared field
-     */
-    "writes"?: string[] | null;
-
-    /**
-     * what a call of a scripted definition gives
-     */
-    "returns"?: string;
-
-    /**
-     * the kind of command a workspace's scripted definition acts as
-     */
-    "command"?: string;
-
-    /**
-     * the id of the lexicon class that lists it; "" for none
+     * Lexicon is the id of the lexicon class that lists the word. It is ""
+     * for a word the lexicon does not list.
      */
     "lexicon"?: string;
 
     /**
-     * what its block holds, in words
-     */
-    "holds"?: string;
-
-    /**
-     * the scope its block runs in, where a command or link moves it
-     */
-    "leads"?: string;
-
-    /**
-     * the scope its value must be for a command or link with no block
-     */
-    "target"?: string;
-
-    /**
-     * a fact comes from dumps older than the install
+     * Stale is whether a fact comes from dumps older than the install.
+     * Inferred is whether one was learned from the game's own files.
      */
     "stale"?: boolean;
+    "inferred": boolean;
 
     /**
-     * a branch of a random list: its percent of the branches' numbers
-     */
-    "weight"?: number;
-
-    /**
-     * the Event Graph's id of the name; "" if it is not drawn
+     * Node is the Event Graph's id of the name. It is "" for a name the
+     * graph does not draw.
      */
     "node"?: string;
 
     /**
-     * the definition the position is in, then the blocks inside it
+     * Within is the key of the definition the position is in, then the keys
+     * of the blocks inside it that hold the position.
      */
     "within"?: string[] | null;
 
     /**
-     * the scopes the dumps give a command, else "The game does not say"
-     */
-    "runs"?: string;
-    "date"?: CardDate | null;
-
-    /**
-     * a CSS color
+     * Color is the CSS color the word stands for, "" for none.
      */
     "color"?: string;
-
-    /**
-     * the number a constant stands for
-     */
-    "number"?: number | null;
-    "image"?: texture$0.Header | null;
     "sites"?: Site[] | null;
 
     /**
-     * a fact was learned from the game's files
-     */
-    "inferred": boolean;
-
-    /**
-     * what the card is about
+     * Range is the word the card is about.
      */
     "range": Range;
 
@@ -163,26 +95,23 @@ export interface Card {
 }
 
 /**
- * A CardDate is a date read in the mod's calendar: its era and the month's name as the mod names it.
+ * A CardRow is one fact of a card: a label, and the fact in words.
  */
-export interface CardDate {
-    "date": jomini$0.Date;
-    "era"?: string;
-    "month": string;
+export interface CardRow {
+    "label": string;
+    "text": string;
 }
 
 /**
- * A Class is one class of the wiki's lexicon, by which a card and a completion name the commands the game declares.
+ * A Class is one class of the wiki's lexicon, by which a card and a
+ * completion name the commands the game declares.
  */
 export interface Class {
     /**
-     * such as effect
+     * ID is the class's own name, such as effect. Label is the name of its
+     * tab in the lexicon, such as Effects.
      */
     "id": string;
-
-    /**
-     * the lexicon tab's, such as Effects
-     */
     "label": string;
 }
 
@@ -289,6 +218,19 @@ export interface Completion {
      * the full path of the image file it names; "" if it names none
      */
     "image"?: string;
+}
+
+/**
+ * A CompletionList is what can be written at a position in a file.
+ */
+export interface CompletionList {
+    "candidates": Completion[] | null;
+
+    /**
+     * Cut is whether a limit left candidates out. The editor asks again as
+     * typing narrows a list that is cut, and filters any other itself.
+     */
+    "cut": boolean;
 }
 
 /**
@@ -494,7 +436,7 @@ export interface Site {
     /**
      * as index.ResolveSite gives it; unsettled where no source says
      */
-    "reason"?: index$0.Reason;
+    "reason"?: game$0.Reason;
 
     /**
      * the reason in words, naming the mod that hides a copy

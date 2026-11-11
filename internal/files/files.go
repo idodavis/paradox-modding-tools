@@ -173,9 +173,7 @@ func (f Format) IsScript() bool {
 
 // DefaultEncoding returns the encoding a file of the format is written in
 // when nothing on disk says. The games' script and localization take UTF-8
-// with a byte order mark, which the lexer of ck3.exe, victoria3.exe and
-// eu5.exe asks for ("should be in utf8-bom encoding"); any other text takes
-// UTF-8.
+// with a byte order mark; any other text takes UTF-8.
 func (f Format) DefaultEncoding() Encoding {
 	if f.IsScript() || f == FormatLocalization {
 		return EncodingUTF8BOM

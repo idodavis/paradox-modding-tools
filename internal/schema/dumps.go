@@ -23,11 +23,20 @@ import (
 
 // DumpCommand is one effect, trigger or link as its dump lists it.
 type DumpCommand struct {
-	Name        string
-	Declared    game.Declaration
+	Name string
+
+	// Declared is what its dump declares: one of the declared texts below,
+	// which the shipped backups hold.
+	Declared string
+
 	Scopes      []string
 	Target      string
 	Description string
+
+	// Path and Line are the dump file it was read from and its line there,
+	// from 1. A shipped backup has neither.
+	Path string
+	Line int
 
 	// Prefixed is whether the dump says the command requires data: the link
 	// is written with a name after a colon.
@@ -120,6 +129,28 @@ var dumpPhrases = struct {
 // yes is the term the dumps write for true.
 const yes = "yes"
 
+// What a dump record says its dump declares: an effect, a trigger or an event
+// target, which is the dumps' word for a link.
+const (
+	declaredEffect  = "effect"
+	declaredTrigger = "trigger"
+	declaredLink    = "event target"
+)
+
+// dumpDatabases holds, by what a dump declares, the database of its
+// definitions, in the order the dumps are read.
+var dumpDatabases = []struct{ declared, database string }{
+	{declaredEffect, game.DumpEffects}, {declaredTrigger, game.DumpTriggers}, {declaredLink, game.DumpLinks},
+}
+
+// sharedWords are the names whose effect and whose trigger differ only in
+// what their block holds. The two share one field, so the game's files count
+// both in it.
+var sharedWords = []string{
+	"switch", "assert_if", "assert_read", "debug_log", "save_temporary_scope_value_as",
+	"save_temporary_opinion_value_as",
+}
+
 // dumpFiles are the dump files read.
 var dumpFiles = []string{
 	"effects.log", "triggers.log", "event_targets.log", "modifiers.log", "on_actions.log", "event_scopes.log",
@@ -198,7 +229,7 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 			dumps.OldestAt = fileAt
 		}
 
-		dumps.parseFile(file, text.Text)
+		dumps.parseFile(path, text.Text)
 		if dir := filepath.Dir(path); !slices.Contains(dumps.Folders, dir) {
 			dumps.Folders = append(dumps.Folders, dir)
 		}
@@ -227,16 +258,16 @@ func findDump(dirs []string, file string) (string, time.Time, error) {
 	return newest, newestAt, nil
 }
 
-// parseFile parses the text of the dump file with the given base name into
-// the dumps. Any other dump file is a data types dump.
-func (d *Dumps) parseFile(file, text string) {
-	switch file {
+// parseFile parses the text of a dump file into the dumps, by the file's
+// base name. A file with any other name is a data types dump.
+func (d *Dumps) parseFile(path, text string) {
+	switch filepath.Base(path) {
 	case "effects.log":
-		d.parseCommands(text, game.DeclarationEffect)
+		d.parseCommands(path, text, declaredEffect)
 	case "triggers.log":
-		d.parseCommands(text, game.DeclarationTrigger)
+		d.parseCommands(path, text, declaredTrigger)
 	case "event_targets.log":
-		d.parseCommands(text, game.DeclarationLink)
+		d.parseCommands(path, text, declaredLink)
 	case "modifiers.log":
 		d.parseModifiers(text)
 	case "on_actions.log":
@@ -307,15 +338,22 @@ var scopeLine = regexp.MustCompile(`^\*{0,2}(Supported Scopes|Supported Targets|
 // dump in the order it lists them. The event targets dump ends with a list of
 // targets saved from code, which is no command and is skipped. A command's
 // target is the one scope its entry says it leads to, and none where the
-// entry names several.
-func (d *Dumps) parseCommands(text string, declaration game.Declaration) {
+// entry names several. An entry's line is where its head is written, found
+// after the entry before it.
+func (d *Dumps) parseCommands(path, text, declared string) {
+	offset, line := 0, 1
 	for head, body := range parseSections(text, true) {
 		if head == "Event Targets Saved from Code:" {
 			continue
 		}
 
+		if start := strings.Index(text[offset:], head); start >= 0 {
+			line += strings.Count(text[offset:offset+start], "\n")
+			offset += start
+		}
+
 		title, first, _ := strings.Cut(head, " - ")
-		command := DumpCommand{Name: strings.TrimSpace(title), Declared: declaration}
+		command := DumpCommand{Name: strings.TrimSpace(title), Declared: declared, Path: path, Line: line}
 		lines := []string{first}
 		for _, line := range body {
 			scope := scopeLine.FindStringSubmatch(line)
@@ -518,12 +556,15 @@ func (s *Schema) buildDumps(row *game.Game, installPath string) error {
 	}
 
 	s.Dumps = state
-	s.Scopes, s.Modifiers, s.Customs = dumps.Scopes, dumps.Modifiers, dumps.Customs
+	s.Modifiers, s.Customs = dumps.Modifiers, dumps.Customs
 	s.OnActions, s.DataTypes = dumps.OnActions, dumps.DataTypes
+	s.buildTypes(dumps.Scopes)
 	s.buildCommands(dumps.Commands)
+	s.buildPrefixes()
 	s.buildCommandKeys(row)
 	s.buildKeywordShapes(row)
 	s.buildFamilies()
+	s.sortDefinitions()
 
 	return nil
 }
@@ -533,8 +574,8 @@ func (s *Schema) buildDumps(row *game.Game, installPath string) error {
 // three sections.
 func (d *Dumps) resolveMissing(backup *Dumps) bool {
 	missing := false
-	for _, declaration := range []game.Declaration{game.DeclarationEffect, game.DeclarationTrigger, game.DeclarationLink} {
-		declares := func(command DumpCommand) bool { return command.Declared == declaration }
+	for _, section := range dumpDatabases {
+		declares := func(command DumpCommand) bool { return command.Declared == section.declared }
 		if slices.ContainsFunc(d.Commands, declares) {
 			continue
 		}
@@ -595,67 +636,135 @@ func (d *Dumps) applyCorrections(row *game.Game) {
 	}
 }
 
-// buildCommands builds the commands the dumps declare. A name that several
-// dumps list is one command, which takes the arguments each dump gives it
-// where that dump declares it. A link that requires data is a prefix. A
-// trigger whose Traits line says what its value is takes that as its value.
+// buildTypes builds the four databases the dumps fill, and a definition for
+// each type of scope the dumps declare. Script runs in a type where the dump
+// says triggers or effects do.
+func (s *Schema) buildTypes(scopes map[string]ScopeType) {
+	for _, database := range []string{game.DumpEffects, game.DumpTriggers, game.DumpLinks, game.DumpTypes} {
+		s.Databases[database] = &Database{Name: database, Field: &Field{}, Definitions: map[string]*Definition{}}
+	}
+
+	types := s.Databases[game.DumpTypes]
+	for key, scope := range scopes {
+		types.Definitions[key] = &Definition{Database: types.Name, Key: key, Runs: scope.Triggers || scope.Effects}
+	}
+}
+
+// buildCommands builds a definition for each entry of the effects, the
+// triggers and the event targets dumps, in its dump's database. A name that
+// two dumps list is a definition in each, with that dump's scopes, target
+// and keys. A trigger whose Traits line says what its value is takes that as
+// its value. The effect and the trigger of a shared word share one field.
 func (s *Schema) buildCommands(dumps []DumpCommand) {
 	for _, dump := range dumps {
-		command := s.Commands[dump.Name]
-		if command == nil {
-			command = &Command{Arguments: map[game.Declaration]*Field{}}
-			s.Commands[dump.Name] = command
+		position := slices.IndexFunc(dumpDatabases, func(section struct{ declared, database string }) bool {
+			return section.declared == dump.Declared
+		})
+		if position < 0 {
+			continue
 		}
 
-		command.build(dump)
-		if command.Arguments[dump.Declared] == nil {
+		// a link that takes a name after a colon is another definition than
+		// the link of that name written alone, as lookupLink finds it
+		key := dump.Name
+		if dump.Declared == declaredLink && dump.Prefixed {
+			key += ":"
+		}
+
+		owner := s.Databases[dumpDatabases[position].database]
+		definition := owner.Definitions[key]
+		listed := definition != nil
+		if !listed {
+			definition = &Definition{Database: owner.Name, Key: key, Path: dump.Path, Line: dump.Line}
+			owner.Definitions[key] = definition
+
 			prose, usage := splitUsage(dump.Description)
-			arguments, key := s.parseArguments(dump.Name, prose, usage)
-			if arguments != nil {
-				command.Arguments[dump.Declared] = arguments
-			}
-
-			command.ArgumentKey = cmp.Or(command.ArgumentKey, key)
+			definition.Field, definition.ArgumentKey = s.parseArguments(dump.Name, prose, usage)
 		}
 
+		definition.build(dump, listed)
 		if expected, ok := s.resolveTraits(dump.Traits); ok {
-			command.makeArguments(dump.Declared, game.SourceDumps).Value.resolve(expected, game.SourceDumps)
+			definition.makeField(game.SourceDumps).Value.resolve(expected, game.SourceDumps)
 		}
 
-		s.resolveTitleValue(command, dump)
-		if _, reserved := s.Prefixes[dump.Name]; dump.Declared == game.DeclarationLink && !reserved && dump.Prefixed {
-			s.Prefixes[dump.Name] = ""
+		s.resolveTitleValue(definition, dump)
+	}
+
+	for _, key := range sharedWords {
+		effect, trigger := s.LookupDefinition(game.DumpEffects, key), s.LookupDefinition(game.DumpTriggers, key)
+		if effect == nil || trigger == nil {
+			continue
+		}
+
+		fields := slices.DeleteFunc([]*Field{effect.Field, trigger.Field}, func(field *Field) bool { return field == nil })
+		shared := unite(fields)
+		keepSharedShapes(shared, fields)
+		effect.Field, trigger.Field = shared, shared
+	}
+}
+
+// build adds what one dump entry says about a definition, but its keys. A
+// name the dump lists again, as the flag says, gets the union of its
+// entries' scopes, and none if any entry names none; the first target, blurb
+// and usage are kept. A link that requires data is written with a name
+// after a colon, and is another definition than the link of its name
+// written alone. A command with no target whose blurb opens with
+// dumpPhrases.Iterates walks a list.
+func (d *Definition) build(dump DumpCommand, listed bool) {
+	switch {
+	case !listed:
+		d.Scopes = slices.Clone(dump.Scopes)
+	case len(dump.Scopes) == 0 || len(d.Scopes) == 0:
+		d.Scopes = nil
+	default:
+		d.Scopes = slices.Compact(slices.Sorted(slices.Values(slices.Concat(d.Scopes, dump.Scopes))))
+	}
+
+	d.Target = cmp.Or(d.Target, dump.Target)
+	prose, usage := splitUsage(dump.Description)
+	blurb, _, _ := strings.Cut(strings.TrimSpace(prose), "\n")
+	blurb = strings.TrimSpace(blurb)
+	d.Blurb = cmp.Or(d.Blurb, blurb)
+	d.Usage = cmp.Or(d.Usage, usage)
+	if dump.Declared == declaredLink {
+		d.Wild, d.Prefixed = dump.Wild, dump.Prefixed
+	}
+
+	d.Iterates = d.Iterates || (strings.HasPrefix(blurb, dumpPhrases.Iterates) && d.Target == "")
+}
+
+// buildPrefixes makes each link prefix the rows name a link written with a
+// name after its colon, and gives it the database of those names: the names
+// script saves name their own kind, and a database's prefixes name it.
+func (s *Schema) buildPrefixes() {
+	links := s.Databases[game.DumpLinks]
+	claim := func(prefix, database string) {
+		link := s.lookupLink(prefix, true)
+		if link == nil {
+			link = &Definition{Database: links.Name, Key: prefix + ":", Prefixed: true}
+			links.Definitions[link.Key] = link
+		}
+
+		expected := Expected{Type: ValueTypeReference, Database: database}
+		link.makeField(game.SourceRegistry).Value.resolve(expected, game.SourceRegistry)
+	}
+
+	for _, saved := range []string{game.SavedScopes, game.Variables, game.LocalVariables, game.GlobalVariables} {
+		claim(saved, saved)
+	}
+
+	for _, label := range slices.Sorted(maps.Keys(s.Databases)) {
+		for _, prefix := range s.Databases[label].Row.Prefixes {
+			claim(prefix, label)
 		}
 	}
 }
 
-// build adds what one dump says about a command, but its arguments. The
-// command's scopes are the union of its dumps', and none if any dump names
-// none. The first target, blurb and usage are kept. A command with no target
-// whose blurb opens with dumpPhrases.Iterates walks a list.
-func (c *Command) build(dump DumpCommand) {
-	switch {
-	case len(c.Declared) == 0:
-		c.Scopes = slices.Clone(dump.Scopes)
-	case len(dump.Scopes) == 0 || len(c.Scopes) == 0:
-		c.Scopes = nil
-	default:
-		c.Scopes = slices.Compact(slices.Sorted(slices.Values(slices.Concat(c.Scopes, dump.Scopes))))
+// sortDefinitions lists the keys of each database's definitions in order.
+func (s *Schema) sortDefinitions() {
+	for _, database := range s.Databases {
+		database.Keys = slices.Sorted(maps.Keys(database.Definitions))
 	}
-
-	c.Declared = append(c.Declared, dump.Declared)
-	c.Target = cmp.Or(c.Target, dump.Target)
-	prose, usage := splitUsage(dump.Description)
-	blurb, _, _ := strings.Cut(strings.TrimSpace(prose), "\n")
-	blurb = strings.TrimSpace(blurb)
-	c.Blurb = cmp.Or(c.Blurb, blurb)
-	c.Usage = cmp.Or(c.Usage, usage)
-	if dump.Declared == game.DeclarationLink {
-		c.Wild = dump.Wild
-		c.Bare = c.Bare || !dump.Prefixed
-	}
-
-	c.Lists = c.Lists || (strings.HasPrefix(blurb, dumpPhrases.Iterates) && c.Target == "")
 }
 
 // usageLine is a line that opens a block, as key = { does, and describedLine
@@ -818,7 +927,7 @@ func findPlaceholderShape(placeholder string) (game.Shape, bool) {
 		shape += "s"
 	}
 
-	_, ok := game.Shapes[shape]
+	_, ok := shapeRows[shape]
 
 	return shape, ok
 }
@@ -907,30 +1016,13 @@ func (s *Schema) resolveTraits(traits string) (Expected, bool) {
 	return Expected{}, false
 }
 
-// makeArguments returns the field of the keys a command takes where it is
-// declared as the given declaration. If the command has none there, it adds
-// an empty one from the given source.
-func (c *Command) makeArguments(declaration game.Declaration, source game.Source) *Field {
-	declaration = c.resolveDeclaration(declaration)
-	if c.Arguments == nil {
-		c.Arguments = map[game.Declaration]*Field{}
-	}
-
-	if c.Arguments[declaration] == nil {
-		c.Arguments[declaration] = &Field{Source: source}
-	}
-
-	return c.Arguments[declaration]
-}
-
 // resolveTitleValue gives a command the value that a line of its dump writes
 // after its name, as add_trait = <trait_key> does; a Traits line's value
 // outranks it. Where the dump also writes the command's keys, a value that
 // names a shape gives a name of that shape's values' database instead, or
 // nothing.
-func (s *Schema) resolveTitleValue(command *Command, dump DumpCommand) {
-	arguments := command.Arguments[dump.Declared]
-	keyed := arguments != nil && len(arguments.Children) > 0
+func (s *Schema) resolveTitleValue(command *Definition, dump DumpCommand) {
+	keyed := command.Field != nil && len(command.Field.Children) > 0
 	for line := range strings.SplitSeq(usageComment.ReplaceAllString(dump.Description, ""), "\n") {
 		tokens := usageToken.FindAllString(line, -1)
 		if len(tokens) < 3 || tokens[0] != dump.Name || !slices.Contains(usageOperators, tokens[1]) || tokens[2] == "{" {
@@ -943,7 +1035,7 @@ func (s *Schema) resolveTitleValue(command *Command, dump DumpCommand) {
 		// a block with keys, as change_first_name = { template_character = … },
 		// holds the command's arguments
 		if keyed && value.Shape.IsStated() {
-			database := game.Shapes[value.Shape.Value].Values
+			database := shapeRows[value.Shape.Value].values
 			value.Shape, value.Value = Claim[game.Shape]{}, Claim[Expected]{}
 			if database != "" {
 				value.Value.resolve(Expected{Type: ValueTypeReference, Database: database}, game.SourceDumps)
@@ -954,7 +1046,7 @@ func (s *Schema) resolveTitleValue(command *Command, dump DumpCommand) {
 			continue
 		}
 
-		command.makeArguments(dump.Declared, game.SourceDumps).take(value.Claims)
+		command.makeField(game.SourceDumps).take(value.Claims)
 
 		return
 	}
@@ -994,13 +1086,17 @@ var commandKeys = []commandKey{
 func (s *Schema) buildCommandKeys(row *game.Game) {
 	for _, entry := range commandKeys {
 		title, key, nested := strings.Cut(entry.Command, "/")
-		command := s.Commands[title]
-		if command == nil || !row.Matches(entry.Games) {
+		if !row.Matches(entry.Games) {
 			continue
 		}
 
-		for _, declaration := range command.Declared {
-			field := command.makeArguments(declaration, game.SourceRegistry)
+		for _, database := range commandDatabases {
+			command := s.Databases[database].Definitions[title]
+			if command == nil {
+				continue
+			}
+
+			field := command.makeField(game.SourceRegistry)
 			if nested {
 				field = field.buildChild(key, game.SourceRegistry)
 			}
@@ -1022,12 +1118,12 @@ func (s *Schema) buildCommandKeys(row *game.Game) {
 // random_list, for the rows that hold for the given game.
 func (s *Schema) buildKeywordShapes(row *game.Game) {
 	for _, keyword := range game.Keywords {
-		command := s.Commands[keyword.Parent]
+		command := s.FindCommand(keyword.Parent)
 		if command == nil || keyword.Shape == "" || keyword.Shape == game.ShapeEnclosing || !row.Matches(keyword.Games) {
 			continue
 		}
 
-		command.makeArguments("", game.SourceDumps).buildChild(keyword.Key, game.SourceNone).Shape.resolve(keyword.Shape, game.SourceRegistry)
+		command.makeField(game.SourceDumps).buildChild(keyword.Key, game.SourceNone).Shape.resolve(keyword.Shape, game.SourceRegistry)
 	}
 }
 
@@ -1037,10 +1133,10 @@ func (s *Schema) buildKeywordShapes(row *game.Game) {
 // arguments gets none.
 func (s *Schema) buildFamilies() {
 	families := map[string][]*Field{}
-	for _, name := range slices.Sorted(maps.Keys(s.Commands)) {
-		iterator, ok := game.MatchListIterator(name)
-		for _, declaration := range s.Commands[name].Declared {
-			if arguments := s.Commands[name].Arguments[declaration]; ok && arguments != nil {
+	for _, database := range commandDatabases {
+		for _, name := range slices.Sorted(maps.Keys(s.Databases[database].Definitions)) {
+			iterator, ok := game.MatchListIterator(name)
+			if arguments := s.Databases[database].Definitions[name].Field; ok && arguments != nil {
 				base := strings.TrimPrefix(name, strings.TrimSuffix(iterator.Key, "*"))
 				families[base] = append(families[base], arguments)
 			}
@@ -1059,28 +1155,32 @@ func (s *Schema) buildFamilies() {
 	}
 }
 
-// buildUnions gives each command the dumps declare as both an effect and a
-// trigger the keys of both together. The effect's claims win where the two
-// state the same rank, but a shape stays only where both state it, or where
-// it allows effects and triggers alike. A command where neither takes keys
-// gets an empty union.
+// buildUnions gives each name the dumps declare as both an effect and a
+// trigger the keys of both together, on both definitions. The effect's
+// claims win where the two state the same rank, but a shape stays only where
+// both state it, or where it takes effects and triggers alike. A name where
+// neither takes keys gets an empty union, and a shared word none, since its
+// two already share one field.
 func (s *Schema) buildUnions() {
-	for _, command := range s.Commands {
-		if slices.Contains(command.Declared, game.DeclarationEffect) && slices.Contains(command.Declared, game.DeclarationTrigger) {
-			fields := []*Field{command.Arguments[game.DeclarationEffect], command.Arguments[game.DeclarationTrigger]}
-			fields = slices.DeleteFunc(fields, func(field *Field) bool { return field == nil })
-			command.Union = unite(fields)
-			keepSharedShapes(command.Union, fields)
+	for key, effect := range s.Databases[game.DumpEffects].Definitions {
+		trigger := s.Databases[game.DumpTriggers].Definitions[key]
+		if trigger == nil || slices.Contains(sharedWords, key) {
+			continue
 		}
+
+		fields := slices.DeleteFunc([]*Field{effect.Field, trigger.Field}, func(field *Field) bool { return field == nil })
+		union := unite(fields)
+		keepSharedShapes(union, fields)
+		effect.Union, trigger.Union = union, union
 	}
 }
 
 // keepSharedShapes clears the shape of a united field, and of each key below
 // it, where the given fields it merges do not all state it, unless the shape
-// allows effects and triggers alike, as value does.
+// takes effects and triggers alike, as value does.
 func keepSharedShapes(united *Field, fields []*Field) {
-	allowed := game.Shapes[united.Shape.Value].Allows
-	mixed := slices.Contains(allowed, game.DeclarationEffect) && slices.Contains(allowed, game.DeclarationTrigger)
+	takes := shapeRows[united.Shape.Value].takes
+	mixed := slices.Contains(takes, game.DumpEffects) && slices.Contains(takes, game.DumpTriggers)
 	if slices.ContainsFunc(fields, func(field *Field) bool {
 		return field.Shape.Value != united.Shape.Value && (field.Shape.IsStated() || !mixed)
 	}) {

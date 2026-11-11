@@ -36,13 +36,13 @@ const keyLimit = 200
 // fields, at a value what may be written there. A word written alone in a block may be a value or a key typed before
 // its equals sign, so it gets both. It returns an empty list for a file that is not script.
 func (lsp *Service) Complete(path string, line, column int) ([]Completion, error) {
-	ws, tree, err := lsp.loadTree(path)
+	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
-	mods := ws.Mods.Load()
+	tree, mods := document.Tree, ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	if !place.Format.IsScript() {
+	if document.Contexts == nil {
 		return []Completion{}, nil
 	}
 	offset := ToOffset(tree.Src, tree.Lines, line, column)
@@ -50,23 +50,24 @@ func (lsp *Service) Complete(path string, line, column int) ([]Completion, error
 	statement, listed, ok := findValue(tree, offset)
 	if ok {
 		current := tree.Statements[statement]
-		visitor := &hoverVisitor{tree: tree, offset: current.Span.Start}
-		ws.Schema.WalkTo(tree, place.File, visitor.offset, visitor)
 		typed := ""
 		if !current.Value.IsEmpty() && offset >= current.Value.Start {
 			typed = tree.Src[current.Value.Start:offset]
 		}
-		values = listValues(ws, mods, place.Position, tree, &visitor.context, typed, offset)
+		values = listValues(ws, mods, place.Position, tree, &document.Contexts[statement], typed, offset)
 	}
 	if ok && !listed {
 		return values, nil
 	}
-	visitor := &completeVisitor{offset: offset}
-	ws.Schema.WalkTo(tree, place.File, offset, visitor)
-	if visitor.context.Shape == "" {
+	// the keys are those of the innermost block that holds the offset
+	holder := tree.FindStatement(offset)
+	for holder > 0 && (offset <= tree.Statements[holder].Block.Start || offset >= tree.Statements[holder].Block.End) {
+		holder = tree.Statements[holder].Parent
+	}
+	if holder == 0 || document.Contexts[holder].Shape == "" {
 		return values, nil
 	}
-	keys := listKeys(mods, place.Position, ws.Schema, ws.Game, &visitor.context)
+	keys := listKeys(mods, place.Position, ws.Schema, ws.Game, &document.Contexts[holder])
 	return lo.UniqBy(slices.Concat(keys, values), func(candidate Completion) string { return candidate.Label }), nil
 }
 
@@ -278,23 +279,6 @@ func listScopeLinks(context *schema.Context, fits func(scope string) bool, rank 
 	}
 	return links
 }
-
-// A completeVisitor finds the context of the innermost block that holds an offset.
-type completeVisitor struct {
-	offset  int
-	context schema.Context
-}
-
-// Enter keeps the context of the block if it holds the offset.
-func (visitor *completeVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
-	if block := tree.Statements[statement].Block; visitor.offset > block.Start && visitor.offset < block.End {
-		visitor.context = *context
-	}
-	return true
-}
-
-// Leave does nothing.
-func (visitor *completeVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
 
 // listKeys returns the keys a block takes: the language's operators, then its commands, calls and links, then its
 // fields, each kind ranked above the next. A key listed twice is kept once, as the first kind.

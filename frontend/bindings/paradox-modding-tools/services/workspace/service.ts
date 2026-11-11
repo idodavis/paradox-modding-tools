@@ -40,20 +40,14 @@ export function AddInstall(gameID: string, path: string, name: string, version: 
 }
 
 /**
- * AddMod adds a mod folder to a workspace as one of the user's mods or an external mod, and gives the mod a color slot.
- * Steam's copy of a Workshop mod is added as an external mod either way. It returns an error if the workspace is not
- * recorded, the folder cannot be a mod of its game (see CheckModFolder), or the workspace has the mod already.
+ * AddMod adds a mod folder to a workspace as one of the user's mods or an
+ * external mod, and gives the mod a color slot. Steam's copy of a Workshop mod
+ * is external either way. It returns an error if the workspace is not
+ * recorded, the folder cannot be a mod of its game, or the workspace has the
+ * mod already.
  */
 export function AddMod(workspaceID: string, dir: string, external: boolean): $CancellablePromise<$models.Mod> {
     return $Call.ByID(4245476076, workspaceID, dir, external);
-}
-
-/**
- * CheckModFolder returns an error if a folder cannot be added as a mod of the given install's game, or if the install
- * is not recorded.
- */
-export function CheckModFolder(installID: string, dir: string): $CancellablePromise<void> {
-    return $Call.ByID(2659390721, installID, dir);
 }
 
 /**

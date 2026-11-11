@@ -4,7 +4,6 @@ package lsp
 
 import (
 	"strings"
-	"sync/atomic"
 	"unicode/utf16"
 
 	"github.com/samber/lo"
@@ -14,11 +13,10 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the language service. It asks the workspace service for the open session at each call, and keeps only
-// the colors of the last file it colored.
+// Service is the language service. It asks the workspace service for the
+// open session at each call, and keeps nothing itself.
 type Service struct {
 	Workspace *workspace.Service
-	coloring  atomic.Pointer[fileColors] // the last file's colors, kept while its text and the mods' index stay the same
 }
 
 // A Range is a span as Monaco counts it: lines and columns from one, the column in UTF-16 code units, the end
@@ -175,7 +173,20 @@ func (lsp *Service) CloseFile(path string) {
 	}
 }
 
-// loadTree returns the open session and the tree of a file, from the editor's text if the file is open. It returns an
+// loadDocument returns the open session and the document of a file, from the
+// editor's text if the file is open. It returns an error if there is no
+// session or the file cannot be read.
+func (lsp *Service) loadDocument(path string) (*workspace.Session, workspace.Document, error) {
+	ws, err := lsp.Workspace.Session()
+	if err != nil {
+		return nil, workspace.Document{}, err
+	}
+	document, err := ws.WalkDocument(path)
+	return ws, document, err
+}
+
+// loadTree returns the open session and the tree of a file, from the editor's
+// text if the file is open, for a reader that needs no contexts. It returns an
 // error if there is no session or the file cannot be read.
 func (lsp *Service) loadTree(path string) (*workspace.Session, *jomini.Tree, error) {
 	ws, err := lsp.Workspace.Session()

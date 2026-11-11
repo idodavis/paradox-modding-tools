@@ -97,11 +97,6 @@ const (
 	// language.
 	SourceDumps
 
-	// SourceExe is a message the game's executable carries, and SourceLog a
-	// line the game's own logs write.
-	SourceExe
-	SourceLog
-
 	// SourceDocs is the prose the install ships beside its script, in .info,
 	// .md and readme.txt files.
 	SourceDocs

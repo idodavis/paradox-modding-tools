@@ -71,18 +71,17 @@ func ServePublish(args []string) (exitCode int, served bool) {
 	return 0, false
 }
 
-// ServiceStartup deletes, in the background, what the service left in PMT's cache that nothing needs: the snapshot of
-// each item that no listing of a recorded mod names, and the copies an upload left when the app stopped during it. A
-// cache folder it cannot read stays as it is.
+// ServiceStartup deletes, in the background, the copies an upload left in
+// PMT's cache when the app stopped during it. A cache folder it cannot read
+// stays as it is.
 func (stm *Service) ServiceStartup(context.Context, application.ServiceOptions) error {
 	cacheDir := stm.Workspace.Config.Dirs.Cache
 	entries, err := os.ReadDir(cacheDir)
 	if err != nil {
 		return nil
 	}
-	linked := stm.listLinkedItems()
 	stale := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (string, bool) {
-		return filepath.Join(cacheDir, entry.Name()), isStale(entry.Name(), linked)
+		return filepath.Join(cacheDir, entry.Name()), isStale(entry.Name())
 	})
 	go func() {
 		for _, dir := range stale {
@@ -92,38 +91,9 @@ func (stm *Service) ServiceStartup(context.Context, application.ServiceOptions) 
 	return nil
 }
 
-// listLinkedItems returns the Workshop ids that the listings of the mods in every workspace name: each mod's own, by
-// its record or its descriptor, and its older listings'. A file that cannot be read names none.
-func (stm *Service) listLinkedItems() map[string]bool {
-	config := stm.Workspace.Config.Config()
-	linked := map[string]bool{}
-	for _, ws := range config.Workspaces {
-		install, _ := lo.Find(config.Installs, func(install app.Install) bool { return install.ID == ws.Install })
-		row := game.LookupGame(install.Game)
-		for _, mod := range ws.Mods {
-			linked[mod.WorkshopID] = true
-			if row != nil {
-				descriptor, _ := workspace.ReadDescriptor(row, mod.Dir)
-				linked[descriptor.WorkshopID] = true
-			}
-			keys, _ := os.ReadDir(files.Join(mod.Dir, workshopDir))
-			for _, key := range keys {
-				listing, _ := app.LoadJSON[Listing](filepath.Join(resolveListingDir(mod.Dir, key.Name()), listingFile))
-				linked[listing.WorkshopID] = true
-			}
-		}
-	}
-	delete(linked, "")
-	return linked
-}
-
-// isStale reports whether an entry of PMT's cache is one the service made and nothing needs: the snapshot of an item no
-// listing names, or an upload's copy, which only an upload that ended early leaves.
-func isStale(name string, linked map[string]bool) bool {
-	if snapshot, ok := strings.CutPrefix(name, snapshotPrefix); ok {
-		workshopID, isJSON := strings.CutSuffix(snapshot, ".json")
-		return isJSON && !linked[workshopID]
-	}
+// isStale reports whether an entry of PMT's cache is an upload's copy, which
+// only an upload that ended early leaves.
+func isStale(name string) bool {
 	return strings.HasPrefix(name, copyPrefix) || strings.HasPrefix(name, picturesPrefix)
 }
 

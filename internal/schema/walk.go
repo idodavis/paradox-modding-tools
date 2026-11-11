@@ -116,8 +116,7 @@ type Saved struct {
 	Type string `json:"type"`
 }
 
-// Context is everything the walk has decided at the statement it is on. The
-// walk reuses one per depth, so a visitor copies whatever it keeps.
+// Context is what the walk decided at one statement.
 type Context struct {
 	// Field is the field the key matched. It is nil if no source knows the
 	// key.
@@ -200,30 +199,21 @@ type Context struct {
 	Parent *Context
 }
 
-// Visitor is told of each statement the walk enters and leaves. Statement 0
-// is the file itself.
-type Visitor interface {
-	// Enter is called when the walk reaches a statement, with its context.
-	// It returns false to skip the statement's children.
-	Enter(tree *jomini.Tree, statement int32, context *Context) bool
-
-	// Leave is called after the walk has finished the statement's children.
-	Leave(tree *jomini.Tree, statement int32, context *Context)
-}
-
 // walker is one descent over one file. It keeps what the descent carries
 // from one statement to the next.
 type walker struct {
-	schema  *Schema
-	row     *game.Game
-	tree    *jomini.Tree
-	file    files.File
-	visitor Visitor
+	schema *Schema
+	row    *game.Game
+	tree   *jomini.Tree
+	file   files.File
 
-	// restricted and offset restrict the walk to the statements that cover a
-	// byte offset in the file.
-	restricted bool
-	offset     int
+	// contexts holds the context of each statement, as the tree lists them.
+	contexts []Context
+
+	// declarations is whether the walk reads only what the file declares,
+	// and body whether it is inside a definition whose calls take parameters.
+	declarations bool
+	body         bool
 
 	rel string
 
@@ -261,6 +251,7 @@ type walker struct {
 
 // frame is what the walk keeps for the statements at one level of depth.
 type frame struct {
+	// context is the context of the statement last read at this level.
 	context *Context
 
 	// label is what the statement last read at this level is written under,
@@ -353,25 +344,42 @@ var linkMakers = map[string]string{
 	"add_character_flag": game.Flags, "add_character_flag/flag": game.Flags, "add_dead_character_flag/flag": game.Flags,
 }
 
-// Walk goes through a file's tree once and calls the visitor at every
-// statement, with the field, scope, shape, definition and references the
-// schema finds there.
-func (s *Schema) Walk(tree *jomini.Tree, file files.File, visitor Visitor) {
-	s.newWalker(tree, file, visitor).walkFile()
+// Walk decides what each statement of a file is. It returns one context for
+// each statement of the tree, in the tree's order; the first is the file's
+// own. It fills the given list where that is long enough, so a caller that
+// walks many files keeps one list, and makes a new one for nil.
+func (s *Schema) Walk(tree *jomini.Tree, file files.File, contexts []Context) []Context {
+	walker := s.newWalker(tree, file, contexts)
+	walker.walkChildren(0, 1)
+
+	return walker.contexts
 }
 
-// WalkTo is Walk restricted to the statements that cover a byte offset in
-// the file.
-func (s *Schema) WalkTo(tree *jomini.Tree, file files.File, offset int, visitor Visitor) {
-	walker := s.newWalker(tree, file, visitor)
-	walker.restricted, walker.offset = true, offset
-	walker.walkFile()
+// WalkDeclarations is Walk for the pass that reads what a file declares. It
+// decides the top statements, the statements of a top block that defines
+// nothing, and the body of a definition whose calls take parameters. Every
+// other statement gets an empty context.
+func (s *Schema) WalkDeclarations(tree *jomini.Tree, file files.File, contexts []Context) []Context {
+	walker := s.newWalker(tree, file, contexts)
+
+	// a kept list still holds the last file's contexts, and this walk leaves
+	// most statements alone; each keeps only the room of its references
+	for position := 1; position < len(walker.contexts); position++ {
+		walker.contexts[position] = Context{References: walker.contexts[position].References[:0]}
+	}
+
+	walker.declarations = true
+	walker.body = walker.startsBody(&walker.contexts[0])
+	walker.walkChildren(0, 1)
+
+	return walker.contexts
 }
 
-// newWalker returns the walker for one file. Where the file's database names
-// its one definition by the file's name, the file's own context holds that
-// definition. Only an events file declares definitions inline.
-func (s *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visitor) *walker {
+// newWalker returns the walker for one file, with an empty context for each
+// statement. Where the file's database names its one definition by the
+// file's name, the file's own context holds that definition. Only an events
+// file declares definitions inline.
+func (s *Schema) newWalker(tree *jomini.Tree, file files.File, contexts []Context) *walker {
 	row := game.LookupGame(s.Game)
 	if row == nil {
 		row = &game.Game{}
@@ -382,8 +390,13 @@ func (s *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visitor) 
 		mods = &modScripted{}
 	}
 
+	if cap(contexts) < len(tree.Statements) {
+		contexts = make([]Context, len(tree.Statements))
+	}
+
+	contexts = contexts[:len(tree.Statements)]
 	walker := &walker{
-		schema: s, row: row, tree: tree, file: file, visitor: visitor, inline: map[string]ScriptedDefinition{},
+		schema: s, row: row, tree: tree, file: file, contexts: contexts, inline: map[string]ScriptedDefinition{},
 		mods: mods.all, modifiers: mods.modifiers, namespaces: mods.namespaces,
 	}
 	walker.rel = file.StageRel()
@@ -398,7 +411,9 @@ func (s *Schema) newWalker(tree *jomini.Tree, file files.File, visitor Visitor) 
 		walker.nestings = row.ListSetupNestings(database.Row.Folder)
 	}
 
-	root := &Context{Shape: game.ShapeUnknown}
+	// the walk writes every other context of the list as it reaches it
+	root := &contexts[0]
+	*root = Context{Shape: game.ShapeUnknown, References: root.References[:0]}
 	if database := walker.database; database != nil {
 		if database.Row.Contents == game.ContentsEvents {
 			root.Namespaces = listNamespaces(tree)
@@ -428,100 +443,87 @@ func listNamespaces(tree *jomini.Tree) []int32 {
 	return statements
 }
 
-// walkFile walks the top statements of the file. A file that is one
-// definition is entered as statement 0 first, with the definition's context,
-// and left after them. A walk to an offset always enters it.
-func (w *walker) walkFile() {
-	root := w.frames[0].context
-	if root.Definition == nil {
-		w.walkChildren(0, 1, false)
-	} else if w.visitor.Enter(w.tree, 0, root) {
-		w.walkChildren(0, 1, false)
-		w.visitor.Leave(w.tree, 0, root)
-	}
-}
-
-// walkChildren walks the children of a statement, one level down. A silent
-// walk tells the visitor nothing.
-func (w *walker) walkChildren(parent int32, level int, silent bool) {
+// walkChildren walks the children of a statement, one level down. A
+// definition's children are walked in the order its database says they run,
+// so each starts with the scopes the earlier ones saved.
+func (w *walker) walkChildren(parent int32, level int) {
 	for len(w.frames) <= level {
-		w.frames = append(w.frames, frame{context: &Context{}})
+		w.frames = append(w.frames, frame{})
 	}
 
-	starts := w.walkRunOrder(parent, level, silent)
-	for child := range w.tree.Children(parent) {
-		statement := w.tree.Statements[child]
-		offered := !silent && (!w.restricted || statement.Span.Contains(w.offset))
-
-		// a restricted walk still resolves the statements before the offset,
-		// to learn what they saved
-		if offered || !w.restricted || statement.Span.End <= w.offset {
-			if starts != nil {
-				w.saved = starts[child]
-			}
-
-			w.walkStatement(child, level, offered)
+	order := w.findRunOrder(level)
+	if len(order) == 0 {
+		for child := range w.tree.Children(parent) {
+			w.walkStatement(child, level)
 		}
-	}
-}
 
-// walkRunOrder walks a definition's children silently in the order they
-// run, and returns the scopes saved before each. It returns nil if the
-// definition has no run order or the walk is silent.
-func (w *walker) walkRunOrder(parent int32, level int, silent bool) map[int32][]Saved {
-	context := w.frames[level-1].context
-	database := w.schema.Databases[context.Database]
-	if silent || !context.Defines || context.Category != CategoryDefinition || database == nil || len(database.Row.RunOrder) == 0 {
-		return nil
+		return
 	}
 
 	rank := func(child int32) int {
 		label, _, _ := w.findLabel(w.tree.Statements[child])
-		if position := slices.Index(database.Row.RunOrder, label); position >= 0 {
+		if position := slices.Index(order, label); position >= 0 {
 			return position
 		}
 
-		return len(database.Row.RunOrder)
+		return len(order)
 	}
+
 	children := slices.Collect(w.tree.Children(parent))
 	slices.SortStableFunc(children, func(first, second int32) int { return cmp.Compare(rank(first), rank(second)) })
 
-	starts, restricted := map[int32][]Saved{}, w.restricted
-	w.restricted = false
 	for _, child := range children {
-		starts[child] = slices.Clip(w.saved)
-		w.walkStatement(child, level, false)
+		w.walkStatement(child, level)
 	}
-
-	w.restricted = restricted
-
-	return starts
 }
 
-// walkStatement resolves one statement, offers it to the visitor if the flag
-// says so, and walks its block unless the visitor declines.
-func (w *walker) walkStatement(statement int32, level int, offered bool) {
-	context := w.frames[level].context
-	w.resolve(context, statement, level)
+// findRunOrder returns the keys of a definition's blocks in the order they
+// run, for the definition that holds the statements of the given level. It
+// returns nil for any other block and for a database with no run order.
+func (w *walker) findRunOrder(level int) []string {
+	context := w.frames[level-1].context
+	database := w.schema.Databases[context.Database]
+	if !context.Defines || context.Category != CategoryDefinition || database == nil {
+		return nil
+	}
 
-	block := w.tree.Statements[statement].IsBlock()
-	if !offered {
-		if block {
-			w.walkChildren(statement, level+1, true)
+	return database.Row.RunOrder
+}
+
+// walkStatement resolves one statement and walks its block. A walk of the
+// declarations walks only a top block that defines nothing and the body of a
+// definition whose calls take parameters.
+func (w *walker) walkStatement(statement int32, level int) {
+	context := &w.contexts[statement]
+	w.frames[level].context = context
+	w.resolve(context, statement, level)
+	if !w.tree.Statements[statement].IsBlock() {
+		return
+	}
+
+	if w.declarations && !w.body {
+		starts := w.startsBody(context)
+		if !starts && (context.Defines || level > 1) {
+			return
 		}
 
-		return
+		w.body = starts
+		defer func() { w.body = false }()
 	}
 
-	if !w.visitor.Enter(w.tree, statement, context) {
-		return
+	w.walkChildren(statement, level+1)
+}
+
+// startsBody reports whether a context makes a definition whose calls take
+// parameters, so that the pass over the declarations reads its body.
+func (w *walker) startsBody(context *Context) bool {
+	if !context.Defines || context.Category != CategoryDefinition || context.Definition.Local {
+		return false
 	}
 
-	if block {
-		w.walkChildren(statement, level+1, false)
-	}
+	database := w.schema.Databases[context.Definition.Database]
 
-	w.visitor.Leave(w.tree, statement, context)
+	return database != nil && database.Callable.Parameters
 }
 
 // resolve fills the context of a statement from the context of the block

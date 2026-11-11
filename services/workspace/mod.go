@@ -220,9 +220,11 @@ func (mod Mod) withRecord(record app.Mod) Mod {
 	return mod
 }
 
-// AddMod adds a mod folder to a workspace as one of the user's mods or an external mod, and gives the mod a color slot.
-// Steam's copy of a Workshop mod is added as an external mod either way. It returns an error if the workspace is not
-// recorded, the folder cannot be a mod of its game (see CheckModFolder), or the workspace has the mod already.
+// AddMod adds a mod folder to a workspace as one of the user's mods or an
+// external mod, and gives the mod a color slot. Steam's copy of a Workshop mod
+// is external either way. It returns an error if the workspace is not
+// recorded, the folder cannot be a mod of its game, or the workspace has the
+// mod already.
 func (wsp *Service) AddMod(workspaceID, dir string, external bool) (Mod, error) {
 	_, install, row, err := findRecords(wsp.Config.Config(), workspaceID)
 	if err != nil {
@@ -318,16 +320,6 @@ func (wsp *Service) ResolveModFolder(installID, dir, name string) (ModFolder, er
 		return ModFolder{Problem: err.Error()}, nil
 	}
 	return ModFolder{Path: folder}, nil
-}
-
-// CheckModFolder returns an error if a folder cannot be added as a mod of the given install's game, or if the install
-// is not recorded.
-func (wsp *Service) CheckModFolder(installID, dir string) error {
-	install, row, err := findInstall(wsp.Config.Config(), installID)
-	if err != nil {
-		return err
-	}
-	return checkModFolder(row, install, dir)
 }
 
 // resolveModDir returns the folder a mod is made in. With no folder, it is the game's mod folder. A game whose launcher

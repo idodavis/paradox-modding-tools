@@ -15,10 +15,9 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// declarer is the visitor of a walk over one file. It records the
-// definitions that script and GUI files call by name, and the event
-// namespaces that event ids are written with. It reads the top statements,
-// and the bodies of the definitions that take parameters.
+// declarer records what one file declares: the definitions that script and
+// GUI files call by name, and the event namespaces that event ids are
+// written with.
 type declarer struct {
 	schema *Schema
 
@@ -118,9 +117,11 @@ func (s *Schema) declares(file files.File) bool {
 // has none.
 func (s *Schema) listDeclarers(declaring []files.File, parse func(path string) (*jomini.Tree, error)) []*declarer {
 	declarers := make([]*declarer, len(declaring))
-	eachParsed(declaring, parse, func(_, index int, tree *jomini.Tree) {
+	contexts := make([][]Context, files.Workers)
+	eachParsed(declaring, parse, func(worker, index int, tree *jomini.Tree) {
 		declarers[index] = &declarer{schema: s, scripted: map[string]ScriptedDefinition{}, modifiers: map[string]*Field{}}
-		s.Walk(tree, declaring[index], declarers[index])
+		contexts[worker] = s.WalkDeclarations(tree, declaring[index], contexts[worker])
+		declarers[index].record(tree, contexts[worker])
 	})
 
 	return declarers
@@ -320,27 +321,37 @@ func (d *declarer) build() {
 	}
 }
 
-// Enter records the definition that a statement makes, if its database is
-// called by name, and the event namespace it declares. It goes into the top
-// blocks that only group definitions, into a file that is one definition,
-// and into the body of a definition that takes parameters, whose typings it
-// records.
-func (d *declarer) Enter(tree *jomini.Tree, statement int32, context *Context) bool {
+// record records what a file declares, from the contexts WalkDeclarations
+// gave its statements: each definition whose database is called by name,
+// each event namespace, and the typings in the body of a definition that
+// takes parameters, which is recorded when its body ends.
+func (d *declarer) record(tree *jomini.Tree, contexts []Context) {
+	for position := range contexts {
+		statement, context := int32(position), &contexts[position]
+		if d.body != nil && tree.Statements[d.body.statement].Last <= statement {
+			d.keep(d.body)
+			d.body = nil
+		}
+
+		if d.body != nil {
+			d.body.scripted.typings = append(d.body.scripted.typings, listTypings(tree, statement, context)...)
+
+			continue
+		}
+
+		if context.Defines && context.Category == CategoryDefinition {
+			d.declare(*context.Definition, tree, statement)
+		}
+
+		if context.Parent != nil && slices.Contains(context.Parent.Namespaces, statement) {
+			d.namespaces = append(d.namespaces, tree.Unquoted(tree.Statements[statement].Value))
+		}
+	}
+
 	if d.body != nil {
-		d.body.scripted.typings = append(d.body.scripted.typings, listTypings(tree, statement, context)...)
-
-		return true
+		d.keep(d.body)
+		d.body = nil
 	}
-
-	if context.Defines && context.Category == CategoryDefinition {
-		d.declare(*context.Definition, tree, statement)
-	}
-
-	if context.Parent != nil && slices.Contains(context.Parent.Namespaces, statement) {
-		d.namespaces = append(d.namespaces, tree.Unquoted(tree.Statements[statement].Value))
-	}
-
-	return statement == 0 || d.body != nil || !context.Defines && tree.Statements[statement].Parent == 0
 }
 
 // listTypings returns the typings that one statement of a scripted
@@ -520,14 +531,5 @@ func listSaves(tree *jomini.Tree, statement int32) (map[string]string, []relay) 
 func (d *declarer) keep(pending *body) {
 	for _, key := range pending.keys {
 		d.scripted[key] = pending.scripted
-	}
-}
-
-// Leave records the scripted definition whose body the walk leaves, with the
-// typings its body writes.
-func (d *declarer) Leave(tree *jomini.Tree, statement int32, context *Context) {
-	if d.body != nil && d.body.statement == statement {
-		d.keep(d.body)
-		d.body = nil
 	}
 }

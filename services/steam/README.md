@@ -120,10 +120,9 @@ answer about each item, its `Details` or why they could not be read, with when i
 ## The cache
 
 The service keeps in PMT's cache a snapshot for each item, as `snapshot-<id>.json`, the tags of each app id, and the
-`copy-` and `pictures-` folders an upload sends from, which it deletes when it ends. At each start, `ServiceStartup`
-deletes in the background the snapshot of each item that no listing of a recorded mod names, by the mod's record, its
-descriptor or an older listing's `listing.json`, and every `copy-` and `pictures-` folder, which only an upload that
-was stopped with the app leaves.
+`copy-` and `pictures-` folders an upload sends from, which it deletes when it ends. `LinkItem` deletes the snapshot of
+the item a listing was linked to when it links another. At each start, `ServiceStartup` deletes in the background
+every `copy-` and `pictures-` folder, which only an upload that was stopped with the app leaves.
 
 ## Tags, change notes and BBCode
 

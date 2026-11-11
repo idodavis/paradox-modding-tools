@@ -528,11 +528,6 @@ export interface Symbol {
      */
     "nameRange": Range;
     "children"?: Symbol[] | null;
-
-    /**
-     * for the icon
-     */
-    "category": schema$0.Category;
 }
 
 /**
@@ -550,5 +545,4 @@ export interface WorkspaceSymbol {
     "name": string;
     "database": string;
     "site": Site;
-    "category": schema$0.Category;
 }

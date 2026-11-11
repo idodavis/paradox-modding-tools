@@ -50,11 +50,7 @@ type Dumps struct {
 
 	Scopes map[string]ScopeType
 
-	// Saved holds the targets the game saves from code, which the event
-	// targets dump ends with.
-	Saved map[string]bool
-
-	Modifiers map[string]Modifier
+	Modifiers map[string]bool
 	OnActions map[string]OnAction
 	DataTypes map[string]DataType
 
@@ -174,7 +170,7 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 	}
 
 	dumps := &Dumps{
-		Scopes: map[string]ScopeType{}, Saved: map[string]bool{}, Modifiers: map[string]Modifier{},
+		Scopes: map[string]ScopeType{}, Modifiers: map[string]bool{},
 		OnActions: map[string]OnAction{}, DataTypes: map[string]DataType{}, Customs: map[string]bool{}, WrittenAt: dumpsAt,
 	}
 	for _, file := range dumpFiles {
@@ -297,27 +293,18 @@ func parseSections(text string, titled bool) iter.Seq2[string, []string] {
 	}
 }
 
-// savedTitle is the title of the list of targets saved from code at the end
-// of the event targets dump.
-const savedTitle = "Event Targets Saved from Code:"
-
 // scopeLine is a line that names the scopes a command runs in, or those it
 // leads to.
 var scopeLine = regexp.MustCompile(`^\*{0,2}(Supported Scopes|Supported Targets|Input Scopes|Output Scopes)\*{0,2}:\s*(.*)$`)
 
 // parseCommands parses the effects, triggers or links of one script_docs
-// dump in the order it lists them, and the targets saved from code that the
-// event targets dump ends with. A command's target is the one scope its
-// entry says it leads to, and none where the entry names several.
+// dump in the order it lists them. The event targets dump ends with a list of
+// targets saved from code, which is no command and is skipped. A command's
+// target is the one scope its entry says it leads to, and none where the
+// entry names several.
 func (d *Dumps) parseCommands(text string, declaration game.Declaration) {
 	for head, body := range parseSections(text, true) {
-		if head == savedTitle {
-			for _, line := range body {
-				if saved := strings.TrimSpace(line); saved != "" {
-					d.Saved[saved] = true
-				}
-			}
-
+		if head == "Event Targets Saved from Code:" {
 			continue
 		}
 
@@ -396,7 +383,6 @@ func parseOnActions(text string) map[string]OnAction {
 		if name, ok := strings.CutSuffix(head, ":"); ok {
 			pairs := parsePairs(body)
 			actions[name] = OnAction{
-				Name:      name,
 				Scope:     strings.Join(splitScopes(pairs["Expected Scope"]), ""),
 				Hardcoded: pairs["From Code"] == "Yes",
 			}
@@ -418,9 +404,7 @@ func (d *Dumps) parseScopes(text string) {
 
 		title, _ := strings.CutSuffix(lines[0], ":")
 		pairs := parsePairs(lines[1:])
-		d.Scopes[title] = ScopeType{
-			Name: title, Triggers: pairs["Evaluate Triggers"] == yes, Effects: pairs["Execute Effects"] == yes,
-		}
+		d.Scopes[title] = ScopeType{Triggers: pairs["Evaluate Triggers"] == yes, Effects: pairs["Execute Effects"] == yes}
 		lines = nil
 	}
 
@@ -442,29 +426,15 @@ func (d *Dumps) parseScopes(text string) {
 // writes them.
 var tagLine = regexp.MustCompile(`^Tag:\s*([^,\s]+)(?:,\s*Categories:\s*(.*))?$`)
 
-// parseModifiers parses the modifiers dump, which the games write in three
-// layouts: a "Tag:" line with a "Use areas:" line below it, a "Tag:" line
-// with its categories, or a title with an indented description.
+// parseModifiers parses the modifiers dump, which the games write as a "Tag:"
+// line or as a title. It reads the names and no other line.
 func (d *Dumps) parseModifiers(text string) {
-	last := ""
 	for line := range strings.Lines(text) {
 		line = strings.TrimRight(line, " \t\r\n")
-		trimmed := strings.TrimSpace(line)
-		tag := tagLine.FindStringSubmatch(line)
-		switch {
-		case tag != nil:
-			last = tag[1]
-			d.Modifiers[last] = Modifier{Name: last, Blurb: strings.Join(splitList(tag[2]), ", ")}
-
-		case titleLine.MatchString(line):
-			last = strings.TrimSuffix(line, ":")
-			d.Modifiers[last] = Modifier{Name: last}
-
-		case last == "": // a line before the first modifier
-
-		case strings.HasPrefix(trimmed, "Use areas:") || strings.HasPrefix(trimmed, "Description:"):
-			_, blurb, _ := strings.Cut(trimmed, ":")
-			d.Modifiers[last] = Modifier{Name: last, Blurb: strings.TrimSpace(blurb)}
+		if tag := tagLine.FindStringSubmatch(line); tag != nil {
+			d.Modifiers[tag[1]] = true
+		} else if titleLine.MatchString(line) {
+			d.Modifiers[strings.TrimSuffix(line, ":")] = true
 		}
 	}
 }
@@ -542,7 +512,7 @@ func (s *Schema) buildDumps(row *game.Game, installPath string) error {
 	}
 
 	s.Dumps = state
-	s.Scopes, s.Saved, s.Modifiers, s.Customs = dumps.Scopes, dumps.Saved, dumps.Modifiers, dumps.Customs
+	s.Scopes, s.Modifiers, s.Customs = dumps.Scopes, dumps.Modifiers, dumps.Customs
 	s.OnActions, s.DataTypes = dumps.OnActions, dumps.DataTypes
 	s.buildCommands(dumps.Commands)
 	s.buildCommandKeys(row)
@@ -554,7 +524,7 @@ func (s *Schema) buildDumps(row *game.Game, installPath string) error {
 
 // resolveMissing takes each section the dumps lack from the backup, and
 // reports whether it took any. The effects, the triggers and the links are
-// three sections, and the links bring the targets saved from code.
+// three sections.
 func (d *Dumps) resolveMissing(backup *Dumps) bool {
 	missing := false
 	for _, declaration := range []game.Declaration{game.DeclarationEffect, game.DeclarationTrigger, game.DeclarationLink} {
@@ -567,10 +537,6 @@ func (d *Dumps) resolveMissing(backup *Dumps) bool {
 			if declares(command) {
 				d.Commands = append(d.Commands, command)
 			}
-		}
-
-		if declaration == game.DeclarationLink {
-			d.Saved = backup.Saved
 		}
 
 		missing = true

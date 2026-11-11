@@ -72,31 +72,30 @@ func (lsp *Service) ListFolds(path string) ([]Fold, error) {
 // ListHints returns a file's inlay hints: each date read in the mod's calendar, and the text of each localization key
 // in the workspace's language.
 func (lsp *Service) ListHints(path string) ([]Hint, error) {
-	ws, tree, err := lsp.loadTree(path)
+	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
 	mods := ws.Mods.Load()
-	place := ws.Locate(mods, path)
-	mod, _ := lsp.Workspace.LookupMod(place.Origin)
-	visitor := &hintsVisitor{ws: ws, mods: mods, calendar: mod.Calendar, hints: []Hint{}}
-	if place.Format.IsScript() {
-		ws.Schema.Walk(tree, place.File, visitor)
+	mod, _ := lsp.Workspace.LookupMod(ws.Locate(mods, path).Origin)
+	hints := &hintList{ws: ws, mods: mods, calendar: mod.Calendar, hints: []Hint{}}
+	for position := range document.Contexts {
+		hints.addStatement(document.Tree, int32(position), &document.Contexts[position])
 	}
-	return visitor.hints, nil
+	return hints.hints, nil
 }
 
-// A hintsVisitor collects the hints of a file.
-type hintsVisitor struct {
+// A hintList collects the hints of a file.
+type hintList struct {
 	ws       *workspace.Session
 	mods     *index.Index // where the texts of the localization keys are looked up
 	calendar app.Calendar
 	hints    []Hint
 }
 
-// Enter records the hint for the statement's value if it is a date, and a hint after each localization key the
-// statement names.
-func (visitor *hintsVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
+// addStatement records the hint for the statement's value if it is a date,
+// and a hint after each localization key the statement names.
+func (h *hintList) addStatement(tree *jomini.Tree, statement int32, context *schema.Context) {
 	for _, reference := range context.References {
 		if reference.Database != game.Localization {
 			continue
@@ -105,12 +104,12 @@ func (visitor *hintsVisitor) Enter(tree *jomini.Tree, statement int32, context *
 		if strings.HasPrefix(tree.Src[end:], `"`) {
 			end++
 		}
-		if text := visitor.describeText(reference.Name); text != "" {
-			visitor.add(tree, end, HintText, text)
+		if text := h.describeText(reference.Name); text != "" {
+			h.add(tree, end, HintText, text)
 		}
 	}
 	if date, ok := findDate(tree, statement, context); ok {
-		card := resolveDate(visitor.calendar, date)
+		card := resolveDate(h.calendar, date)
 		parts := []string{}
 		if card.Date.Day > 0 {
 			parts = append(parts, fmt.Sprint(card.Date.Day))
@@ -122,26 +121,22 @@ func (visitor *hintsVisitor) Enter(tree *jomini.Tree, statement int32, context *
 		if card.Era != "" {
 			parts = append(parts, card.Era)
 		}
-		visitor.add(tree, tree.Statements[statement].Value.End, HintDate, strings.Join(parts, " "))
+		h.add(tree, tree.Statements[statement].Value.End, HintDate, strings.Join(parts, " "))
 	}
-	return true
 }
 
-// Leave does nothing.
-func (visitor *hintsVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
-
 // add records a hint of the given kind and text at the given offset in the tree's source.
-func (visitor *hintsVisitor) add(tree *jomini.Tree, offset int, kind, text string) {
+func (h *hintList) add(tree *jomini.Tree, offset int, kind, text string) {
 	point := ToRange(tree.Src, tree.Lines, jomini.Span{Start: offset, End: offset})
-	visitor.hints = append(visitor.hints, Hint{Line: point.StartLine, Column: point.StartColumn, Text: text, Kind: kind})
+	h.hints = append(h.hints, Hint{Line: point.StartLine, Column: point.StartColumn, Text: text, Kind: kind})
 }
 
 // describeText returns what a hint shows after a localization key: its text in quotes, cut at hintTextLength
 // characters, or "no text yet" if no language has it. It returns "" for a key only other languages write.
-func (visitor *hintsVisitor) describeText(key string) string {
-	text, _, ok := visitor.ws.LookupText(visitor.mods, key)
+func (h *hintList) describeText(key string) string {
+	text, _, ok := h.ws.LookupText(h.mods, key)
 	if !ok {
-		if lo.ContainsBy(visitor.mods.ListMessages(key), func(site index.Site) bool { return visitor.mods.IsLoaded(site.File) }) {
+		if lo.ContainsBy(h.mods.ListMessages(key), func(site index.Site) bool { return h.mods.IsLoaded(site.File) }) {
 			return ""
 		}
 		return "no text yet"
@@ -190,13 +185,13 @@ func (lsp *Service) PresentColor(path string, colorRange Range, color jomini.RGB
 
 // Signature returns the signature help for the call at a position, or nil if the position is not inside a call.
 func (lsp *Service) Signature(path string, line, column int) (*Signature, error) {
-	ws, tree, err := lsp.loadTree(path)
+	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
+	tree := document.Tree
 	offset := ToOffset(tree.Src, tree.Lines, line, column)
-	visitor := walkTo(ws, tree, ws.Locate(ws.Mods.Load(), path), offset)
-	call, callee, key, ok := findCall(ws, visitor)
+	call, callee, key, ok := findCall(ws, findCursor(document, offset))
 	if !ok {
 		return nil, nil
 	}
@@ -216,17 +211,17 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 // findCall returns the call to a scripted definition that holds the visited position: its statement, the field that
 // lists the definition's parameters, and the key it is called by. It returns false if the position is in no such call
 // or the definition takes no parameters.
-func findCall(ws *workspace.Session, visitor *hoverVisitor) (int32, *schema.Field, string, bool) {
-	for statement, context := visitor.statement, &visitor.context; statement > 0; {
-		current := visitor.tree.Statements[statement]
-		if current.IsBlock() && visitor.offset > current.Block.Start && visitor.offset < current.Block.End &&
+func findCall(ws *workspace.Session, cursor cursor) (int32, *schema.Field, string, bool) {
+	for statement, context := cursor.statement, cursor.context; statement > 0; {
+		current := cursor.tree.Statements[statement]
+		if current.IsBlock() && cursor.offset > current.Block.Start && cursor.offset < current.Block.End &&
 			context.Category == schema.CategoryCall && context.Field != nil {
 			callees := lo.FlatMap(context.References, func(reference schema.Reference, _ int) []schema.Reference {
 				return index.ListCallees(reference)
 			})
 			for _, reference := range callees {
 				database := ws.Schema.Databases[reference.Database]
-				if reference.Name == visitor.tree.Unquoted(current.Key) && database != nil && database.Callable.Parameters {
+				if reference.Name == cursor.tree.Unquoted(current.Key) && database != nil && database.Callable.Parameters {
 					return statement, context.Field, reference.Name, true
 				}
 			}

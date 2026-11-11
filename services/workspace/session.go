@@ -47,11 +47,15 @@ type Session struct {
 	caches      string // the folder the install's schema and index were loaded from or saved in
 }
 
-// A Document is one file as the session holds it, parsed once in the dialect of its format. A localization file's tree
-// holds its text and lines only, and its messages are what it says. Any other file has no messages.
+// A Document is one file as the session holds it, parsed once in the dialect
+// of its format and walked once. A localization file's tree holds its text
+// and lines only, and its messages are what it says. A script file has the
+// walk's context of each statement of its tree. Any other file has neither.
 type Document struct {
+	File     files.File
 	Tree     *jomini.Tree
 	Messages *loc.File
+	Contexts []schema.Context
 }
 
 // The names of the two caches in the caches' folder.
@@ -264,22 +268,58 @@ func (ws *Session) Close() {
 	ws.documents.Purge()
 }
 
-// ParseDocument parses a file's text in the dialect of the given format: a localization file's as messages, any
-// other as script.
-func ParseDocument(format files.Format, path, text string) Document {
-	if format == files.FormatLocalization {
-		return Document{Tree: jomini.NewTree(text), Messages: loc.Parse(text, path)}
+// WalkText parses the given text of a file in the dialect of its format and
+// walks a script file.
+func (ws *Session) WalkText(place Place, text string) Document {
+	document := parseDocument(place, text)
+	if place.Format.IsScript() {
+		document.Contexts = ws.Schema.Walk(document.Tree, place.File, nil)
 	}
-	return Document{Tree: jomini.Parse(text)}
+	return document
+}
+
+// parseDocument parses the given text of a file in the dialect of its
+// format: a localization file's as messages, any other as script.
+func parseDocument(place Place, text string) Document {
+	if place.Format == files.FormatLocalization {
+		return Document{File: place.File, Tree: jomini.NewTree(text), Messages: loc.Parse(text, place.Path)}
+	}
+	return Document{File: place.File, Tree: jomini.Parse(text)}
+}
+
+// WalkDocument returns the document of the file with the given path,
+// as LoadDocument finds it, with the walk's contexts if it is a script file.
+// A cached file is walked the first time it is asked for here, since most
+// readers of the cache read only the tree.
+func (ws *Session) WalkDocument(path string) (Document, error) {
+	// the lock is held through the walk, so no rescan runs before the
+	// walked document is cached
+	ws.mu.RLock()
+	defer ws.mu.RUnlock()
+	document, err := ws.findDocument(path)
+	if err != nil || document.Contexts != nil || !document.File.Format.IsScript() {
+		return document, err
+	}
+
+	document.Contexts = ws.Schema.Walk(document.Tree, document.File, nil)
+	ws.documents.Add(files.ToKey(path), document)
+
+	return document, nil
 }
 
 // LoadDocument returns the document of the file with the given path. It is the editor's while the editor has the
 // file open, else the cached one, else the file is read and parsed. It returns an error if the file cannot be read.
 func (ws *Session) LoadDocument(path string) (Document, error) {
-	key := files.ToKey(path)
 	// the lock is held through the parse, so no rescan runs before the document is cached
 	ws.mu.RLock()
 	defer ws.mu.RUnlock()
+	return ws.findDocument(path)
+}
+
+// findDocument does what LoadDocument does, for a caller that holds the
+// session's lock.
+func (ws *Session) findDocument(path string) (Document, error) {
+	key := files.ToKey(path)
 	if document, open := ws.buffers[key]; open {
 		return document, nil
 	}
@@ -290,7 +330,7 @@ func (ws *Session) LoadDocument(path string) (Document, error) {
 	if err != nil {
 		return Document{}, err
 	}
-	document := ParseDocument(ws.Locate(ws.Mods.Load(), path).Format, path, text.Text)
+	document := parseDocument(ws.Locate(ws.Mods.Load(), path), text.Text)
 	ws.documents.Add(key, document)
 	return document, nil
 }
@@ -304,7 +344,7 @@ func (ws *Session) LoadTree(path string) (*jomini.Tree, error) {
 
 // SetText parses the editor's text of an open file and keeps it as the file's buffer, replacing the last.
 func (ws *Session) SetText(path, text string) {
-	document := ParseDocument(ws.Locate(ws.Mods.Load(), path).Format, path, text)
+	document := ws.WalkText(ws.Locate(ws.Mods.Load(), path), text)
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	ws.buffers[files.ToKey(path)] = document
@@ -398,14 +438,24 @@ func (ws *Session) findText(mods *index.Index, site index.Site, language string)
 // game.DescriptionKey for its description. It is the text of the localization key the definition writes there, else
 // of the key the game builds from its name for its database. It returns "" if no such text exists.
 func (ws *Session) LookupDefinitionText(mods *index.Index, site index.Site, key string) string {
-	if tree, statement, err := ws.FindStatement(mods, site); err == nil {
+	tree, statement, _ := ws.FindStatement(mods, site)
+	return ws.LookupStatementText(mods, tree, statement, mods.ToReference(site), key)
+}
+
+// LookupStatementText returns the text of the definition that a statement of
+// a tree makes, under the given key, as LookupDefinitionText finds it. The
+// reference names the definition. A nil tree gives only the text of the key
+// the game builds.
+func (ws *Session) LookupStatementText(
+	mods *index.Index, tree *jomini.Tree, statement int32, reference schema.Reference, key string,
+) string {
+	if tree != nil {
 		if written, ok := FindTextKey(tree, statement, key); ok {
 			if text, _, ok := ws.LookupText(mods, written); ok {
 				return text
 			}
 		}
 	}
-	reference := mods.ToReference(site)
 	pattern, ok := ws.Game.LookupTextKey(reference.Database, key)
 	if !ok {
 		return ""
@@ -479,8 +529,14 @@ func (ws *Session) Rescan(changes []FileChange) error {
 		return errors.Join(failure, err)
 	}
 	ws.Mods.Store(next)
-	for _, file := range changed {
-		ws.documents.Remove(file.Key)
+	// what the mods declare may have changed, so every kept walk is made
+	// again: a cached file's when it is next loaded, an open file's now
+	ws.documents.Purge()
+	for key, document := range ws.buffers {
+		if document.Contexts != nil {
+			document.Contexts = ws.Schema.Walk(document.Tree, document.File, nil)
+			ws.buffers[key] = document
+		}
 	}
 	return failure
 }

@@ -64,7 +64,6 @@ flowchart TD
 - **ScopeType**: one type of scope, with whether triggers and effects run in it.
 - **DataType**: one type of the data binding language, with its functions.
 - **DataFunction**: one function of a data type.
-- **Modifier**: one modifier the dumps declare.
 - **OnAction**: one on_action the dumps declare, with its scope and whether the game calls it from its own code.
 - **ScriptedDefinition**: a scripted effect, trigger, value or list the game or a mod defines, with the parameters it
   takes.

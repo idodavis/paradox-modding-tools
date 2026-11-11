@@ -7,10 +7,8 @@ import (
 
 	"github.com/samber/lo"
 
-	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
-	"paradox-modding-tools/services/workspace"
 )
 
 // A Legend is the list of token types and modifiers that the semantic tokens are encoded against.
@@ -28,30 +26,27 @@ var legend = []schema.Category{
 // Tokens returns the semantic tokens of the given range of a file: the color category of every key and value in it,
 // encoded as Monaco wants. It returns none for a file that is not script.
 func (lsp *Service) Tokens(path string, bounds Range) ([]uint32, error) {
-	ws, tree, err := lsp.loadTree(path)
+	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
-	span := ToSpan(tree.Src, tree.Lines, bounds)
-	rangeTokens := lo.Filter(lsp.listTokens(ws, tree, path), func(current token, _ int) bool {
-		return current.span.End > span.Start && current.span.Start < span.End
-	})
-	return encodeTokens(tree.Src, tree.Lines, rangeTokens), nil
-}
 
-// listTokens returns the colored spans of a parsed file. The last file's are kept, so a request for more of the same
-// text, as each scroll makes, does not walk it again; a new text or a new mods' index walks it anew.
-func (lsp *Service) listTokens(ws *workspace.Session, tree *jomini.Tree, path string) []token {
-	mods := ws.Mods.Load()
-	if last := lsp.coloring.Load(); last != nil && last.tree == tree && last.mods == mods {
-		return last.tokens
+	tree := document.Tree
+	span := ToSpan(tree.Src, tree.Lines, bounds)
+	var tokens []token
+	add := func(colored token) {
+		if colored.span.End > span.Start && colored.span.Start < span.End {
+			tokens = append(tokens, colored)
+		}
 	}
-	visitor, place := &tokensVisitor{schema: ws.Schema}, ws.Locate(mods, path)
-	if place.Format.IsScript() {
-		ws.Schema.Walk(tree, place.File, visitor)
+
+	for position := range document.Contexts {
+		current, context := tree.Statements[position], &document.Contexts[position]
+		add(makeToken(ws.Schema, tree, current.Key, context.Category))
+		add(makeToken(ws.Schema, tree, current.Value, context.ValueGroup))
 	}
-	lsp.coloring.Store(&fileColors{tree: tree, mods: mods, tokens: visitor.tokens})
-	return visitor.tokens
+
+	return encodeTokens(tree.Src, tree.Lines, tokens), nil
 }
 
 // ListLegend returns the legend the tokens are encoded against.
@@ -60,44 +55,20 @@ func (lsp *Service) ListLegend() Legend {
 	return Legend{Types: types, Modifiers: []string{}}
 }
 
-// A tokensVisitor collects the colored spans of a file.
-type tokensVisitor struct {
-	schema *schema.Schema
-	tokens []token
-}
-
 // A token is one colored span before encoding.
 type token struct {
 	span     jomini.Span
 	category schema.Category
 }
 
-// A fileColors is the colored spans of one parsed file, under the mods' index that colors them.
-type fileColors struct {
-	tree   *jomini.Tree
-	mods   *index.Index
-	tokens []token
-}
-
-// Enter records the statement's key and value categories.
-func (visitor *tokensVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
-	current := tree.Statements[statement]
-	visitor.tokens = append(visitor.tokens,
-		visitor.makeToken(tree, current.Key, context.Category), visitor.makeToken(tree, current.Value, context.ValueGroup))
-	return true
-}
-
 // makeToken returns the token of a span with the given category. A span the walk gave none is a link if its text is a
 // chain of links, as scope:actor or root.liege.
-func (visitor *tokensVisitor) makeToken(tree *jomini.Tree, span jomini.Span, category schema.Category) token {
-	if category == schema.CategoryNone && !span.IsEmpty() && visitor.schema.IsLink(tree.Unquoted(span)) {
+func makeToken(language *schema.Schema, tree *jomini.Tree, span jomini.Span, category schema.Category) token {
+	if category == schema.CategoryNone && !span.IsEmpty() && language.IsLink(tree.Unquoted(span)) {
 		category = schema.CategoryLink
 	}
 	return token{span: span, category: category}
 }
-
-// Leave does nothing.
-func (visitor *tokensVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
 
 // encodeTokens returns the given tokens as five integers each: the line and column deltas, the length, the type's place
 // in the legend and the modifiers. It leaves out a token Monaco cannot draw.

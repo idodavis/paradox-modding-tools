@@ -499,6 +499,9 @@ func (stm *Service) LinkItem(modID, key, item string) error {
 	if err := stm.writeChanges(ws, mod, current, listing); err != nil {
 		return err
 	}
+	if current.WorkshopID != workshopID {
+		_ = removeCacheDir(stm.Workspace.Config.Dirs.Cache, resolveSnapshotPath(stm.Workspace.Config.Dirs.Cache, current.WorkshopID))
+	}
 	application.Get().Event.Emit(EventListingChanged, modID)
 	return nil
 }
@@ -572,12 +575,14 @@ func (stm *Service) buildExclusions(mod workspace.Mod) ([]exclusion, error) {
 	}
 	keepMetadata := "\n!" + game.MetadataDir + "/"
 	exclusions := lo.Map(stm.ListRules(), func(rule Rule, _ int) exclusion {
+		// the .gitignore rule leaves out what the mod's own .gitignore names
+		if rule.Pattern == gitignoreFile {
+			return exclusion{ignore: files.ParseIgnore(gitignore.Text), reason: rule.Reason}
+		}
 		return exclusion{ignore: files.ParseIgnore(rule.Pattern + keepMetadata), reason: rule.Reason}
 	})
 	return append(exclusions,
-		exclusion{ignore: files.ParseIgnore(gitignore.Text), reason: "The mod's .gitignore names it."},
-		exclusion{ignore: files.ParseIgnore(mod.Ignore), reason: "One of the mod's own patterns names it."},
-	), nil
+		exclusion{ignore: files.ParseIgnore(mod.Ignore), reason: "One of the mod's own patterns names it."}), nil
 }
 
 // findExclusion returns why an upload leaves out a file: the reason of the first exclusion that covers it. It returns

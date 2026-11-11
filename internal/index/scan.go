@@ -24,8 +24,8 @@ import (
 	"paradox-modding-tools/internal/schema"
 )
 
-// collector is the scan's visitor. It turns the definition and the
-// references of each statement into occurrences.
+// collector turns the definition and the references of each statement of a
+// walked file into occurrences.
 type collector struct {
 	schema *schema.Schema
 
@@ -34,10 +34,15 @@ type collector struct {
 
 	occurrences []Occurrence
 
-	// definitions holds the positions of the definitions the walk is inside,
-	// the innermost last.
-	definitions []int32
+	// holders holds, for each statement read so far, where the occurrence of
+	// the innermost definition around its block is. It is -1 for none.
+	holders []int32
 }
+
+// contextPool holds lists of contexts for the files being scanned, so that a
+// scan makes one list for each file it reads at once and not one for each
+// file.
+var contextPool = sync.Pool{New: func() any { return new([]schema.Context) }}
 
 // Scan builds the index of an install's files, in parallel. The mounts are
 // the game's roots, then each DLC's, in load order, with their files as
@@ -265,9 +270,8 @@ func (i *Index) buildFile(lock *sync.RWMutex, schema *schema.Schema, position in
 	case format == files.FormatTable:
 		occurrences = tables.buildRows(schema, position, i.readSource(position))
 	case format.IsScript():
-		visitor := &collector{schema: schema, index: tables}
-		schema.Walk(jomini.Parse(i.readSource(position)), i.Files[position], visitor)
-		occurrences = visitor.occurrences
+		collector := &collector{schema: schema, index: tables}
+		occurrences = collector.collect(jomini.Parse(i.readSource(position)), i.Files[position])
 	default:
 		return
 	}
@@ -341,13 +345,33 @@ func (i *Index) buildRows(schema *schema.Schema, position int32, source string) 
 	return occurrences
 }
 
-// Enter records the statement's definition and references.
-func (c *collector) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
-	var parent int32
-	nested := len(c.definitions) > 0
-	if nested {
-		parent = c.definitions[len(c.definitions)-1]
+// collect walks a file and returns its occurrences: each statement's
+// definition, then its references, in the tree's order. The file's own
+// context gives one only where the file is one definition.
+func (c *collector) collect(tree *jomini.Tree, file files.File) []Occurrence {
+	list := contextPool.Get().(*[]schema.Context)
+	defer contextPool.Put(list)
+
+	contexts := c.schema.Walk(tree, file, *list)
+	*list = contexts
+	c.holders = make([]int32, len(contexts))
+
+	for position := range contexts {
+		c.collectStatement(tree, int32(position), &contexts[position])
 	}
+
+	return c.occurrences
+}
+
+// collectStatement records the statement's definition and references.
+func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context *schema.Context) {
+	// the file's own statement is inside no definition
+	holder := int32(-1)
+	if statement > 0 {
+		holder = c.holders[tree.Statements[statement].Parent]
+	}
+
+	parent, nested := max(holder, 0), holder >= 0
 
 	if definition := context.Definition; context.Defines {
 		occurrence := c.index.makeOccurrence(RoleDefines, definition.Database, definition.Name, definition.Span)
@@ -357,10 +381,12 @@ func (c *collector) Enter(tree *jomini.Tree, statement int32, context *schema.Co
 		occurrence.Line = int32(tree.Lines.ToPosition(definition.Span.Start).Line)
 		occurrence.Parent, occurrence.Nested = parent, nested
 		occurrence.Statement = definition.Statement
-		parent, nested = int32(len(c.occurrences)), true
+		holder = int32(len(c.occurrences))
+		parent, nested = holder, true
 		c.occurrences = append(c.occurrences, occurrence)
-		c.definitions = append(c.definitions, parent)
 	}
+
+	c.holders[statement] = holder
 
 	for _, reference := range context.References {
 		occurrence := c.index.makeOccurrence(RoleRefers, reference.Database, reference.Name, reference.Span)
@@ -368,15 +394,6 @@ func (c *collector) Enter(tree *jomini.Tree, statement int32, context *schema.Co
 		occurrence.Parent, occurrence.Nested, occurrence.Firing = parent, nested, c.isFiring(context, reference)
 		occurrence.Statement = statement
 		c.occurrences = append(c.occurrences, occurrence)
-	}
-
-	return true
-}
-
-// Leave closes the definition that the statement makes, if it makes one.
-func (c *collector) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {
-	if context.Defines {
-		c.definitions = c.definitions[:len(c.definitions)-1]
 	}
 }
 

@@ -337,7 +337,7 @@ func (lsp *Service) DiagnoseText(path, text string) ([]Diagnostic, error) {
 	if !isDiagnosed(place) {
 		return []Diagnostic{}, nil
 	}
-	document := workspace.ParseDocument(place.Format, path, text)
+	document := ws.WalkText(place, text)
 	return lsp.listEnabled(ws.ID, describeDiagnostics(newVisitor(ws, mods, place, &sync.Map{}).diagnoseTree(document))), nil
 }
 
@@ -377,7 +377,7 @@ func diagnoseFile(ws *workspace.Session, mods *index.Index, path string, paramet
 	if !isDiagnosed(place) {
 		return []Diagnostic{}, nil
 	}
-	document, err := ws.LoadDocument(path)
+	document, err := ws.WalkDocument(path)
 	if err != nil {
 		return nil, err
 	}
@@ -531,11 +531,17 @@ func (visitor *diagnoseVisitor) diagnoseTree(document workspace.Document) []Diag
 		return diagnoseFolders(tree, place)
 	}
 	diagnostics := toDiagnostics(tree, tree.Problems)
-	if !visitor.parseOnly {
-		visitor.ws.Schema.Walk(tree, place.File, visitor)
-		diagnostics = append(diagnostics, visitor.diagnostics...)
+	if visitor.parseOnly {
+		return diagnostics
 	}
-	return diagnostics
+	// the file's own context is judged only where the file is one definition
+	for position := range document.Contexts {
+		statement, context := int32(position), &document.Contexts[position]
+		if statement > 0 || context.Definition != nil {
+			visitor.diagnoseStatement(tree, statement, context)
+		}
+	}
+	return append(diagnostics, visitor.diagnostics...)
 }
 
 // diagnoseDescriptor returns a problem, at the text that writes it, if a mod's descriptor names a supported version the
@@ -559,8 +565,10 @@ func (visitor *diagnoseVisitor) diagnoseDescriptor(tree *jomini.Tree) []Diagnost
 	return []Diagnostic{makeDiagnostic(tree, span, "supported-version", facts)}
 }
 
-// Enter records the problems of a statement.
-func (visitor *diagnoseVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
+// diagnoseStatement records the problems of a statement, and for a
+// definition each key it must write and does not.
+func (visitor *diagnoseVisitor) diagnoseStatement(tree *jomini.Tree, statement int32, context *schema.Context) {
+	visitor.diagnoseRequired(tree, statement, context)
 	visitor.diagnoseReferences(tree, context)
 	visitor.diagnoseKey(tree, statement, context)
 	visitor.diagnoseScope(tree, statement, context)
@@ -571,11 +579,11 @@ func (visitor *diagnoseVisitor) Enter(tree *jomini.Tree, statement int32, contex
 	if value := tree.Statements[statement].Value; visitor.place.Format == files.FormatGUI && strings.Contains(tree.Text(value), "[") {
 		visitor.diagnoseCalls(tree, loc.Segments(tree.Unquoted(value), tree.UnquotedSpan(value).Start), context.Datacontext)
 	}
-	return true
 }
 
-// Leave records each key a definition must write and does not, in alphabetical order.
-func (visitor *diagnoseVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {
+// diagnoseRequired records each key a definition must write and does not, in
+// alphabetical order.
+func (visitor *diagnoseVisitor) diagnoseRequired(tree *jomini.Tree, statement int32, context *schema.Context) {
 	definition := context.Definition
 	if !context.Defines || definition.Mode != "" {
 		return

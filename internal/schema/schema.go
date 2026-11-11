@@ -417,7 +417,6 @@ type Database struct {
 // ScopeType is one type of scope the game runs script in, and what script can
 // do there.
 type ScopeType struct {
-	Name     string
 	Triggers bool
 	Effects  bool
 }
@@ -449,16 +448,8 @@ type DataType struct {
 	Functions map[string]DataFunction
 }
 
-// Modifier is one modifier the dumps declare. It may be written as a key
-// inside a modifier block.
-type Modifier struct {
-	Name  string
-	Blurb string
-}
-
 // OnAction is one on_action the dumps declare, with the scope it runs in.
 type OnAction struct {
-	Name  string
 	Scope string
 
 	// Hardcoded is whether the game calls it from its own code, as the dumps'
@@ -569,14 +560,14 @@ type Schema struct {
 	Commands map[string]*Command
 	Scopes   map[string]ScopeType
 
-	// Saved holds the scope names the game saves from code.
-	Saved map[string]bool
-
 	// Customs holds the customizable localizations the dumps name, though the
 	// game's files may define none.
 	Customs map[string]bool
 
-	Modifiers map[string]Modifier
+	// Modifiers holds the modifiers the dumps declare, which a modifier block
+	// may write as keys.
+	Modifiers map[string]bool
+
 	OnActions map[string]OnAction
 	DataTypes map[string]DataType
 

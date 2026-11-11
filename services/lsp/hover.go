@@ -99,11 +99,11 @@ var blockLabels = map[game.Shape]string{
 // Hover returns the hover card for the key or value at a position in a file. It returns nil if the position is on
 // nothing.
 func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
-	ws, tree, err := lsp.loadTree(path)
+	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
-	mods := ws.Mods.Load()
+	tree, mods := document.Tree, ws.Mods.Load()
 	place := ws.Locate(mods, path)
 	offset := ToOffset(tree.Src, tree.Lines, line, column)
 	if place.Format == files.FormatLocalization {
@@ -113,8 +113,7 @@ func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
 		}
 		return card, nil
 	}
-	visitor := walkTo(ws, tree, place, offset)
-	card := lsp.describeHit(ws, mods, place, visitor)
+	card := lsp.describeHit(ws, mods, place, findCursor(document, offset))
 	if card != nil {
 		card.Lexicon = findLexicon(card)
 	}
@@ -123,15 +122,15 @@ func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
 
 // describeHit returns the hover card for the key or value the visitor stopped on in a script file. It returns nil if
 // the cursor is on nothing a card can describe.
-func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place workspace.Place, visitor *hoverVisitor) *Card {
-	span, reference := findHit(visitor)
+func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place workspace.Place, cursor cursor) *Card {
+	span, reference := findHit(cursor)
 	if span.IsEmpty() {
 		return nil
 	}
-	tree, context := visitor.tree, &visitor.context
+	tree, context := cursor.tree, cursor.context
 	reference = resolveHit(mods, place, reference, context.References)
 	card := &Card{
-		Title: tree.Unquoted(span), Range: ToRange(tree.Src, tree.Lines, span), Within: visitor.ancestors,
+		Title: tree.Unquoted(span), Range: ToRange(tree.Src, tree.Lines, span), Within: listAncestors(cursor),
 	}
 	switch {
 	case reference.Database == game.Localization:
@@ -141,9 +140,9 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 		if reference.Database == game.Constant {
 			describeNumber(card, tree, reference.Span)
 		}
-	case tree.Statements[visitor.statement].Value.Contains(visitor.offset):
-		describeValue(card, ws, visitor)
-		if date, ok := findDate(tree, visitor.statement, context); ok {
+	case tree.Statements[cursor.statement].Value.Contains(cursor.offset):
+		describeValue(card, ws, cursor)
+		if date, ok := findDate(tree, cursor.statement, context); ok {
 			mod, _ := lsp.Workspace.LookupMod(place.Origin)
 			card.Date = resolveDate(mod.Calendar, date)
 		}
@@ -151,22 +150,22 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 		keyword := context.Keyword
 		card.What, card.Class, card.Blurb = "keyword", string(keyword.Class), keyword.Blurb
 		if keyword.Weighted {
-			card.Weight = resolveWeight(tree, visitor.statement)
+			card.Weight = resolveWeight(tree, cursor.statement)
 		}
 	case context.Category == schema.CategoryCommand || context.Category == schema.CategoryLink:
-		describeCommand(card, visitor)
+		describeCommand(card, cursor)
 		card.Stale = ws.Schema.Dumps.Stale
 	case context.Category == schema.CategoryField:
 		describeField(card, context)
 		card.Stale = ws.Schema.Dumps.Stale
 		if context.Parent.Callee != nil {
-			call := tree.Statements[visitor.statement].Parent
+			call := tree.Statements[cursor.statement].Parent
 			card.What, card.Callee = cardParameter, tree.Unquoted(tree.Statements[call].Key)
 		}
 	case context.Category == schema.CategoryParameter:
 		card.What = cardParameter
 	}
-	describeBlock(card, visitor)
+	describeBlock(card, cursor)
 	if card.What == "" && card.Date == nil && card.Color == "" {
 		return nil
 	}
@@ -219,45 +218,52 @@ func listEntries(ws *workspace.Session, mods *index.Index, sites []index.Site) [
 	})
 }
 
-// A hoverVisitor finds the innermost statement of a tree at an offset, and its context.
-type hoverVisitor struct {
+// A cursor is the innermost statement of a document at an offset, with what
+// the walk decided there.
+type cursor struct {
 	tree      *jomini.Tree
 	offset    int
 	statement int32 // 0, the file, if there is none
-	context   schema.Context
-	ancestors []string // the definition's name, then the keys of the blocks that hold the offset
+	context   *schema.Context
 }
 
-// walkTo walks a file to an offset and returns the visitor that holds the innermost statement there. Only a script file
-// is walked, since the schema has no rules for the keys of any other file; the visitor of any other holds no statement.
-func walkTo(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) *hoverVisitor {
-	visitor := &hoverVisitor{tree: tree, offset: offset}
-	if place.Format.IsScript() {
-		ws.Schema.WalkTo(tree, place.File, offset, visitor)
+// findCursor returns the cursor at an offset of a document. A document the
+// walk does not read, such as a localization file's, gives the file itself
+// with an empty context.
+func findCursor(document workspace.Document, offset int) cursor {
+	cursor := cursor{tree: document.Tree, offset: offset, context: &schema.Context{}}
+	if document.Contexts != nil {
+		cursor.statement = document.Tree.FindStatement(offset)
+		cursor.context = &document.Contexts[cursor.statement]
 	}
-	return visitor
+
+	return cursor
 }
 
-// Enter keeps the context when the statement covers the offset, with the name of the definition the offset is in and
-// the keys of the blocks inside it.
-func (visitor *hoverVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
-	current := tree.Statements[statement]
-	if !current.Span.Contains(visitor.offset) {
-		return true
-	}
-	visitor.statement, visitor.context = statement, *context
-	visitor.context.References = slices.Clone(context.References)
-	switch {
-	case context.Defines:
-		visitor.ancestors = []string{context.Definition.Name}
-	case context.Definition != nil && !current.Key.IsEmpty() && current.Block.Contains(visitor.offset):
-		visitor.ancestors = append(visitor.ancestors, tree.Unquoted(current.Key))
-	}
-	return true
-}
+// listAncestors returns the key of the definition a cursor is in, then the
+// keys of the blocks inside it that hold the cursor. A name script saves,
+// such as a scope, starts none. It returns nil outside any definition.
+func listAncestors(cursor cursor) []string {
+	var keys []string
+	tree, statement := cursor.tree, cursor.statement
+	for context := cursor.context; context != nil; context = context.Parent {
+		current := tree.Statements[statement]
+		if context.Defines && context.Category == schema.CategoryDefinition {
+			keys = append(keys, context.Definition.Name)
+			slices.Reverse(keys)
 
-// Leave does nothing.
-func (visitor *hoverVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
+			return keys
+		}
+
+		if !current.Key.IsEmpty() && current.Block.Contains(cursor.offset) {
+			keys = append(keys, tree.Unquoted(current.Key))
+		}
+
+		statement = current.Parent
+	}
+
+	return nil
+}
 
 // describeMessage returns the card for a position in a localization file, and the key's reference. The card is nil if
 // the position is on nothing.
@@ -374,11 +380,11 @@ func findKept(ws *workspace.Session, mods *index.Index, reference schema.Referen
 
 // findHit returns the span the cursor is on in the visited statement, and its reference if it names one. The span is
 // empty if the cursor is on neither the key nor the value.
-func findHit(visitor *hoverVisitor) (jomini.Span, schema.Reference) {
-	if visitor.statement == 0 {
+func findHit(cursor cursor) (jomini.Span, schema.Reference) {
+	if cursor.statement == 0 {
 		return jomini.Span{}, schema.Reference{}
 	}
-	context, offset, current := &visitor.context, visitor.offset, visitor.tree.Statements[visitor.statement]
+	context, offset, current := cursor.context, cursor.offset, cursor.tree.Statements[cursor.statement]
 	// a definition named by a value in its block, as a texticon by its icon, has its name in a statement of its own
 	if definition := context.Definition; definition != nil && definition.Span.Contains(offset) {
 		return definition.Span, schema.Reference{Database: definition.Database, Name: definition.Name, Span: definition.Span}
@@ -392,7 +398,7 @@ func findHit(visitor *hoverVisitor) (jomini.Span, schema.Reference) {
 	case current.Value.Contains(offset):
 		return current.Value, schema.Reference{}
 	case current.Key.Contains(offset) && context.Category == schema.CategoryLink:
-		for _, link := range jomini.Links(visitor.tree.Text(current.Key), current.Key.Start) {
+		for _, link := range jomini.Links(cursor.tree.Text(current.Key), current.Key.Start) {
 			if link.Span.Contains(offset) {
 				return link.Span, schema.Reference{}
 			}
@@ -447,25 +453,25 @@ func describeNumber(card *Card, tree *jomini.Tree, span jomini.Span) {
 }
 
 // describeValue fills a card for a value that is a parameter, a constant, a data call or one of its key's choices.
-func describeValue(card *Card, ws *workspace.Session, visitor *hoverVisitor) {
-	switch visitor.context.ValueGroup {
+func describeValue(card *Card, ws *workspace.Session, cursor cursor) {
+	switch cursor.context.ValueGroup {
 	case schema.CategoryParameter:
 		card.What = cardParameter
 	case schema.CategoryConstant:
 		card.What = "constant"
-		describeNumber(card, visitor.tree, visitor.tree.Statements[visitor.statement].Value)
+		describeNumber(card, cursor.tree, cursor.tree.Statements[cursor.statement].Value)
 	case schema.CategoryCall:
-		describeFunction(card, ws, visitor.tree, *visitor.context.Call, visitor.context.Datacontext, visitor.offset)
+		describeFunction(card, ws, cursor.tree, *cursor.context.Call, cursor.context.Datacontext, cursor.offset)
 	case schema.CategoryChoice:
-		describeChoice(card, visitor)
+		describeChoice(card, cursor)
 	}
 }
 
 // describeChoice fills a card for a value that is one of the choices its key takes, such as an event's type: it names
 // the key, and gives the choices and what the key's field says of itself.
-func describeChoice(card *Card, visitor *hoverVisitor) {
-	field := visitor.context.Field
-	card.What, card.Blurb = visitor.tree.Unquoted(visitor.tree.Statements[visitor.statement].Key), field.Blurb.Value
+func describeChoice(card *Card, cursor cursor) {
+	field := cursor.context.Field
+	card.What, card.Blurb = cursor.tree.Unquoted(cursor.tree.Statements[cursor.statement].Key), field.Blurb.Value
 	describeTakes(card, field)
 }
 
@@ -496,18 +502,18 @@ func resolveDate(calendar app.Calendar, date jomini.Date) *CardDate {
 
 // describeCommand fills a card for an effect, a trigger or a link. A command the schema does not know gets only what
 // it is.
-func describeCommand(card *Card, visitor *hoverVisitor) {
-	card.What = findClass(visitor.context.Declaration).ID
-	command := visitor.context.Command
+func describeCommand(card *Card, cursor cursor) {
+	card.What = findClass(cursor.context.Declaration).ID
+	command := cursor.context.Command
 	if command == nil {
 		return
 	}
 	card.Blurb, card.Runs = command.Blurb, cmp.Or(strings.Join(command.Scopes, ", "), "The game does not say")
-	if visitor.tree.Statements[visitor.statement].IsBlock() {
+	if cursor.tree.Statements[cursor.statement].IsBlock() {
 		card.Leads = command.Target
 	} else {
 		card.Target = command.Target
-		describeTakes(card, visitor.context.Parent.FindArguments(command, visitor.context.Declaration))
+		describeTakes(card, cursor.context.Parent.FindArguments(command, cursor.context.Declaration))
 	}
 }
 
@@ -563,11 +569,11 @@ func resolveWeight(tree *jomini.Tree, statement int32) int {
 }
 
 // describeBlock fills a card for a statement that holds a block: what the block holds and, for a color, the color.
-func describeBlock(card *Card, visitor *hoverVisitor) {
-	if visitor.tree.Statements[visitor.statement].IsBlock() && visitor.context.Shape != game.ShapeUnknown {
-		card.Holds = cmp.Or(blockLabels[visitor.context.Shape], string(visitor.context.Shape))
+func describeBlock(card *Card, cursor cursor) {
+	if cursor.tree.Statements[cursor.statement].IsBlock() && cursor.context.Shape != game.ShapeUnknown {
+		card.Holds = cmp.Or(blockLabels[cursor.context.Shape], string(cursor.context.Shape))
 	}
-	if color, ok := jomini.ToColor(visitor.tree, visitor.statement); ok {
+	if color, ok := jomini.ToColor(cursor.tree, cursor.statement); ok {
 		card.Color = color.ToCSS()
 	}
 }

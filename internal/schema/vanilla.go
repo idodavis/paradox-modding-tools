@@ -18,10 +18,16 @@ import (
 	"paradox-modding-tools/internal/loc"
 )
 
-// counter is the visitor of one worker's counting walk. It counts into
-// fields of its own, apart from the schema.
+// counter counts the files one worker walks. It counts into fields of its
+// own, apart from the schema.
 type counter struct {
-	schema  *Schema
+	schema *Schema
+
+	// contexts is the list the worker's walks fill, one file after another.
+	contexts []Context
+
+	// holders holds, for each statement of the file being counted, where the
+	// keys of its block are counted.
 	holders []holder
 
 	// path is the file being counted, and colorSuffix the ending of the keys
@@ -138,10 +144,9 @@ func (s *Schema) CountVanilla(listing []files.File, parse func(path string) (*jo
 
 	failures := eachParsed(listing, parse, func(worker, index int, tree *jomini.Tree) {
 		counter, file := counters[worker], listing[index]
-		counter.holders = counter.holders[:0]
 		counter.path, counter.gui = file.Path, file.Format == files.FormatGUI
 		counter.colorSuffix = game.FileTypes[strings.ToLower(path.Ext(file.Rel))].ColorSuffix
-		s.Walk(tree, file, counter)
+		counter.count(tree, file)
 	})
 	for _, other := range counters[1:] {
 		counters[0].add(other)
@@ -161,12 +166,28 @@ func (s *Schema) CountVanilla(listing []files.File, parse func(path string) (*jo
 	return nil
 }
 
-// Enter counts a statement: the name it defines, the names it writes after
-// prefixes, its command, its value and its field.
-func (c *counter) Enter(tree *jomini.Tree, statement int32, context *Context) bool {
+// count walks a file and counts each of its statements, in the tree's order.
+// The file's own context counts only where the file is one definition.
+func (c *counter) count(tree *jomini.Tree, file files.File) {
+	c.contexts = c.schema.Walk(tree, file, c.contexts)
+	c.holders = slices.Grow(c.holders[:0], len(c.contexts))[:len(c.contexts)]
+	c.holders[0] = holder{}
+
+	for position := range c.contexts {
+		statement, context := int32(position), &c.contexts[position]
+		if statement > 0 || context.Definition != nil {
+			c.countStatement(tree, statement, context)
+		}
+	}
+}
+
+// countStatement counts a statement: the name it defines, the names it
+// writes after prefixes, its command, its value and its field.
+func (c *counter) countStatement(tree *jomini.Tree, statement int32, context *Context) {
+	// the file's own statement is held by nothing
 	var parent holder
-	if last := len(c.holders) - 1; last >= 0 {
-		parent = c.holders[last]
+	if statement > 0 {
+		parent = c.holders[tree.Statements[statement].Parent]
 	}
 
 	c.countDefinition(context)
@@ -223,9 +244,7 @@ func (c *counter) Enter(tree *jomini.Tree, statement int32, context *Context) bo
 	}
 
 	next.shaped = next.field != nil && block
-	c.holders = append(c.holders, next)
-
-	return true
+	c.holders[statement] = next
 }
 
 // countDefinition records the name a statement defines, if any, and the
@@ -575,11 +594,6 @@ func (c *counter) isFrame(context *Context) bool {
 	database := c.schema.Databases[context.Database]
 
 	return database != nil && context.Field == database.Definition && context.Definition == nil
-}
-
-// Leave drops the statement's holder.
-func (c *counter) Leave(tree *jomini.Tree, statement int32, context *Context) {
-	c.holders = c.holders[:len(c.holders)-1]
 }
 
 // add adds the counts of another worker to this one's.

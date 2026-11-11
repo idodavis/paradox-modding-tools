@@ -92,14 +92,14 @@ func (lsp *Service) DescribeIndentation(path string) (string, error) {
 
 // ListFixes returns the quick fixes for the given problems of a file, one for each problem that has a fix.
 func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, error) {
-	ws, tree, err := lsp.loadTree(path)
+	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
-	mods := ws.Mods.Load()
+	tree, mods := document.Tree, ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	walk := func(diagnostic Diagnostic) *hoverVisitor {
-		return walkTo(ws, tree, place, ToOffset(tree.Src, tree.Lines, diagnostic.Range.StartLine, diagnostic.Range.StartColumn))
+	walk := func(diagnostic Diagnostic) cursor {
+		return findCursor(document, ToOffset(tree.Src, tree.Lines, diagnostic.Range.StartLine, diagnostic.Range.StartColumn))
 	}
 	fixes := []Fix{}
 	for _, diagnostic := range diagnostics {
@@ -180,12 +180,12 @@ func buildAppendFix(ws *workspace.Session, mods *index.Index, target, source, ad
 // A reference to a callable database also draws on the commands the block it is written in takes. The edits are empty
 // if no name is near enough.
 func buildReferenceFix(
-	language *schema.Schema, mods *index.Index, visitor *hoverVisitor, diagnostic Diagnostic,
+	language *schema.Schema, mods *index.Index, cursor cursor, diagnostic Diagnostic,
 ) (string, []Edit) {
 	diff := diffmatchpatch.New()
 	best, nearest := fixDistance, ""
-	for _, reference := range visitor.context.References {
-		if reference.Span.Start != visitor.offset {
+	for _, reference := range cursor.context.References {
+		if reference.Span.Start != cursor.offset {
 			continue
 		}
 		name := mods.ToCaseless(reference.Database, reference.Name)
@@ -195,7 +195,7 @@ func buildReferenceFix(
 		})
 		if database := language.Databases[reference.Database]; database != nil && database.Callable.Command != "" {
 			keys = slices.Concat(keys, lo.Filter(slices.Sorted(maps.Keys(language.Commands)), func(key string, _ int) bool {
-				_, ok := findAllowed(language.Commands[key], visitor.context.Parent)
+				_, ok := findAllowed(language.Commands[key], cursor.context.Parent)
 				return ok
 			}))
 		}
@@ -217,8 +217,8 @@ func buildReferenceFix(
 
 // buildMissingFix returns the fix for a definition that lacks a key it must write: a line that adds the key with its
 // default. The edits are empty if the key has no default.
-func buildMissingFix(schema *schema.Schema, visitor *hoverVisitor, diagnostic Diagnostic) (string, []Edit) {
-	tree, definition, key := visitor.tree, visitor.context.Definition, diagnostic.Facts["key"]
+func buildMissingFix(schema *schema.Schema, cursor cursor, diagnostic Diagnostic) (string, []Edit) {
+	tree, definition, key := cursor.tree, cursor.context.Definition, diagnostic.Facts["key"]
 	if definition == nil || !tree.Statements[definition.Statement].IsBlock() {
 		return "", nil
 	}
@@ -353,13 +353,13 @@ func buildEntryFix(ws *workspace.Session, mods *index.Index, target, source, ent
 // returns nil if the position is in no entry. It returns an error if the mod defines the entry already, the game
 // combines every copy of that kind of entry, or no mod can hold the copy.
 func (lsp *Service) BuildOverride(path string, line, column int, modID string) (*Fix, error) {
-	ws, tree, err := lsp.loadTree(path)
+	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
-	mods := ws.Mods.Load()
+	tree, mods := document.Tree, ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	definition := findEntry(ws, tree, place, ToOffset(tree.Src, tree.Lines, line, column))
+	definition := findEntry(ws, document, ToOffset(tree.Src, tree.Lines, line, column))
 	if definition == nil {
 		return nil, nil
 	}
@@ -401,14 +401,21 @@ func (lsp *Service) BuildOverride(path string, line, column int, modID string) (
 	return &fix, nil
 }
 
-// findEntry returns the definition at an offset of a file that a mod can override: one written in a folder of its
-// database. It returns nil if the offset is in none.
-func findEntry(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) *schema.Definition {
-	definition := walkTo(ws, tree, place, offset).context.Definition
-	if definition == nil || definition.Statement == 0 || !hasFolder(ws.Schema.Databases[definition.Database]) {
+// findEntry returns the definition at an offset of a document that a mod can
+// override: the innermost one that holds the offset, if it is written in a
+// folder of its database. A name script saves on the way, such as a scope,
+// is no entry. It returns nil if the offset is in none.
+func findEntry(ws *workspace.Session, document workspace.Document, offset int) *schema.Definition {
+	context := findCursor(document, offset).context
+	for context != nil && (!context.Defines || context.Category != schema.CategoryDefinition) {
+		context = context.Parent
+	}
+
+	if context == nil || context.Definition.Statement == 0 || !hasFolder(ws.Schema.Databases[context.Definition.Database]) {
 		return nil
 	}
-	return definition
+
+	return context.Definition
 }
 
 // listRivals returns the copies of a name that an override has to load after or before: the ones written with an

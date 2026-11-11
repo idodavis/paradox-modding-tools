@@ -15,33 +15,18 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// visit is one statement the recorder was offered, with the context the walk
-// gave it.
+// visit is one statement of a walked file, with the context the walk gave
+// it.
 type visit struct {
 	key     string
 	value   string
 	context Context
 }
 
-// recorder is a visitor that keeps every statement it is offered.
+// recorder holds every statement of a walked file.
 type recorder struct {
 	visits []visit
 }
-
-// Enter keeps the statement and its context, its references copied, and goes
-// on into its block.
-func (r *recorder) Enter(tree *jomini.Tree, statement int32, context *Context) bool {
-	kept := *context
-	kept.References = slices.Clone(context.References)
-	kept.Saved = slices.Clone(context.Saved)
-	current := tree.Statements[statement]
-	r.visits = append(r.visits, visit{key: tree.Text(current.Key), value: tree.Text(current.Value), context: kept})
-
-	return true
-}
-
-// Leave does nothing.
-func (r *recorder) Leave(tree *jomini.Tree, statement int32, context *Context) {}
 
 // find returns the first statement kept with the given key and value; ""
 // matches any value.
@@ -121,26 +106,22 @@ func openFixture(t *testing.T, install, rel string) (*jomini.Tree, files.File) {
 	return tree, files.File{Path: path, Rel: rel, Origin: files.OriginVanilla, Format: files.Classify(rel)}
 }
 
-// walkFixture walks one file of the CK3 fixture install and returns what the
-// walk offered.
+// walkFixture walks one file of the CK3 fixture install and returns its
+// statements with their contexts. The file's own comes first only where the
+// file is one definition.
 func walkFixture(t *testing.T, built *Schema, install, rel string) *recorder {
 	t.Helper()
 
 	tree, file := openFixture(t, install, rel)
 	seen := &recorder{}
-	built.Walk(tree, file, seen)
+	for statement, context := range built.Walk(tree, file, nil) {
+		if statement == 0 && context.Definition == nil {
+			continue
+		}
 
-	return seen
-}
-
-// walkFixtureTo walks one file of the CK3 fixture install to a byte offset
-// and returns what the walk offered.
-func walkFixtureTo(t *testing.T, built *Schema, install, rel string, offset int) *recorder {
-	t.Helper()
-
-	tree, file := openFixture(t, install, rel)
-	seen := &recorder{}
-	built.WalkTo(tree, file, offset, seen)
+		current := tree.Statements[statement]
+		seen.visits = append(seen.visits, visit{key: tree.Text(current.Key), value: tree.Text(current.Value), context: context})
+	}
 
 	return seen
 }
@@ -327,23 +308,6 @@ func TestWalkEventsFixture(t *testing.T) {
 	}
 }
 
-// TestWalkToKeepsSaved checks that a walk to an offset knows the scopes saved
-// before it, as the whole walk does.
-func TestWalkToKeepsSaved(t *testing.T) {
-	built, install := buildFixture(t)
-	text, err := os.ReadFile(filepath.Join(install, game.ScriptRoot, "events", "v_events.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	offset := strings.Index(string(text), "add_character_flag = seen_one")
-	whole := walkFixture(t, built, install, "events/v_events.txt").find(t, "add_character_flag", "seen_one")
-	part := walkFixtureTo(t, built, install, "events/v_events.txt", offset).find(t, "add_character_flag", "seen_one")
-	if len(whole.context.Saved) == 0 || !slices.Equal(whole.context.Saved, part.context.Saved) {
-		t.Errorf("Walk %v, WalkTo %v", whole.context.Saved, part.context.Saved)
-	}
-}
-
 // TestResolveMacroReplacesParameters checks that a call to a macro expands
 // with its parameters replaced.
 func TestResolveMacroReplacesParameters(t *testing.T) {
@@ -406,9 +370,9 @@ func TestBuildInstalls(t *testing.T) {
 				}
 			})
 
-			t.Logf("%d files in %s: %d databases, %d commands, %d saved from code, %d scripted definitions",
+			t.Logf("%d files in %s: %d databases, %d commands, %d scripted definitions",
 				len(paths), elapsed.Round(time.Millisecond), len(built.Databases), len(built.Commands),
-				len(built.Saved), len(built.ScriptedDefinitions))
+				len(built.ScriptedDefinitions))
 			t.Logf("fields by source: %d none, %d dumps, %d docs, %d vanilla; docs facts: %v",
 				sources[game.SourceNone], sources[game.SourceDumps], sources[game.SourceDocs], sources[game.SourceVanilla], facts)
 

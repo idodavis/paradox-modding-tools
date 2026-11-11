@@ -199,11 +199,7 @@ function follow(event: MouseEvent): void {
           <!-- eslint-disable-next-line vue/no-v-html -- sanitized by Go -->
           <div ref="content" class="art max-w-none" @click="follow" v-html="page.html" />
           <Teleport v-for="(codeBlock, index) in codeBlocks" :key="index" :to="codeBlock.pre">
-            <ScriptSnippet
-              :text="codeBlock.text"
-              language="paradox-script"
-              class="my-3 rounded-lg border border-default px-3 pb-1.5"
-            />
+            <ScriptSnippet :text="codeBlock.text" class="my-3 rounded-lg border border-default px-3 pb-1.5" />
           </Teleport>
         </div>
       </template>

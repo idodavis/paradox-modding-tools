@@ -48,9 +48,10 @@ const fixDistance = 3
 // maxPrefix is how many characters of z or 0 a file's name may start with to load after or before the others.
 const maxPrefix = 8
 
-// Format returns the edits that format a file's text, keeping the file's own indentation, else a tab or as many spaces
-// as the given tab size. It returns no edits for a read-only file, one that is not script or does not parse, or one
-// that would change in more than its spacing.
+// Format returns the edits that format a file's text, keeping the file's own
+// indentation, else a tab or as many spaces as the given tab size. It returns
+// no edits for a read-only file and for one that is not script or does not
+// parse.
 func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -66,11 +67,7 @@ func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit,
 			unit = strings.Repeat(" ", tabSize)
 		}
 	}
-	text := tree.Format(unit)
-	if strings.Join(strings.Fields(text), "") != strings.Join(strings.Fields(tree.Src), "") {
-		return []Edit{}, nil
-	}
-	return ToEdits(tree.Src, tree.Lines, jomini.DiffEdits(tree.Src, text)), nil
+	return ToEdits(tree.Src, tree.Lines, tree.Format(unit)), nil
 }
 
 // DescribeIndentation returns what a file indents one level with, in words: "Tabs" or "4 spaces". It returns "" if the

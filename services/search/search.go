@@ -57,8 +57,9 @@ type Query struct {
 	Origins   []string `json:"origins" jsonschema:"the mods searched, by id, and vanilla for the game's files; the mods if empty"`
 }
 
-// Hits holds the matches in one file, each with the range of the match and the text of its line. It is what the
-// search:hits event carries.
+// Hits holds the matches in one file, each with the range of the match and
+// the text of its line. A match carries no place of its own: Place is the
+// file's. It is what the search:hits event carries.
 type Hits struct {
 	Place workspace.Place `json:"place"`
 	Hits  []lsp.Site      `json:"hits"`
@@ -123,7 +124,7 @@ func (sch *Service) SearchFile(query Query, path string) (Hits, error) {
 	if err != nil {
 		return Hits{Place: place}, nil
 	}
-	return makeHits(place, findSites(source, expression, query.WholeWord)), nil
+	return Hits{Place: place, Hits: findSites(source, expression, query.WholeWord)}, nil
 }
 
 // ReplaceText replaces every match of a query in the mods' files and returns how many it replaced. A file open in the
@@ -214,7 +215,7 @@ func run(ws *workspace.Session, query Query, stop <-chan struct{}, tally *tally)
 				return nil
 			}
 			if sites := findSites(source, expression, query.WholeWord); len(sites) > 0 && !isClosed(stop) {
-				tally.send(makeHits(ws.Locate(mods, file.Path), sites))
+				tally.send(Hits{Place: ws.Locate(mods, file.Path), Hits: sites})
 			}
 			return nil
 		})
@@ -235,14 +236,6 @@ func findSites(source string, expression *regexp.Regexp, wholeWord bool) []lsp.S
 			Text:  source[line.Start:line.End],
 		}
 	})
-}
-
-// makeHits returns one file's hits, each of the given matches marked with the file's place.
-func makeHits(place workspace.Place, sites []lsp.Site) Hits {
-	for position := range sites {
-		sites[position].Place = place
-	}
-	return Hits{Place: place, Hits: sites}
 }
 
 // makeTest returns the quick test a file's text must pass before it is searched line by line. A regular expression

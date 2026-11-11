@@ -307,7 +307,7 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 	if card := hover(14, 5); card == nil || card.What != "effect" || card.Runs != "The game does not say" {
 		t.Errorf("an effect: %+v", card)
 	}
-	if card := hover(13, 5); card == nil || card.What != "keyword" || card.Class != "saving" || card.Blurb == "" {
+	if card := hover(7, 3); card == nil || card.What != "keyword" || card.Class != "logical" || card.Blurb == "" {
 		t.Errorf("a keyword: %+v", card)
 	}
 	if card := hover(4, 3); card == nil || card.What != "field" || card.Takes == "" || !card.Inferred {

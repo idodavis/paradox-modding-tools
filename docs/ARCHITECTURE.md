@@ -278,6 +278,7 @@ flowchart LR
 | [FEATURES.md](FEATURES.md) | Every page and what it does |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Building from source, the tests, a first change |
 | [AGENTS.md](../AGENTS.md) | The code conventions, for people and the coding agents they bring |
+| [GLOSSARY.md](GLOSSARY.md) | The one word PMT uses for each of its own things |
 | [RELEASING.md](RELEASING.md) | How a release goes out, and its checklist |
 | [ROADMAP.md](ROADMAP.md) | What comes next |
 | [frontend/src/README.md](../frontend/src/README.md) | The Vue app's folders and patterns |

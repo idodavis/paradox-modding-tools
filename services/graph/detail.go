@@ -135,19 +135,25 @@ func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	return section
 }
 
+// triggeredText is the description key of a text shown when its trigger
+// holds, and textChoices the description keys that choose one of the texts
+// inside them.
+const triggeredText = "triggered_desc"
+
+var textChoices = []string{"first_valid", "random_valid"}
+
 // listVersions returns the texts a block can show, in the order written.
 func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Version {
 	var versions []Version
 	for child := range tree.Children(statement) {
-		key := tree.Text(tree.Statements[child].Key)
-		row, _ := ws.Game.LookupKeyword(game.ShapeDescription, "", key, "")
+		key := strings.ToLower(tree.Text(tree.Statements[child].Key))
 		switch {
-		case row.Shows == game.ShowLeaf || key == game.DescriptionKey || key == game.OptionTitleKey:
+		case key == triggeredText || key == game.DescriptionKey || key == game.OptionTitleKey:
 			if version, ok := makeVersion(ws, mods, tree, child); ok {
 				version.When = findCondition(ws, mods, tree, child)
 				versions = append(versions, version)
 			}
-		case row.Shows != "":
+		case slices.Contains(textChoices, key):
 			versions = append(versions, listVersions(ws, mods, tree, child)...)
 		}
 	}
@@ -262,18 +268,23 @@ func listRules(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, stat
 	return rules
 }
 
-// findRule returns the game rule that holds the given setting, or false if none does.
+// findRule returns the game rule that holds the given setting: the rule the
+// setting's definition is written in. It returns false if nothing defines
+// the setting.
 func findRule(ws *workspace.Session, mods *index.Index, setting string) (Rule, bool) {
-	for _, winner := range mods.ListKept(ws.Schema, game.GameRules.Database) {
-		tree, statement, err := ws.FindStatement(mods, winner.Site)
-		if err != nil {
-			continue
-		}
-		if child, ok := tree.FindChild(statement, setting); ok && tree.Statements[child].IsBlock() {
-			return makeRule(ws, mods, tree, statement), true
-		}
+	winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: game.GameRules.Settings, Name: setting})
+	if !ok {
+		return Rule{}, false
 	}
-	return Rule{}, false
+	rule, ok := mods.FindDefinition(winner.Site)
+	if !ok {
+		return Rule{}, false
+	}
+	tree, statement, err := ws.FindStatement(mods, rule)
+	if err != nil {
+		return Rule{}, false
+	}
+	return makeRule(ws, mods, tree, statement), true
 }
 
 // makeRule returns the game rule a statement defines. Its default is the setting it names as one, else its first.

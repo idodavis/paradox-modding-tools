@@ -28,7 +28,6 @@ import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import RichEditor from "../../ui/RichEditor.vue";
-import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import CodeEditor from "./CodeEditor.vue";
 import DrawPane from "./draw/DrawPane.vue";
 import GitDiff from "./GitDiff.vue";
@@ -656,7 +655,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
             <CompareView
               :left="model.diskText.text"
               :right="model.model.getValue()"
-              :language="EDITOR_LANGUAGES[model.place.format] ?? 'plaintext'"
+              :language="model.place.language"
               left-label="The file on disk"
               right-label="Your unsaved text"
             />

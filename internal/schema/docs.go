@@ -94,8 +94,12 @@ var docTypes = map[string]docType{
 	"bool": {Value: ValueTypeBool}, "boolean": {Value: ValueTypeBool}, "yes/no": {Value: ValueTypeBool},
 	"int": {Value: ValueTypeNumber}, "integer": {Value: ValueTypeNumber}, "int32": {Value: ValueTypeNumber}, "number": {Value: ValueTypeNumber},
 	"float": {Value: ValueTypeNumber}, "decimal": {Value: ValueTypeNumber}, "fixed point": {Value: ValueTypeNumber},
-	"value":        {Value: ValueTypeNumber, Values: true},
-	"script value": {Value: ValueTypeNumber, Values: true}, "scripted value": {Value: ValueTypeNumber, Values: true},
+	// CK3 common/script_values/_script_values.info, "Inlining": "Formulas can
+	// be written inline wherever scripted values work", so a block written
+	// there is a value block
+	"value":                {Value: ValueTypeNumber, Values: true, Shape: game.ShapeValue},
+	"script value":         {Value: ValueTypeNumber, Values: true, Shape: game.ShapeValue},
+	"scripted value":       {Value: ValueTypeNumber, Values: true, Shape: game.ShapeValue},
 	"scripted value int32": {Value: ValueTypeNumber},
 	"date":                 {Value: ValueTypeDate},
 	"string":               {Value: ValueTypeText}, "text": {Value: ValueTypeText}, "name": {Value: ValueTypeText}, "identifier": {Value: ValueTypeText},
@@ -244,29 +248,32 @@ func (d *docReader) build(database *Database, readme string) {
 		return
 	}
 
-	buildDocFields(game.LookupGame(d.schema.Game), definition, d.root, "")
+	shape := cmp.Or(database.Callable.Shape, database.Row.Shape, game.ShapeFields)
+	buildDocFields(game.LookupGame(d.schema.Game), definition, d.root, "", shape)
 }
 
 // buildDocFields copies the fields that a doc writes onto a field, with
 // their claims and the fields below them. It stops at a block that the given
 // game's keywords say holds script. The doc's field sits under the given
-// key, "" for the definition itself.
-func buildDocFields(row *game.Game, field, doc *Field, holder string) {
+// key, "" for the definition itself, in a block of the given shape.
+func buildDocFields(row *game.Game, field, doc *Field, holder string, shape game.Shape) {
 	for key, child := range doc.Children {
 		target := field.buildChild(key, game.SourceDocs)
 		target.take(child.Claims)
-		if !holdsScript(row, holder, key, child) {
-			buildDocFields(row, target, child, key)
+		if !holdsScript(row, shape, holder, key, child) {
+			// what a block below a definition's own holds is not known
+			buildDocFields(row, target, child, key, game.ShapeUnknown)
 		}
 	}
 }
 
 // holdsScript reports whether a field's block holds script rather than
 // fields. It does if the field states a shape or a number to work out, or if
-// its key is a keyword of the given game that gives its block a shape under
-// the key above.
-func holdsScript(row *game.Game, holder, key string, field *Field) bool {
-	keyword, ok := row.LookupKeyword("", holder, key, "")
+// its key is a keyword of the given game that gives its block a shape, in a
+// block of the given shape under the key above.
+func holdsScript(row *game.Game, shape game.Shape, holder, key string, field *Field) bool {
+	block := len(field.Children) > 0 || field.Value.Value.Type == ValueTypeBlock
+	keyword, ok := row.LookupKeyword(shape, holder, key, block)
 
 	return field.Shape.IsStated() || field.Value.Value.Type == ValueTypeNumber || ok && keyword.Shape != ""
 }

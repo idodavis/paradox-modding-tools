@@ -63,6 +63,10 @@ type Card struct {
 	Sites       []Site          `json:"sites,omitempty"`
 	Inferred    bool            `json:"inferred"` // a fact was learned from the game's files
 	Range       Range           `json:"range"`    // what the card is about
+
+	// Token is the token type the editor colors the card's word by, as
+	// ListLegend names it. It is "" for a word with no color of its own.
+	Token string `json:"token,omitempty"`
 }
 
 // A Class is one class of the wiki's lexicon, by which a card and a completion name the commands the game declares.
@@ -111,13 +115,31 @@ func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
 		if card != nil && reference.Name != "" {
 			describeKey(ws, mods, place, card, reference)
 		}
-		return card, nil
+		return colorCard(document, card), nil
 	}
 	card := lsp.describeHit(ws, mods, place, findCursor(document, offset))
 	if card != nil {
 		card.Lexicon = findLexicon(card)
 	}
-	return card, nil
+	return colorCard(document, card), nil
+}
+
+// colorCard sets the token type of the word a card is about, so a page can
+// draw the card in the color the editor gives the word, and returns the
+// card. A nil card stays nil.
+func colorCard(document workspace.Document, card *Card) *Card {
+	if card == nil {
+		return nil
+	}
+
+	tree := document.Tree
+	tokens := listTokens(document, ToSpan(tree.Src, tree.Lines, card.Range), true)
+	first := slices.IndexFunc(tokens, func(current token) bool { return slices.Contains(legend, current.category) })
+	if first >= 0 {
+		card.Token = string(tokens[first].category)
+	}
+
+	return card
 }
 
 // describeHit returns the hover card for the key or value the visitor stopped on in a script file. It returns nil if
@@ -158,6 +180,9 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 	case context.Category == schema.CategoryField:
 		describeField(card, context)
 		card.Stale = ws.Schema.Dumps.Stale
+		if context.Field.Weighted {
+			card.Weight = resolveWeight(tree, cursor.statement)
+		}
 		if context.Parent.Callee != nil {
 			call := tree.Statements[cursor.statement].Parent
 			card.What, card.Callee = cardParameter, tree.Unquoted(tree.Statements[call].Key)

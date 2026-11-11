@@ -287,6 +287,29 @@ type Reference struct {
 	Folder string
 }
 
+// DatabaseField is one field of a database's definitions with what no dump
+// states about it.
+type DatabaseField struct {
+	// Games are the games the row holds for, every game if none.
+	Games []string
+
+	// Database is the database whose definitions hold the field, and KeyPath
+	// the field's key path from the definition; <number> matches a number
+	// key.
+	Database, KeyPath string
+
+	// Shape is what the field's block holds. It is "" where the row states
+	// none.
+	Shape Shape
+
+	// Weighted is whether the field's key is a number whose share of its
+	// siblings' is its chance.
+	Weighted bool
+
+	// Blurb is the field's hover text.
+	Blurb string
+}
+
 // EntryMode is a prefix written before a definition's name, and what it does
 // to a definition already loaded.
 type EntryMode struct {
@@ -434,8 +457,8 @@ var EventDelay = struct {
 // main_menu/common/game_rules/_game_rules.info:1-19.
 var GameRules = struct {
 	// Database is the database of the rules, each a block that holds a block
-	// for each setting.
-	Database string
+	// for each setting, and Settings the database of those settings.
+	Database, Settings string
 
 	// Trigger is the trigger that asks whether a rule is set to the setting
 	// it names.
@@ -452,7 +475,7 @@ var GameRules = struct {
 	// and description, with the setting at %s.
 	Setting     string
 	Description string
-}{"game_rules", "has_game_rule", "default", "categories", "setting_%s", "setting_%s_desc"}
+}{"game_rules", "game_rules.setting", "has_game_rule", "default", "categories", "setting_%s", "setting_%s_desc"}
 
 // CustomTexts is how a customizable localization is written, alike in the
 // three games: a block for each text it can show, which names the text's key
@@ -707,6 +730,12 @@ var References = []Reference{
 		Games: []string{CK3}, Database: "events", KeyPath: "sender/triggered_animation/animation",
 		Target: "gfx/portraits/portrait_animations",
 	},
+	// CK3 common/epidemics/_epidemics.info:124-128: "holder_event = <event>
+	// # Fired for the player county holder of the province", and the same for
+	// the liege and the realm
+	{Games: []string{CK3}, Database: "epidemics", KeyPath: "outbreak_intensities/*/notification/holder_event", Target: "events"},
+	{Games: []string{CK3}, Database: "epidemics", KeyPath: "outbreak_intensities/*/notification/liege_event", Target: "events"},
+	{Games: []string{CK3}, Database: "epidemics", KeyPath: "outbreak_intensities/*/notification/realm_event", Target: "events"},
 	// a date entry's liege names the title above it, as CK3
 	// history/titles/00_other_titles.txt:2525 writes e_hre
 	{Games: []string{CK3}, Database: "history/titles", KeyPath: "<number>/liege", Target: "landed_titles"},
@@ -737,6 +766,34 @@ var gameReferences = func() map[string][]Reference {
 
 	return references
 }()
+
+// The hover texts of an on_action's weighted entries.
+const (
+	randomEventBlurb    = "One event the on_action can pick; its number is how likely it is. An event of 0 is a chance that none fires."
+	randomOnActionBlurb = "One on_action the on_action can pick; its number is how likely it is."
+)
+
+// DatabaseFields holds the fields whose shape or weights no dump states.
+var DatabaseFields = []DatabaseField{
+	// _on_actions.info:55-90 (CK3; EU5's on_actions.info and Vic3's
+	// _on_actions.md alike): one entry is picked to fire
+	{Database: "on_action", KeyPath: "random_events/<number>", Weighted: true, Blurb: randomEventBlurb},
+	{Database: "on_action", KeyPath: "random_on_action/<number>", Weighted: true, Blurb: randomOnActionBlurb},
+	{Database: "on_actions", KeyPath: "random_events/<number>", Weighted: true, Blurb: randomEventBlurb},
+	{Database: "on_actions", KeyPath: "random_on_actions/<number>", Weighted: true, Blurb: randomOnActionBlurb},
+	// CK3 history/_characters.info:65-66,78: a date entry changes the
+	// character's own keys, and reads any other key as an effect
+	{
+		Games: []string{CK3}, Database: "history/characters", KeyPath: "<number>", Shape: ShapeSetup,
+		Blurb: "What changes for the character on this date.",
+	},
+	// EU5 in_game/common/subject_types/readme.txt:80 writes it as goal keys,
+	// each holding a type and a bias
+	{
+		Games: []string{EU5}, Database: "subject_types", KeyPath: "ai_biases", Shape: ShapeFields,
+		Blurb: "The weight the AI adds to certain goals, one block for each goal with its type and its bias.",
+	},
+}
 
 // ToDatabase returns the database name of a folder or file: the path without
 // common/ and without its extension.
@@ -885,6 +942,9 @@ func (g *Game) FindNestings(rel string) []Nesting {
 
 // Nestings holds the nested databases, a game's own before every game's.
 var Nestings = []Nesting{
+	// a game rule holds a block for each of its settings (GameRules cites the
+	// three games' docs); the keys the docs write for a rule stay its fields
+	{Parent: "common/game_rules", Database: "setting"},
 	// a title inside a title is a title; its key opens with its tier
 	{Games: []string{CK3}, Parent: "common/landed_titles", Keys: "[ekdcb]_*"},
 	{Games: []string{CK3}, Parent: "common/activities/activity_types", KeyPath: "options", Database: "option_category"},

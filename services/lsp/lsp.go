@@ -85,14 +85,17 @@ func findHolder(ws *workspace.Session, mods *index.Index, definition index.Site)
 	return mods.ToReference(holder).Name
 }
 
-// LocateSite returns the site of an occurrence with the range of its name and the text of its line. The range stays
-// empty and the text "" if the file cannot be read.
+// LocateSite returns the site of an occurrence with the range of its name and
+// the text of its line. It reads the file's text and parses nothing. The
+// range stays empty and the text "" if the file cannot be read, or is shorter
+// than when it was scanned.
 func LocateSite(ws *workspace.Session, mods *index.Index, handle index.Site) Site {
 	site := MakeSite(ws, mods, handle)
-	if tree, err := ws.LoadTree(site.Place.Path); err == nil {
-		span := mods.Occurrence(handle).Span
-		line := tree.Lines.LineSpan(tree.Lines.ToPosition(span.Start).Line)
-		site.Range, site.Text = ToRange(tree.Src, tree.Lines, span), tree.Src[line.Start:line.End]
+	span := mods.Occurrence(handle).Span
+	if source, err := ws.LoadSource(site.Place.Path); err == nil && span.End <= len(source) {
+		lines := jomini.NewLines(source)
+		line := lines.LineSpan(lines.ToPosition(span.Start).Line)
+		site.Range, site.Text = ToRange(source, lines, span), source[line.Start:line.End]
 	}
 	return site
 }

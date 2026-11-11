@@ -154,6 +154,12 @@ export interface Card {
      * what the card is about
      */
     "range": Range;
+
+    /**
+     * Token is the token type the editor colors the card's word by, as
+     * ListLegend names it. It is "" for a word with no color of its own.
+     */
+    "token"?: string;
 }
 
 /**
@@ -376,7 +382,8 @@ export interface Hint {
 }
 
 /**
- * A Legend is the list of token types and modifiers that the semantic tokens are encoded against.
+ * A Legend is the list of token types and modifiers that the semantic tokens
+ * are encoded against.
  */
 export interface Legend {
     "tokenTypes": string[] | null;

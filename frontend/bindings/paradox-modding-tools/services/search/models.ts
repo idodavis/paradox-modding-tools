@@ -9,8 +9,9 @@ import * as lsp$0 from "../lsp/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * Hits holds the matches in one file, each with the range of the match and the text of its line. It is what the
- * search:hits event carries.
+ * Hits holds the matches in one file, each with the range of the match and
+ * the text of its line. A match carries no place of its own: Place is the
+ * file's. It is what the search:hits event carries.
  */
 export interface Hits {
     "place": workspace$0.Place;

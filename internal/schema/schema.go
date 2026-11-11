@@ -244,6 +244,11 @@ type Expected struct {
 
 	// Nested is whether a name of a database nested in Database fits too.
 	Nested bool `json:"nested,omitempty"`
+
+	// Stem is the name a reference's value stands for, with %s for the value,
+	// as CK3's activity log names the key <value>_title. It is "" for the
+	// value itself.
+	Stem string `json:"stem,omitempty"`
 }
 
 // Vanilla is what the game's own files write at a field, counted.
@@ -313,6 +318,10 @@ type Field struct {
 	// Source is the highest-ranked declared source that writes the field. It
 	// is game.SourceNone if none does.
 	Source game.Source
+
+	// Weighted is whether the field's key is a number whose share of its
+	// siblings' is its chance, as an on_action's random_events entry is.
+	Weighted bool
 
 	Vanilla Vanilla
 }
@@ -666,6 +675,7 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 	// the count reads the unions as every later walk does, so they are built
 	// before it and again after
 	schema.buildDatabases(row, folders)
+	schema.buildFields(row)
 	if err := schema.buildDumps(row, installPath); err != nil {
 		return nil, err
 	}
@@ -871,6 +881,29 @@ func (s *Schema) buildDatabase(row *game.Game, label string, databaseRow game.Da
 	}
 
 	s.TypeDatabases[phrase] = owner
+}
+
+// buildFields gives each field that a game.DatabaseFields row names what the
+// row states: its shape, its weights and its hover text. A row for another
+// game, or for a database the game lacks, is skipped.
+func (s *Schema) buildFields(row *game.Game) {
+	for _, entry := range game.DatabaseFields {
+		database := s.Databases[entry.Database]
+		if database == nil || !row.Matches(entry.Games) {
+			continue
+		}
+
+		field := database.Definition
+		for key := range strings.SplitSeq(entry.KeyPath, "/") {
+			field = field.buildChild(key, game.SourceRegistry)
+		}
+
+		field.Weighted = entry.Weighted
+		field.Blurb.resolve(entry.Blurb, game.SourceRegistry)
+		if entry.Shape != "" {
+			field.Shape.resolve(entry.Shape, game.SourceRegistry)
+		}
+	}
 }
 
 // isNamedExactly reports whether a database's name is the given phrase with

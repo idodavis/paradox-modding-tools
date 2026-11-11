@@ -9,6 +9,7 @@ import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import { watch } from "vue";
 
 import type { editor, languages } from "monaco-editor";
+import { SYNTAX } from "../../../lib/syntax";
 import { legendQuery, loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
@@ -46,29 +47,6 @@ const CONFIGURATION: languages.LanguageConfiguration = {
     ["{", "}"],
     ["[", "]"],
   ],
-};
-
-// Each token the grammars and the legend use, with the `--syn-<name>` theme variable that colors it.
-const SYNTAX: Record<string, string> = {
-  comment: "comment",
-  string: "string",
-  number: "number",
-  literal: "number",
-  choice: "number",
-  operator: "operator",
-  block: "field",
-  field: "field",
-  entry: "name",
-  variable: "macro",
-  scope: "command",
-  keyword: "keyword",
-  command: "command",
-  definition: "name",
-  reference: "name",
-  link: "link",
-  call: "command",
-  parameter: "macro",
-  constant: "macro",
 };
 
 const defined = new Set<string>();
@@ -183,14 +161,19 @@ function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeDat
   const probe = document.body.appendChild(document.createElement("div"));
   probe.dataset.theme = pageTheme;
   const style = getComputedStyle(probe);
+  // A token written as a mix of other tokens is worked out by the browser.
   const token = (key: string): string => {
     const color = style.getPropertyValue(`--${key}`).trim();
-    return !color || color.startsWith("#") ? color : new Color(color).to("srgb").toString({ format: "hex" });
+    if (!color || color.startsWith("#")) return color;
+    probe.style.color = color;
+    return new Color(style.color).to("srgb").toString({ format: "hex" });
   };
+  // A theme may give a syntax color a weight, which Monaco takes as a font
+  // style.
   const rules = Object.entries(SYNTAX).map(([type, syntax]) => ({
     token: type,
     foreground: token(`syn-${syntax}`),
-    fontStyle: type === "comment" ? "italic" : "",
+    fontStyle: type === "comment" ? "italic" : style.getPropertyValue(`--syn-${syntax}-weight`).trim(),
   }));
   const theme: editor.IStandaloneThemeData = {
     base: dark ? "vs-dark" : "vs",

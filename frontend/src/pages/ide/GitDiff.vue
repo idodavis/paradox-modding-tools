@@ -7,7 +7,6 @@ import { commitsQuery, fileQuery, gitFileQuery, gitStatusQuery } from "../../que
 import { useEditorStore, type DiffSide, type Tab } from "../../stores/editor";
 import CompareView from "../../ui/CompareView.vue";
 import OriginChip from "../../ui/OriginChip.vue";
-import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import { findModel } from "./editor/models";
 
 const { tab, side, root = "" } = defineProps<{ tab: Tab; side: DiffSide; root?: string }>();
@@ -66,7 +65,7 @@ const right = computed(() => (side === "changes" ? working.value : (revised.valu
   <CompareView
     :left="left ?? ''"
     :right="right"
-    :language="place ? EDITOR_LANGUAGES[place.format] : 'plaintext'"
+    :language="place?.language ?? 'plaintext'"
     :left-label="sides.labels[0] ?? ''"
     :right-label="sides.labels[1] ?? ''"
   >

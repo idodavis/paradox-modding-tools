@@ -59,18 +59,22 @@ func (s *Schema) findKeyCall(key string, start int) (jomini.Step, *Command, bool
 	return call.Steps[0], command, ok
 }
 
-// findStatementCall does what findKeyCall does for a statement's key. A key
-// compared with a block, such as list_size(x) < { value = … }, writes no
-// call: the game reads that block as a value to work out.
+// findStatementCall does what findKeyCall does for a statement's key.
 func (s *Schema) findStatementCall(tree *jomini.Tree, statement int32) (jomini.Step, *Command, bool) {
-	current := tree.Statements[statement]
-	if operator := tree.Text(current.Op); current.IsBlock() && operator != "=" && operator != "?=" {
-		return jomini.Step{}, nil, false
-	}
-
-	span := tree.UnquotedSpan(current.Key)
+	span := tree.UnquotedSpan(tree.Statements[statement].Key)
 
 	return s.findKeyCall(tree.Text(span), span.Start)
+}
+
+// isCompared reports whether a statement compares its key with a block, as
+// list_size(x) < { value = … } does. The game reads such a block as a value
+// to work out. A block written with no operator, as a GUI file's types Name
+// { } is, compares nothing.
+func isCompared(tree *jomini.Tree, statement int32) bool {
+	current := tree.Statements[statement]
+	operator := tree.Text(current.Op)
+
+	return current.IsBlock() && operator != "" && operator != "=" && operator != "?="
 }
 
 // findCallee returns the name a statement's key calls: the command's name for
@@ -162,6 +166,14 @@ func (s *Schema) IsLink(key string) bool {
 	}
 
 	return command != nil && !command.Wild && slices.Contains(command.Declared, game.DeclarationLink)
+}
+
+// isChain reports whether every step of a value written with dots is a scope
+// link, as owner.ruler is and a text key such as war.0051.start is not.
+func (s *Schema) isChain(text string) bool {
+	return !slices.ContainsFunc(jomini.Links(text, 0), func(link jomini.Link) bool {
+		return !s.IsLink(text[link.Span.Start:link.Span.End])
+	})
 }
 
 // isKeyLink reports whether a key starts with a scope link, as IsLink does,

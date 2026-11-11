@@ -270,7 +270,7 @@ function outline(group: Group | null): void {
           v-for="(condition, ordinal) in step.conditions"
           :key="ordinal"
           :text="condition"
-          language="paradox-gui"
+          :path="path"
           class="mb-1"
         />
         <div

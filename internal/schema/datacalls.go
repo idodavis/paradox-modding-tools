@@ -245,6 +245,8 @@ func (s *Schema) ListTextReferences(message loc.Message) []Reference {
 		}
 	}
 
+	judge(references)
+
 	return references
 }
 

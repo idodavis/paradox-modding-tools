@@ -320,7 +320,6 @@ function jump(index: number): void {
             <ScriptSnippet
               v-if="item.usage"
               :text="item.usage"
-              language="paradox-script"
               class="rounded-md border border-default px-2.5 pb-1.5"
             />
           </div>

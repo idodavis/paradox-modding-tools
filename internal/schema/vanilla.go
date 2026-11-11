@@ -224,6 +224,13 @@ func (c *counter) countStatement(tree *jomini.Tree, statement int32, context *Co
 	case field != nil && (!block || !c.isColor(tree, statement, tree.Text(current.Key))):
 		next.field = field
 
+	case context.Keyword != nil && context.Keyword.Shape == game.ShapeEnclosing:
+		// an enclosing keyword's block, such as an if's, is the block around
+		// it again, so its keys count where that block's do
+		c.holders[statement] = parent
+
+		return
+
 	case context.Defines && context.Category == CategoryDefinition && context.Definition.Mode == "":
 		next = holder{field: mirror(c.definitions, context.Database), keys: map[string]bool{}}
 		next.field.Vanilla.Definitions++
@@ -408,21 +415,14 @@ func (c *counter) resolveProofs(key string) (string, bool) {
 }
 
 // resolveKeyShape returns the shape of the block that holds the given key. A
-// keyword gives its holder, and a command declared as one of triggers or
-// effects gives that. A key nothing else explains gives modifiers or fields.
-// A command that fits more than one shape gives shapeAmbiguous. A link, a
-// list iterator, a parameter and a call give "".
+// keyword's key is read as written, whatever the walk made of it: one written
+// in blocks of one shape gives that shape, and one the dumps declare gives
+// what its command gives. A command declared as one of triggers or effects
+// gives that. A key nothing else explains gives modifiers or fields. A link,
+// a list iterator, a parameter and a call give "".
 func (c *counter) resolveKeyShape(key string, context *Context) game.Shape {
-	lower := strings.ToLower(key)
-	row := game.LookupGame(c.schema.Game)
-	for _, keyword := range game.Keywords {
-		if keyword.Holder != "" && keyword.Key == lower && row.Matches(keyword.Games) {
-			if keyword.Class == "" {
-				return ""
-			}
-
-			return keyword.Holder
-		}
+	if shape, ok := c.resolveKeywordShape(strings.ToLower(key)); ok {
+		return shape
 	}
 
 	switch {
@@ -437,11 +437,39 @@ func (c *counter) resolveKeyShape(key string, context *Context) game.Shape {
 	return ""
 }
 
+// resolveKeywordShape returns the shape of the block that holds a key, in
+// lower case, that is a keyword written in any block its holders name. The
+// key's first such row decides, as it does in a lookup: it gives its one
+// holder, else what its command in the dumps gives, else "". A keyword with
+// no class gives "", since its key is a common field's too, as modifier and
+// trigger are. It returns false if the key is no such keyword.
+func (c *counter) resolveKeywordShape(key string) (game.Shape, bool) {
+	row := game.LookupGame(c.schema.Game)
+	for _, keyword := range game.Keywords {
+		if keyword.Key != key || keyword.Parent != "" || !row.Matches(keyword.Games) {
+			continue
+		}
+
+		command := c.schema.Commands[key]
+		switch {
+		case keyword.Class == "":
+		case len(keyword.Holders) == 1:
+			return keyword.Holders[0], true
+		case len(keyword.Holders) == 0 && command != nil:
+			return c.resolveCommandShape(key, command), true
+		}
+
+		return "", true
+	}
+
+	return "", false
+}
+
 // resolveCommandShape returns the shape of the block that holds the given
-// command. A trigger gives triggers and an effect gives effects. A command
-// declared as both, one that is also a modifier and one written in a case
-// the dumps do not use give shapeAmbiguous. A list iterator and a command
-// declared as neither give "".
+// command. A trigger gives triggers and an effect gives effects. One that is
+// also a modifier and one written in a case the dumps do not use give
+// shapeAmbiguous. A list iterator, a command declared as neither and one
+// declared as both give "": a block of either may hold it.
 func (c *counter) resolveCommandShape(key string, command *Command) game.Shape {
 	if _, iterator := game.MatchListIterator(key); iterator {
 		return ""
@@ -451,9 +479,9 @@ func (c *counter) resolveCommandShape(key string, command *Command) game.Shape {
 	effects := slices.Contains(command.Declared, game.DeclarationEffect)
 	_, modifier := c.schema.Modifiers[key]
 	switch {
-	case !triggers && !effects:
+	case triggers == effects:
 		return ""
-	case triggers && effects, modifier, c.schema.Commands[key] == nil:
+	case modifier, c.schema.Commands[key] == nil:
 		return shapeAmbiguous
 	case triggers:
 		return game.ShapeTriggers
@@ -864,8 +892,8 @@ func (c *counter) resolveClaims(field *Field, held bool) {
 }
 
 // resolveShapeClaim returns the one shape the blocks of a field were written
-// in, value winning over triggers. It returns game.ShapeUnknown if the shapes
-// disagree, and "" if the blocks tell nothing.
+// in, value winning over triggers and effects. It returns game.ShapeUnknown
+// if the shapes disagree, and "" if the blocks tell nothing.
 func resolveShapeClaim(vanilla Vanilla) game.Shape {
 	_, valued := vanilla.Shapes[game.ShapeValue]
 	var shapes []game.Shape
@@ -893,7 +921,10 @@ func resolveShapeClaim(vanilla Vanilla) game.Shape {
 	case len(vanilla.Shapes) > 0:
 		shapes = slices.Sorted(maps.Keys(vanilla.Shapes))
 		if valued {
-			shapes = slices.DeleteFunc(shapes, func(shape game.Shape) bool { return shape == game.ShapeTriggers })
+			// a value block takes triggers and effects too
+			shapes = slices.DeleteFunc(shapes, func(shape game.Shape) bool {
+				return shape == game.ShapeTriggers || shape == game.ShapeEffects
+			})
 		}
 
 		if slices.Contains(shapes, shapeAmbiguous) {
@@ -1050,7 +1081,8 @@ func (c *counter) isLiteral(value string) bool {
 // takesValues reports whether a field takes a number that a script value may
 // give: of the values the game's own files write in it, one names a script
 // value, as add_stability = stability_mild_bonus does, and every other is a
-// number, a parameter, a chain of links or a command.
+// number, a parameter, a chain of links or a command, alone or with its
+// argument in parentheses.
 func (c *counter) takesValues(values map[string]int) bool {
 	names := c.defined[c.schema.Values]
 	named := false
@@ -1058,10 +1090,11 @@ func (c *counter) takesValues(values map[string]int) bool {
 		text := strings.Trim(value, `"`)
 		class := jomini.Classify(text)
 		_, declared := c.schema.FindCommand(text)
+		_, _, called := c.schema.findKeyCall(text, 0)
 		switch {
 		case names[text]:
 			named = true
-		case class == jomini.ClassNumber || class == jomini.ClassParameter || c.schema.IsLink(text) || declared: // allowed
+		case class == jomini.ClassNumber || class == jomini.ClassParameter || c.schema.IsLink(text) || declared || called: // allowed
 		default:
 			return false
 		}

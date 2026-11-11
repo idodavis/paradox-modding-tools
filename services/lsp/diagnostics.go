@@ -631,7 +631,8 @@ func (visitor *diagnoseVisitor) diagnoseMissing(tree *jomini.Tree, references []
 			continue
 		}
 		alternatives := lo.Filter(references, func(other schema.Reference, _ int) bool { return atSpan(other) })
-		if !lo.EveryBy(alternatives, canJudge) || lo.SomeBy(alternatives, visitor.isKnown) {
+		isInferred := func(other schema.Reference) bool { return other.Inferred }
+		if lo.SomeBy(alternatives, isInferred) || lo.SomeBy(alternatives, visitor.isKnown) {
 			continue
 		}
 		code := classifyMissing(alternatives)
@@ -678,18 +679,6 @@ func JoinList(texts []string, conjunction string) string {
 		return strings.Join(texts, "")
 	}
 	return strings.Join(texts[:len(texts)-1], ", ") + " " + conjunction + " " + texts[len(texts)-1]
-}
-
-// canJudge reports whether a reference can be judged dangling. A saved name,
-// such as a scope or a variable, never is, nor is a name any of whose links
-// has a prefix.
-func canJudge(reference schema.Reference) bool {
-	prefixed := slices.ContainsFunc(jomini.Links(reference.Name, 0), func(link jomini.Link) bool {
-		return !link.Prefix.IsEmpty()
-	})
-	return reference.Database != "" && !slices.Contains(game.Links, reference.Database) &&
-		reference.Caller != game.AnyCall && reference.Caller != game.GUI.TagCalls && !reference.Inferred && !prefixed &&
-		!strings.Contains(reference.Name, "$")
 }
 
 // isKnown reports whether the game knows a reference's name. Any name the game's own files use is known, and so is a

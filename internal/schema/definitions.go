@@ -208,8 +208,6 @@ func (w *walker) findAssetDefinition(statement int32, level int) (Definition, bo
 func (w *walker) findScriptDefinition(statement int32, level int) (Definition, bool) {
 	label, span := w.frames[level].label, w.frames[level].span
 	if owner := w.schema.Databases[w.declaring[w.findLead(statement)]]; owner != nil && label != "" {
-		w.inline[label] = makeScripted(owner, w.tree, statement)
-
 		return Definition{Database: owner.Name, Name: label, Span: span, Statement: statement, Local: true}, true
 	}
 

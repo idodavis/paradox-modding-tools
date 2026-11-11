@@ -114,9 +114,7 @@
 //     Go stack overflow is fatal. The tree stays flat and valid.
 //
 // Parse reads past an operator with no key before it, which it drops, and
-// past a byte order mark at the start. DiffEdits replaces the whole text
-// where either text is not valid UTF-8, since the diff would move every later
-// offset.
+// past a byte order mark at the start.
 package jomini
 
 import (

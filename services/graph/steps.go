@@ -45,10 +45,12 @@ func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 		Via:  lo.Map(fire.Via, func(site index.Site, _ int) string { return mods.ToReference(site).Name }),
 		Site: lsp.LocateSite(ws, mods, fire.Use),
 	}
-	tree, err := ws.LoadTree(edge.Site.Place.Path)
-	if err != nil {
+	// a step is what the walk decided its block is, so the file is walked
+	document, err := ws.WalkDocument(edge.Site.Place.Path)
+	if err != nil || document.Contexts == nil {
 		return edge
 	}
+	tree := document.Tree
 	use := tree.FindStatement(mods.Occurrence(fire.Use).Span.Start)
 	firing := findFiring(ws, tree, use)
 	edge.Effect = tree.Text(tree.Statements[firing].Key)
@@ -56,8 +58,8 @@ func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	edge.Title = findTitle(ws, mods, tree, firing, game.TitleKey)
 	site, _ := mods.FindDefinition(fire.Use)
 	definition := mods.Occurrence(site).Statement
-	edge.Steps = listSteps(ws, mods, tree, firing, definition)
-	if entry := makeStep(ws, mods, tree, use, definition); use != firing && entry.Kind == kindWeight {
+	edge.Steps = listSteps(ws, mods, document, firing, definition)
+	if entry := makeStep(ws, mods, document, use, definition); use != firing && entry.Kind == kindWeight {
 		edge.Steps = append(edge.Steps, entry)
 	}
 	return edge
@@ -138,11 +140,11 @@ func findTitle(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, stat
 
 // listSteps returns the blocks a firing's statement sits in, from the top of the definition down, leaving out the
 // definition and the firing itself.
-func listSteps(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, firing, definition int32) []Step {
+func listSteps(ws *workspace.Session, mods *index.Index, document workspace.Document, firing, definition int32) []Step {
 	var steps []Step
-	statements := tree.Statements
+	statements := document.Tree.Statements
 	for statement := statements[firing].Parent; statement > definition; statement = statements[statement].Parent {
-		step := makeStep(ws, mods, tree, statement, definition)
+		step := makeStep(ws, mods, document, statement, definition)
 		if step.Kind == kindWeight {
 			statement = statements[statement].Parent
 		}
@@ -152,26 +154,33 @@ func listSteps(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, firi
 	return steps
 }
 
-// makeStep returns the step of one block a firing sits in, in the given definition.
-func makeStep(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement, definition int32) Step {
+// weightModifiers are the keys of the blocks that change the weight of the
+// branch they are written in.
+var weightModifiers = []string{"modifier", "opinion_modifier", "compare_modifier", "compatibility_modifier"}
+
+// makeStep returns the step of one block a firing sits in, in the given
+// definition. Whether the block is a branch, a weighted branch or a list is
+// what the walk decided its key is.
+func makeStep(ws *workspace.Session, mods *index.Index, document workspace.Document, statement, definition int32) Step {
+	tree, context := document.Tree, &document.Contexts[statement]
 	current := tree.Statements[statement]
 	key, holder := tree.Text(current.Key), tree.Text(tree.Statements[current.Parent].Key)
-	keyword, isKeyword := ws.Game.LookupKeyword("", holder, key, "")
-	_, iterates := game.MatchListIterator(key)
-	_, isCommand := ws.Schema.FindCommand(key)
+	keyword := game.Keyword{}
+	if context.Keyword != nil {
+		keyword = *context.Keyword
+	}
 	step := Step{
 		Key: key, Kind: kindBlock, When: findCondition(ws, mods, tree, statement), Line: toSourceLine(tree, current.Key),
 	}
 	switch {
 	case keyword.Class == game.KeywordClassConditional:
 		step.Kind = kindBranch
-	case keyword.Weighted:
+	case keyword.Weighted || context.Field != nil && context.Field.Weighted:
 		step.Key, step.Kind, step.Weight = holder, kindWeight, key
 		step.Modifiers = lo.CountBy(slices.Collect(tree.Children(statement)), func(child int32) bool {
-			row, _ := ws.Game.LookupKeyword(game.ShapeValue, "", tree.Text(tree.Statements[child].Key), "")
-			return row.Modifies
+			return slices.Contains(weightModifiers, strings.ToLower(tree.Text(tree.Statements[child].Key)))
 		})
-	case iterates && !isKeyword && isCommand:
+	case context.Iterates:
 		step.Kind = kindList
 	case ws.Schema.IsLink(key):
 		step.Kind = kindScope

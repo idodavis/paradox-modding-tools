@@ -1,11 +1,9 @@
 // language.go holds the script language's own rules: shapes and their key
-// rules, keywords, how a condition reads in English, and the names script
-// saves and reads back.
+// rules, the keywords, and the names script saves and reads back.
 
 package game
 
 import (
-	"path"
 	"slices"
 	"strings"
 
@@ -38,8 +36,8 @@ type ShapeSpec struct {
 	Encloses Shape
 }
 
-// KeyRule is one way a block reads a key: as a call, a field, a command, a
-// link and so on.
+// KeyRule is one way a block reads a key that is no keyword: as a call, a
+// field, a command, a link and so on.
 type KeyRule string
 
 // The key rules, each with the key it fits.
@@ -58,9 +56,6 @@ const (
 	// KeyRuleCommand fits a command that the dumps declare, or a pattern makes,
 	// and the block takes.
 	KeyRuleCommand KeyRule = "command"
-
-	// KeyRuleOperator fits an operator of a value block, such as add.
-	KeyRuleOperator KeyRule = "operator"
 
 	// KeyRuleLink fits a key that starts with a scope link, as scope:target
 	// does.
@@ -92,85 +87,57 @@ const (
 	KeyRuleCall KeyRule = "call"
 )
 
-// Keyword is a key of the language itself: one it gives a fixed shape to, or
-// one of its operators. The first row that fits a key wins.
+// Keyword is a fixed word of the script language, such as if, limit, and or
+// add. It means the same in every game. The walk recognizes it by the block
+// it is written in, before it looks the key up as a name. Where the dumps
+// also list it, as they list if among the effects, their entry gives its
+// text, usage and scopes.
 type Keyword struct {
-	// Key is a key path in lower case. Written command/key, it fits only in
-	// that command's block.
+	// Key is the keyword in lower case. One that ends in * is a prefix, as
+	// every_* is of every_vassal. AnyKey stands for any key and
+	// jomini.NumberKey for a number.
 	Key string
 
-	// Games are the games the row holds for, every game if none.
+	// Games are the games that have it, every game if none.
 	Games []string
-
-	// Holder is the shape of the only block it fits in. It is "" for any.
-	Holder Shape
-
-	// Shape is what its block holds, a Shapes key or ShapeEnclosing. It is ""
-	// for what the key's rule gives.
-	Shape Shape
-
-	// Caller is the caller its calls are looked up by. It is "" for the
-	// shape's own.
-	Caller string
-
-	// Shows is which of the texts inside it the keyword shows.
-	Shows Show
 
 	Class KeywordClass
 
-	// Blurb is the line a hover card shows.
-	Blurb string
+	// Parent is the key whose block it is written in, as random_list is for
+	// a numbered branch. One that ends in * is a prefix. It is "" for a
+	// keyword written in any block its Holders name.
+	Parent string
 
-	// Says is how a condition in English reads it, with a * for the rest of
-	// a prefix key. It is "" for the key as words.
-	Says string
+	// Holders are the shapes of the blocks it is written in. For a keyword
+	// with no Parent, none means any block that holds script. For one with a
+	// Parent, none means any block.
+	Holders []Shape
 
-	// Covers is whether its own text is shown in place of the conditions
-	// inside it.
-	Covers bool
+	// Shape is what its own block holds, or ShapeEnclosing for what the
+	// block around it holds. It is "" for a keyword whose block has no shape
+	// of its own, and for one written with a value.
+	Shape Shape
 
-	// ValueFirst is whether a condition in English reads its value first, as
-	// in "X exists".
-	ValueFirst bool
-
-	// Negates is whether it is true when what is inside it is false.
-	Negates bool
-
-	// Follows are the keys, one of which must be written just before it in
-	// its block. None means any.
+	// Follows are the keys one of which is written just before it, as if
+	// or else_if before else. None means any.
 	Follows []string
 
-	// Continues are the Keys of the rows, one of which must be the keyword of
-	// the block that holds it. None means any.
-	Continues []string
+	// Recursive is whether its block may hold the same keyword again, as
+	// Vic3's else chain in a progress bar does.
+	Recursive bool
 
-	// Weighted is whether its branches are weights: a branch's key is a
-	// number, and its chance is its share.
-	Weighted bool
+	// Caller is the caller a call in its block goes through, "" for the
+	// block's own.
+	Caller string
 
-	// Modifies is whether its block changes the weight of the block it is
-	// written in.
-	Modifies bool
+	// Weighted is whether its key is a number whose share of its siblings'
+	// is its chance. Preview is whether its block is shown in the tooltip
+	// and never run.
+	Weighted, Preview bool
 
-	// Preview is whether its block is shown in the tooltip and never run.
-	Preview bool
-
-	// Values is the database of the text it shows, as its value or its text
-	// key. It is "" for none.
-	Values string
+	// Blurb is the hover text where no dump describes it.
+	Blurb string
 }
-
-// Show is which of the texts inside it a description keyword shows. The zero
-// Show is none of them.
-type Show string
-
-// The texts a description keyword shows: the first whose trigger holds, one
-// of those at random, or the keyword's own, when its trigger holds.
-const (
-	ShowFirst  Show = "first"
-	ShowRandom Show = "random"
-	ShowLeaf   Show = "leaf"
-)
 
 // KeywordClass is what kind of keyword one is, such as logical for and, or
 // math for add. The zero KeywordClass is none.
@@ -274,8 +241,8 @@ const (
 	ShapeEnclosing Shape = "enclosing"
 )
 
-// Shapes is the shapes a block can hold, each with how it reads its keys. A
-// description block reads them by the Keywords alone.
+// Shapes is the shapes a block can hold, each with how it reads a key that
+// is no keyword. A description block's keys are all keywords.
 var Shapes = map[Shape]ShapeSpec{
 	ShapeFields: {KeyRules: []KeyRule{KeyRuleField}},
 	ShapeTriggers: {
@@ -301,7 +268,7 @@ var Shapes = map[Shape]ShapeSpec{
 		Caller:   AnyCall, Allows: []Declaration{DeclarationTrigger}, Encloses: ShapeTriggers,
 	},
 	ShapeValue: {
-		KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleOperator, KeyRuleObserved, KeyRuleLink, KeyRuleCall},
+		KeyRules: []KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall},
 		Caller:   callValue, Allows: []Declaration{DeclarationEffect, DeclarationTrigger},
 	},
 	ShapeUnknown: {
@@ -318,6 +285,13 @@ var Shapes = map[Shape]ShapeSpec{
 	ShapeDescription: {Values: Localization},
 }
 
+// scriptShapes are the shapes of the blocks that hold script, where a
+// keyword with no Parent and no Holders is written.
+var scriptShapes = []Shape{
+	ShapeTriggers, ShapeEffects, ShapeValue, ShapeSetup, ShapeUnknown,
+	ShapeArguments, ShapeEffectArguments, ShapeTriggerArguments,
+}
+
 // descBlurb is the sentence shown for a description, which a value block's
 // desc shares.
 const descBlurb = "The text shown: a localization key, or a block that chooses one."
@@ -325,116 +299,119 @@ const descBlurb = "The text shown: a localization key, or a block that chooses o
 // customBlurb is the sentence shown for a list's custom text.
 const customBlurb = "The text shown for the list in the tooltip: a localization key."
 
-// Keywords are the keys the language gives a fixed shape to, then the
-// operators the dumps declare as commands.
+// Keywords are the fixed words of the script language. Where several rows
+// fit a key, one written under the key's Parent comes before one written in
+// any block, and then the first row wins.
 var Keywords = []Keyword{
-	{Key: "random_list/<number>", Shape: ShapeEffects, Caller: AnyCall, Weighted: true, Blurb: "One branch of a random list; its number is how likely it is."},
-	// _on_actions.info:55-90 (CK3; EU5's on_actions.info and Vic3's
-	// _on_actions.md alike): one entry is picked to fire
-	{Key: "random_events/<number>", Weighted: true, Blurb: "One event the on_action can pick; its number is how likely it is. An event of 0 is a chance that none fires."},
-	{Key: "random_on_action/<number>", Weighted: true, Blurb: "One on_action the on_action can pick; its number is how likely it is."},
-	{Key: "random_on_actions/<number>", Weighted: true, Blurb: "One on_action the on_action can pick; its number is how likely it is."},
-	// CK3 history/_characters.info:65-66,78: a date entry changes the
-	// character's own keys, and reads any other key as an effect
-	{Games: []string{CK3}, Holder: ShapeSetup, Key: "<number>", Shape: ShapeSetup, Blurb: "What changes for the character on this date."},
-	{Key: "switch/<any>", Shape: ShapeEnclosing, Blurb: "One case of a switch: runs when the trigger's value is this."},
-	{Key: "every_*", Shape: ShapeEffects, Class: KeywordClassList, Blurb: "Runs the effects inside it on every item of the list named after every_."},
-	{Key: "random_*", Shape: ShapeEffects, Class: KeywordClassList, Blurb: "Runs the effects inside it on one random item of the list."},
-	{Key: "ordered_*", Shape: ShapeEffects, Class: KeywordClassList, Blurb: "Runs the effects inside it on the items of the list in the order given."},
-	{Key: "any_*", Shape: ShapeTriggers, Class: KeywordClassList, Says: "any * where", Blurb: "True when at least one item of the list passes the triggers inside it."},
-	// no dump declares a list's custom text; the games write it inside every_
-	// and ordered_ lists only
-	{Key: "every_*/custom", Shape: ShapeDescription, Class: KeywordClassDisplay, Blurb: customBlurb},
-	{Key: "ordered_*/custom", Shape: ShapeDescription, Class: KeywordClassDisplay, Blurb: customBlurb},
-	{Holder: ShapeDescription, Key: "first_valid", Shape: ShapeDescription, Class: KeywordClassDisplay, Shows: ShowFirst, Blurb: "Shows the first text inside it whose trigger holds."},
-	{Holder: ShapeDescription, Key: "random_valid", Shape: ShapeDescription, Class: KeywordClassDisplay, Shows: ShowRandom, Blurb: "Shows one of the texts inside it whose trigger holds, at random."},
-	{Holder: ShapeDescription, Key: "triggered_desc", Shape: ShapeDescription, Class: KeywordClassDisplay, Shows: ShowLeaf, Blurb: "A text shown only when its trigger holds."},
-	{Holder: ShapeDescription, Key: "trigger", Shape: ShapeTriggers, Blurb: "The conditions that must hold for the block around it to count."},
-	// a scalar desc is the text itself
-	{Holder: ShapeDescription, Key: "desc", Shape: ShapeDescription, Blurb: descBlurb},
-	{Holder: ShapeValue, Key: "value", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "The number a script value starts from, or is set to."},
-	{Holder: ShapeArguments, Key: "value", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "The number the command takes, or a script value that works it out."},
-	{Holder: ShapeValue, Key: "add", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Adds the number or script value given."},
-	{Holder: ShapeValue, Key: "subtract", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Subtracts the number or script value given."},
-	{Holder: ShapeValue, Key: "multiply", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Multiplies by the number or script value given."},
-	{Holder: ShapeValue, Key: "divide", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Divides by the number or script value given."},
-	{Holder: ShapeValue, Key: "modulo", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Keeps the remainder of dividing by the number given."},
-	{Holder: ShapeValue, Key: "min", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Keeps the result at least the number given."},
-	{Holder: ShapeValue, Key: "max", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Keeps the result at most the number given."},
-	{Holder: ShapeValue, Key: "round", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Rounds the result to the nearest whole number."},
-	{Holder: ShapeValue, Key: "round_to", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Rounds the result to the nearest multiple of the number given."},
-	// _script_values.info:38
-	{Holder: ShapeValue, Key: "pow", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Raises the result to the power of the number given."},
-	{Holder: ShapeValue, Key: "ceiling", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Rounds the result up to a whole number."},
-	{Holder: ShapeValue, Key: "floor", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Rounds the result down to a whole number."},
-	{Holder: ShapeValue, Key: "fixed_range", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Keeps the result between the min and max inside it."},
-	{Holder: ShapeValue, Key: "integer_range", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Keeps the result a whole number between the min and max inside it."},
-	{Holder: ShapeValue, Key: "abs", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Drops the result's sign."},
-	// _script_values.info:48-49
-	{Holder: ShapeValue, Key: "desc", Shape: ShapeDescription, Blurb: descBlurb},
-	{Holder: ShapeValue, Key: "format", Shape: ShapeDescription, Blurb: "The text that lays out this block's line when the value is broken down."},
-	// EU5 in_game/common/international_organizations/hre.txt:897,
-	// "desc_sort_order = -99999 # Make sure we are last"
-	{Holder: ShapeValue, Key: "desc_sort_order", Class: KeywordClassDisplay, Blurb: "Where this block's line sorts when the value is broken down: the lowest comes last."},
-	{Holder: ShapeValue, Key: "save_temporary_value_as", Shape: ShapeArguments, Class: KeywordClassSaving, Blurb: "Remembers a value under a name until this script value ends."},
-	// a weight block: CK3 _scripted_modifiers.info:13-22, EU5
-	// scripted_modifiers.info:8-22, Vic3 _on_actions.md:50-55
-	{Holder: ShapeValue, Key: "base", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "The number a weight starts from."},
-	// the CK3 wiki's Weight modifier page
-	{Holder: ShapeValue, Key: "factor", Shape: ShapeValue, Class: KeywordClassMath, Blurb: "Multiplies the weight by the number given."},
-	{Holder: ShapeValue, Key: "modifier", Shape: ShapeValue, Modifies: true, Blurb: "Changes the weight by its add or factor when the triggers inside it hold."},
-	// common/character_interactions/00_alliance.txt:648 writes a weight
-	// modifier's conditions in it
-	{Holder: ShapeValue, Key: "trigger", Shape: ShapeTriggers, Blurb: "The conditions that must hold for the modifier around it to apply."},
-	{Holder: ShapeValue, Key: "opinion_modifier", Shape: ShapeArguments, Modifies: true, Blurb: "Changes the weight by how much one character likes another."},
-	{Holder: ShapeValue, Key: "compare_modifier", Shape: ShapeArguments, Modifies: true, Blurb: "Changes the weight by how a value of one character compares with another's."},
-	// CK3 character_interactions/00_scheme_interactions.txt:2099 and
-	// schemes/scheme_types/befriend_scheme.txt:315
-	{Games: []string{CK3}, Holder: ShapeValue, Key: "compatibility_modifier", Shape: ShapeArguments, Modifies: true, Blurb: "Changes the weight by how well two characters' traits get along."},
-	{Key: "and", Shape: ShapeTriggers, Class: KeywordClassLogical, Says: "all of", Blurb: "True only when everything inside it is true."},
-	{Key: "or", Shape: ShapeTriggers, Class: KeywordClassLogical, Says: "any of", Blurb: "True when at least one thing inside it is true."},
-	{Key: "not", Shape: ShapeTriggers, Class: KeywordClassLogical, Says: "not all of", Negates: true, Blurb: "True when what is inside it is false."},
-	{Key: "nor", Shape: ShapeTriggers, Class: KeywordClassLogical, Says: "none of", Negates: true, Blurb: "True only when nothing inside it is true."},
-	{Key: "nand", Shape: ShapeTriggers, Class: KeywordClassLogical, Says: "not all of", Negates: true, Blurb: "True unless everything inside it is true."},
-	{Key: "all_false", Shape: ShapeTriggers, Class: KeywordClassLogical, Says: "none of", Negates: true, Blurb: "True only when nothing inside it is true (the same as NOR)."},
-	{Key: "any_false", Shape: ShapeTriggers, Class: KeywordClassLogical, Says: "not all of", Negates: true, Blurb: "True when at least one thing inside it is false (the same as NAND)."},
+	{Key: "and", Class: KeywordClassLogical, Shape: ShapeTriggers, Blurb: "True only when everything inside it is true."},
+	{Key: "or", Class: KeywordClassLogical, Shape: ShapeTriggers, Blurb: "True when at least one thing inside it is true."},
+	{Key: "not", Class: KeywordClassLogical, Shape: ShapeTriggers, Blurb: "True when what is inside it is false."},
+	{Key: "nor", Class: KeywordClassLogical, Shape: ShapeTriggers, Blurb: "True only when nothing inside it is true."},
+	{Key: "nand", Class: KeywordClassLogical, Shape: ShapeTriggers, Blurb: "True unless everything inside it is true."},
+	{Key: "all_false", Class: KeywordClassLogical, Shape: ShapeTriggers, Blurb: "True only when nothing inside it is true (the same as NOR)."},
+	{Key: "any_false", Class: KeywordClassLogical, Shape: ShapeTriggers, Blurb: "True when at least one thing inside it is false (the same as NAND)."},
 	{Key: "always", Class: KeywordClassLogical, Blurb: "True or false as written: always = yes is always true."},
+
+	{Key: "if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Blurb: "Runs what is inside it when its limit holds."},
+	{Key: "else_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"if", "else_if"},
+		Blurb: "Runs when the if or else_if before it did not, and its own limit holds."},
+	{Key: "else", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"if", "else_if"},
+		Blurb: "Runs when no if or else_if before it ran."},
+	{Key: "trigger_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Blurb: "Checks what is inside it only when its limit holds."},
+	{Key: "trigger_else_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"trigger_if", "trigger_else_if"},
+		Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds."},
+	{Key: "trigger_else", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"trigger_if", "trigger_else_if"},
+		Blurb: "Checks what is inside it when every trigger_if before it was skipped."},
 	// Vic3 common/scripted_progress_bars/scripted_progress_bars.md: an else
 	// inside a progress_condition takes over when its limit fails, "chained
 	// as deep as you need", so it is written inside the block, after its
-	// body; the else of such an else is written inside it in the same way
-	{Games: []string{Vic3}, Key: "progress_condition/else", Shape: ShapeEnclosing, Class: KeywordClassConditional,
-		Blurb: "Takes over when the limit of the progress condition around it fails."},
-	{Games: []string{Vic3}, Key: "else/else", Continues: []string{"progress_condition/else", "else/else"},
-		Shape: ShapeEnclosing, Class: KeywordClassConditional, Blurb: "Takes over when the limit of the else around it fails."},
-	{Key: "if", Shape: ShapeEnclosing, Class: KeywordClassConditional, Blurb: "Runs what is inside it when its limit holds."},
-	{Key: "else_if", Shape: ShapeEnclosing, Class: KeywordClassConditional, Blurb: "Runs when the if or else_if before it did not, and its own limit holds.", Follows: []string{"if", "else_if"}},
-	{Key: "else", Shape: ShapeEnclosing, Class: KeywordClassConditional, Blurb: "Runs when no if or else_if before it ran.", Follows: []string{"if", "else_if"}},
-	{Key: "trigger_if", Shape: ShapeEnclosing, Class: KeywordClassConditional, Says: "if", Blurb: "Checks what is inside it only when its limit holds."},
-	{Key: "trigger_else_if", Shape: ShapeEnclosing, Class: KeywordClassConditional, Says: "else if", Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds.", Follows: []string{"trigger_if", "trigger_else_if"}},
-	{Key: "trigger_else", Shape: ShapeEnclosing, Class: KeywordClassConditional, Says: "else", Blurb: "Checks what is inside it when every trigger_if before it was skipped.", Follows: []string{"trigger_if", "trigger_else_if"}},
-	{Key: "limit", Shape: ShapeTriggers, Class: KeywordClassConditional, Says: "when", Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
-	{Key: "alternative_limit", Shape: ShapeTriggers, Class: KeywordClassConditional, Blurb: "A second limit a list falls back to when its limit matches nothing."},
-	{Key: "switch", Class: KeywordClassConditional, Blurb: "Reads one trigger and runs the case whose value matches, else the fallback."},
-	{Key: "calc_true_if", Shape: ShapeTriggers, Class: KeywordClassConditional, Says: "at least the amount of", Blurb: "True when at least amount of the triggers inside it are true."},
-	{Key: "while", Shape: ShapeEffects, Class: KeywordClassFlow, Blurb: "Repeats what is inside it while its limit holds, or count times."},
-	{Key: "random", Shape: ShapeEffects, Class: KeywordClassFlow, Blurb: "Runs what is inside it with the chance given, else nothing."},
+	// body, and the else of such an else inside it in the same way
+	{Games: []string{Vic3}, Key: "else", Parent: "progress_condition", Class: KeywordClassConditional, Shape: ShapeEnclosing,
+		Recursive: true, Blurb: "Takes over when the limit of the progress condition or the else around it fails."},
+	{Key: "limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
+	{Key: "alternative_limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "A second limit a list falls back to when its limit matches nothing."},
+	{Key: "calc_true_if", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "True when at least amount of the triggers inside it are true."},
+
+	// effects.log and triggers.log of the three games write a switch as
+	// trigger = <a trigger>, a block for each value, and fallback = { }
+	{Key: "switch", Class: KeywordClassConditional, Shape: ShapeEnclosing,
+		Blurb: "Reads one trigger and runs the case whose value matches, else the fallback."},
+	{Key: "trigger", Parent: "switch", Class: KeywordClassConditional, Blurb: "The trigger whose value picks the case."},
+	{Key: "fallback", Parent: "switch", Class: KeywordClassConditional, Shape: ShapeEnclosing, Blurb: "Runs when no case matches."},
+	{Key: AnyKey, Parent: "switch", Shape: ShapeEnclosing, Blurb: "One case of a switch: runs when the trigger's value is this."},
+
+	{Key: "while", Class: KeywordClassFlow, Shape: ShapeEffects, Blurb: "Repeats what is inside it while its limit holds, or count times."},
+	{Key: "random", Class: KeywordClassFlow, Shape: ShapeEffects, Blurb: "Runs what is inside it with the chance given, else nothing."},
 	{Key: "random_list", Class: KeywordClassFlow, Blurb: "Picks one branch at random; each branch's number is its weight."},
-	{Key: "hidden_effect", Shape: ShapeEffects, Class: KeywordClassDisplay, Blurb: "Runs its effects without showing them in the tooltip."},
-	{Key: "show_as_tooltip", Shape: ShapeEffects, Class: KeywordClassDisplay, Blurb: "Shows its effects in the tooltip without running them.", Preview: true},
-	{Key: "custom_tooltip", Class: KeywordClassDisplay, Covers: true, Values: Localization, Blurb: "Shows a text of your own in place of the tooltip of what is inside."},
-	{Key: "custom_description", Class: KeywordClassDisplay, Covers: true, Blurb: "Shows a text of your own in place of the generated description."},
-	{Key: "custom_label", Class: KeywordClassDisplay, Values: Localization, Blurb: "Shows a text of your own in the tooltip, with this scope as its subject."},
-	{Key: "save_scope_as", Class: KeywordClassSaving, Blurb: "Remembers the current scope under a name for the rest of the event chain."},
-	{Key: "save_temporary_scope_as", Class: KeywordClassSaving, Blurb: "Remembers the current scope under a name until this effect ends."},
-	{Key: "save_scope_value_as", Class: KeywordClassSaving, Blurb: "Remembers a number or a yes/no under a name for the rest of the event chain."},
-	{Key: "save_temporary_scope_value_as", Class: KeywordClassSaving, Blurb: "Remembers a number or a yes/no under a name until this effect ends."},
-	{Key: "add_to_list", Class: KeywordClassSaving, Blurb: "Adds the current scope to a named list for the rest of the event chain."},
-	{Key: "add_to_temporary_list", Class: KeywordClassSaving, Blurb: "Adds the current scope to a named list until this effect ends."},
-	{Key: "exists", Class: KeywordClassSaving, ValueFirst: true, Blurb: "True when the scope named is there and is not nothing."},
-	// EU5 in_game/common/subject_types/readme.txt:80 writes it as goal keys,
-	// each holding a type and a bias
-	{Games: []string{EU5}, Holder: ShapeFields, Key: "ai_biases", Shape: ShapeFields, Blurb: "The weight the AI adds to certain goals, one block for each goal with its type and its bias."},
+	{Key: jomini.NumberKey, Parent: "random_list", Shape: ShapeEffects, Caller: AnyCall, Weighted: true,
+		Blurb: "One branch of a random list; its number is how likely it is."},
+	{Key: "hidden_effect", Class: KeywordClassDisplay, Shape: ShapeEffects, Blurb: "Runs its effects without showing them in the tooltip."},
+	{Key: "show_as_tooltip", Class: KeywordClassDisplay, Shape: ShapeEffects, Preview: true, Blurb: "Shows its effects in the tooltip without running them."},
+
+	{Key: "value", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "The number a script value starts from, or is set to."},
+	{Key: "value", Holders: []Shape{ShapeArguments}, Class: KeywordClassMath, Shape: ShapeValue,
+		Blurb: "The number the command takes, or a script value that works it out."},
+	{Key: "add", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Adds the number or script value given."},
+	{Key: "subtract", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Subtracts the number or script value given."},
+	{Key: "multiply", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Multiplies by the number or script value given."},
+	{Key: "divide", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Divides by the number or script value given."},
+	{Key: "modulo", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Keeps the remainder of dividing by the number given."},
+	{Key: "min", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Keeps the result at least the number given."},
+	{Key: "max", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Keeps the result at most the number given."},
+	{Key: "round", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Rounds the result to the nearest whole number."},
+	{Key: "round_to", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Rounds the result to the nearest multiple of the number given."},
+	// _script_values.info:38
+	{Key: "pow", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Raises the result to the power of the number given."},
+	{Key: "ceiling", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Rounds the result up to a whole number."},
+	{Key: "floor", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Rounds the result down to a whole number."},
+	{Key: "fixed_range", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Keeps the result between the min and max inside it."},
+	{Key: "integer_range", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue,
+		Blurb: "Keeps the result a whole number between the min and max inside it."},
+	{Key: "abs", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Drops the result's sign."},
+	// _script_values.info:48-49
+	{Key: "desc", Holders: []Shape{ShapeValue}, Shape: ShapeDescription, Blurb: descBlurb},
+	{Key: "format", Holders: []Shape{ShapeValue}, Shape: ShapeDescription, Blurb: "The text that lays out this block's line when the value is broken down."},
+	// EU5 in_game/common/international_organizations/hre.txt:897,
+	// "desc_sort_order = -99999 # Make sure we are last"
+	{Key: "desc_sort_order", Holders: []Shape{ShapeValue}, Class: KeywordClassDisplay,
+		Blurb: "Where this block's line sorts when the value is broken down: the lowest comes last."},
+	{Key: "save_temporary_value_as", Holders: []Shape{ShapeValue}, Class: KeywordClassSaving, Shape: ShapeArguments,
+		Blurb: "Remembers a value under a name until this script value ends."},
+	// a weight block: CK3 _scripted_modifiers.info:13-22, EU5
+	// scripted_modifiers.info:8-22, Vic3 _on_actions.md:50-55
+	{Key: "base", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "The number a weight starts from."},
+	// the CK3 wiki's Weight modifier page
+	{Key: "factor", Holders: []Shape{ShapeValue}, Class: KeywordClassMath, Shape: ShapeValue, Blurb: "Multiplies the weight by the number given."},
+	{Key: "modifier", Holders: []Shape{ShapeValue}, Shape: ShapeValue, Blurb: "Changes the weight by its add or factor when the triggers inside it hold."},
+	// common/character_interactions/00_alliance.txt:648 writes a weight
+	// modifier's conditions in it
+	{Key: "trigger", Holders: []Shape{ShapeValue}, Shape: ShapeTriggers, Blurb: "The conditions that must hold for the modifier around it to apply."},
+	{Key: "opinion_modifier", Holders: []Shape{ShapeValue}, Shape: ShapeArguments, Blurb: "Changes the weight by how much one character likes another."},
+	{Key: "compare_modifier", Holders: []Shape{ShapeValue}, Shape: ShapeArguments,
+		Blurb: "Changes the weight by how a value of one character compares with another's."},
+	// CK3 character_interactions/00_scheme_interactions.txt:2099 and
+	// schemes/scheme_types/befriend_scheme.txt:315
+	{Games: []string{CK3}, Key: "compatibility_modifier", Holders: []Shape{ShapeValue}, Shape: ShapeArguments,
+		Blurb: "Changes the weight by how well two characters' traits get along."},
+
+	{Key: "first_valid", Holders: []Shape{ShapeDescription}, Class: KeywordClassDisplay, Shape: ShapeDescription,
+		Blurb: "Shows the first text inside it whose trigger holds."},
+	{Key: "random_valid", Holders: []Shape{ShapeDescription}, Class: KeywordClassDisplay, Shape: ShapeDescription,
+		Blurb: "Shows one of the texts inside it whose trigger holds, at random."},
+	{Key: "triggered_desc", Holders: []Shape{ShapeDescription}, Class: KeywordClassDisplay, Shape: ShapeDescription,
+		Blurb: "A text shown only when its trigger holds."},
+	{Key: "trigger", Holders: []Shape{ShapeDescription}, Shape: ShapeTriggers, Blurb: "The conditions that must hold for the block around it to count."},
+	// a scalar desc is the text itself
+	{Key: "desc", Holders: []Shape{ShapeDescription}, Shape: ShapeDescription, Blurb: descBlurb},
+
+	{Key: "every_*", Class: KeywordClassList, Shape: ShapeEffects, Blurb: "Runs the effects inside it on every item of the list named after every_."},
+	{Key: "random_*", Class: KeywordClassList, Shape: ShapeEffects, Blurb: "Runs the effects inside it on one random item of the list."},
+	{Key: "ordered_*", Class: KeywordClassList, Shape: ShapeEffects, Blurb: "Runs the effects inside it on the items of the list in the order given."},
+	{Key: "any_*", Class: KeywordClassList, Shape: ShapeTriggers, Blurb: "True when at least one item of the list passes the triggers inside it."},
+	// no dump declares a list's custom text; the games write it inside every_
+	// and ordered_ lists only
+	{Key: "custom", Parent: "every_*", Class: KeywordClassDisplay, Shape: ShapeDescription, Blurb: customBlurb},
+	{Key: "custom", Parent: "ordered_*", Class: KeywordClassDisplay, Shape: ShapeDescription, Blurb: customBlurb},
 }
 
 // LimitKey is the key of the conditions an if, a list or a while checks first.
@@ -444,76 +421,95 @@ const LimitKey = "limit"
 // event's or an option's trigger.
 const TriggerKey = "trigger"
 
-// OperatorSays is how a condition in English reads each operator between a key
-// and a value.
-var OperatorSays = map[string]string{
-	"=": "is", "==": "is", "!=": "is not", ">": "more than", ">=": "at least", "<": "less than", "<=": "at most",
-	"?=": "is, if it exists",
-}
-
 // Bools are the values a yes-or-no is written with.
 var Bools = []string{"yes", "no"}
 
-// keywordPositions holds where each keyword sits in Keywords, by the key it
-// fits. A keyword written under a command is held by its key without the
-// command. A prefix keyword is not held.
-var keywordPositions = func() map[string][]int {
-	positions := map[string][]int{}
-	for position, row := range Keywords {
-		if !strings.HasSuffix(row.Key, "*") {
-			_, last, held := strings.Cut(row.Key, "/")
-			if !held {
-				last = row.Key
-			}
-
-			positions[last] = append(positions[last], position)
-		}
+// keywordRows holds the rows of Keywords by their Key, in the table's order.
+var keywordRows = func() map[string][]Keyword {
+	rows := map[string][]Keyword{}
+	for _, row := range Keywords {
+		rows[row.Key] = append(rows[row.Key], row)
 	}
 
-	return positions
+	return rows
 }()
 
-// LookupKeyword returns the game's keyword for a key in a block of the given
-// shape and command, matching the key and the command in any letter case. The
-// outer is the Key of the keyword row of the block that holds the key, or ""
-// if it has none. Where several fit, it is the first row of Keywords. It
-// returns false if none fits.
-func (g *Game) LookupKeyword(shape Shape, command, key, outer string) (Keyword, bool) {
-	command, key = strings.ToLower(command), strings.ToLower(key)
+// LookupKeyword returns the keyword a key is in a block of the given shape,
+// written under the given key, matching both keys in any letter case. A
+// keyword whose block holds triggers, effects or what the block around it
+// holds is one only where it is written with a block, as the flag says. A
+// prefix keyword is never returned; MatchListIterator finds those. It returns
+// false if the key is no keyword there.
+func (g *Game) LookupKeyword(shape Shape, parent, key string, block bool) (Keyword, bool) {
+	parent, key = strings.ToLower(parent), strings.ToLower(key)
 	candidates := []string{key, AnyKey}
 	if jomini.Classify(key).IsNumberKey() {
-		candidates = append(candidates, jomini.NumberKey)
+		candidates = []string{key, jomini.NumberKey, AnyKey}
 	}
 
-	best, ok := 0, false
-	for _, candidate := range candidates {
-		for _, position := range keywordPositions[candidate] {
-			if ok && position > best {
-				break
-			}
-
-			row := Keywords[position]
-			holder, _, held := strings.Cut(row.Key, "/")
-			fits, _ := path.Match(holder, command)
-			continues := len(row.Continues) == 0 || slices.Contains(row.Continues, outer)
-			if (row.Holder == "" || row.Holder == shape) && (!held || fits) && continues && g.Matches(row.Games) {
-				best, ok = position, true
-
-				break
+	// A row written under the key above is closer than one written in any
+	// block.
+	for _, held := range []bool{true, false} {
+		for _, candidate := range candidates {
+			for _, row := range keywordRows[candidate] {
+				if (row.Parent != "") == held && g.fitsKeyword(row, shape, parent, block) {
+					return row, true
+				}
 			}
 		}
 	}
 
-	if !ok {
-		return Keyword{}, false
-	}
-
-	return Keywords[best], true
+	return Keyword{}, false
 }
 
-// IsOperator reports whether a key is an operator of a value block.
-func IsOperator(key string) bool {
-	return slices.ContainsFunc(Keywords, func(row Keyword) bool { return row.Holder == ShapeValue && row.Key == key })
+// ListKeywords returns the keywords that may be written in a block of the
+// given shape under the given key, in the table's order, without the prefixes
+// and the rows for any key or a number.
+func (g *Game) ListKeywords(shape Shape, parent string) []Keyword {
+	parent = strings.ToLower(parent)
+
+	var rows []Keyword
+	for _, row := range Keywords {
+		named := !strings.HasSuffix(row.Key, "*") && row.Key != AnyKey && row.Key != jomini.NumberKey
+		if named && g.fitsKeyword(row, shape, parent, true) {
+			rows = append(rows, row)
+		}
+	}
+
+	return rows
+}
+
+// fitsKeyword reports whether a row of Keywords holds for the game and may be
+// written in a block of the given shape under the given key, in lower case,
+// with a block or with a value as the flag says.
+func (g *Game) fitsKeyword(row Keyword, shape Shape, parent string, block bool) bool {
+	if !g.Matches(row.Games) {
+		return false
+	}
+
+	prefix, isPrefix := strings.CutSuffix(row.Parent, "*")
+	switch {
+	case row.Parent == "":
+	case isPrefix && strings.HasPrefix(parent, prefix):
+	case row.Parent == parent:
+	default:
+		return false
+	}
+
+	holders := row.Holders
+	if row.Parent == "" && len(holders) == 0 {
+		holders = scriptShapes
+	}
+
+	if len(holders) > 0 && !slices.Contains(holders, shape) {
+		return false
+	}
+
+	// A keyword that holds script is never written with a value, so a field
+	// of its key, as EU5's limit = janissary_unit_limit, is no keyword.
+	holdsScript := row.Shape == ShapeTriggers || row.Shape == ShapeEffects || row.Shape == ShapeEnclosing
+
+	return block || !holdsScript
 }
 
 // MatchListIterator returns the prefix keyword, such as every_*, that a key

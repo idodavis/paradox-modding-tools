@@ -37,7 +37,7 @@ and where each feature lives, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md), whi
 - What PMT stores is JSON (`config.json`) and gob caches; no SQLite.
 - Every field the frontend sees has a camelCase JSON tag.
 - **The frontend** is appearance and interaction only. `styles/themes.css` is the only palette: a block of tokens per
-  `data-theme`, a dark and a light one per family, and the `@theme` / `--ui-*` bridge; the code's colors are the ten
+  `data-theme`, a dark and a light one per family, and the `@theme` / `--ui-*` bridge; the code's colors are the twelve
   `--syn-<category>` tokens. Table filters live in UTable column state; fetch state in Pinia Colada.
 - Nuxt UI component patterns (`:items` and similar) over ad-hoc `v-if`/`v-model` control flow where Nuxt UI fits.
 

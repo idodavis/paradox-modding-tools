@@ -1,53 +1,54 @@
-<!-- Shows read-only code as the editor draws it. It can number its lines and highlight a run of them. -->
-<script lang="ts">
-import type { Format } from "@internal/files/models";
-
-/** EDITOR_LANGUAGES holds the editor language a file is colored in, by Go's format. */
-export const EDITOR_LANGUAGES: Readonly<Record<Format, string>> = {
-  "": "plaintext",
-  script: "paradox-script",
-  gui: "paradox-gui",
-  asset: "paradox-script",
-  font: "paradox-script",
-  gfx: "paradox-script",
-  localization: "paradox-localization",
-  image: "plaintext",
-  "web-image": "plaintext",
-  table: "plaintext",
-  descriptor: "plaintext",
-  shader: "plaintext",
-  readme: "paradox-readme",
-  markdown: "markdown",
-  text: "plaintext",
-  binary: "plaintext",
-};
-</script>
-
+<!--
+  Shows read-only code in the colors Go gives it. It can number its lines and
+  highlight a run of them.
+-->
 <script setup lang="ts">
-import { computed, shallowRef, watch } from "vue";
+import { computed } from "vue";
+import { useQuery } from "@pinia/colada";
 import { editor } from "monaco-editor/editor/editor.api";
 
+import { Format } from "@internal/files/models";
+import { SYNTAX } from "../lib/syntax";
+import { legendQuery, textColorsQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
+
+/**
+ * A Piece is a run of a line's text with the syntax color it is drawn in,
+ * none for plain text.
+ */
+type Piece = { text: string; color?: string };
 
 const {
   text,
-  language,
+  path = "",
+  format = Format.FormatScript,
   line = 0,
   focus = undefined,
   inline = false,
 } = defineProps<{
   text: string;
-  language: string;
-  /** The file line the text begins at, from 1. Without it, no line numbers show. */
+  /**
+   * The file the text is from, which Go reads it as. Without it, the text is
+   * read by its format alone.
+   */
+  path?: string;
+  /** The format of a text from no file. */
+  format?: Format;
+  /**
+   * The file line the text begins at, from 1. Without it, no line numbers
+   * show.
+   */
   line?: number;
   /** The first and last file lines to highlight. */
   focus?: [number, number];
-  /** Whether it shows as a piece of a line, in the line's text size, with no gutter, band or padding. */
+  /**
+   * Whether it shows as a piece of a line, in the line's text size, with no
+   * gutter, band or padding.
+   */
   inline?: boolean;
 }>();
 
 const settings = useSettingsStore();
-const html = shallowRef("");
 // Monaco rounds the height of a line to whole pixels.
 const lineHeight = computed(() => {
   const { fontSize, lineHeight: factor } = settings.codeFont();
@@ -57,9 +58,10 @@ const style = computed(() => {
   const { fontFamily, fontSize, padding } = settings.codeFont();
   return { fontFamily, fontSize: `${fontSize}px`, lineHeight: `${lineHeight.value}px`, paddingTop: `${padding.top}px` };
 });
-// Trailing line breaks are dropped, since Monaco would draw them as an empty line, and so is the indent every line
-// shares, so deeply nested code starts at the left.
-const code = computed(() => {
+// Trailing line breaks are dropped, since they would draw as an empty line,
+// and so is the indent every line shares, so deeply nested code starts at
+// the left.
+const lines = computed(() => {
   const rows = text.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/);
   const indents = rows.filter((row) => row.trim()).map((row) => /^[\t ]*/.exec(row)?.[0] ?? "");
   const shared = indents.reduce((common, indent) => {
@@ -67,9 +69,9 @@ const code = computed(() => {
     while (end < common.length && common[end] === indent[end]) end++;
     return common.slice(0, end);
   }, indents[0] ?? "");
-  return rows.map((row) => row.slice(shared.length)).join("\n");
+  return rows.map((row) => row.slice(shared.length));
 });
-const lineNumbers = computed(() => (line ? code.value.split(/\r\n|\r|\n/).map((_text, index) => line + index) : []));
+const lineNumbers = computed(() => (line ? lines.value.map((_text, index) => line + index) : []));
 const gutter = computed(() => ({
   width: `${Math.max(settings.codeFont().lineNumbersMinChars, String(lineNumbers.value.at(-1)).length)}ch`,
   marginInlineEnd: `${editor.EditorOptions.lineDecorationsWidth.defaultValue}px`,
@@ -86,28 +88,69 @@ const band = computed(() => {
   };
 });
 
-// A stale answer is dropped.
-watch(
-  [code, () => language, () => settings.theme()],
-  async (_sources, _previous, onCleanup) => {
-    let stale = false;
-    onCleanup(() => (stale = true));
-    const colored = await editor.colorize(code.value, language, {});
-    if (!stale) html.value = colored;
-  },
-  { immediate: true, flush: "post" },
+// The text is drawn once, in its colors. Until Go answers it keeps its size
+// and shows nothing, and a text drawn before is drawn again at once. With no
+// workspace open Go gives no colors and the text is drawn plain.
+const { data: legend, status: legendStatus } = useQuery(legendQuery);
+const { data: tokens, status } = useQuery(() => textColorsQuery({ path, format, text: lines.value.join("\n") }));
+const painted = computed(() => status.value !== "pending" && legendStatus.value !== "pending");
+const rows = computed<Piece[][]>(() =>
+  tokens.value && legend.value
+    ? colorLines(lines.value, tokens.value, legend.value.tokenTypes ?? [])
+    : lines.value.map((row) => [{ text: row }]),
 );
+
+/**
+ * colorLines cuts each line into pieces by Go's tokens, which come five
+ * numbers each: the lines since the last token, the columns since it (or
+ * since the line's start on a new line), the length, the type's place in the
+ * legend, and the modifiers.
+ */
+function colorLines(source: string[], tokens: number[], types: string[]): Piece[][] {
+  const colored: Piece[][] = source.map(() => []);
+  const ends = source.map(() => 0);
+  let row = 0;
+  let column = 0;
+  for (let at = 0; at + 4 < tokens.length; at += 5) {
+    const [lineDelta = 0, columnDelta = 0, length = 0, type = 0] = tokens.slice(at, at + 4);
+    row += lineDelta;
+    column = lineDelta ? columnDelta : column + columnDelta;
+    const content = source[row];
+    const pieces = colored[row];
+    if (content === undefined || !pieces) break;
+    const end = ends[row] ?? 0;
+    if (column > end) pieces.push({ text: content.slice(end, column) });
+    pieces.push({ text: content.slice(column, column + length), color: SYNTAX[types[type] ?? ""] });
+    ends[row] = column + length;
+  }
+  return colored.map((pieces, index) => {
+    const content = source[index] ?? "";
+    const end = ends[index] ?? 0;
+    return end < content.length ? [...pieces, { text: content.slice(end) }] : pieces;
+  });
+}
+
+/**
+ * paint returns the color a piece is drawn in and the weight the theme gives
+ * that color. Plain text takes neither.
+ */
+function paint(piece: Piece): Record<string, string> | undefined {
+  if (!piece.color) return undefined;
+  return { color: `var(--syn-${piece.color})`, fontWeight: `var(--syn-${piece.color}-weight, inherit)` };
+}
 </script>
 
 <template>
-  <!-- eslint-disable vue/no-v-html -- Monaco escapes the text it colors -->
   <span
     v-if="inline"
-    class="inline-snippet whitespace-pre-wrap"
+    class="whitespace-pre-wrap"
+    :class="{ invisible: !painted }"
     :style="{ fontFamily: style.fontFamily }"
-    v-html="html"
-  />
-  <!-- eslint-enable vue/no-v-html -->
+  >
+    <template v-for="(pieces, row) in rows" :key="row">
+      <span v-for="(piece, at) in pieces" :key="at" :style="paint(piece)">{{ piece.text }}</span>
+    </template>
+  </span>
   <div v-else class="relative flex bg-(--bg-0) text-(--fg-1)" :style="style">
     <div
       v-if="band"
@@ -121,17 +164,10 @@ watch(
     >
       <div v-for="number in lineNumbers" :key="number">{{ number }}</div>
     </div>
-    <!-- eslint-disable-next-line vue/no-v-html -- Monaco escapes the text it colors -->
-    <div class="relative min-w-0 flex-1 overflow-x-auto whitespace-pre" v-html="html" />
+    <div class="relative min-w-0 flex-1 overflow-x-auto whitespace-pre" :class="{ invisible: !painted }">
+      <div v-for="(pieces, row) in rows" :key="row" :style="{ minHeight: `${lineHeight}px` }">
+        <span v-for="(piece, at) in pieces" :key="at" :style="paint(piece)">{{ piece.text }}</span>
+      </div>
+    </div>
   </div>
 </template>
-
-<style scoped>
-/* Monaco sends its colored text as a block of lines, which a piece of a line shows on its own line */
-.inline-snippet :deep(div) {
-  display: inline;
-}
-.inline-snippet :deep(br) {
-  display: none;
-}
-</style>

@@ -82,15 +82,15 @@ on_action's `random_events` picks by weight has that entry as its last step.
 
 A condition in words is a block's limit, else its trigger, each statement a `Condition`.
 
-- A keyword of the language reads its `game.Keyword.Says` ("any of", "any province where"), and one that `Covers`
+- A key with words of its own reads them from `phrases` ("any of", "any province where"), and one that `Covers`
   what it holds reads its text as the player does (a `custom_tooltip`).
 - A key that names a scope, or a parameter that stands for one, stays as written as the condition's `Subject`. Any other
   key is its words, a yes after it dropped and a no making it `Negated`.
-- Each operator reads its words from `game.OperatorSays`, but an = reads its words only between a scope and a value,
+- Each operator reads its words from `operatorSays`, but an = reads its words only between a scope and a value,
   and a ?= before a block reads "if it exists".
-- A value stays as written, with `Title`, the in-game name of the definition a `prefix:name` value names. A keyword
+- A value stays as written, with `Title`, the in-game name of the definition a `prefix:name` value names. A key
   marked `ValueFirst` makes the value the subject (`exists = X` reads "X exists").
-- A block that only wraps one condition folds into it: a negation (`game.Keyword.Negates`) makes it `Negated`, and a
+- A block that only wraps one condition folds into it: a negation (a phrase that `Negates`) makes it `Negated`, and a
   scope makes itself its subject. A negation around several stays a group, since moving its lines would change what they
   claim.
 

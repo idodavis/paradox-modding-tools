@@ -371,11 +371,16 @@ func (ws *Session) LookupBuffer(path string) (string, bool) {
 	return document.Tree.Src, true
 }
 
-// LoadSource returns the text of the file with the given path: the editor's while the editor has the file open,
-// else the one on disk. A missing file reads as empty. It returns an error if the file cannot be read.
+// LoadSource returns the text of the file with the given path: the editor's
+// while the editor has the file open, else a cached document's, else the one
+// on disk. A missing file reads as empty. It returns an error if the file
+// cannot be read.
 func (ws *Session) LoadSource(path string) (string, error) {
 	if source, open := ws.LookupBuffer(path); open {
 		return source, nil
+	}
+	if document, cached := ws.documents.Get(files.ToKey(path)); cached {
+		return document.Tree.Src, nil
 	}
 	text, err := files.LoadText(path)
 	return text.Text, err

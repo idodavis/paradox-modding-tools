@@ -14,6 +14,7 @@ import * as steam from "@services/steam/service";
 import * as terminal from "@services/terminal/service";
 import * as wiki from "@services/wiki/service";
 import * as workspace from "@services/workspace/service";
+import type { Format } from "@internal/files/models";
 import type { Coat, PictureList, States } from "@services/draw/models";
 import type { Filter } from "@services/graph/models";
 import type { Site } from "@services/lsp/models";
@@ -248,6 +249,12 @@ export const symbolsQuery = defineQueryOptions(({ query, localization }: { query
   key: [...keys.lsp, "symbols", query, localization],
   query: () => lsp.FindSymbols(query, localization, 50),
 }));
+export const textColorsQuery = defineQueryOptions(
+  ({ path, format, text }: { path: string; format: Format; text: string }) => ({
+    key: [...keys.lsp, "colors", path, format, text],
+    query: () => lsp.ColorText(path, format, text),
+  }),
+);
 
 export const graphQuery = defineQueryOptions(({ root, filter }: { root: string; filter: Filter }) => ({
   key: [...keys.graph, root, filter],

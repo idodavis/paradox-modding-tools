@@ -14,7 +14,6 @@ import { confirm } from "../../../lib/feedback";
 import { list, plural } from "../../../lib/format";
 import { fileQuery, keys, loadQuery, placeQuery } from "../../../queries";
 import { useSearchStore } from "../../../stores/search";
-import { EDITOR_LANGUAGES } from "../../../ui/ScriptSnippet.vue";
 
 /** A Model is one open file in this window, shared by every tab that shows it. */
 export type Model = {
@@ -181,8 +180,7 @@ async function load(place: Place): Promise<Model> {
 /** buildModel makes a file's Model, reusing the Monaco text model already at the file's URI if there is one. */
 function buildModel(place: Place, start: { text: string; disk: string; encoding: Encoding; unsaved: boolean }): Model {
   const uri = monaco.Uri.file(place.path);
-  const textModel =
-    monaco.editor.getModel(uri) ?? monaco.editor.createModel(start.text, EDITOR_LANGUAGES[place.format], uri);
+  const textModel = monaco.editor.getModel(uri) ?? monaco.editor.createModel(start.text, place.language, uri);
   const model: Model = shallowReactive<Model>({
     uri: uri.toString(),
     place,

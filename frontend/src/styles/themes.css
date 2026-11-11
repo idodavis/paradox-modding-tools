@@ -50,7 +50,9 @@
 }
 
 /* The syntax colors most themes take from their palette. In every theme only the macros are red or pink. A theme
-   sets its own keyword, field and operator. */
+   sets its own keyword, field and operator. A call of a scripted definition and a reference to a definition are
+   each a mix of two of the theme's own colors, so every theme has them; a theme may set its own. A theme may also
+   draw a color in bold, as `--syn-<category>-weight: bold`. */
 [data-theme] {
   --syn-name: var(--purple);
   --syn-macro: var(--red);
@@ -59,6 +61,8 @@
   --syn-command: var(--blue);
   --syn-comment: var(--fg-3);
   --syn-link: var(--link);
+  --syn-call: color-mix(in oklab, var(--syn-command) 55%, var(--syn-string));
+  --syn-reference: color-mix(in oklab, var(--syn-name) 60%, var(--fg-1));
 }
 
 /* PMT; its terminal's colors and the three games' are the design system's */
@@ -81,11 +85,18 @@
   --blue: #6fb7f0;
   --green: #5ccb8f;
   --purple: #b19cf5;
-  --syn-keyword: #e8c96a;
-  --syn-operator: #aab4c1;
-  --syn-field: #acd2f1;
-  --syn-link: #62d3e8;
-  --syn-string: #79cb83;
+  --syn-name: #bd7bff;
+  --syn-reference: #dbb7ff;
+  --syn-field: #cff0f8;
+  --syn-keyword: #ffd239;
+  --syn-call: var(--syn-reference);
+  --syn-command: #70e7cf;
+  --syn-link: #20cdff;
+  --syn-number: #f28746;
+  --syn-string: #57ec7c;
+  --syn-macro: #ff5555;
+  --syn-comment: #6b7684;
+  --syn-operator: #c5cacf;
   --ansi-black: #1e232c;
   --ansi-red: #f0716b;
   --ansi-green: #5ccb8f;
@@ -127,11 +138,19 @@
   --blue: #2568b8;
   --green: #1f8a4c;
   --purple: #6b4fd1;
-  --syn-keyword: #8a6500;
-  --syn-operator: #4d5866;
-  --syn-field: #204470;
-  --syn-link: #0e7f9a;
-  --syn-comment: #6b7684;
+  --syn-name: #a74fff;
+  --syn-name-weight: bold;
+  --syn-reference: #9d3cff;
+  --syn-field: #1a708c;
+  --syn-keyword: #e3b000;
+  --syn-call: var(--syn-reference);
+  --syn-command: #058472;
+  --syn-link: #04c1f0;
+  --syn-number: #d65f0a;
+  --syn-string: #05b84d;
+  --syn-macro: #e72323;
+  --syn-comment: #7b8594;
+  --syn-operator: #434954;
   --ansi-black: #1a1f27;
   --ansi-red: #c4372f;
   --ansi-green: #1f8a4c;

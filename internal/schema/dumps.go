@@ -79,8 +79,8 @@ type dumpCorrection struct {
 	Target  string
 }
 
-// commandKey is a command, or a key of a command's block, whose block's keys,
-// beside the arguments the dumps declare, are names of a database.
+// commandKey is a command, or a key of a command's block, that names a
+// database in a way the dumps' usage lines do not state.
 type commandKey struct {
 	// Games are the games the row holds for, every game if none.
 	Games []string
@@ -89,8 +89,14 @@ type commandKey struct {
 	// block.
 	Command string
 
-	// Database is the database the block's keys name.
-	Database string
+	// Database is the database the block's keys name, beside the arguments
+	// the dumps declare, and Value the database its value names. Each is ""
+	// for none.
+	Database, Value string
+
+	// Stem is the name the value stands for in Value's database, with %s for
+	// the value. It is "" for the value itself.
+	Stem string
 }
 
 // dumpPhrases are the phrases in the dumps that the engine decides by.
@@ -954,8 +960,8 @@ func (s *Schema) resolveTitleValue(command *Command, dump DumpCommand) {
 	}
 }
 
-// commandKeys are the commands and command keys whose block's keys are names
-// of a database.
+// commandKeys are the commands and command keys that name a database in a
+// way the dumps' usage lines do not state.
 var commandKeys = []commandKey{
 	// CK3 effects.log, stress_impact: "trait = value # add this stress if the
 	// character has this trait"
@@ -963,12 +969,28 @@ var commandKeys = []commandKey{
 	// CK3 effects.log:349: "random_traits_list = { count = { 1 5 }
 	// traitID = { some triggers } … }"
 	{Games: []string{game.CK3}, Command: "create_character/random_traits_list", Database: "traits"},
+	// CK3 effects.log, custom_tooltip and custom_label: "just a tooltip …
+	// Can also be written as custom_tooltip = { text = key … }"
+	{Command: "custom_tooltip", Value: game.Localization}, {Command: "custom_tooltip/text", Value: game.Localization},
+	{Command: "custom_label", Value: game.Localization}, {Command: "custom_label/text", Value: game.Localization},
+	// CK3: ActivityLogEntry.GetTitle shows <key>_title, which every key the
+	// game's files log defines; the description, GetDescription, is <key>
+	// itself where one is written
+	{Command: "add_activity_log_entry/key", Value: game.Localization, Stem: "%s_title"},
+	// CK3 triggers.log:4766, "Does the character have this trait or a trait
+	// of this trait group?": the dump writes no usage line
+	{Games: []string{game.CK3}, Command: "has_trait", Value: "traits"},
+	// triggers.log, "has_game_rule = faster_conversion": the usage line
+	// writes one setting's name
+	{Command: game.GameRules.Trigger, Value: game.GameRules.Settings},
 }
 
 // buildCommandKeys gives each command, or key of a command's block, that a
-// commandKeys row names the database its block's keys name, for the rows
-// that hold for the given game. A row whose command the dumps do not declare
-// is skipped.
+// commandKeys row names the database its block's keys name and the one its
+// value names, for the rows that hold for the given game and under each
+// declaration of the command. The dumps' text is what says a value's
+// database, so a wrong value there is an error. A row whose command the
+// dumps do not declare is skipped.
 func (s *Schema) buildCommandKeys(row *game.Game) {
 	for _, entry := range commandKeys {
 		title, key, nested := strings.Cut(entry.Command, "/")
@@ -977,12 +999,21 @@ func (s *Schema) buildCommandKeys(row *game.Game) {
 			continue
 		}
 
-		field := command.makeArguments("", game.SourceRegistry)
-		if nested {
-			field = field.buildChild(key, game.SourceRegistry)
-		}
+		for _, declaration := range command.Declared {
+			field := command.makeArguments(declaration, game.SourceRegistry)
+			if nested {
+				field = field.buildChild(key, game.SourceRegistry)
+			}
 
-		field.Keys.resolve(entry.Database, game.SourceRegistry)
+			if entry.Database != "" {
+				field.Keys.resolve(entry.Database, game.SourceRegistry)
+			}
+
+			if entry.Value != "" {
+				expected := Expected{Type: ValueTypeReference, Database: entry.Value, Stem: entry.Stem}
+				field.Value = Claim[Expected]{Value: expected, Source: game.SourceDumps}
+			}
+		}
 	}
 }
 
@@ -991,13 +1022,12 @@ func (s *Schema) buildCommandKeys(row *game.Game) {
 // random_list, for the rows that hold for the given game.
 func (s *Schema) buildKeywordShapes(row *game.Game) {
 	for _, keyword := range game.Keywords {
-		title, key, nested := strings.Cut(keyword.Key, "/")
-		command := s.Commands[title]
-		if !nested || command == nil || keyword.Shape == "" || keyword.Shape == game.ShapeEnclosing || !row.Matches(keyword.Games) {
+		command := s.Commands[keyword.Parent]
+		if command == nil || keyword.Shape == "" || keyword.Shape == game.ShapeEnclosing || !row.Matches(keyword.Games) {
 			continue
 		}
 
-		command.makeArguments("", game.SourceDumps).buildChild(key, game.SourceNone).Shape.resolve(keyword.Shape, game.SourceRegistry)
+		command.makeArguments("", game.SourceDumps).buildChild(keyword.Key, game.SourceNone).Shape.resolve(keyword.Shape, game.SourceRegistry)
 	}
 }
 

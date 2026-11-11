@@ -1,6 +1,5 @@
-// edit.go applies edits to a text, finds the edits between two texts, writes
-// a tree's text again in an even layout and builds the edit that adds lines
-// to a block.
+// edit.go applies edits to a text, finds the edits that give a tree's text an
+// even layout and builds the edit that adds lines to a block.
 
 package jomini
 
@@ -9,9 +8,6 @@ import (
 	"slices"
 	"strings"
 	"unicode"
-	"unicode/utf8"
-
-	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 // Edit is one change to a text. It replaces a span with a text, so an empty
@@ -46,35 +42,6 @@ func ApplyEdits(text string, edits []Edit) string {
 	return result.String()
 }
 
-// DiffEdits returns the smallest list of edits that turns the old text into
-// the new one. Where either text is not valid UTF-8, it replaces the whole
-// text, since the diff writes an invalid byte as U+FFFD and every later
-// offset would move.
-func DiffEdits(oldText, newText string) []Edit {
-	if !utf8.ValidString(oldText) || !utf8.ValidString(newText) {
-		return []Edit{{Span: Span{Start: 0, End: len(oldText)}, Text: newText}}
-	}
-
-	var edits []Edit
-	offset := 0
-
-	for _, diff := range diffmatchpatch.New().DiffMain(oldText, newText, true) {
-		switch diff.Type {
-		case diffmatchpatch.DiffDelete:
-			edits = append(edits, Edit{Span: Span{Start: offset, End: offset + len(diff.Text)}})
-			offset += len(diff.Text)
-
-		case diffmatchpatch.DiffInsert:
-			edits = append(edits, Edit{Span: Span{Start: offset, End: offset}, Text: diff.Text})
-
-		case diffmatchpatch.DiffEqual:
-			offset += len(diff.Text)
-		}
-	}
-
-	return edits
-}
-
 // LineEnding returns the line ending a text uses: CRLF where it has one, else
 // LF.
 func LineEnding(text string) string {
@@ -85,18 +52,26 @@ func LineEnding(text string) string {
 	return "\n"
 }
 
-// Format returns the tree's text written again in an even layout. Each line
-// starts with the given unit of indentation once for each block it is inside,
-// the tokens on a line are one space apart, and an operator is spaced as most
-// of the tree's operators are. The line breaks stay where they are, each
-// written with the tree's line ending, and so does any other text between
-// tokens, such as a comma. A comment loses the white space at its end.
-func (t *Tree) Format(unit string) string {
+// Format returns the edits that give the tree's text an even layout. Each
+// line starts with the given unit of indentation once for each block it is
+// inside, the tokens on a line are one space apart, and an operator is
+// spaced as most of the tree's operators are. The line breaks stay where
+// they are, each written with the tree's line ending. A comment loses the
+// white space at its end. An edit only ever replaces white space: any other
+// text between tokens, such as a comma, stays as it is.
+func (t *Tree) Format(unit string) []Edit {
 	gap, ending := t.operatorGap(), LineEnding(t.Src)
 
-	var text strings.Builder
+	var edits []Edit
 	var before token
 	end, depth := 0, 0
+
+	// space makes the white space from an offset to another the given text
+	space := func(start, stop int, text string) {
+		if t.Src[start:stop] != text {
+			edits = append(edits, Edit{Span: Span{Start: start, End: stop}, Text: text})
+		}
+	}
 
 	for position, current := range t.listTokens() {
 		// a closing brace is outside the block it closes
@@ -107,37 +82,31 @@ func (t *Tree) Format(unit string) string {
 		spacing := t.Src[end:current.span.Start]
 		switch {
 		case strings.TrimSpace(spacing) != "":
-			text.WriteString(spacing)
 		case strings.Contains(spacing, "\n"):
-			text.WriteString(strings.Repeat(ending, strings.Count(spacing, "\n")))
-			text.WriteString(strings.Repeat(unit, max(depth, 0)))
-		case position > 0 && current.class != tokenClassComment &&
-			(before.class == tokenClassOperator || current.class == tokenClassOperator):
-			text.WriteString(gap)
-		case position > 0:
-			text.WriteString(" ")
+			space(end, current.span.Start, strings.Repeat(ending, strings.Count(spacing, "\n"))+strings.Repeat(unit, max(depth, 0)))
+		case position == 0:
+			space(end, current.span.Start, "")
+		case current.class != tokenClassComment && (before.class == tokenClassOperator || current.class == tokenClassOperator):
+			space(end, current.span.Start, gap)
+		default:
+			space(end, current.span.Start, " ")
 		}
 
-		source := t.Text(current.span)
-		if current.class == tokenClassComment {
-			source = strings.TrimRightFunc(source, unicode.IsSpace)
-		}
-
-		text.WriteString(source)
 		before, end = current, current.span.End
+		if current.class == tokenClassComment {
+			space(current.span.Start+len(strings.TrimRightFunc(t.Text(current.span), unicode.IsSpace)), end, "")
+		}
 
 		if current.class == tokenClassOpen {
 			depth++
 		}
 	}
 
-	if rest := t.Src[end:]; strings.TrimSpace(rest) != "" {
-		text.WriteString(rest)
-	} else {
-		text.WriteString(strings.Repeat(ending, strings.Count(rest, "\n")))
+	if rest := t.Src[end:]; strings.TrimSpace(rest) == "" {
+		space(end, len(t.Src), strings.Repeat(ending, strings.Count(rest, "\n")))
 	}
 
-	return text.String()
+	return edits
 }
 
 // operatorGap returns what an operator is spaced from its key and its value

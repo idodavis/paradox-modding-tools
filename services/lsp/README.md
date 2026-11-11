@@ -67,8 +67,9 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   with the choices and the key's own text. A command's card shows the scopes the dumps give it, or says they name
   none. A fact learned only
   from the game's files marks the card inferred. `Classes` are the wiki lexicon's, in the
-  order of its tabs, and `Card.Lexicon` names the one that lists what the card is about.
-- **Completion.** `Complete` returns what fits at a key: the language's operators for the block, then its commands,
+  order of its tabs, and `Card.Lexicon` names the one that lists what the card is about. `Card.Token` is the token
+  type the editor colors the word by, so the page draws the card's label in the word's own color.
+- **Completion.** `Complete` returns what fits at a key: the language's keywords for the block, then its commands,
   the scripted definitions the block's caller calls and, where the block reads links, the links written alone that
   run in its scope, `this`, `root`, `prev` and the scopes saved earlier, each ranked by how often the game writes it,
   then its fields and the names of the database its keys name. A block whose caller is any call, such as a command's
@@ -82,16 +83,19 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   written alone in a block gets both lists, the values and the block's keys, since it may also be a key typed before
   its equals sign. A definition local to another file is never offered.
 - **Navigation.** `Definition` returns where a name is defined, the kept definition first. `References` adds where it is
-  used. `Rename` returns its edits grouped by the mod file they change, and `PrepareRename` refuses a name the game
-  defines too, or one no mod defines. `ListSymbols` is a file's outline, and `FindSymbols` searches the workspace's
+  used. `Rename` returns its edits grouped by the file they change, and `PrepareRename` refuses a name that a
+  read-only file defines too (the game's or a Workshop mod's), or one nothing defines. All three read a file that is
+  open in the editor from the editor's own text, since the index holds the saved file's positions. `ListSymbols` is a file's outline, and `FindSymbols` searches the workspace's
   definitions, or its localization keys, best match first. Only a script file is walked to a position, since the
   schema has no rules for the keys of any other file.
-- **Tokens.** `Tokens` returns the color category of every key and value in a range, from the walk, encoded as Monaco's
-  semantic tokens against `ListLegend`. A key or value the walk gives no category is a link if it starts a chain of
-  links. The service keeps the last file's tokens while its tree and the mods' index stay the same, so the editor
-  asking for the next lines as it scrolls does not walk the file again.
-- **Edits.** `Format` keeps the file's own indentation, and gives no edits for a read-only file, a file that does not
-  parse, or one that would change in more than its spacing. `ListFixes` gives the quick fixes: the nearest defined
+- **Tokens.** `Tokens` returns the color of every key and value of a script file in a range, from the walk the
+  document keeps, and of every key and piece of markup of a localization file, from `loc`'s segments, encoded as
+  Monaco's semantic tokens against `ListLegend`. Where the walk gives no category, a number, a date and a yes or
+  no are numbers and any other key is a field. A list iterator such as `every_vassal` is a keyword, though the walk
+  holds it as the command it also is. `ColorText` colors a text that is no open file, such as a snippet a
+  page shows: it adds the comments, quoted texts and operators that Monaco colors by itself in the editor.
+- **Edits.** `Format` keeps the file's own indentation, and gives no edits for a read-only file or a file that does
+  not parse; its edits only ever replace white space. `ListFixes` gives the quick fixes: the nearest defined
   name for one nothing defines, which for a call is also a command the block allows, a missing key with its default, an entry mode out of place removed, and the file's
   localization keys that have no base-language text added to the mod's localization file, which the fix creates first
   if it is missing. `BuildOverride` copies an entry into a mod, and `DraftFile` names and starts a new file.
@@ -117,8 +121,9 @@ and Health's rows both read the level from it. `SplitMessage` fills a template a
   it depends on. A name nothing defines there, but a mod it does not depend on does, has an `Elsewhere` message.
 - The parse errors and the localization checks come from `jomini` and `loc`, under the same table.
 
-**A check accuses only on firm ground.** A reference is dangling only where its database is known, holds no names made
-as the script runs, and the claim that makes it is not inferred from the game's files alone. A name the game's own
+**A check accuses only on firm ground.** A reference is dangling only where the walk did not mark it `Inferred`: its
+database is known, holds no names made as the script runs, and the claim that makes it is not inferred from the
+game's files alone (`schema`'s `judge` gives the one verdict). A name the game's own
 files use is never dangling, unless every definition of it lies in a file the game does not read. A key is unknown, or
 a value of the wrong type, only where a source that can accuse describes the block and the game's own files never
 write otherwise.

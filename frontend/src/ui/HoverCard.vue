@@ -5,6 +5,7 @@ import { useQuery } from "@pinia/colada";
 
 import type { Card, Diagnostic } from "@services/lsp/models";
 
+import { SYNTAX } from "../lib/syntax";
 import { codesQuery, levelsQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -62,6 +63,19 @@ const rows = computed(() => {
   return all.filter((row): row is [string, string] => !!row[1]);
 });
 const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
+// The label takes the color the editor gives the word, on a faint wash of
+// it. A word with no color of its own keeps the plain label.
+const tint = computed(() => {
+  const syntax = SYNTAX[card?.token ?? ""];
+  if (!syntax) return undefined;
+  const color = `var(--syn-${syntax})`;
+  return {
+    color,
+    fontWeight: `var(--syn-${syntax}-weight, inherit)`,
+    backgroundColor: `color-mix(in oklab, ${color} 12%, transparent)`,
+    "--tw-ring-color": `color-mix(in oklab, ${color} 30%, transparent)`,
+  };
+});
 </script>
 
 <template>
@@ -86,7 +100,13 @@ const sites = computed(() => (card?.sites ?? []).slice(0, SITES_SHOWN));
     <template v-if="card">
       <div class="flex flex-col gap-1 px-3.5 py-2.5">
         <div class="flex min-w-0 items-center gap-2">
-          <UBadge :label="card.class ? `${card.what} · ${card.class}` : card.what" color="info" size="sm" />
+          <UBadge
+            :label="card.class ? `${card.what} · ${card.class}` : card.what"
+            color="neutral"
+            variant="subtle"
+            size="sm"
+            :style="tint"
+          />
           <span class="min-w-0 font-mono text-13 font-semibold break-all text-highlighted">{{ card.title }}</span>
           <span class="grow" />
           <UTooltip

@@ -110,8 +110,7 @@ func TestRunFindsRegexAndWholeWordHits(t *testing.T) {
 	if len(whole) != 2 || whole[0].Range.StartLine != 1 || whole[1].Range.StartLine != 3 {
 		t.Fatalf("whole-word hits: %+v", whole)
 	}
-	if whole[1].Text != "  Add_Gold = 3" || whole[1].Range.StartColumn != 3 || whole[1].Range.EndColumn != 11 ||
-		whole[1].Place.Origin != fixtureModID {
+	if whole[1].Text != "  Add_Gold = 3" || whole[1].Range.StartColumn != 3 || whole[1].Range.EndColumn != 11 {
 		t.Errorf("whole-word hit: %+v", whole[1])
 	}
 	pattern := listHits(t, ws, Query{Text: `add_gold\w*`, Regex: true, MatchCase: true, Include: include}, 1)

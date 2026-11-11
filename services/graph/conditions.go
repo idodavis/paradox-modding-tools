@@ -26,6 +26,63 @@ type Condition struct {
 	Conditions []Condition `json:"conditions,omitempty"` // the statements of its block, in the order written
 }
 
+// A phrase is how a condition reads one key in English.
+type phrase struct {
+	// Says is the key in words, with a * for the rest of a prefix key. It is
+	// "" for the key as written.
+	Says string
+
+	// ValueFirst is whether its value is read first, as in "X exists".
+	// Negates is whether it is true when what is inside it is false. Covers
+	// is whether its own text is shown in place of the conditions inside it.
+	ValueFirst, Negates, Covers bool
+}
+
+// notAll is how a condition reads a keyword that is true unless everything
+// inside it is true.
+const notAll = "not all of"
+
+// phrases holds how a condition reads each key that does not read as its own
+// words, by the key in lower case.
+var phrases = map[string]phrase{
+	"and": {Says: "all of"}, "or": {Says: "any of"},
+	"not": {Says: notAll, Negates: true}, "nor": {Says: "none of", Negates: true},
+	"nand": {Says: notAll, Negates: true}, "all_false": {Says: "none of", Negates: true},
+	"any_false":  {Says: notAll, Negates: true},
+	"trigger_if": {Says: "if"}, "trigger_else_if": {Says: "else if"}, "trigger_else": {Says: "else"},
+	"limit": {Says: "when"}, "calc_true_if": {Says: "at least the amount of"},
+	"custom_tooltip": {Covers: true}, "custom_description": {Covers: true},
+	"exists": {ValueFirst: true},
+}
+
+// anyPrefix is how the key of a trigger over a list starts, and anyPhrase how
+// a condition reads such a key.
+const anyPrefix = "any_"
+
+var anyPhrase = phrase{Says: "any * where"}
+
+// operatorSays is how a condition reads each operator between a key and a
+// value.
+var operatorSays = map[string]string{
+	"=": "is", "==": "is", "!=": "is not", ">": "more than", ">=": "at least", "<": "less than", "<=": "at most",
+	"?=": "is, if it exists",
+}
+
+// findPhrase returns how a condition reads a key, and the rest of the key
+// where it opens with the prefix of a trigger over a list.
+func findPhrase(key string) (phrase, string) {
+	lower := strings.ToLower(key)
+	if entry, ok := phrases[lower]; ok {
+		return entry, ""
+	}
+
+	if rest, ok := strings.CutPrefix(lower, anyPrefix); ok {
+		return anyPhrase, rest
+	}
+
+	return phrase{}, ""
+}
+
 // findCondition returns the limit of a block in words, else its trigger. It returns nil if it holds neither.
 func findCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Condition {
 	for _, key := range []string{game.LimitKey, game.TriggerKey} {
@@ -51,16 +108,12 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)
 	condition := Condition{Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Span)}
-	keyword, ok := ws.Game.LookupKeyword(game.ShapeTriggers, "", key, "")
-	if !ok {
-		keyword, _ = game.MatchListIterator(strings.ToLower(key))
-	}
+	keyword, rest := findPhrase(key)
 	switch {
 	case keyword.Covers:
 		condition.Text, condition.Value = describeCover(ws, mods, tree, statement)
 		return condition
 	case keyword.Says != "":
-		rest := strings.TrimPrefix(strings.ToLower(key), strings.TrimSuffix(keyword.Key, "*"))
 		condition.Text = strings.Replace(keyword.Says, "*", toWords(rest), 1)
 	case ws.Schema.IsLink(key) || current.KeyClass == jomini.ClassParameter:
 		condition.Subject = key
@@ -96,7 +149,7 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 
 // foldCondition folds a block that only wraps one condition into it: a negation makes it negated, and a scope becomes
 // its subject.
-func foldCondition(condition Condition, keyword game.Keyword) Condition {
+func foldCondition(condition Condition, keyword phrase) Condition {
 	if len(condition.Conditions) != 1 {
 		return condition
 	}
@@ -140,5 +193,5 @@ func describeOperator(operator string, isBlock, isScope bool) string {
 	case operator == "?=" && isBlock:
 		return "if it exists"
 	}
-	return game.OperatorSays[operator]
+	return operatorSays[operator]
 }

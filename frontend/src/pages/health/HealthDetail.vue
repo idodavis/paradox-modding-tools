@@ -365,7 +365,7 @@ function describeSite(site: Site): string {
           v-else-if="compared && pair.left && pair.right"
           :left="compared.left"
           :right="compared.right"
-          language="paradox-script"
+          :language="pair.left.place.language"
           :left-label="describeSite(pair.left)"
           :right-label="describeSite(pair.right)"
           class="h-[70vh]"

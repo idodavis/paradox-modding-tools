@@ -390,27 +390,6 @@ func TestApplyEdits(t *testing.T) {
 	ApplyEdits("hello world", []Edit{{Span: Span{Start: 0, End: 3}}, {Span: Span{Start: 2, End: 5}}})
 }
 
-func TestDiffEdits(t *testing.T) {
-	tests := [][2]string{
-		{"a = 1\nb = 2\n", "a = 1\nb = 3\n"},
-		{"", "x = 1"},
-		{"x = 1", ""},
-		{"x = { a b c }", "x = {\n\ta\n\tb\n\tc\n}"},
-		{"été = 1\nb = 2", "été = 2\nc = 2"},
-		{strings.Repeat("line\n", 200) + "end", strings.Repeat("line\n", 100) + "changed\n" + strings.Repeat("line\n", 99) + "end"},
-		{"a\xffb", "a\xffc"},
-	}
-	for _, test := range tests {
-		edits := DiffEdits(test[0], test[1])
-		if got := ApplyEdits(test[0], edits); got != test[1] {
-			t.Errorf("ApplyEdits(DiffEdits(%q, %q)) = %q", test[0], test[1], got)
-		}
-	}
-	if edits := DiffEdits("same", "same"); len(edits) != 0 {
-		t.Errorf("DiffEdits of equal texts = %+v", edits)
-	}
-}
-
 func TestIndentation(t *testing.T) {
 	tests := []struct {
 		text string
@@ -431,7 +410,7 @@ func TestIndentation(t *testing.T) {
 
 func TestFormat(t *testing.T) {
 	stray, fixed := "x = {\r\r\n\ta = 1\r\n}\r\n", "x = {\r\n\ta = 1\r\n}\r\n"
-	if got := Parse(stray).Format("\t"); got != fixed {
+	if got := ApplyEdits(stray, Parse(stray).Format("\t")); got != fixed {
 		t.Errorf("a stray carriage return: %q, want %q", got, fixed)
 	}
 }

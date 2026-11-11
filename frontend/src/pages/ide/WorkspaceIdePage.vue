@@ -37,7 +37,6 @@ import CompareView from "../../ui/CompareView.vue";
 import AddModMenu from "../../ui/AddModMenu.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
-import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import { STATUS_ITEM } from "../../ui/StatusFacts.vue";
 import CoatDialog from "./draw/CoatDialog.vue";
 import SaveDdsModal from "./SaveDdsModal.vue";
@@ -330,7 +329,7 @@ const { data: status } = useQuery(() => ({
   enabled: !!git.findRoot(editor.activeFile()),
 }));
 const activeModel = computed(() => findModel(editor.activeFile()?.key ?? ""));
-const languageName = computed(() => describeLanguage(EDITOR_LANGUAGES[activeModel.value?.place.format ?? ""]));
+const languageName = computed(() => describeLanguage(activeModel.value?.place.language ?? "plaintext"));
 const { mutate: saveWithEncoding } = useMutation({
   mutation: ({ model, encoding }: { model: Model; encoding: Encoding }) => {
     model.encoding = encoding;
@@ -886,7 +885,7 @@ function collapseAll(): void {
             v-else-if="leftFile.data.value && rightFile.data.value"
             :left="leftFile.data.value.text.text"
             :right="rightFile.data.value.text.text"
-            :language="EDITOR_LANGUAGES[comparing.right.format]"
+            :language="comparing.right.language"
             :left-label="describePlace(comparing.left)"
             :right-label="describePlace(comparing.right)"
           />

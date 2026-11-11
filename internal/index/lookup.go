@@ -190,6 +190,56 @@ func (i *Index) ListKeys(language, text string, limit int) []string {
 	return keys[:min(len(keys), limit)]
 }
 
+// ListNamed returns the sites of the occurrences with the given role whose
+// name the given function ranks 0 or higher, the lowest rank first. Within a
+// rank this index's own files come before the install's, each in load order.
+// It reads the postings, so it looks at each name once and at no reference.
+func (i *Index) ListNamed(role Role, rank func(name string) int) []Site {
+	// order is 0 for a site of this index's own files and 1 for the install's
+	type match struct {
+		site        Site
+		rank, order int
+	}
+
+	var matches []match
+	ranks := map[uint32]int{}
+	for order, index := range []*Index{i, i.install} {
+		if index == nil {
+			continue
+		}
+
+		for posting, names := range index.postings {
+			if posting.Role != role {
+				continue
+			}
+
+			for name, sites := range names {
+				if _, ranked := ranks[name]; !ranked {
+					ranks[name] = rank(i.Names.Texts[name])
+				}
+
+				for _, site := range i.narrowSites(sites) {
+					if ranks[name] >= 0 {
+						matches = append(matches, match{site, ranks[name], order})
+					}
+				}
+			}
+		}
+	}
+
+	slices.SortFunc(matches, func(first, second match) int {
+		return cmp.Or(cmp.Compare(first.rank, second.rank), cmp.Compare(first.order, second.order),
+			compareSites(first.site, second.site))
+	})
+
+	sites := make([]Site, len(matches))
+	for position, found := range matches {
+		sites[position] = found.site
+	}
+
+	return sites
+}
+
 // FindDefinition returns the definition that a site sits inside. It returns
 // false if the site is at the top of its file.
 func (i *Index) FindDefinition(site Site) (Site, bool) {

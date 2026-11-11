@@ -13,6 +13,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as files$0 from "../../internal/files/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as jomini$0 from "../../internal/jomini/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -34,6 +37,17 @@ export function BuildOverride(path: string, line: number, column: number, modID:
  */
 export function CloseFile(path: string): $CancellablePromise<void> {
     return $Call.ByID(934988783, path);
+}
+
+/**
+ * ColorText returns every token of a text that is not open in the editor,
+ * such as a snippet a page shows, encoded as Tokens encodes them. The text is
+ * read as the file with the given path would be, or as a file of the given
+ * format in no folder where the path is "". Its comments, quoted texts and
+ * operators are tokens too, so a page can draw it with no editor.
+ */
+export function ColorText(path: string, format: files$0.Format, text: string): $CancellablePromise<number[] | null> {
+    return $Call.ByID(3057261305, path, format, text);
 }
 
 /**
@@ -88,9 +102,10 @@ export function FindSymbols(query: string, localization: boolean, limit: number)
 }
 
 /**
- * Format returns the edits that format a file's text, keeping the file's own indentation, else a tab or as many spaces
- * as the given tab size. It returns no edits for a read-only file, one that is not script or does not parse, or one
- * that would change in more than its spacing.
+ * Format returns the edits that format a file's text, keeping the file's own
+ * indentation, else a tab or as many spaces as the given tab size. It returns
+ * no edits for a read-only file and for one that is not script or does not
+ * parse.
  */
 export function Format(path: string, tabSize: number, insertSpaces: boolean): $CancellablePromise<$models.Edit[] | null> {
     return $Call.ByID(331973468, path, tabSize, insertSpaces);
@@ -148,8 +163,9 @@ export function ListSymbols(path: string): $CancellablePromise<$models.Symbol[] 
 }
 
 /**
- * PrepareRename returns the range of the name at a position. It returns nil if the position is on no name, if the
- * game defines the name too, or if no mod defines it.
+ * PrepareRename returns the range of the name at a position. It returns nil
+ * if the position is on no name, if nothing defines it, or if a file that
+ * cannot be changed defines it too: one of the game's or of a Workshop mod.
  */
 export function PrepareRename(path: string, line: number, column: number): $CancellablePromise<$models.Range | null> {
     return $Call.ByID(2522429872, path, line, column);
@@ -173,8 +189,11 @@ export function References(path: string, line: number, column: number): $Cancell
 }
 
 /**
- * Rename returns the edits that give the name at a position a new name, grouped by the mod file they change. It returns
- * an error if the new name is empty, or if the name has no database and more than one database defines it.
+ * Rename returns the edits that give the name at a position a new name,
+ * grouped by the file they change. A file that cannot be changed, the game's
+ * or a Workshop mod's, gets none. It returns an error if the new name is
+ * empty, or if the name has no database and more than one database defines
+ * it.
  */
 export function Rename(path: string, line: number, column: number, name: string): $CancellablePromise<{ [_ in string]?: $models.Edit[] | null } | null> {
     return $Call.ByID(4199671945, path, line, column, name);
@@ -195,8 +214,10 @@ export function Signature(path: string, line: number, column: number): $Cancella
 }
 
 /**
- * Tokens returns the semantic tokens of the given range of a file: the color category of every key and value in it,
- * encoded as Monaco wants. It returns none for a file that is not script.
+ * Tokens returns the semantic tokens of the given range of a file, encoded as
+ * Monaco wants: the color of every key and value of a script file, and of
+ * every key and piece of markup of a localization file. It returns none for
+ * any other file.
  */
 export function Tokens(path: string, bounds: $models.Range): $CancellablePromise<number[] | null> {
     return $Call.ByID(1531108025, path, bounds);

@@ -4,7 +4,6 @@
 package lsp
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"slices"
@@ -60,7 +59,72 @@ func (lsp *Service) Definition(path string, line, column int) ([]Site, error) {
 		return []Site{}, nil
 	}
 	sites, _ := listSites(ws, mods, place, reference)
-	return lo.Map(sites, func(site index.Site, _ int) Site { return LocateSite(ws, mods, site) }), nil
+	return locateSites(ws, mods, reference, sites, false), nil
+}
+
+// locateSites returns the given sites of a reference's name, each with its
+// range and its line's text. A file the editor has open gives the sites of
+// the editor's own text instead, since the index holds the saved file's: its
+// definitions of the name, and its uses too where the flag says.
+func locateSites(ws *workspace.Session, mods *index.Index, reference schema.Reference, sites []index.Site, uses bool) []Site {
+	located, read := []Site{}, map[string]bool{}
+	for _, site := range sites {
+		path := mods.File(site).Path
+		if _, open := ws.LookupBuffer(path); !open {
+			located = append(located, LocateSite(ws, mods, site))
+		} else if !read[path] {
+			read[path] = true
+			located = append(located, listBufferSites(ws, mods, path, reference, uses)...)
+		}
+	}
+	return located
+}
+
+// listBufferSites returns where the document of an open file writes a
+// reference's name: each definition of it, and each use where the flag says.
+// A call that may be to any callable database counts as a use of a callable
+// name. It returns none if the file cannot be read.
+func listBufferSites(ws *workspace.Session, mods *index.Index, path string, reference schema.Reference, uses bool) []Site {
+	document, err := ws.WalkDocument(path)
+	if err != nil {
+		return nil
+	}
+	name := mods.ToCaseless(reference.Database, reference.Name)
+	callable := len(game.Callables[reference.Database].Callers) > 0
+	matches := func(other schema.Reference) bool {
+		return (other.Database == reference.Database || callable && other.Database == game.AnyCall) &&
+			mods.ToCaseless(reference.Database, other.Name) == name
+	}
+	var spans []jomini.Span
+	for position := range document.Contexts {
+		context := &document.Contexts[position]
+		if definition := context.Definition; context.Defines && matches(schema.Reference{Database: definition.Database, Name: definition.Name}) {
+			spans = append(spans, definition.Span)
+		}
+		for _, other := range context.References {
+			if uses && matches(other) {
+				spans = append(spans, other.Span)
+			}
+		}
+	}
+	if document.Messages != nil {
+		for _, message := range document.Messages.Messages {
+			if matches(schema.Reference{Database: game.Localization, Name: message.Key}) {
+				spans = append(spans, message.KeySpan)
+			}
+			for _, other := range ws.Schema.ListTextReferences(message) {
+				if uses && matches(other) {
+					spans = append(spans, other.Span)
+				}
+			}
+		}
+	}
+	place, tree := ws.Locate(mods, path), document.Tree
+	return lo.Map(spans, func(span jomini.Span, _ int) Site {
+		line := tree.Lines.ToPosition(span.Start).Line
+		row := tree.Lines.LineSpan(line)
+		return Site{Place: place, Line: line + 1, Range: ToRange(tree.Src, tree.Lines, span), Text: tree.Src[row.Start:row.End]}
+	})
 }
 
 // findReference returns the reference a definition or a use makes at the given offset, with the span it is written at.
@@ -110,7 +174,7 @@ func (lsp *Service) References(path string, line, column int) ([]Site, error) {
 		return []Site{}, nil
 	}
 	occurrences := dropTranslations(ws, mods, place, listOccurrences(mods, place, reference))
-	return lo.Map(occurrences, func(site index.Site, _ int) Site { return LocateSite(ws, mods, site) }), nil
+	return locateSites(ws, mods, reference, occurrences, true), nil
 }
 
 // listOccurrences returns the sites of a name, its definitions and then its uses, as seen from the given file.
@@ -118,8 +182,9 @@ func listOccurrences(mods *index.Index, place workspace.Place, reference schema.
 	return slices.Concat(mods.ResolveLocal(reference, place.Position), mods.ListUses(reference.Database, reference.Name))
 }
 
-// PrepareRename returns the range of the name at a position. It returns nil if the position is on no name, if the
-// game defines the name too, or if no mod defines it.
+// PrepareRename returns the range of the name at a position. It returns nil
+// if the position is on no name, if nothing defines it, or if a file that
+// cannot be changed defines it too: one of the game's or of a Workshop mod.
 func (lsp *Service) PrepareRename(path string, line, column int) (*Range, error) {
 	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
@@ -131,17 +196,20 @@ func (lsp *Service) PrepareRename(path string, line, column int) (*Range, error)
 	if reference.Name == "" {
 		return nil, nil
 	}
-	// a name the game also defines cannot be renamed, since its definition in the game's files stays
+	// a name a read-only file also defines cannot be renamed, since that definition stays
 	sites := mods.ResolveLocal(reference, place.Position)
-	if len(sites) == 0 || lo.SomeBy(sites, func(site index.Site) bool { return mods.File(site).Origin == files.OriginVanilla }) {
+	if len(sites) == 0 || lo.SomeBy(sites, func(site index.Site) bool { return ws.Locate(mods, mods.File(site).Path).ReadOnly }) {
 		return nil, nil
 	}
 	renamable := ToRange(document.Tree.Src, document.Tree.Lines, span)
 	return &renamable, nil
 }
 
-// Rename returns the edits that give the name at a position a new name, grouped by the mod file they change. It returns
-// an error if the new name is empty, or if the name has no database and more than one database defines it.
+// Rename returns the edits that give the name at a position a new name,
+// grouped by the file they change. A file that cannot be changed, the game's
+// or a Workshop mod's, gets none. It returns an error if the new name is
+// empty, or if the name has no database and more than one database defines
+// it.
 func (lsp *Service) Rename(path string, line, column int, name string) (map[string][]Edit, error) {
 	if name == "" {
 		return nil, errors.New("a name cannot be empty")
@@ -161,16 +229,10 @@ func (lsp *Service) Rename(path string, line, column int, name string) (map[stri
 		}
 	}
 	edits := map[string][]Edit{}
-	for _, site := range listOccurrences(mods, place, reference) {
-		target := mods.File(site).Path
-		if mods.File(site).Origin == files.OriginVanilla {
-			continue
+	for _, site := range locateSites(ws, mods, reference, listOccurrences(mods, place, reference), true) {
+		if !site.Place.ReadOnly && site.Range != (Range{}) {
+			edits[site.Place.Path] = append(edits[site.Place.Path], Edit{Range: site.Range, Text: name})
 		}
-		modTree, err := ws.LoadTree(target)
-		if err != nil {
-			continue
-		}
-		edits[target] = append(edits[target], Edit{Range: ToRange(modTree.Src, modTree.Lines, mods.Occurrence(site).Span), Text: name})
 	}
 	return edits, nil
 }
@@ -270,40 +332,25 @@ func (lsp *Service) FindSymbols(query string, localization bool, limit int) ([]W
 	if localization {
 		role = index.RoleLocalizes
 	}
-	type match struct {
-		site index.Site
-		rank int
+	sites := mods.ListNamed(role, func(name string) int {
+		lower := strings.ToLower(name)
+		if !strings.Contains(lower, query) {
+			return -1
+		}
+		return files.ClassifyMatch(lower, query)
+	})
+	// a key is listed once, not once for each language
+	symbols, listed := []WorkspaceSymbol{}, map[string]bool{}
+	for _, site := range sites {
+		reference := mods.ToReference(site)
+		if len(symbols) == limit {
+			break
+		}
+		if localization && listed[reference.Name] {
+			continue
+		}
+		listed[reference.Name] = true
+		symbols = append(symbols, WorkspaceSymbol{Name: reference.Name, Database: reference.Database, Site: LocateSite(ws, mods, site)})
 	}
-	ranks := map[uint32]int{} // each name's rank, -1 for a name that does not contain the query
-	classify := func(name uint32) int {
-		if rank, ok := ranks[name]; ok {
-			return rank
-		}
-		lower := strings.ToLower(mods.Names.Texts[name])
-		ranks[name] = -1
-		if strings.Contains(lower, query) {
-			ranks[name] = files.ClassifyMatch(lower, query)
-		}
-		return ranks[name]
-	}
-	// the mods' files are searched first, and a key is listed once, not once for each language
-	var matches []match
-	listed := map[string]bool{}
-	for _, position := range slices.Concat(mods.ListOwnFiles(), ws.Install.ListOwnFiles()) {
-		for number, occurrence := range mods.Occurrences[position] {
-			name := mods.Names.Texts[occurrence.Name]
-			if occurrence.Role != role || classify(occurrence.Name) < 0 || localization && listed[name] {
-				continue
-			}
-			listed[name] = true
-			matches = append(matches, match{index.Site{File: position, Occurrence: int32(number)}, ranks[occurrence.Name]})
-		}
-	}
-	slices.SortStableFunc(matches, func(first, second match) int { return cmp.Compare(first.rank, second.rank) })
-	return lo.Map(matches[:min(limit, len(matches))], func(one match, _ int) WorkspaceSymbol {
-		reference := mods.ToReference(one.site)
-		return WorkspaceSymbol{
-			Name: reference.Name, Database: reference.Database, Site: LocateSite(ws, mods, one.site),
-		}
-	}), nil
+	return symbols, nil
 }

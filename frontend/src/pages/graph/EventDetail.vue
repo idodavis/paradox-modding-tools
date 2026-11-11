@@ -309,7 +309,7 @@ function show(place: Place, line: number): void {
               <template v-for="section in properties" :key="section.line">
                 <dt class="text-dimmed">{{ section.key }}</dt>
                 <dd class="min-w-0 wrap-anywhere">
-                  <ScriptSnippet :text="section.value" language="paradox-script" inline />
+                  <ScriptSnippet :text="section.value" :path="node.site.place.path" inline />
                 </dd>
               </template>
             </dl>
@@ -397,7 +397,12 @@ function show(place: Place, line: number): void {
                 @click="show(node.site.place, node.site.line)"
               />
             </div>
-            <ScriptSnippet :text="detail.source" :line="node.site.line" language="paradox-script" class="px-3 pb-1.5" />
+            <ScriptSnippet
+              :text="detail.source"
+              :line="node.site.line"
+              :path="node.site.place.path"
+              class="px-3 pb-1.5"
+            />
           </div>
         </div>
       </div>

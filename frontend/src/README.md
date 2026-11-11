@@ -83,8 +83,9 @@ Wails' runtime acts only on the window that calls it.
 - **Nuxt UI first.** A component that Nuxt UI has is used through its own props, such as `:items` for menus, tabs
   and selects, rather than built from `v-if` and `v-model`. Table filters live in `UTable`'s column state.
 - **One palette.** `styles/themes.css` is the only place colors are set: a block of tokens for each `data-theme`, a
-  dark and a light one per family, bridged to Nuxt UI's `--ui-*` variables. Code is colored by ten `--syn-<category>`
-  tokens.
+  dark and a light one per family, bridged to Nuxt UI's `--ui-*` variables. Code is colored by twelve `--syn-<category>`
+  tokens, which `lib/syntax.ts` maps each token type to; Go gives every key, value and piece of markup its type. A
+  theme may draw one of them in bold (`--syn-<category>-weight`).
 - **Dense where content fills the screen.** Editors, diffs and merges get the space; path and config chrome stays
   compact.
 

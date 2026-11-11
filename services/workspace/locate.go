@@ -3,6 +3,7 @@
 package workspace
 
 import (
+	"cmp"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -27,18 +28,39 @@ type Place struct {
 	IsDir    bool   `json:"isDir"`    // true for a folder
 	Drawable bool   `json:"drawable"` // true for a file Visual draws
 	Readme   string `json:"readme"`   // the path of the game's readme/info for its database; "" if none
+
+	// Language is the editor language the file is shown in, plain text for a
+	// format that has none of its own.
+	Language string `json:"language"`
+}
+
+// plainLanguage is the editor language of a file whose format has none of its
+// own, and scriptLanguage that of a file of plain script.
+const (
+	plainLanguage  = "plaintext"
+	scriptLanguage = "paradox-script"
+)
+
+// editorLanguages holds the editor language of each format that has one.
+var editorLanguages = map[files.Format]string{
+	files.FormatScript: scriptLanguage, files.FormatAsset: scriptLanguage, files.FormatFont: scriptLanguage,
+	files.FormatGFX: scriptLanguage, files.FormatGUI: "paradox-gui", files.FormatLocalization: "paradox-localization",
+	files.FormatReadme: "paradox-readme", files.FormatMarkdown: "markdown",
 }
 
 // Locate returns the place of the file with the given path, found in the given index of the mods. A path under none
 // of the roots gives a place with only its path, key and name.
 func (ws *Session) Locate(mods *index.Index, path string) Place {
-	place := Place{File: files.File{Path: path, Key: files.ToKey(path)}, Name: filepath.Base(path), Position: -1}
+	place := Place{
+		File: files.File{Path: path, Key: files.ToKey(path)}, Name: filepath.Base(path), Position: -1, Language: plainLanguage,
+	}
 	root, ok := mods.FindRoot(path)
 	if !ok {
 		return place
 	}
 	// a root's own folder has no rel
 	place.File, _ = files.NewFile(root, path)
+	place.Language = cmp.Or(editorLanguages[place.Format], plainLanguage)
 	if cut := strings.LastIndexByte(place.Rel, '/'); cut >= 0 {
 		place.Folder = place.Rel[:cut]
 	}

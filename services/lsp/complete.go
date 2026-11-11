@@ -394,9 +394,15 @@ func listFields(mods *index.Index, file int32, holder *schema.Context) []Complet
 // listOperators returns the given game's keywords that fit a block, grouped by class and ranked above the given floor.
 // A key written with a block is inserted with one.
 func listOperators(row *game.Game, commands map[string]*schema.Command, holder *schema.Context, floor int) []Completion {
-	fitting := lo.Filter(game.Keywords, func(keyword game.Keyword, _ int) bool {
-		return !strings.ContainsAny(keyword.Key, "/*<") && row.Matches(keyword.Games) &&
-			isOperatorFit(keyword, commands[keyword.Key], holder)
+	// a keyword the dumps declare is offered only where the block takes its
+	// command, so if is none of a trigger block's
+	fitting := slices.DeleteFunc(row.ListKeywords(cmp.Or(holder.Shape, game.ShapeUnknown), holder.Label), func(keyword game.Keyword) bool {
+		command := commands[keyword.Key]
+		if command == nil {
+			return false
+		}
+		_, allowed := holder.FindDeclaration(command)
+		return !allowed
 	})
 	classes := lo.Uniq(lo.Map(fitting, func(keyword game.Keyword, _ int) game.KeywordClass { return keyword.Class }))
 	slices.SortStableFunc(fitting, func(first, second game.Keyword) int {
@@ -426,18 +432,6 @@ func isBlockField(field *schema.Field) bool {
 	return field != nil && (field.Value.Value.Type == schema.ValueTypeBlock || len(field.Children) > 0 ||
 		field.Shape.IsStated() && isBlockShape(field.Shape.Value) ||
 		field.Vanilla.Blocks > 0 && field.Vanilla.Blocks == field.Vanilla.Count)
-}
-
-// isOperatorFit reports whether a language keyword, with the command of its key, fits the block of the context.
-func isOperatorFit(keyword game.Keyword, command *schema.Command, holder *schema.Context) bool {
-	switch {
-	case keyword.Holder != "":
-		return keyword.Holder == holder.Shape
-	case command != nil:
-		_, ok := holder.FindDeclaration(command)
-		return ok
-	}
-	return len(game.Shapes[holder.Shape].Allows) > 0
 }
 
 // listCommands returns the commands a block takes, in alphabetical order. The given function ranks a command.

@@ -219,6 +219,12 @@ export interface Place {
      * the path of the game's readme/info for its database; "" if none
      */
     "readme": string;
+
+    /**
+     * Language is the editor language the file is shown in, plain text for a
+     * format that has none of its own.
+     */
+    "language": string;
 }
 
 /**

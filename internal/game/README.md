@@ -35,7 +35,7 @@ flowchart TD
 | file | what it holds |
 |---|---|
 | `game.go` | The package doc, the three games' rows, `Source`, and the lookups on a game, such as `LookupGame` and `FindLocReplacement`. |
-| `databases.go` | The database tables, such as `Databases`, `Nestings`, `Precedences` and `References`, and the words their rows take, such as `Keep` and `ModePlace`. |
+| `databases.go` | The database tables, such as `Databases`, `Nestings`, `Precedences`, `References` and `DatabaseFields`, and the words their rows take, such as `Keep` and `ModePlace`. |
 | `language.go` | The language's own rules, such as `Shapes` and their key rules, `Keywords`, and the names script saves and reads back. |
 | `gui.go` | The rules for GUI files and the Visual view. |
 | `coat.go` | The rules for coats of arms. |
@@ -55,6 +55,9 @@ flowchart TD
 - **Reference**: a key path whose values name other definitions.
 - **Shape**: what a block holds, which decides how its keys are read.
 - **Key rule**: one way a block reads a key, such as a call, a command or a field. A shape tries its rules in order.
-- **Keyword**: a key of the language itself, with a fixed shape and a line for the hover card.
+- **Database field**: one field of a database's definitions with what no dump states about it, such as the weight
+  that an on_action's `random_events` entry is written under.
+- **Keyword**: a fixed word of the script language, such as `if`, `limit` or `add`, with the blocks it is written
+  in and what its own block holds. A command or a field of one database is no keyword.
 - **Declaration**: what the dumps declare a command as: an effect, a trigger or a link.
 - **Source**: where a fact the schema learned came from, ranked.

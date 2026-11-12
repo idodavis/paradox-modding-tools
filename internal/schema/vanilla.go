@@ -220,7 +220,7 @@ func (c *counter) countStatement(tree *jomini.Tree, statement int32, context *Co
 
 	case context.Defines && context.Category == CategoryDefinition && context.Definition.Mode == "":
 		next = holder{field: mirror(c.definitions, context.Database), keys: map[string]bool{}}
-		next.field.Vanilla.Definitions++
+		next.field.Vanilla.definitions++
 
 	case context.Defines && context.Category == CategoryDefinition, c.isFrame(context):
 		next.field = mirror(c.definitions, context.Database)
@@ -340,7 +340,7 @@ func (c *counter) countShape(field *Field, tree *jomini.Tree, statement int32, c
 	if context.Category == CategoryCall {
 		if proofs, defined := c.resolveProofs(key); defined {
 			if proofs != "" {
-				field.Vanilla.Proofs = addCounts(field.Vanilla.Proofs, map[string]int{proofs: 1})
+				field.Vanilla.proofs = addCounts(field.Vanilla.proofs, map[string]int{proofs: 1})
 			}
 
 			return
@@ -348,7 +348,7 @@ func (c *counter) countShape(field *Field, tree *jomini.Tree, statement int32, c
 	}
 
 	if shape := c.resolveKeyShape(key, context); shape != "" {
-		field.Vanilla.Shapes = addCounts(field.Vanilla.Shapes, map[game.Shape]int{shape: 1})
+		field.Vanilla.shapes = addCounts(field.Vanilla.shapes, map[game.Shape]int{shape: 1})
 	}
 }
 
@@ -359,12 +359,12 @@ func (c *counter) countShape(field *Field, tree *jomini.Tree, statement int32, c
 func (c *counter) resolveProofs(key string) (string, bool) {
 	var shapes []game.Shape
 	defined := false
-	for database, callable := range game.Callables {
-		if len(callable.Callers) == 0 || c.schema.lookupScripted(nil, database, key) == nil {
+	for _, database := range game.Called {
+		if c.schema.lookupScripted(nil, database, key) == nil {
 			continue
 		}
 
-		proves := callable.Proves
+		proves := c.schema.Databases[database].Declaration.Proves()
 		if defined {
 			shapes = slices.DeleteFunc(shapes, func(shape game.Shape) bool { return !slices.Contains(proves, shape) })
 		} else {
@@ -445,11 +445,10 @@ func (c *counter) resolveCommandShape(key string, command *Definition) game.Shap
 	}
 
 	effects, triggers := c.schema.Databases[game.DumpEffects].Definitions, c.schema.Databases[game.DumpTriggers].Definitions
-	_, modifier := c.schema.Modifiers[key]
 	switch {
 	case command.Database == game.DumpLinks, effects[command.Key] != nil && triggers[command.Key] != nil:
 		return ""
-	case modifier, effects[key] == nil && triggers[key] == nil:
+	case c.schema.declaresModifier(key), effects[key] == nil && triggers[key] == nil:
 		return shapeAmbiguous
 	case command.Database == game.DumpTriggers:
 		return game.ShapeTriggers
@@ -479,7 +478,7 @@ func (c *counter) isUnexplained(key string, context *Context) bool {
 // else explains: modifiers, fields, or shapeAmbiguous for a modifier that is
 // a command too.
 func (c *counter) resolveFieldShape(key string) game.Shape {
-	_, modifier := c.schema.Modifiers[key]
+	modifier := c.schema.declaresModifier(key)
 	command := c.schema.FindCommand(key) != nil
 	switch {
 	case modifier && command:
@@ -511,13 +510,13 @@ func (c *counter) countField(parent holder, tree *jomini.Tree, statement int32, 
 	field.Vanilla.Count++
 	if parent.keys != nil && !parent.keys[key] {
 		parent.keys[key] = true
-		field.Vanilla.Definitions++
+		field.Vanilla.definitions++
 	}
 
 	if current.IsBlock() {
 		field.Vanilla.Blocks++
 		if c.isColor(tree, statement, rawKey) {
-			field.Vanilla.Colors++
+			field.Vanilla.colors++
 		}
 	}
 
@@ -630,11 +629,11 @@ func (f *Field) add(counted *Field) {
 func (v *Vanilla) add(counted Vanilla) {
 	v.Count += counted.Count
 	v.Blocks += counted.Blocks
-	v.Colors += counted.Colors
-	v.Definitions += counted.Definitions
+	v.colors += counted.colors
+	v.definitions += counted.definitions
 	v.Values = addCounts(v.Values, counted.Values)
-	v.Shapes = addCounts(v.Shapes, counted.Shapes)
-	v.Proofs = addCounts(v.Proofs, counted.Proofs)
+	v.shapes = addCounts(v.shapes, counted.shapes)
+	v.proofs = addCounts(v.proofs, counted.proofs)
 }
 
 // resolveCounts gives the schema what the count found: fields with their
@@ -658,11 +657,11 @@ func (c *counter) resolveCounts() {
 	}
 
 	for _, database := range slices.Sorted(maps.Keys(c.defined)) {
-		c.schema.buildDatabase(row, database, game.Database{})
+		c.schema.buildDatabase(row, database, game.Declaration{})
 	}
 
 	for database, counted := range c.definitions {
-		c.schema.buildDatabase(row, database, game.Database{})
+		c.schema.buildDatabase(row, database, game.Declaration{})
 		c.schema.Databases[database].Field.add(counted)
 	}
 
@@ -672,7 +671,24 @@ func (c *counter) resolveCounts() {
 		c.resolvePrefix(prefix, labels)
 	}
 
+	for _, database := range c.schema.Databases {
+		demoteRequired(database.Field)
+	}
+
 	c.schema.UnlistedCalls = c.unlisted
+}
+
+// demoteRequired settles which keys the definitions of a database must
+// write, given the field of its definitions. A key that a firm source calls
+// required is not required of a mod where a definition the game ships
+// leaves it out: its claim then stands as the game's own files show it,
+// which accuses nothing.
+func demoteRequired(root *Field) {
+	for _, field := range root.Children {
+		if field.Required.Value == RequirementAlways && field.Vanilla.definitions != root.Vanilla.definitions {
+			field.Required.Source = game.SourceVanilla
+		}
+	}
 }
 
 // resolvePatterns finds the command patterns. A database makes one where two
@@ -706,7 +722,7 @@ func (c *counter) resolvePatterns() {
 	for key, commands := range members {
 		// one command for each definition: a name written twice, or in an
 		// entry mode, makes no pattern
-		if len(commands) < 2 || len(commands) != c.schema.Databases[key.database].Field.Vanilla.Definitions {
+		if len(commands) < 2 || len(commands) != c.schema.Databases[key.database].Field.Vanilla.definitions {
 			continue
 		}
 
@@ -847,7 +863,7 @@ func (c *counter) resolveClaims(field *Field, held bool) {
 
 	switch {
 	case vanilla.Count == 0: // a command's argument counts its values but not its writes
-	case vanilla.Blocks == vanilla.Count && vanilla.Colors == vanilla.Count:
+	case vanilla.Blocks == vanilla.Count && vanilla.colors == vanilla.Count:
 		field.Value.resolve(Expected{Type: ValueTypeColor}, game.SourceVanilla)
 	case vanilla.Blocks == vanilla.Count:
 		field.Value.resolve(Expected{Type: ValueTypeBlock}, game.SourceVanilla)
@@ -871,11 +887,11 @@ func (c *counter) resolveClaims(field *Field, held bool) {
 // in, value winning over triggers and effects. It returns game.ShapeUnknown
 // if the shapes disagree, and "" if the blocks tell nothing.
 func resolveShapeClaim(vanilla Vanilla) game.Shape {
-	_, valued := vanilla.Shapes[game.ShapeValue]
+	_, valued := vanilla.shapes[game.ShapeValue]
 	var shapes []game.Shape
 	switch {
-	case len(vanilla.Proofs) > 0:
-		for proofs := range vanilla.Proofs {
+	case len(vanilla.proofs) > 0:
+		for proofs := range vanilla.proofs {
 			var allowed []game.Shape
 			for shape := range strings.FieldsSeq(proofs) {
 				allowed = append(allowed, game.Shape(shape))
@@ -894,8 +910,8 @@ func resolveShapeClaim(vanilla Vanilla) game.Shape {
 			shapes = slices.DeleteFunc(shapes, func(shape game.Shape) bool { return shape == game.ShapeValue })
 		}
 
-	case len(vanilla.Shapes) > 0:
-		shapes = slices.Sorted(maps.Keys(vanilla.Shapes))
+	case len(vanilla.shapes) > 0:
+		shapes = slices.Sorted(maps.Keys(vanilla.shapes))
 		if valued {
 			// a value block takes triggers and effects too
 			shapes = slices.DeleteFunc(shapes, func(shape game.Shape) bool {
@@ -1043,8 +1059,8 @@ func hasAll(values map[string]int, sets ...map[string]bool) bool {
 func (c *counter) isNamedFor(label string, others []string) bool {
 	database := c.schema.Databases[label]
 
-	return database != nil && (database.Row.Target != "" && slices.Contains(others, database.Row.Target) ||
-		database.Row.Mirrors && len(others) > 1)
+	return database != nil && (database.Declaration.Target != "" && slices.Contains(others, database.Declaration.Target) ||
+		database.Declaration.Mirrors && len(others) > 1)
 }
 
 // isLiteral reports whether a value is one of the language's own: a number,

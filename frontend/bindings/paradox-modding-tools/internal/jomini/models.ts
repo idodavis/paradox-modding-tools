@@ -12,6 +12,17 @@ export interface RGBA {
 }
 
 /**
+ * Range is a span as an editor counts it: lines and columns from one, the
+ * column in UTF-16 code units, the end exclusive.
+ */
+export interface Range {
+    "startLineNumber": number;
+    "startColumn": number;
+    "endLineNumber": number;
+    "endColumn": number;
+}
+
+/**
  * Span is a half-open range of bytes in a text.
  */
 export interface Span {

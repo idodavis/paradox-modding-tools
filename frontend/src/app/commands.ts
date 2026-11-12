@@ -15,7 +15,7 @@ import type { Fix } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import { confirm, copyText, toast } from "../lib/feedback";
 import { findModel, save, saveUnsaved, unsavedModels, type Model } from "../pages/ide/editor/models";
-import { copiesQuery, loadQuery, placeQuery, precedenceQuery } from "../queries";
+import { copiesQuery, loadQuery, placeQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { canSplit, useEditorStore, type Tab } from "../stores/editor";
 import { STAGE, UNSTAGE, useGitStore } from "../stores/git";
@@ -687,13 +687,9 @@ export function overrideEntry(place: Place, line: number, column: number, text: 
             // Saving puts the copy in the index, so the entry cannot be overridden into the mod a second time.
             const model = findModel(copy.key);
             if (model) await save(model);
-            const gameId = useWorkspaceStore().active()?.game?.id ?? "";
-            const precedence = await loadQuery(
-              precedenceQuery({ gameId, database: copy.database, folder: copy.folder }),
-            );
             toast?.add({
               title: `${text || "The entry"} copied into ${copy.rel}`,
-              description: precedence,
+              description: fix.note,
               color: "success",
             });
           } finally {

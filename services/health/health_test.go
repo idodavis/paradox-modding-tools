@@ -17,6 +17,7 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -409,8 +410,10 @@ func logCounts(t *testing.T, report Report) {
 	}
 }
 
-// compareDiagnostics fails the test if the report's counts of the codes the editor gives differ from what the editor
-// finds. The codes only Health's report finds are left out.
+// compareDiagnostics fails the test if the report's counts of the codes the
+// editor gives differ from what the editor finds. The codes only Health's
+// report finds are left out, and so is a priority tie that the report shows
+// as an undecided contest.
 func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 	t.Helper()
 	ws, err := hlt.Workspace.Session()
@@ -418,6 +421,12 @@ func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 		t.Fatal(err)
 	}
 	mods := ws.Mods.Load()
+	undecided := map[string]bool{}
+	for _, finding := range listFindings(report) {
+		if finding.Code == undecidedCode {
+			undecided[finding.Facts["database"]+":"+finding.Facts["name"]] = true
+		}
+	}
 	want := map[string]int{}
 	for _, file := range mods.Files[len(ws.Install.Files):] {
 		judged := file.Format.IsScript() || file.Format == files.FormatLocalization || file.Format == files.FormatDescriptor
@@ -426,7 +435,10 @@ func compareDiagnostics(t *testing.T, hlt *Service, report Report) {
 		}
 		diagnostics, _ := lsp.DiagnoseFile(ws, mods, file.Path)
 		for _, diagnostic := range diagnostics {
-			want[diagnostic.Code]++
+			tied := diagnostic.Code == index.ProblemPriority && undecided[diagnostic.Facts["database"]+":"+diagnostic.Facts["name"]]
+			if !tied {
+				want[diagnostic.Code]++
+			}
 		}
 	}
 	got := map[string]int{}

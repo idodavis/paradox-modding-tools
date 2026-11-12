@@ -168,12 +168,6 @@ export const modFolderQuery = defineQueryOptions(
     query: () => workspace.ResolveModFolder(installId, dir, name),
   }),
 );
-export const precedenceQuery = defineQueryOptions(
-  ({ gameId, database, folder }: { gameId: string; database: string; folder: string }) => ({
-    key: ["workspace", "precedence", gameId, database, folder],
-    query: () => workspace.DescribePrecedence(gameId, database, folder),
-  }),
-);
 
 export const drawablesQuery = defineQueryOptions((path: string) => ({
   key: [...keys.draw(path), "drawables"],
@@ -252,9 +246,9 @@ export const symbolsQuery = defineQueryOptions(({ query, localization }: { query
   query: () => lsp.FindSymbols(query, localization, 50),
 }));
 export const textColorsQuery = defineQueryOptions(
-  ({ path, format, text }: { path: string; format: Format; text: string }) => ({
-    key: [...keys.lsp, "colors", path, format, text],
-    query: () => lsp.ColorText(path, format, text),
+  ({ path, format, text, line }: { path: string; format: Format; text: string; line: number }) => ({
+    key: [...keys.lsp, "colors", path, format, text, line],
+    query: () => lsp.ColorText(path, format, text, line),
   }),
 );
 

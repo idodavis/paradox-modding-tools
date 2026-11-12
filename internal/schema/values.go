@@ -96,8 +96,9 @@ func isSavedName(context *Context, span jomini.Span) bool {
 }
 
 // listNames returns the references a plain value makes, in this order: a
-// name of each database its field claims, of the database its place names
-// and of the one its block's shape gives a text; an event where it is shaped
+// name of each database its field claims, of its keyword's database, of the
+// database its place names and of the one its block's shape gives a text; an
+// event where it is shaped
 // like an event id; a script value; and the names after its links' prefixes.
 // A math keyword's value that is a command's name with an argument in
 // parentheses makes the references of its argument alone.
@@ -112,6 +113,13 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 	}
 
 	claim, databases := w.listClaimed(context, text)
+
+	// a switch's trigger may be a trigger's name, as has_culture is, or a
+	// link
+	if keyword := context.Keyword; keyword != nil && keyword.Names != "" && w.schema.LookupDefinition(keyword.Names, text) != nil {
+		databases = append(databases, keyword.Names)
+	}
+
 	placed, folder, isPlaced := w.findPlace(context, statement, level, text)
 	if isPlaced {
 		databases = append(databases, placed)
@@ -296,10 +304,20 @@ func (w *walker) findPlace(context *Context, statement int32, level int, text st
 		keys = slices.Concat(keys, []string{key})
 	}
 
-	for _, row := range w.row.ListReferences() {
-		if row.Database == "" && w.file.Format == files.FormatGUI && key == row.KeyPath ||
-			row.Database != "" && row.Database == context.Database && jomini.MatchKeyPath(row.KeyPath, keys) {
-			return cmp.Or(row.Target, row.Database), row.Folder, true
+	// a GUI file's widgets name definitions by one key at any depth
+	if widgets := w.schema.Databases[game.GUI.WidgetDatabase]; w.file.Format == files.FormatGUI && widgets != nil {
+		for _, row := range widgets.Declaration.References {
+			if key == row.KeyPath {
+				return row.Target, row.Folder, true
+			}
+		}
+	}
+
+	if database := w.schema.Databases[context.Database]; database != nil {
+		for _, row := range database.Declaration.References {
+			if jomini.MatchKeyPath(row.KeyPath, keys) {
+				return cmp.Or(row.Target, database.Name), row.Folder, true
+			}
 		}
 	}
 
@@ -310,7 +328,7 @@ func (w *walker) findPlace(context *Context, statement int32, level int, text st
 	}
 
 	if database := w.schema.Databases[context.Database]; database != nil && (!context.Defines || !context.Definition.Alias) {
-		if target, isAlias := database.Row.Aliases[key]; isAlias {
+		if target, isAlias := database.Declaration.Aliases[key]; isAlias {
 			return cmp.Or(target, database.Name), "", true
 		}
 	}
@@ -372,7 +390,7 @@ func (w *walker) findPictureDatabase(database string, keys []string) (string, bo
 func (w *walker) hasNamespace(id string) bool {
 	namespace, _, _ := strings.Cut(id, ".")
 
-	return w.schema.Namespaces[namespace] || w.namespaces[namespace]
+	return w.schema.lookupScripted(w.winners, game.EventNamespaces, namespace) != nil
 }
 
 // allowsUndefined reports whether a reference to the given database needs
@@ -380,7 +398,7 @@ func (w *walker) hasNamespace(id string) bool {
 func (w *walker) allowsUndefined(label string) bool {
 	database := w.schema.Databases[label]
 
-	return database != nil && database.Row.AllowsUndefined
+	return database != nil && database.Declaration.AllowsUndefined
 }
 
 // listPrefixed returns the references a chain of links makes after prefixes
@@ -412,18 +430,18 @@ func (w *walker) listPrefixed(chain string, base int) []Reference {
 // such as the group NAI and the define NAI|X for define:NAI|X.
 func (w *walker) listLabelReferences(database, label string, start int) []Reference {
 	owner := w.schema.Databases[database]
-	if owner == nil || owner.Row.Separator == "" {
+	if owner == nil || owner.Declaration.Separator == "" {
 		return []Reference{{Database: database, Name: label, Span: jomini.Span{Start: start, End: start + len(label)}}}
 	}
 
-	holder, rest, _ := strings.Cut(label, owner.Row.Separator)
+	holder, rest, _ := strings.Cut(label, owner.Declaration.Separator)
 	references := []Reference{{Database: database, Name: holder, Span: jomini.Span{Start: start, End: start + len(holder)}}}
-	key, _, _ := strings.Cut(rest, owner.Row.Separator)
+	key, _, _ := strings.Cut(rest, owner.Declaration.Separator)
 	if key == "" {
 		return references
 	}
 
-	keyStart := start + len(holder) + len(owner.Row.Separator)
+	keyStart := start + len(holder) + len(owner.Declaration.Separator)
 	for _, nested := range owner.Nested {
 		references = append(references, Reference{
 			Database: nested, Name: w.schema.JoinNested(nested, holder, key),

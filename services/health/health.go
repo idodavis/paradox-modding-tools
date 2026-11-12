@@ -284,7 +284,7 @@ func (hlt *Service) makeReport(ws *workspace.Session, order []string) (Report, e
 			defined = append(defined, reference)
 		}
 	}
-	paths, declared := listShippedPaths(ws, compatible), listDeclared(ws)
+	paths, declared := listShippedPaths(compatible), listDeclared(ws)
 	lists := []func() []Finding{
 		func() []Finding {
 			return lo.FlatMap(defined, func(reference schema.Reference, _ int) []Finding {
@@ -306,7 +306,7 @@ func (hlt *Service) makeReport(ws *workspace.Session, order []string) (Report, e
 		group.Go(func() { results[position] = list() })
 	}
 	group.Wait()
-	findings, pairs := slices.Concat(results...), record.IgnoredPairs
+	findings, pairs := dropRepeatedTies(slices.Concat(results...)), record.IgnoredPairs
 	resolveFindings(ws, findings, ids, declared, pairs)
 	pairFindings := listPairFindings(ws, compatible, findings, pairs)
 	report := groupReport(slices.Concat(findings, pairFindings), ids, hlt.listExternal())
@@ -317,6 +317,21 @@ func (hlt *Service) makeReport(ws *workspace.Session, order []string) (Report, e
 		slices.SortFunc(report.Changes, compareChanges)
 	}
 	return report, nil
+}
+
+// dropRepeatedTies returns the findings without a file's priority tie for
+// a name that an undecided contest reports, so that one tie between several
+// mods is shown once, with every mod it lies in.
+func dropRepeatedTies(findings []Finding) []Finding {
+	undecided := map[string]bool{}
+	for _, finding := range findings {
+		if finding.Code == undecidedCode {
+			undecided[finding.Facts["database"]+":"+finding.Facts["name"]] = true
+		}
+	}
+	return slices.DeleteFunc(findings, func(finding Finding) bool {
+		return finding.Code == index.ProblemPriority && undecided[finding.Facts["database"]+":"+finding.Facts["name"]]
+	})
 }
 
 // resolveFindings grades the contests and shared localization keys of a load order, and lists the pairs of mods each
@@ -510,6 +525,9 @@ func (hlt *Service) ListOverview() ([]Overview, error) {
 	positions := mods.ListOwnFiles()
 	return lo.Map(*ws.Order.Load(), func(mod workspace.Mod, _ int) Overview {
 		overview := Overview{Mod: mod.ID, Counts: map[string]int{}, Judged: lo.CoalesceSliceOrEmpty(ws.ListDependencies(mod.ID))}
+
+		// a key counts once, however many languages the mod writes it in
+		keys := map[uint32]bool{}
 		for _, position := range positions {
 			if mods.Files[position].Origin != mod.ID {
 				continue
@@ -518,10 +536,15 @@ func (hlt *Service) ListOverview() ([]Overview, error) {
 			for database, count := range mods.CountDefinitions(position) {
 				overview.Counts[game.DescribeDefinition(database, true)] += count
 			}
-			overview.Messages += lo.CountBy(mods.Occurrences[position], func(occurrence index.Occurrence) bool {
-				return occurrence.Role == index.RoleLocalizes
-			})
+			for _, occurrence := range mods.Occurrences[position] {
+				if occurrence.Role == index.RoleLocalizes {
+					keys[occurrence.Name] = true
+				}
+			}
 		}
+
+		overview.Messages = len(keys)
+
 		return overview
 	}), nil
 }
@@ -650,8 +673,7 @@ func ListScaffolds(mods *index.Index, mod workspace.Mod, language string) map[st
 func listDefinitions(ws *workspace.Session, mods *index.Index) []index.Site {
 	return listModSites(mods, func(site index.Site) bool {
 		_, known := ws.Schema.Databases[mods.ToReference(site).Database]
-		occurrence := mods.Occurrence(site)
-		return occurrence.Role == index.RoleDefines && !occurrence.Alias && known
+		return mods.Occurrence(site).Own && known
 	})
 }
 
@@ -730,7 +752,7 @@ func isMod(mods *index.Index, site index.Site) bool {
 // listShippedPaths returns the paths the mods ship in the folders the game reads, each once, sorted without regard to
 // case. Files that differ only in their stage folder share a path. A file the game never reads, which hides no other,
 // is left out.
-func listShippedPaths(ws *workspace.Session, mods *index.Index) []string {
+func listShippedPaths(mods *index.Index) []string {
 	var paths []string
 	groups := map[string]bool{} // by the key of the first file at a path
 	for _, position := range mods.ListOwnFiles() {
@@ -739,7 +761,7 @@ func listShippedPaths(ws *workspace.Session, mods *index.Index) []string {
 		if ok {
 			copies = append(copies, loaded)
 		}
-		if !isGameFolder(ws, file.Rel) ||
+		if !mods.IsGameFolder(position) ||
 			!slices.ContainsFunc(copies, func(other files.File) bool { return other.Key == file.Key }) || groups[copies[0].Key] {
 			continue
 		}
@@ -770,7 +792,7 @@ func makeFileSites(ws *workspace.Session, mods *index.Index, path string) []lsp.
 // makeFileSite returns the finding site of a whole file, at its first line. It is kept if the game loads the file.
 func makeFileSite(ws *workspace.Session, mods *index.Index, position int32) lsp.Site {
 	return lsp.Site{
-		Place: ws.Locate(mods, mods.Files[position].Path), Line: 1, Range: lsp.ToLineRange(1),
+		Place: ws.Locate(mods, mods.Files[position].Path), Line: 1, Range: jomini.ToLineRange(1),
 		Kept: mods.IsLoaded(position),
 		Defines: lo.Map(listFileDefinitions(mods, position), func(occurrence index.Occurrence, _ int) string {
 			return mods.Names.Texts[occurrence.Name]
@@ -781,10 +803,7 @@ func makeFileSite(ws *workspace.Session, mods *index.Index, position int32) lsp.
 // listFileDefinitions returns the occurrences that define the names of a file, in the order written. A name the file
 // saves while the game runs, such as a saved scope, is none of them.
 func listFileDefinitions(mods *index.Index, position int32) []index.Occurrence {
-	return lo.Filter(mods.Occurrences[position], func(occurrence index.Occurrence, _ int) bool {
-		return occurrence.Role == index.RoleDefines && !occurrence.Alias &&
-			!slices.Contains(game.Links, mods.Databases.Texts[occurrence.Database])
-	})
+	return lo.Filter(mods.Occurrences[position], func(occurrence index.Occurrence, _ int) bool { return occurrence.Own })
 }
 
 // listUnused returns a finding for each mod whose copies of a name the game never uses because it keeps its own. Each
@@ -798,7 +817,7 @@ func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, wi
 		if lo.SomeBy(byMod[mod], func(site index.Site) bool { return mods.ResolveSite(winner, site).Kept }) {
 			continue
 		}
-		facts := lsp.DescribeReference(reference)
+		facts := index.DescribeReference(reference)
 		facts["winner"], facts["beaten"] = ws.DescribeMod(mods.File(winner.Site).Origin), ws.DescribeMod(mod)
 		own := lo.Filter(sites, func(site index.Site, _ int) bool { return !isMod(mods, site) || mods.File(site).Origin == mod })
 		findings = append(findings, makeFinding(mods, "unused-copy", facts, lsp.MakeSites(ws, mods, own, &winner)))
@@ -841,9 +860,7 @@ func listRemovedUses(ws *workspace.Session, mods *index.Index, path string) ([]U
 	seen := map[schema.Reference]bool{}
 	for number, occurrence := range mods.Occurrences[position] {
 		reference := mods.ToReference(index.Site{File: position, Occurrence: int32(number)})
-		if occurrence.Role != index.RoleDefines || occurrence.Alias || occurrence.Local || seen[reference] ||
-			slices.Contains(game.Links, reference.Database) ||
-			len(listLoaded(mods, mods.Resolve(reference))) > 0 {
+		if !occurrence.Own || occurrence.Local || seen[reference] || len(listLoaded(mods, mods.Resolve(reference))) > 0 {
 			continue
 		}
 		seen[reference] = true
@@ -881,10 +898,10 @@ func listDescriptors(ws *workspace.Session, mods *index.Index) []Finding {
 		if descriptor.Path == "" {
 			continue
 		}
-		sites := []lsp.Site{{Place: ws.Locate(mods, descriptor.Path), Line: 1, Range: lsp.ToLineRange(1)}}
+		sites := []lsp.Site{{Place: ws.Locate(mods, descriptor.Path), Line: 1, Range: jomini.ToLineRange(1)}}
 		for _, dependency := range descriptor.Dependencies {
 			if _, ok := workspace.FindMod(order, dependency); !ok {
-				facts := lsp.DescribeReference(schema.Reference{Name: cmp.Or(dependency.Title, dependency.ID)})
+				facts := index.DescribeReference(schema.Reference{Name: cmp.Or(dependency.Title, dependency.ID)})
 				facts["mod"] = ws.DescribeMod(mod.ID)
 				findings = append(findings, makeFinding(mods, "missing-dependency", facts, sites))
 			}
@@ -913,7 +930,7 @@ func listUnmounted(ws *workspace.Session, mods *index.Index) []Finding {
 	}
 	return lo.Map(order, func(key folder, _ int) Finding {
 		facts := map[string]string{"name": key.name, "count": strconv.Itoa(len(positions[key]))}
-		site := lsp.Site{Place: ws.Locate(mods, mods.Files[positions[key][0]].Path), Line: 1, Range: lsp.ToLineRange(1)}
+		site := lsp.Site{Place: ws.Locate(mods, mods.Files[positions[key][0]].Path), Line: 1, Range: jomini.ToLineRange(1)}
 		return makeFinding(mods, "unmounted-folder", facts, []lsp.Site{site})
 	})
 }
@@ -938,7 +955,7 @@ func listCoverage(ws *workspace.Session, mods *index.Index, messages []index.Sit
 			if language == game.BaseLanguage {
 				continue
 			}
-			facts := lsp.DescribeReference(schema.Reference{Database: game.Localization, Name: language})
+			facts := index.DescribeReference(schema.Reference{Database: game.Localization, Name: language})
 			facts["mod"] = ws.DescribeMod(mod.ID)
 			facts["have"] = strconv.Itoa(len(base) - len(listUntranslated(mods, byLanguage, language)))
 			facts["of"] = strconv.Itoa(len(base))
@@ -982,7 +999,8 @@ func listDiagnostics(ws *workspace.Session, mods *index.Index) []Finding {
 		place := ws.Locate(mods, target)
 		for _, diagnostic := range diagnostics[position] {
 			site := lsp.Site{Place: place, Line: diagnostic.Range.StartLine, Range: diagnostic.Range}
-			finding := makeFinding(mods, diagnostic.Code, diagnostic.Facts, []lsp.Site{site})
+			// the facts are the kept problem's own, which a finding may add to
+			finding := makeFinding(mods, diagnostic.Code, maps.Clone(diagnostic.Facts), []lsp.Site{site})
 			finding.Defined, finding.Diagnosed = diagnostic.Defined, true
 			findings = append(findings, finding)
 		}

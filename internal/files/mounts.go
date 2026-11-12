@@ -40,6 +40,10 @@ type Mounts struct {
 	// origins holds the ids of the mods Narrow kept. It is nil for mounts
 	// that answer for every mod.
 	origins map[string]struct{}
+
+	// gameFolders holds the first folder of each of the game's own files,
+	// from the file's stage and in lower case.
+	gameFolders map[string]struct{}
 }
 
 // placement is where the game mounts one file.
@@ -124,12 +128,22 @@ func NewMounts(roots []Root, list []File) *Mounts {
 	mounts := &Mounts{
 		Roots: roots, Files: list, rootKeys: listRootKeys(roots),
 		byKey: make(map[string]int32, len(list)), groups: make(map[string][]int32, len(list)),
-		placements: make([]placement, len(list)),
+		placements: make([]placement, len(list)), gameFolders: map[string]struct{}{},
 	}
 
 	for position, file := range list {
 		mounts.byKey[file.Key] = int32(position)
 		mounts.buildGroup(int32(position))
+
+		// a file listed from a root that holds a root of its own, as the
+		// game's folder holds each DLC's, has its path from the outer one and
+		// names no folder of the game's
+		place := mounts.placements[position]
+		folder, _, nested := strings.Cut(place.key, "/")
+		inner := mounts.rootKeys[place.root]+strings.ToLower(file.Rel) == file.Key
+		if nested && inner && file.Origin == OriginVanilla {
+			mounts.gameFolders[folder] = struct{}{}
+		}
 	}
 
 	return mounts
@@ -199,29 +213,84 @@ func (m *Mounts) FindRoot(path string) (Root, bool) {
 	return m.Roots[position], true
 }
 
+// Hiding is why the game does not read a file. The zero Hiding is a file
+// nothing hides.
+type Hiding string
+
+// The ways a file is hidden from the game.
+const (
+	// HidingShadowed is a file at the same path later in the load order,
+	// which the game reads in its place.
+	HidingShadowed Hiding = "shadowed"
+
+	// HidingDropped is a mod's replace_path that names the file's folder.
+	HidingDropped Hiding = "dropped"
+
+	// HidingUnmounted is a file the game never mounts.
+	HidingUnmounted Hiding = "unmounted"
+)
+
 // FindLoaded returns the file the game reads at a path from a root, and the
 // files it hides, the ones a replace_path drops among them. It returns false
 // if the game reads none.
 func (m *Mounts) FindLoaded(rel string) (loaded File, hidden []File, ok bool) {
-	var kept []File
+	key := m.toGroupKey(rel)
+	winner, ok := m.lookupLoaded(key)
 
-	for _, position := range m.groups[m.toGroupKey(rel)] {
-		if !m.IsListed(position) || m.IsUnmounted(position) || !m.Covers(position) {
-			continue
-		}
-
-		if _, dropped := m.FindReplacingMod(position); dropped {
+	for _, position := range m.groups[key] {
+		if position != winner && m.isMounted(position) {
 			hidden = append(hidden, m.Files[position])
-		} else {
-			kept = append(kept, m.Files[position])
 		}
 	}
 
-	if len(kept) == 0 {
+	if !ok {
 		return File{}, hidden, false
 	}
 
-	return kept[len(kept)-1], append(hidden, kept[:len(kept)-1]...), true
+	return m.Files[winner], hidden, true
+}
+
+// lookupLoaded returns the position in Files of the file the game reads
+// among the files of a group, given the group's key: the last in load order
+// that is mounted and that no replace_path drops. It returns false if the
+// game reads none.
+func (m *Mounts) lookupLoaded(key string) (int32, bool) {
+	for _, position := range slices.Backward(m.groups[key]) {
+		if _, dropped := m.FindReplacingMod(position); !dropped && m.isMounted(position) {
+			return position, true
+		}
+	}
+
+	return -1, false
+}
+
+// isMounted reports whether the file at a position can be read at all: it is
+// still listed, the game mounts it, and the mounts answer for it.
+func (m *Mounts) isMounted(position int32) bool {
+	return m.IsListed(position) && !m.IsUnmounted(position) && m.Covers(position)
+}
+
+// FindHiding returns why the game does not read the file at a position, and
+// the root of the mod that hides it. It returns "" for a file the game reads,
+// and for one that is no longer listed or that the mounts do not answer for.
+// An unmounted file has no hider.
+func (m *Mounts) FindHiding(position int32) (Hiding, Root) {
+	switch {
+	case m.IsUnmounted(position):
+		return HidingUnmounted, Root{}
+	case !m.isMounted(position):
+		return "", Root{}
+	}
+
+	if mod, dropped := m.FindReplacingMod(position); dropped {
+		return HidingDropped, mod
+	}
+
+	if winner, ok := m.lookupLoaded(m.placements[position].key); ok && winner != position {
+		return HidingShadowed, m.Roots[m.placements[winner].root]
+	}
+
+	return "", Root{}
 }
 
 // toGroupKey returns the key of the group a path from a root belongs to: the
@@ -321,16 +390,25 @@ func replaces(root Root, folder string) bool {
 
 // IsLoaded reports whether the game reads the file at a position in Files.
 func (m *Mounts) IsLoaded(position int32) bool {
-	file := m.Files[position]
-	loaded, _, ok := m.FindLoaded(file.Rel)
+	winner, ok := m.lookupLoaded(m.placements[position].key)
 
-	return ok && loaded.Key == file.Key
+	return ok && winner == position
 }
 
 // IsUnmounted reports whether the game never mounts the file at a position,
 // as for a mod's file outside the stage folders of a game that has them.
 func (m *Mounts) IsUnmounted(position int32) bool {
 	return m.placements[position].unmounted
+}
+
+// IsGameFolder reports whether the game's own files lie under the first
+// folder of the path of the file at a position, from the file's stage. A
+// file in no folder lies under none.
+func (m *Mounts) IsGameFolder(position int32) bool {
+	folder, _, nested := strings.Cut(m.placements[position].key, "/")
+	_, ok := m.gameFolders[folder]
+
+	return nested && ok
 }
 
 // ListImages returns the image files the game reads below a folder, given as

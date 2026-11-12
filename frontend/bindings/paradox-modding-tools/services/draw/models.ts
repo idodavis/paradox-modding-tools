@@ -6,13 +6,13 @@
 import * as game$0 from "../../internal/game/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as jomini$0 from "../../internal/jomini/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as loc$0 from "../../internal/loc/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as texture$0 from "../../internal/texture/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as lsp$0 from "../lsp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
@@ -64,7 +64,7 @@ export interface Choice {
 export interface Coat {
     "name": string;
     "layers": Layer[] | null;
-    "range": lsp$0.Range;
+    "range": jomini$0.Range;
     "place": workspace$0.Place;
 
     /**
@@ -219,7 +219,7 @@ export interface Instance {
      * its place among every instance of its coat in the order they draw, from 0
      */
     "rank": number;
-    "range": lsp$0.Range;
+    "range": jomini$0.Range;
 }
 
 /**
@@ -259,7 +259,7 @@ export interface Layer {
     /**
      * where the emblem's mask is written; zero where it writes none
      */
-    "maskRange": lsp$0.Range;
+    "maskRange": jomini$0.Range;
 
     /**
      * the pattern's color regions an emblem shows in; none means all of them
@@ -301,7 +301,7 @@ export interface Layer {
      */
     "instances": Instance[] | null;
     "sub"?: Coat | null;
-    "range": lsp$0.Range;
+    "range": jomini$0.Range;
 
     /**
      * the file the layer is written in
@@ -419,7 +419,7 @@ export interface Property {
      * what the game reads: a constant, an expression or a GetDefine call is worked out, also inside a block
      */
     "value": string;
-    "range": lsp$0.Range;
+    "range": jomini$0.Range;
 
     /**
      * the position of the file it is written in among its window's places
@@ -483,7 +483,7 @@ export interface Setting {
     /**
      * starts where the block does
      */
-    "block": lsp$0.Range;
+    "block": jomini$0.Range;
     "key": string;
     "value": string;
 }
@@ -610,7 +610,7 @@ export interface Widget {
      * the positions of the textures laid over its own among its window's overlays
      */
     "overlays": number[] | null;
-    "range": lsp$0.Range;
+    "range": jomini$0.Range;
 
     /**
      * the position of the file it is written in among its window's places

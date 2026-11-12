@@ -45,8 +45,8 @@ const hintTextLength = 60
 
 // A ColorSite is one color written in a file: where it is and the color it stands for.
 type ColorSite struct {
-	Range Range       `json:"range"`
-	Color jomini.RGBA `json:"color"`
+	Range jomini.Range `json:"range"`
+	Color jomini.RGBA  `json:"color"`
 }
 
 // A Signature is the parameter list of a scripted definition at a call, with the parameter the position is on.
@@ -115,7 +115,7 @@ func (h *hintList) addStatement(tree *jomini.Tree, statement int32, context *sch
 
 // add records a hint of the given kind and text at the given offset in the tree's source.
 func (h *hintList) add(tree *jomini.Tree, offset int, kind, text string) {
-	point := ToRange(tree.Src, tree.Lines, jomini.Span{Start: offset, End: offset})
+	point := jomini.ToRange(tree.Src, tree.Lines, jomini.Span{Start: offset, End: offset})
 	h.hints = append(h.hints, Hint{Line: point.StartLine, Column: point.StartColumn, Text: text, Kind: kind})
 }
 
@@ -145,7 +145,7 @@ func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 	for statement := int32(1); int(statement) < len(tree.Statements); statement++ {
 		if color, ok := jomini.ToColor(tree, statement); ok {
 			span := tree.Statements[statement].ResolveValueSpan()
-			sites = append(sites, ColorSite{Range: ToRange(tree.Src, tree.Lines, span), Color: color})
+			sites = append(sites, ColorSite{Range: jomini.ToRange(tree.Src, tree.Lines, span), Color: color})
 		}
 	}
 	return sites, nil
@@ -154,12 +154,12 @@ func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 // PresentColor returns the text that writes a color into a file, in the form of the color already written at the given
 // range. If the range holds no color, it uses the form the game's coats write colors in. It returns an error if the
 // form cannot be written.
-func (lsp *Service) PresentColor(path string, colorRange Range, color jomini.RGBA) (string, error) {
+func (lsp *Service) PresentColor(path string, colorRange jomini.Range, color jomini.RGBA) (string, error) {
 	ws, tree, err := lsp.loadTree(path)
 	if err != nil {
 		return "", err
 	}
-	offset := ToOffset(tree.Src, tree.Lines, colorRange.StartLine, colorRange.StartColumn)
+	offset := jomini.ToOffset(tree.Src, tree.Lines, colorRange.StartLine, colorRange.StartColumn)
 	tag, parts, ok := jomini.ColorParts(tree, tree.FindStatement(offset))
 	if !ok {
 		tag, parts = ws.Game.Coat.ColorForm.Tag, ws.Game.Coat.ColorForm.Example
@@ -178,7 +178,7 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 		return nil, err
 	}
 	tree := document.Tree
-	offset := ToOffset(tree.Src, tree.Lines, line, column)
+	offset := jomini.ToOffset(tree.Src, tree.Lines, line, column)
 	call, callee, key, ok := findCall(ws, findCursor(document, offset))
 	if !ok {
 		return nil, nil
@@ -209,7 +209,7 @@ func findCall(ws *workspace.Session, cursor cursor) (int32, *schema.Field, strin
 			})
 			for _, reference := range callees {
 				database := ws.Schema.Databases[reference.Database]
-				if reference.Name == cursor.tree.Unquoted(current.Key) && database != nil && database.Callable.Parameters {
+				if reference.Name == cursor.tree.Unquoted(current.Key) && database != nil && database.Declaration.Parameters {
 					return statement, context.Field, reference.Name, true
 				}
 			}

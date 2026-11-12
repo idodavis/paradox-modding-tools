@@ -7,9 +7,8 @@
 // # Sources
 //
 //   - Every fact comes with a game.Source, and a lower source outranks a
-//     higher one: the rows, the dumps, the game's executable, its logs, the
-//     docs, the wiki, the game's own files, and inferred last. A claim keeps
-//     the fact of its best source.
+//     higher one: the rows, the dumps, the docs, the wiki, the game's own
+//     files, and inferred last. A claim keeps the fact of its best source.
 //   - Only the dumps, the docs, the wiki and what a definition in the files
 //     says its name or a parameter takes can accuse a mod.
 //   - A fact learned from the game's own files completes a hover card, marked
@@ -254,27 +253,30 @@ type Expected struct {
 	Stem string `json:"stem,omitempty"`
 }
 
-// Vanilla is what the game's own files write at a field, counted.
+// Vanilla is what the game's own files write at a field, counted. Its
+// unexported tallies are the count's own: it decides the field's claims
+// from them, no cache stores them and no other package reads them.
 type Vanilla struct {
-	// Count is how many times the field is written, Blocks how many of those
-	// writes are a block, and Colors how many of those blocks are a color.
+	// Count is how many times the field is written, and Blocks how many of
+	// those writes are a block.
 	Count  int
 	Blocks int
-	Colors int
-
-	// Definitions is how many plain definitions of its database write it.
-	Definitions int
 
 	// Values holds the count of each value written.
 	Values map[string]int
 
-	// Shapes holds the count of each shape that a key written directly in its
-	// blocks tells.
-	Shapes map[game.Shape]int
+	// colors is how many of the blocks written are a color, and definitions
+	// how many plain definitions of its database write the field.
+	colors      int
+	definitions int
 
-	// Proofs holds the count of each set of shapes that a call in its blocks
+	// shapes holds the count of each shape that a key written directly in its
+	// blocks tells.
+	shapes map[game.Shape]int
+
+	// proofs holds the count of each set of shapes that a call in its blocks
 	// allows, the shapes joined by spaces.
-	Proofs map[string]int
+	proofs map[string]int
 }
 
 // Requirement is whether a field must be written.
@@ -330,9 +332,12 @@ type Field struct {
 }
 
 // Definition is one key a database declares outside the index: an effect, a
-// trigger, a link or a scope type of the dumps.
+// trigger, a link, a scope type, a modifier or an on_action of the dumps, or
+// a scripted definition, a modifier type or an event namespace of the files.
 type Definition struct {
-	// Database is the database that declares it.
+	// Database is the database that declares it. It is "" for a widget type
+	// the game draws with no file defining it, whose block takes no type's
+	// keys.
 	Database string
 
 	Key   string
@@ -351,9 +356,14 @@ type Definition struct {
 	Union *Field
 
 	// Scopes are the scope types it is written in, none for any. Target is
-	// the scope type it leads to, "" for none.
+	// the scope type it leads to, which for an on_action is the scope it
+	// runs in. It is "" for none.
 	Scopes []string
 	Target string
+
+	// Hardcoded is whether the game runs an on_action from its own code, as
+	// the dumps' "From Code: Yes" says.
+	Hardcoded bool
 
 	// Saves holds, by parameter of a scripted definition, the link its body
 	// saves the argument's name under, such as scope. Any other definition
@@ -402,10 +412,11 @@ type Database struct {
 	Name string
 
 	// Definitions are the keys it declares outside the index, by key: what
-	// the dumps list, and for a database whose definitions script calls, the
-	// copy of each name that the game keeps among its own files, in lower
-	// case where the database ignores case. Any other database of files has
-	// none.
+	// the dumps list, and what the game's own files declare for every later
+	// walk to know. Those are the copy the game keeps of each name script
+	// calls, in lower case where the database ignores case, each modifier
+	// type, each event namespace, and each widget type the game draws
+	// itself. Any other database of files has none.
 	Definitions map[string]*Definition
 
 	// Keys are the keys of Definitions, sorted, and Patterns its pattern
@@ -419,17 +430,13 @@ type Database struct {
 	// Field is what a definition's block takes.
 	Field *Field
 
-	// Row is where its definitions are written and how each is named.
-	Row game.Database
-
-	// Callable is what calls its definitions. It is zero if nothing does.
-	Callable game.Callable
+	// Declaration is what the game's sources state about it, with only the
+	// references and the fields that hold for the game. It is the zero one
+	// for a database no row names.
+	Declaration game.Declaration
 
 	// Precedence is how several definitions of one name combine.
 	Precedence game.Precedence
-
-	// Documented holds every key the docs mention for its definitions.
-	Documented map[string]bool
 
 	// Readme is the game doc its blurb was read from, else the first that
 	// describes it all. It is "" if none.
@@ -470,7 +477,8 @@ type DataType struct {
 	Functions map[string]DataFunction
 }
 
-// OnAction is one on_action the dumps declare, with the scope it runs in.
+// OnAction is one on_action as the dumps declare it, with the scope it runs
+// in.
 type OnAction struct {
 	Scope string
 
@@ -539,16 +547,17 @@ type modScripted struct {
 	sequence int
 	unread   map[string]bool
 
-	// winners holds, by database and name, the scripted definition a call
+	// callees holds, by database and name, the scripted definition a call
 	// finds where the workspace changes what the game's files give: the
 	// winner among the mods' copies and the game's, or nil where no copy is
-	// left. A name it lacks is the game's own.
-	winners map[string]*Definition
+	// left. They are picked again only when a file that declares one
+	// changes.
+	callees map[string]*Definition
 
-	// modifiers and namespaces hold what the mods' files declare, as
-	// ModifierFields and Namespaces hold the game's.
-	modifiers  map[string]*Field
-	namespaces map[string]bool
+	// winners holds the callees, and with them each modifier type and each
+	// event namespace the mods' files declare. A name it lacks is the
+	// game's own.
+	winners map[string]*Definition
 }
 
 // The origins of a source's data: the install, the shipped backup, or none.
@@ -596,11 +605,6 @@ type Schema struct {
 	// game's files may define none.
 	Customs map[string]bool
 
-	// Modifiers holds the modifiers the dumps declare, which a modifier block
-	// may write as keys.
-	Modifiers map[string]bool
-
-	OnActions map[string]OnAction
 	DataTypes map[string]DataType
 
 	// TypeDatabases holds, by the phrase of a data type, the database of its
@@ -611,35 +615,24 @@ type Schema struct {
 	// events file, the definition's database.
 	InlineDatabases map[string]string
 
-	// ModifierFields holds, by modifier type the game defines, what its name
-	// takes in a modifiers block.
-	ModifierFields map[string]*Field
-
 	// ScriptedCopies holds every copy of a scripted definition the game's
 	// files declare, by database and name. The copy of each that the game
 	// keeps among them is a definition of its database.
 	ScriptedCopies map[string][]ScriptedCopy
-	WidgetTypes    map[string]bool
-
-	// Namespaces holds the event namespaces the game's events files declare.
-	Namespaces map[string]bool
 
 	// UnlistedCalls holds the data call steps, as Type.step, that no dump
 	// declares for the type before them, though the game's own localization
 	// and GUI text write them.
 	UnlistedCalls map[string]bool
 
-	// TopFolders holds the first folder of each of the game's files in lower
-	// case, without the stage folder: the folders under which the game reads
-	// a mod's files.
-	TopFolders map[string]bool
-
-	// Lists, Events, Messages, Concepts, ModifierTypes, Effects and Values
-	// are the databases of scripted lists, of events, of the messages an
-	// effect sends the player, of game concepts, of modifier types, of
-	// scripted effects and of script values. Each is "" if none.
+	// Lists, Events, OnActions, Messages, Concepts, ModifierTypes, Effects
+	// and Values are the databases of scripted lists, of events, of
+	// on_actions, of the messages an effect sends the player, of game
+	// concepts, of modifier types, of scripted effects and of script values.
+	// Each is "" if none.
 	Lists         string
 	Events        string
+	OnActions     string
 	Messages      string
 	Concepts      string
 	ModifierTypes string
@@ -669,16 +662,7 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 		Callees:         map[string][]string{},
 		TypeDatabases:   map[string]string{},
 		InlineDatabases: map[string]string{},
-		ModifierFields:  map[string]*Field{},
-		WidgetTypes:     map[string]bool{},
-		Namespaces:      map[string]bool{},
 		UnlistedCalls:   map[string]bool{},
-		TopFolders:      map[string]bool{},
-	}
-	for _, file := range listing {
-		if folder, _, nested := strings.Cut(strings.ToLower(file.StageRel()), "/"); nested {
-			schema.TopFolders[folder] = true
-		}
 	}
 
 	schema.Setups = listSetups(row, listing, parse)
@@ -687,7 +671,7 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 	// the count reads the unions as every later walk does, so they are built
 	// before it and again after
 	schema.buildDatabases(row, folders)
-	schema.buildFields(row)
+	schema.buildFields()
 	if err := schema.buildDumps(row, installPath); err != nil {
 		return nil, err
 	}
@@ -751,9 +735,9 @@ func listFolders(row *game.Game, listing []files.File) []string {
 		}
 	}
 
-	for _, folder := range row.ListDatabaseFolders() {
-		if present[folder] {
-			folders[folder] = true
+	for _, declaration := range row.ListDeclarations() {
+		if present[declaration.Folder] {
+			folders[declaration.Folder] = true
 		}
 	}
 
@@ -766,12 +750,12 @@ func listFolders(row *game.Game, listing []files.File) []string {
 // to: the file itself if a row names it, else the nearest folder above it
 // that a row names, else the file's own folder.
 func findFolder(row *game.Game, rel string) string {
-	if _, ok := row.FindDatabase(rel); ok {
+	if _, ok := row.FindDeclaration(rel); ok {
 		return rel
 	}
 
 	for dir := path.Dir(rel); dir != "."; dir = path.Dir(dir) {
-		if _, ok := row.FindDatabase(dir); ok {
+		if _, ok := row.FindDeclaration(dir); ok {
 			return dir
 		}
 	}
@@ -789,47 +773,39 @@ var fireContents = []game.Contents{
 // nesting, and those the GUI files declare.
 func (s *Schema) buildDatabases(row *game.Game, folders []string) {
 	for _, folder := range folders {
-		databaseRow, _ := row.FindDatabase(folder)
+		declaration, _ := row.FindDeclaration(folder)
 		if slices.Contains(s.Setups, folder) {
-			databaseRow, _ = row.FindDatabase(game.SetupFolder)
+			declaration, _ = row.FindDeclaration(game.SetupFolder)
 		}
 
-		databaseRow.Folder = folder
-		s.buildDatabase(row, game.ToDatabase(folder), databaseRow)
+		declaration.Folder = folder
+		declaration.Nestings = row.ListNestings(declaration)
+		s.buildDatabase(row, game.ToDatabase(folder), declaration)
+		s.buildNested(row, declaration.Nestings)
 	}
 
-	for _, nesting := range slices.Concat(row.ListNestings(), row.ListSetupNestings(s.Setups...)) {
-		if nesting.Database == "" || nesting.Parent == game.SetupFolder {
-			continue
-		}
-
-		label := nesting.Label()
-		s.buildDatabase(row, label, game.Database{Target: nesting.Target})
-		if parent := s.Databases[game.ToDatabase(nesting.Parent)]; parent != nil && !slices.Contains(parent.Nested, label) {
-			parent.Nested = append(parent.Nested, label)
-		}
+	names := []string{
+		game.GUI.WidgetDatabase, game.GUI.WidgetTypes, game.GUI.TextFormats, game.GUI.TextIcons, game.EventNamespaces,
 	}
-
 	for _, declaring := range game.GUI.Declares {
-		s.buildDatabase(row, game.GUI.DatabasePrefix+declaring, game.Database{})
+		names = append(names, game.GUI.DatabasePrefix+declaring)
 	}
 
-	s.buildDatabase(row, game.GUI.WidgetDatabase, game.Database{})
-
-	// a text names a format or an icon in any case
-	s.buildDatabase(row, game.GUI.TextFormats, game.Database{FoldsCase: true})
-	s.buildDatabase(row, game.GUI.TextIcons, game.Database{FoldsCase: true})
+	for _, label := range names {
+		s.buildDatabase(row, label, row.LookupDeclaration(label))
+	}
 
 	housed := map[game.Contents][]string{}
 	for label, database := range s.Databases {
-		housed[database.Row.Contents] = append(housed[database.Row.Contents], label)
+		housed[database.Declaration.Contents] = append(housed[database.Declaration.Contents], label)
 
-		// the effects and value callables are the first label in order with
-		// that shape
+		// the effects and value callables are the first label in order whose
+		// called definitions have that shape
+		called, shape := len(database.Declaration.Callers) > 0, database.Declaration.Shape
 		switch {
-		case database.Callable.Shape == game.ShapeEffects && (s.Effects == "" || label < s.Effects):
+		case called && shape == game.ShapeEffects && (s.Effects == "" || label < s.Effects):
 			s.Effects = label
-		case database.Callable.Shape == game.ShapeValue && (s.Values == "" || label < s.Values):
+		case called && shape == game.ShapeValue && (s.Values == "" || label < s.Values):
 			s.Values = label
 		}
 	}
@@ -844,36 +820,40 @@ func (s *Schema) buildDatabases(row *game.Game, folders []string) {
 	s.Events, s.Messages, s.Lists = findOnly(game.ContentsEvents), findOnly(game.ContentsMessages),
 		findOnly(game.ContentsLists)
 	s.Concepts, s.ModifierTypes = findOnly(game.ContentsConcepts), findOnly(game.ContentsModifiers)
+	s.OnActions = findOnly(game.ContentsOnActions)
 
 	for _, house := range fireContents {
 		s.FireDatabases = append(s.FireDatabases, housed[house]...)
 	}
 
 	slices.Sort(s.FireDatabases)
-	for _, widget := range slices.Concat(slices.Collect(maps.Keys(game.GUI.Types)), row.GUI.Undeclared) {
-		s.WidgetTypes[widget] = true
-	}
-
+	s.declareWidgets(slices.Concat(slices.Collect(maps.Keys(game.GUI.Types)), row.GUI.Undeclared))
 	s.listCallees()
 }
 
-// buildDatabase adds one database built from its row. It does nothing if the
-// schema has it already. A database with a target, such as the history of
-// titles, names no data type, since its definitions are the target's.
-func (s *Schema) buildDatabase(row *game.Game, label string, databaseRow game.Database) {
+// buildDatabase adds one database built from its declaration, keeping only
+// the references and the fields that hold for the game. It does nothing if
+// the schema has it already. A database with a target, such as the history
+// of titles, names no data type, since its definitions are the target's.
+func (s *Schema) buildDatabase(row *game.Game, label string, declaration game.Declaration) {
 	if s.Databases[label] != nil {
 		return
 	}
 
+	declaration.References = slices.DeleteFunc(slices.Clone(declaration.References), func(reference game.Reference) bool {
+		return !row.Matches(reference.Games)
+	})
+	declaration.Fields = slices.DeleteFunc(slices.Clone(declaration.Fields), func(field game.DatabaseField) bool {
+		return !row.Matches(field.Games)
+	})
 	s.Databases[label] = &Database{
-		Name: label, Field: &Field{}, Row: databaseRow, Callable: game.Callables[label],
-		Precedence: row.LookupPrecedence(label, databaseRow.Folder), Documented: map[string]bool{},
+		Name: label, Field: &Field{}, Declaration: declaration, Precedence: row.LookupPrecedence(declaration, label),
 	}
-	for _, key := range databaseRow.DeclaringKeys {
+	for _, key := range declaration.DeclaringKeys {
 		s.InlineDatabases[key] = label
 	}
 
-	if databaseRow.Target != "" {
+	if declaration.Target != "" {
 		return
 	}
 
@@ -891,25 +871,43 @@ func (s *Schema) buildDatabase(row *game.Game, label string, databaseRow game.Da
 	s.TypeDatabases[phrase] = owner
 }
 
-// buildFields gives each field that a game.DatabaseFields row names what the
-// row states: its shape, its weights and its hover text. A row for another
-// game, or for a database the game lacks, is skipped.
-func (s *Schema) buildFields(row *game.Game) {
-	for _, entry := range game.DatabaseFields {
-		database := s.Databases[entry.Database]
-		if database == nil || !row.Matches(entry.Games) {
+// buildNested adds the database each nesting defines in, with the nesting's
+// own precedence where it states one, and lists it as nested in its parent.
+// A nesting that defines in its parent's own database adds none.
+func (s *Schema) buildNested(row *game.Game, nestings []game.Nesting) {
+	for _, nesting := range nestings {
+		if nesting.Database == "" {
 			continue
 		}
 
-		field := database.Field
-		for key := range strings.SplitSeq(entry.KeyPath, "/") {
-			field = field.buildChild(key, game.SourceRegistry)
+		label := nesting.Label()
+		declaration := game.Declaration{Target: nesting.Target}
+		if nesting.Precedence.Keeps != "" {
+			declaration.Precedences = []game.Precedence{nesting.Precedence}
 		}
 
-		field.Weighted = entry.Weighted
-		field.Blurb.resolve(entry.Blurb, game.SourceRegistry)
-		if entry.Shape != "" {
-			field.Shape.resolve(entry.Shape, game.SourceRegistry)
+		s.buildDatabase(row, label, declaration)
+		if parent := s.Databases[game.ToDatabase(nesting.Parent)]; parent != nil && !slices.Contains(parent.Nested, label) {
+			parent.Nested = append(parent.Nested, label)
+		}
+	}
+}
+
+// buildFields gives each field that a database's declaration names what the
+// row states: its shape, its weights and its hover text.
+func (s *Schema) buildFields() {
+	for _, database := range s.Databases {
+		for _, entry := range database.Declaration.Fields {
+			field := database.Field
+			for key := range strings.SplitSeq(entry.KeyPath, "/") {
+				field = field.buildChild(key, game.SourceRegistry)
+			}
+
+			field.Weighted = entry.Weighted
+			field.Blurb.resolve(entry.Blurb, game.SourceRegistry)
+			if entry.Shape != "" {
+				field.Shape.resolve(entry.Shape, game.SourceRegistry)
+			}
 		}
 	}
 }
@@ -922,21 +920,23 @@ func isNamedExactly(label, phrase string) bool {
 }
 
 // listCallees fills Callees: for each caller, the databases whose definitions
-// it can call.
+// it can call, in name order.
 func (s *Schema) listCallees() {
-	for label, callable := range game.Callables {
-		if s.Databases[label] == nil {
-			continue
-		}
-
-		for _, caller := range callable.Callers {
-			s.Callees[caller] = append(s.Callees[caller], label)
+	for _, label := range game.Called {
+		if database := s.Databases[label]; database != nil {
+			for _, caller := range database.Declaration.Callers {
+				s.Callees[caller] = append(s.Callees[caller], label)
+			}
 		}
 	}
+}
 
-	for _, labels := range s.Callees {
-		slices.Sort(labels)
-	}
+// declares reports whether a row or the docs state a key as a field of the
+// database's definitions. Such a key is a field, never a nested definition.
+func (d *Database) declares(key string) bool {
+	child := d.Field.findChild(key)
+
+	return child != nil && child.Source != game.SourceNone && child.Source <= game.SourceDocs
 }
 
 // FindDatabase returns the database that a file belongs to, going by its path
@@ -944,7 +944,7 @@ func (s *Schema) listCallees() {
 // database claims the file.
 func (s *Schema) FindDatabase(file files.File) (*Database, bool) {
 	for folder := file.StageRel(); folder != "."; folder = path.Dir(folder) {
-		if database, ok := s.Databases[game.ToDatabase(folder)]; ok && database.Row.Folder == folder {
+		if database, ok := s.Databases[game.ToDatabase(folder)]; ok && database.Declaration.Folder == folder {
 			return database, true
 		}
 	}
@@ -1045,7 +1045,7 @@ func (s *Schema) findSeparator(database string) string {
 	}
 
 	if holder := s.Databases[parent]; holder != nil {
-		return holder.Row.Separator
+		return holder.Declaration.Separator
 	}
 
 	return ""
@@ -1054,7 +1054,7 @@ func (s *Schema) findSeparator(database string) string {
 // IsCaseless reports whether the database's names match without regard to
 // case.
 func (d *Database) IsCaseless() bool {
-	return d.Row.FoldsCase || d.Callable.FoldsCase
+	return d.Declaration.FoldsCase
 }
 
 // MatchValue reports whether a written value fits what a field takes. A

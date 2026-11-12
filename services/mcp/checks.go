@@ -15,6 +15,7 @@ import (
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/files"
+	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/draw"
 	"paradox-modding-tools/services/graph"
@@ -76,9 +77,9 @@ func (mcp *Service) checkPage(page string, query map[string]string) error {
 		case !ok && len(keys) == 0:
 			errs = append(errs, fmt.Errorf("%s takes no query", page))
 		case !ok:
-			errs = append(errs, fmt.Errorf("%s takes no %q in its query; it takes %s", page, key, lsp.JoinList(keys, "or")))
+			errs = append(errs, fmt.Errorf("%s takes no %q in its query; it takes %s", page, key, game.JoinList(keys, "or")))
 		case len(row.Values) > 0 && !slices.Contains(row.Values, value):
-			errs = append(errs, fmt.Errorf("%s's %s is %s, not %q", page, key, lsp.JoinList(row.Values, "or"), value))
+			errs = append(errs, fmt.Errorf("%s's %s is %s, not %q", page, key, game.JoinList(row.Values, "or"), value))
 		case row.Check != nil:
 			errs = append(errs, row.Check(mcp, value))
 		}
@@ -226,7 +227,7 @@ func (mcp *Service) checkDrawable(place workspace.Place, drawable string, picks 
 			continue
 		}
 		words := lo.Map(group.Options, func(option string, _ int) string { return describeOption(group, option) })
-		errs = append(errs, fmt.Errorf("%s's group %q takes %s, not %q", window.Name, id, lsp.JoinList(words, "or"), picks[id]))
+		errs = append(errs, fmt.Errorf("%s's group %q takes %s, not %q", window.Name, id, game.JoinList(words, "or"), picks[id]))
 	}
 	return errors.Join(errs...)
 }

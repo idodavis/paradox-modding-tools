@@ -35,7 +35,7 @@ flowchart TD
 | file | what it holds |
 |---|---|
 | `game.go` | The package doc, the three games' rows, `Source`, and the lookups on a game, such as `LookupGame` and `FindLocReplacement`. |
-| `databases.go` | The database tables, such as `Databases`, `Nestings`, `Precedences`, `References` and `DatabaseFields`, and the words their rows take, such as `Keep` and `ModePlace`. |
+| `databases.go` | The databases' declarations: one `Declaration` for each database that needs one, with its nestings, references, fields and precedence. Also the nestings and precedences that hold for every database below a folder, and the words their rows take, such as `Keep` and `ModePlace`. |
 | `keep.go` | Which copy of a name the game keeps when several files define it (`Precedence.FindWinner`), and the reasons in words. |
 | `language.go` | The language's own rules, such as the shapes a block can hold, `Keywords`, the databases the dumps fill, and the names script saves and reads back. |
 | `gui.go` | The rules for GUI files and the Visual view. |

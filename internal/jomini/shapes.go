@@ -259,9 +259,10 @@ func parseLink(text string, start int) Link {
 }
 
 // Parameters returns each parameter that a text writes, $NAME$ or
-// $NAME|default$, in order. A name is ASCII letters, digits and underscores,
-// and a default runs to the next $. The given base is where the text starts
-// in its file. A $ that starts no parameter is passed over.
+// $NAME|default$, in order. A name is ASCII letters, digits, underscores
+// and percent signs, as CK3's $SUCCESS_%$ is, and a default runs to the
+// next $. The given base is where the text starts in its file. A $ that
+// starts no parameter is passed over.
 func Parameters(text string, base int) []Parameter {
 	var parameters []Parameter
 
@@ -290,7 +291,9 @@ func Parameters(text string, base int) []Parameter {
 // text. It returns false if none starts there: no name follows the $, or no
 // $ closes the parameter.
 func parseParameter(text string, start, base int) (Parameter, bool) {
-	end := len(text) - len(strings.TrimLeftFunc(text[start+1:], isAlphanumericRune))
+	end := len(text) - len(strings.TrimLeftFunc(text[start+1:], func(r rune) bool {
+		return isAlphanumericRune(r) || r == '%'
+	}))
 	if end == start+1 || end == len(text) {
 		return Parameter{}, false
 	}

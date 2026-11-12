@@ -3,10 +3,13 @@
 
 package game
 
-import "slices"
+import (
+	"cmp"
+	"slices"
+)
 
-// Reason is why the game keeps a copy of a name, why it does not read a copy,
-// or that no source says which copy it keeps.
+// Reason is why the game keeps a copy of a name, or that no source says which
+// copy it keeps.
 type Reason string
 
 // The reasons a copy has.
@@ -45,18 +48,11 @@ const (
 
 	// ReasonUnsettled is that no source says which copy the game keeps.
 	ReasonUnsettled Reason = "unsettled"
-
-	// ReasonShadowed and ReasonDropped are a copy in a file the game does not
-	// read: a file at the same path later in the load order replaces it, or a
-	// mod's replace_path drops its folder.
-	ReasonShadowed Reason = "shadowed"
-	ReasonDropped  Reason = "dropped"
 )
 
 // Reasons holds each reason in words: a label, and for a reason a contest's
 // winner can have, a longer text saying why it wins. That text is a template
-// filled with {folder}, {file}, {winner}, {beaten} and {beatenFile}. The label
-// of a copy the game does not read takes {mod}, the mod that hides it.
+// filled with {folder}, {file}, {winner}, {beaten} and {beatenFile}.
 var Reasons = map[Reason]struct{ Label, Why string }{
 	ReasonLast: {Label: "Last file by name", Why: "The game reads every file in {folder} in order of file name and " +
 		"keeps the copy it reads last. {winner}'s file, {file}, comes after {beaten}'s {beatenFile}, so its copy " +
@@ -80,8 +76,6 @@ var Reasons = map[Reason]struct{ Label, Why string }{
 		"makes the game skip the game's files in that folder. Of the copies the game reads, it keeps {winner}'s."},
 	ReasonReplaceFolder: {Label: "In a replace folder"},
 	ReasonUnsettled:     {Label: "Not documented"},
-	ReasonShadowed:      {Label: "The copy of this file in {mod} replaces it"},
-	ReasonDropped:       {Label: "A replace_path in {mod} drops this folder"},
 }
 
 // Cause is what leaves the choice of a winner open.
@@ -118,6 +112,17 @@ type Winner struct {
 	// what leaves an unsettled choice open.
 	Reason Reason
 	Cause  Cause
+
+	// Prefix is the entry mode's prefix that leaves the choice open, as
+	// INJECT: is. It is "" for any other cause.
+	Prefix string
+}
+
+// ReadsMode reports whether the game reads an entry mode written on a
+// definition at the top of a file, or else on one inside a wrapper's block.
+// A database that takes no entry modes reads none.
+func (p Precedence) ReadsMode(top bool) bool {
+	return p.Modes == ModePlaceEntry && top || p.Modes == ModePlaceWrapped && !top
 }
 
 // FindWinner returns the copy the game keeps among the copies of one name,
@@ -127,13 +132,14 @@ type Winner struct {
 // modes find nothing to act on.
 func (p Precedence) FindWinner(modes []string, priorities []int) (Winner, bool) {
 	last := len(modes) - 1
+	written := slices.IndexFunc(modes, func(mode string) bool { return mode != "" })
 	switch {
 	case len(modes) == 0:
 		return Winner{}, false
 	case p.Modes != "":
 		return p.findModeWinner(modes)
-	case slices.ContainsFunc(modes, func(mode string) bool { return mode != "" }):
-		return Winner{Reason: ReasonUnsettled, Cause: CauseKeyword}, true
+	case written >= 0:
+		return Winner{Reason: ReasonUnsettled, Cause: CauseKeyword, Prefix: modes[written]}, true
 	case len(modes) == 1:
 		return Winner{}, true
 	case p.Keeps == KeepFirst:
@@ -196,6 +202,7 @@ func (p Precedence) findModeWinner(modes []string) (Winner, bool) {
 			// joins it.
 			winner.Merged = append(winner.Merged, position)
 			winner.Reason, winner.Cause = ReasonUnsettled, CauseInject
+			winner.Prefix = cmp.Or(winner.Prefix, modes[position])
 
 		case len(winner.Merged) == 0:
 			// A mode that creates makes the definition.
@@ -206,7 +213,7 @@ func (p Precedence) findModeWinner(modes []string) (Winner, bool) {
 			// every copy INJECT: made. With no plain copy and no
 			// REPLACE_OR_CREATE: copy, this mode then has nothing to act on.
 			// It takes the standing copy's place, and the choice stays open.
-			winner = Winner{Reason: ReasonUnsettled, Cause: CauseInject, Merged: []int{position}}
+			winner = Winner{Reason: ReasonUnsettled, Cause: CauseInject, Prefix: winner.Prefix, Merged: []int{position}}
 
 		case mode.Replaces:
 			// A mode that replaces takes the standing copy's place. It

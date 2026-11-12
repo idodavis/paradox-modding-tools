@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"maps"
 	"slices"
-	"strings"
 
 	"github.com/samber/lo"
 
@@ -43,7 +42,7 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 		}
 	}
 	if winner.Reason == game.ReasonUnsettled {
-		if finding, ok := makeUndecided(ws, mods, sites, describeCause(mods, sites, winner, precedence)); ok {
+		if finding, ok := makeUndecided(ws, mods, sites, describeCause(winner, precedence)); ok {
 			findings = append(findings, finding)
 		}
 		return findings
@@ -55,7 +54,7 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 		return mods.File(site).Origin, isMod(mods, site)
 	}))
 	if len(origins) >= 2 && isMod(mods, winner.Site) {
-		contest := makeFinding(mods, contestCode, lsp.DescribeReference(reference), lsp.MakeSites(ws, mods, sites, &winner))
+		contest := makeFinding(mods, contestCode, index.DescribeReference(reference), lsp.MakeSites(ws, mods, sites, &winner))
 		if len(listBeaten(contest)) > 0 {
 			contest.Comparable = true
 			findings = append(findings, contest)
@@ -66,7 +65,7 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 		return findings
 	}
 	if site, ok := lo.Find(sites, func(site index.Site) bool { return isMod(mods, site) && mods.ResolveSite(winner, site).Kept }); ok {
-		facts := lsp.DescribeReference(reference)
+		facts := index.DescribeReference(reference)
 		facts["kept"] = describeKept(mods, site)
 		findings = append(findings, makeFinding(mods, "override", facts, lsp.MakeSites(ws, mods, sites, &winner)))
 	}
@@ -99,7 +98,7 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 	kept := lo.SomeBy(shipped, func(site lsp.Site) bool { return site.Kept })
 	var findings []Finding
 	if len(lo.UniqBy(shipped, func(site lsp.Site) string { return site.Place.Origin })) >= 2 && kept {
-		facts := lsp.DescribeReference(schema.Reference{Database: game.File, Name: shipped[0].Place.Rel})
+		facts := index.DescribeReference(schema.Reference{Database: game.File, Name: shipped[0].Place.Rel})
 		contest := makeFinding(mods, fileContestCode, facts, shipped)
 		contest.Removed = listRemoved(contest.Sites)
 		findings = append(findings, contest)
@@ -107,7 +106,7 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 	if len(installed) == 0 {
 		return findings
 	}
-	facts := lsp.DescribeReference(schema.Reference{Database: game.File, Name: installed[0].Place.Rel})
+	facts := index.DescribeReference(schema.Reference{Database: game.File, Name: installed[0].Place.Rel})
 	facts["kept"] = lo.Ternary(kept, "the game keeps the mod's", "the game keeps its own")
 	var uses []Use
 	var users []string
@@ -127,29 +126,18 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 	return append(findings, override)
 }
 
-// describeCause returns the words that say why the sources leave a winner open.
-func describeCause(mods *index.Index, sites []index.Site, winner index.Winner, precedence game.Precedence) string {
+// describeCause returns the words that say why the sources leave a winner
+// open.
+func describeCause(winner index.Winner, precedence game.Precedence) string {
 	switch winner.Cause {
 	case game.CausePriority:
 		return "both have the same override priority; give one a higher " + precedence.PriorityKey
 	case game.CauseKeyword:
-		prefix := findModePrefix(mods, sites, func(game.EntryMode) bool { return true })
-		return "no source says that the folder takes the " + prefix + " keyword, or what the game does with it"
+		return "no source says that the folder takes the " + winner.Prefix + " keyword, or what the game does with it"
 	case game.CauseInject:
-		prefix := findModePrefix(mods, sites, func(mode game.EntryMode) bool { return !mode.Replaces })
-		return "the folder takes REPLACE only, and whether " + prefix + " is refused or replaces is not documented"
+		return "the folder takes REPLACE only, and whether " + winner.Prefix + " is refused or replaces is not documented"
 	}
 	return "it is not documented whether a replace_path drops another mod's files"
-}
-
-// findModePrefix returns the prefix of the first site's entry mode that the given test accepts, or "" if none does.
-func findModePrefix(mods *index.Index, sites []index.Site, accepts func(game.EntryMode) bool) string {
-	for _, site := range sites {
-		if mode, known := mods.FindMode(site); known && accepts(mode) {
-			return mode.Prefix
-		}
-	}
-	return ""
 }
 
 // makeUndecided returns the finding for copies of a name whose kept copy no source names. It returns false if they
@@ -160,7 +148,7 @@ func makeUndecided(ws *workspace.Session, mods *index.Index, definitions []index
 	if len(parties) < 2 {
 		return Finding{}, false
 	}
-	facts := lsp.DescribeReference(mods.ToReference(definitions[0]))
+	facts := index.DescribeReference(mods.ToReference(definitions[0]))
 	facts["mods"], facts["why"] = describeMods(ws, parties), why
 	finding := makeFinding(mods, undecidedCode, facts, sites)
 	finding.Comparable = true
@@ -183,8 +171,10 @@ func writesBlock(ws *workspace.Session, mods *index.Index, site index.Site, bloc
 	return ok
 }
 
-// listSharedMessages lists the localization keys that two or more mods define in one language. Which copy the game
-// shows is not known, so none is marked kept.
+// listSharedMessages lists the localization keys that two or more mods
+// define in one language. The copy in the replace folder that ranks first is
+// the one the game shows; where two rank alike no source says which it
+// shows, so none is marked kept.
 func listSharedMessages(ws *workspace.Session, mods *index.Index, messages []index.Site) []Finding {
 	loaded := listLoaded(mods, messages)
 	groups := lo.PartitionBy(loaded, func(site index.Site) [2]string {
@@ -196,19 +186,17 @@ func listSharedMessages(ws *workspace.Session, mods *index.Index, messages []ind
 		if len(origins) < 2 {
 			continue
 		}
-		facts := lsp.DescribeReference(mods.ToReference(sites[0]))
-		facts["language"], facts["mods"] = mods.Language(sites[0]), describeMods(ws, listMods(mods, origins))
-		findings = append(findings, makeFinding(mods, sharedMessageCode, facts, lsp.MakeSites(ws, mods, sites, nil)))
+		reference, language := mods.ToReference(sites[0]), mods.Language(sites[0])
+		facts := index.DescribeReference(reference)
+		facts["language"], facts["mods"] = language, describeMods(ws, listMods(mods, origins))
+		var shown *index.Winner
+		if winner, ok := mods.FindMessage(reference.Name, language); ok {
+			shown = &winner
+		}
+
+		findings = append(findings, makeFinding(mods, sharedMessageCode, facts, lsp.MakeSites(ws, mods, sites, shown)))
 	}
 	return findings
-}
-
-// isGameFolder reports whether the first folder of a mod file's path, after any stage folder, is one the game's own
-// files lie in.
-func isGameFolder(ws *workspace.Session, rel string) bool {
-	_, rest := files.SplitStage(strings.ToLower(rel), ws.Game.Stages)
-	folder, _, nested := strings.Cut(rest, "/")
-	return nested && ws.Schema.TopFolders[folder]
 }
 
 // resolveContest names a contest's winner and beaten mods, lists its pairs of the winner with each beaten mod, and sets
@@ -242,7 +230,7 @@ func splitWhy(finding Finding) []lsp.Part {
 			!site.Kept && site.Place.Origin != files.OriginVanilla
 	})
 	facts := maps.Clone(finding.Facts)
-	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, lsp.JoinList(beaten, "and")
+	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, game.JoinList(beaten, "and")
 	return lsp.SplitMessage(game.Reasons[winner.Reason].Why, facts)
 }
 
@@ -281,7 +269,7 @@ func listBeaten(finding Finding) []string {
 
 // describeMods returns the titles of mods joined as in a sentence, such as "A, B and C". It returns "" for none.
 func describeMods(ws *workspace.Session, modIDs []string) string {
-	return lsp.JoinList(lo.Map(modIDs, func(id string, _ int) string { return ws.DescribeMod(id) }), "and")
+	return game.JoinList(lo.Map(modIDs, func(id string, _ int) string { return ws.DescribeMod(id) }), "and")
 }
 
 // resolveOrder gives a critical contest that the load order decides the order that fixes it: the beaten mod moved just

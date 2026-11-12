@@ -29,11 +29,9 @@ type declarer struct {
 	// widgets are the widget types the file defines or builds on.
 	widgets []string
 
-	// modifiers holds, by modifier type, what its name takes.
-	modifiers map[string]*Field
-
-	// namespaces are the event namespaces the file declares.
-	namespaces []string
+	// declared are the modifier types the file defines, each with what its
+	// name takes as its field, and the event namespaces the file declares.
+	declared []*Definition
 
 	// body is the definition whose body the walk is in. It is nil outside
 	// one.
@@ -65,14 +63,12 @@ func (s *Schema) SetScripted(changed []files.File, unread map[string]bool, parse
 		return file.Format != files.FormatScript || !s.declares(file)
 	})
 	declarers := s.listDeclarers(declaring, parse)
-	next := &modScripted{
-		byFile: map[string]*declarer{}, unread: unread, modifiers: map[string]*Field{}, namespaces: map[string]bool{},
-	}
+	next := &modScripted{byFile: map[string]*declarer{}, unread: unread}
 
 	previous := s.mods.Load()
 	stale := previous == nil || !maps.Equal(unread, previous.unread)
 	if previous != nil {
-		next.byFile, next.sequence, next.winners = maps.Clone(previous.byFile), previous.sequence, previous.winners
+		next.byFile, next.sequence, next.callees = maps.Clone(previous.byFile), previous.sequence, previous.callees
 	}
 
 	for _, file := range changed {
@@ -89,19 +85,19 @@ func (s *Schema) SetScripted(changed []files.File, unread map[string]bool, parse
 		}
 	}
 
+	if stale {
+		next.callees = s.resolveModded(next)
+	}
+
+	next.winners = maps.Clone(next.callees)
 	for key, declarer := range next.byFile {
 		if unread[key] {
 			continue
 		}
 
-		maps.Copy(next.modifiers, declarer.modifiers)
-		for _, namespace := range declarer.namespaces {
-			next.namespaces[namespace] = true
+		for _, declared := range declarer.declared {
+			next.winners[declared.Database+":"+declared.Key] = declared
 		}
-	}
-
-	if stale {
-		next.winners = s.resolveModded(next)
 	}
 
 	s.mods.Store(next)
@@ -210,7 +206,7 @@ func compareCopies(first, second ScriptedCopy, precedence game.Precedence) int {
 // database ignores case.
 func (s *Schema) toScriptedKey(definition Copy) string {
 	label := definition.Name
-	if database := s.Databases[definition.Database]; database != nil && database.Callable.FoldsCase {
+	if database := s.Databases[definition.Database]; database != nil && database.Declaration.FoldsCase {
 		label = strings.ToLower(label)
 	}
 
@@ -227,7 +223,7 @@ func (s *Schema) lookupScripted(winners map[string]*Definition, database, key st
 		return nil
 	}
 
-	if owner.Callable.FoldsCase {
+	if owner.Declaration.FoldsCase {
 		key = strings.ToLower(key)
 	}
 
@@ -291,8 +287,8 @@ func (s *Schema) declares(file files.File) bool {
 
 	database, ok := s.FindDatabase(file)
 
-	return ok && (len(database.Callable.Callers) > 0 || database.Row.Contents == game.ContentsModifiers ||
-		database.Row.Contents == game.ContentsEvents)
+	return ok && (len(database.Declaration.Callers) > 0 || database.Declaration.Contents == game.ContentsModifiers ||
+		database.Declaration.Contents == game.ContentsEvents)
 }
 
 // listDeclarers walks the given files that declare definitions, in
@@ -302,7 +298,7 @@ func (s *Schema) listDeclarers(declaring []files.File, parse func(path string) (
 	declarers := make([]*declarer, len(declaring))
 	contexts := make([][]Context, files.Workers)
 	eachParsed(declaring, parse, func(worker, index int, tree *jomini.Tree) {
-		declarers[index] = &declarer{schema: s, modifiers: map[string]*Field{}}
+		declarers[index] = &declarer{schema: s}
 		contexts[worker] = s.WalkDeclarations(tree, declaring[index], contexts[worker])
 		declarers[index].record(tree, contexts[worker])
 	})
@@ -445,13 +441,16 @@ func passRelay(scripted, callee *Definition, relay relay) bool {
 }
 
 // declareFiles gives the schema what the given files of the game declare, in
-// place of what it held: every copy of each scripted definition, and in each
-// database the copy of each name that the game keeps. It returns those
-// winners, for their parameters to be typed and their relays passed on.
+// place of what it held: every copy of each scripted definition, and as
+// definitions of their databases the copy of each name that the game keeps,
+// each modifier type and each event namespace. A widget type the files
+// define or build on joins the widget types, which are never emptied. It
+// returns the winners, for their parameters to be typed and their relays
+// passed on.
 func (s *Schema) declareFiles(declaring []files.File, parse func(path string) (*jomini.Tree, error)) []ScriptedCopy {
 	s.ScriptedCopies = map[string][]ScriptedCopy{}
-	for _, database := range s.Databases {
-		if len(database.Callable.Callers) > 0 {
+	for label, database := range s.Databases {
+		if len(database.Declaration.Callers) > 0 || label == s.ModifierTypes || label == game.EventNamespaces {
 			database.Definitions = map[string]*Definition{}
 		}
 	}
@@ -467,14 +466,11 @@ func (s *Schema) declareFiles(declaring []files.File, parse func(path string) (*
 			s.ScriptedCopies[key] = append(s.ScriptedCopies[key], scripted)
 		}
 
-		maps.Copy(s.ModifierFields, declarer.modifiers)
-		for _, widget := range declarer.widgets {
-			s.WidgetTypes[widget] = true
+		for _, declared := range declarer.declared {
+			s.Databases[declared.Database].Definitions[declared.Key] = declared
 		}
 
-		for _, namespace := range declarer.namespaces {
-			s.Namespaces[namespace] = true
-		}
+		s.declareWidgets(declarer.widgets)
 	}
 
 	var winners []ScriptedCopy
@@ -490,6 +486,19 @@ func (s *Schema) declareFiles(declaring []files.File, parse func(path string) (*
 	}
 
 	return winners
+}
+
+// declareWidgets adds the given widget types to the database of them, each
+// as a definition with no database, so its block takes no type's keys.
+func (s *Schema) declareWidgets(widgets []string) {
+	types := s.Databases[game.GUI.WidgetTypes]
+	if types.Definitions == nil {
+		types.Definitions = map[string]*Definition{}
+	}
+
+	for _, widget := range widgets {
+		types.Definitions[widget] = &Definition{Key: widget}
+	}
 }
 
 // record records what a file declares, from the contexts WalkDeclarations
@@ -515,7 +524,8 @@ func (d *declarer) record(tree *jomini.Tree, contexts []Context) {
 		}
 
 		if context.Parent != nil && slices.Contains(context.Parent.Namespaces, statement) {
-			d.namespaces = append(d.namespaces, tree.Unquoted(tree.Statements[statement].Value))
+			namespace := tree.Unquoted(tree.Statements[statement].Value)
+			d.declared = append(d.declared, &Definition{Database: game.EventNamespaces, Key: namespace})
 		}
 	}
 
@@ -572,33 +582,35 @@ func findParameter(text string) (string, bool) {
 // definition, with the parameters its body writes. One that takes
 // parameters is recorded when the walk leaves its body. If a widget calls
 // it, it also records the widget type, and the type that widget is built
-// on. It also records what the name of a modifier type takes.
+// on. A modifier type is recorded with what its name takes.
 func (d *declarer) declare(definition Copy, tree *jomini.Tree, statement int32) {
 	database := d.schema.Databases[definition.Database]
 	if database == nil {
 		return
 	}
 
-	if database.Row.Contents == game.ContentsModifiers {
-		d.modifiers[definition.Name] = makeModifierField(tree, statement)
+	if database.Declaration.Contents == game.ContentsModifiers {
+		d.declared = append(d.declared, &Definition{
+			Database: database.Name, Key: definition.Name, Field: makeModifierField(tree, statement),
+		})
 	}
 
 	base := tree.Unquoted(tree.Statements[statement].Tag)
-	if base != "" && slices.Contains(database.Callable.Callers, game.GUI.TagCalls) {
+	if base != "" && slices.Contains(database.Declaration.Callers, game.GUI.TagCalls) {
 		d.widgets = append(d.widgets, base)
 	}
 
-	if definition.Local || len(database.Callable.Callers) == 0 {
+	if definition.Local || len(database.Declaration.Callers) == 0 {
 		return
 	}
 
-	if slices.Contains(database.Callable.Callers, game.GUI.TagCalls) {
+	if slices.Contains(database.Declaration.Callers, game.GUI.TagCalls) {
 		d.widgets = append(d.widgets, definition.Name)
 	}
 
 	pending := &body{statement: statement, scripted: ScriptedCopy{Copy: definition}}
 	pending.scripted.Definition, pending.scripted.relays = makeScripted(database, definition.Name, tree, statement)
-	if database.Callable.Parameters {
+	if database.Declaration.Parameters {
 		d.body = pending
 
 		return
@@ -629,7 +641,7 @@ func makeModifierField(tree *jomini.Tree, statement int32) *Field {
 // definitions take parameters.
 func makeScripted(database *Database, key string, tree *jomini.Tree, statement int32) (*Definition, []relay) {
 	scripted := &Definition{Database: database.Name, Key: key}
-	if !database.Callable.Parameters {
+	if !database.Declaration.Parameters {
 		return scripted, nil
 	}
 

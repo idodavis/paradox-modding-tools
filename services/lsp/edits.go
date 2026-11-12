@@ -33,6 +33,10 @@ type Fix struct {
 	Edits   map[string][]Edit `json:"edits"`
 	Creates string            `json:"creates,omitempty"` // a file written first: a localization file has only its header
 	Reveal  *Site             `json:"reveal,omitempty"`  // where the caret goes once the fix is applied
+
+	// Note says in plain words what the fix leaves the game doing, as an
+	// override says which copy the game keeps. It is "" for none.
+	Note string `json:"note,omitempty"`
 }
 
 // A Draft is the file New file makes in a folder of a mod: the name it suggests and the text the file starts with.
@@ -95,18 +99,18 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 	tree, mods := document.Tree, ws.Mods.Load()
 	place := ws.Locate(mods, path)
 	walk := func(diagnostic Diagnostic) cursor {
-		return findCursor(document, ToOffset(tree.Src, tree.Lines, diagnostic.Range.StartLine, diagnostic.Range.StartColumn))
+		return findCursor(document, jomini.ToOffset(tree.Src, tree.Lines, diagnostic.Range.StartLine, diagnostic.Range.StartColumn))
 	}
 	fixes := []Fix{}
 	for _, diagnostic := range diagnostics {
 		var title string
 		var edits []Edit
 		switch diagnostic.Code {
-		case unresolvedCode:
+		case index.ProblemUnresolved:
 			title, edits = buildReferenceFix(ws.Schema, mods, walk(diagnostic), diagnostic)
-		case "missing-key":
+		case index.ProblemRequired:
 			title, edits = buildMissingFix(ws.Schema, walk(diagnostic), diagnostic)
-		case "misplaced-mode":
+		case index.ProblemMode:
 			title, edits = "Remove mode", []Edit{{Range: diagnostic.Range}}
 		}
 		if len(edits) > 0 {
@@ -165,9 +169,9 @@ func buildAppendFix(ws *workspace.Session, mods *index.Index, target, source, ad
 	end := jomini.Span{Start: len(source), End: len(source)}
 	whole := source + addition
 	point := jomini.Span{Start: len(source) + caret, End: len(source) + caret}
-	reveal := ToRange(whole, jomini.NewLines(whole), point)
+	reveal := jomini.ToRange(whole, jomini.NewLines(whole), point)
 	return Fix{
-		Edits:  map[string][]Edit{target: {{Range: ToRange(source, jomini.NewLines(source), end), Text: addition}}},
+		Edits:  map[string][]Edit{target: {{Range: jomini.ToRange(source, jomini.NewLines(source), end), Text: addition}}},
 		Reveal: &Site{Place: ws.Locate(mods, target), Line: reveal.StartLine, Range: reveal},
 	}
 }
@@ -189,7 +193,7 @@ func buildReferenceFix(
 		keys := lo.Map(mods.ListDefinitions(reference.Database), func(site index.Site, _ int) string {
 			return mods.ToReference(site).Name
 		})
-		if database := language.Databases[reference.Database]; database != nil && database.Callable.Command != "" {
+		if database := language.Databases[reference.Database]; database != nil && database.Declaration.Command() != "" {
 			for _, dump := range commandDatabases {
 				if cursor.context.Parent.Takes(dump) {
 					keys = slices.Concat(keys, language.ListKeys(dump))
@@ -230,7 +234,7 @@ func buildMissingFix(schema *schema.Schema, cursor cursor, diagnostic Diagnostic
 
 // hasFolder reports whether a database has a folder of its own, one that holds many files, not a single file.
 func hasFolder(database *schema.Database) bool {
-	return database != nil && database.Row.Folder != "" && path.Ext(database.Row.Folder) == ""
+	return database != nil && database.Declaration.Folder != "" && path.Ext(database.Declaration.Folder) == ""
 }
 
 // DraftFile returns the file New file makes in a folder of a mod: the name it suggests and the text it starts with. It
@@ -316,7 +320,7 @@ func resolveModStem(mod workspace.Mod) string { return files.ToSlug(filepath.Bas
 // it. It returns "" if the given text of the file already declares it, and for a database whose definitions are not
 // events.
 func buildNamespace(database *schema.Database, key, source string) string {
-	if database == nil || database.Row.Contents != game.ContentsEvents {
+	if database == nil || database.Declaration.Contents != game.ContentsEvents {
 		return ""
 	}
 	namespace, _, _ := strings.Cut(key, ".")
@@ -345,18 +349,29 @@ func buildEntryFix(ws *workspace.Session, mods *index.Index, target, source, ent
 	return fix
 }
 
-// BuildOverride returns the fix that overrides the entry at a position of a file: a copy of it, written as the game
-// keeps it over the others, in the mod with the given id or else the first other mod that can be written to. It
-// returns nil if the position is in no entry. It returns an error if the mod defines the entry already, the game
-// combines every copy of that kind of entry, or no mod can hold the copy.
-func (lsp *Service) BuildOverride(path string, line, column int, modID string) (*Fix, error) {
+// BuildOverride returns the fix that overrides the entry at a position of a
+// file. The fix copies the entry into a mod, written so that the game keeps
+// the copy. The mod is the one with the given id, or the first other mod
+// that can be written to if the id is "". It returns nil if the position is
+// in no entry.
+//
+// It returns an error if the mod defines the entry already, the game joins
+// every copy of that kind of entry, or no file name makes the copy win. With
+// no mod id, those cases return nil and no error.
+func (lsp *Service) BuildOverride(path string, line, column int, modID string) (fix *Fix, err error) {
+	defer func() {
+		if modID == "" {
+			err = nil
+		}
+	}()
+
 	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
 	tree, mods := document.Tree, ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	definition := findEntry(ws, document, ToOffset(tree.Src, tree.Lines, line, column))
+	definition := findEntry(ws, document, jomini.ToOffset(tree.Src, tree.Lines, line, column))
 	if definition == nil {
 		return nil, nil
 	}
@@ -370,22 +385,12 @@ func (lsp *Service) BuildOverride(path string, line, column int, modID string) (
 		return nil, fmt.Errorf("%s defines the %s %s already", ws.DescribeMod(mod.ID),
 			game.DescribeDefinition(definition.Database, false), definition.Name)
 	}
-	entry, side := tree.Text(tree.Statements[definition.Statement].Span), 0
-	rivals := listRivals(mods, sites, database.Precedence)
-	switch precedence := database.Precedence; {
-	case precedence.Modes != "":
-		entry, side = buildModeCopy(tree, definition, precedence), 1
-	case precedence.Keeps == game.KeepFirst:
-		side = -1
-	case precedence.KeepsEvery():
-		return nil, errors.New("the game joins every copy of an entry of this kind, so a mod adds to it instead of overriding it")
-	case precedence.Keeps == game.KeepHighest:
-		highest := lo.Max(lo.Map(sites, func(site index.Site, _ int) int { return int(mods.Occurrence(site).Priority) }))
-		entry = buildPriorityCopy(tree, definition, precedence, highest+1)
-	default:
-		side = 1
+	entry, side, err := writeOverride(tree, mods, definition, database.Precedence, sites)
+	if err != nil {
+		return nil, err
 	}
-	folder := resolveOverrideFolder(ws.Game, mods, place, database, rivals, side)
+	rivals := listRivals(mods, sites, database.Precedence)
+	folder := resolveOverrideFolder(mods, place, database, rivals, side)
 	prefix, ok := findPrefix(ws.Game, mods, mod, folder, side, rivals)
 	if !ok {
 		return nil, fmt.Errorf("no file name in %s makes the copy load %s the other copies", folder,
@@ -393,16 +398,46 @@ func (lsp *Service) BuildOverride(path string, line, column int, modID string) (
 	}
 	target := files.Join(mod.Dir, resolveEntryRel(mod, folder, prefix))
 	source, _ := ws.LoadSource(target)
-	fix := buildEntryFix(ws, mods, target, source, buildNamespace(database, definition.Name, source)+entry)
-	fix.Title = "Override " + definition.Name + " in " + ws.DescribeMod(mod.ID)
-	return &fix, nil
+	override := buildEntryFix(ws, mods, target, source, buildNamespace(database, definition.Name, source)+entry)
+	override.Title = "Override " + definition.Name + " in " + ws.DescribeMod(mod.ID)
+	override.Note = database.Precedence.Describe()
+	return &override, nil
+}
+
+// writeOverride returns the text of a copy that overrides a definition, and
+// where the copy's file must load: 1 for after the other copies, -1 for
+// before them, 0 for anywhere. The sites are the other copies. It returns an
+// error if the game joins every copy.
+func writeOverride(
+	tree *jomini.Tree, mods *index.Index, definition *schema.Copy, precedence game.Precedence, sites []index.Site,
+) (string, int, error) {
+	entry := tree.Text(tree.Statements[definition.Statement].Span)
+	switch {
+	// an entry mode replaces the copies loaded before it
+	case precedence.Modes != "":
+		return buildModeCopy(tree, definition, precedence), 1, nil
+
+	case precedence.Keeps == game.KeepFirst:
+		return entry, -1, nil
+
+	case precedence.KeepsEvery():
+		return "", 0, errors.New("the game joins every copy of an entry of this kind, so a mod adds to it instead of overriding it")
+
+	// the highest priority wins wherever its file loads
+	case precedence.Keeps == game.KeepHighest:
+		highest := lo.Max(lo.Map(sites, func(site index.Site, _ int) int { return int(mods.Occurrence(site).Priority) }))
+
+		return buildPriorityCopy(tree, definition, precedence, highest+1), 0, nil
+	}
+
+	return entry, 1, nil
 }
 
 // findEntry returns the definition at an offset of a document that a mod can
 // override: the innermost one that holds the offset, if it is written in a
 // folder of its database. A name script saves on the way, such as a scope,
 // is no entry. It returns nil if the offset is in none.
-func findEntry(ws *workspace.Session, document workspace.Document, offset int) *schema.Copy {
+func findEntry(ws *workspace.Session, document schema.Document, offset int) *schema.Copy {
 	context := findCursor(document, offset).context
 	for context != nil && (!context.Defines || context.Category != schema.CategoryDefinition) {
 		context = context.Parent
@@ -428,21 +463,15 @@ func listRivals(mods *index.Index, sites []index.Site, precedence game.Precedenc
 // after the given rivals goes beside the one that loads last, since a folder's files load before its subfolders'. Any
 // other goes in the entry's database folder, under the entry's stage folder.
 func resolveOverrideFolder(
-	row *game.Game, mods *index.Index, place workspace.Place, database *schema.Database, rivals []index.Site, side int,
+	mods *index.Index, place workspace.Place, database *schema.Database, rivals []index.Site, side int,
 ) string {
 	if side > 0 && len(rivals) > 0 {
 		last := slices.MaxFunc(rivals, func(first, second index.Site) int {
-			return files.CompareLoadOrder(stripStage(row, mods.File(first).Rel), stripStage(row, mods.File(second).Rel))
+			return mods.ComparePaths(first.File, second.File)
 		})
 		return path.Dir(mods.File(last).Rel)
 	}
-	return path.Join(place.Stage, database.Row.Folder)
-}
-
-// stripStage returns a file's path from its root in lower case, without its stage folder, as the game orders its files.
-func stripStage(row *game.Game, rel string) string {
-	_, rest := files.SplitStage(strings.ToLower(rel), row.Stages)
-	return rest
+	return path.Join(place.Stage, database.Declaration.Folder)
 }
 
 // findOverrideMod returns the mod that holds the copy an override makes: the one with the given id, or else the first
@@ -475,13 +504,14 @@ func findPrefix(
 	if side == 0 {
 		return "", true
 	}
-	others := lo.Map(rivals, func(site index.Site, _ int) string { return stripStage(row, mods.File(site).Rel) })
+	// the game orders files by their paths from their stages, with case
+	others := lo.Map(rivals, func(site index.Site, _ int) string { return mods.File(site).StageRel() })
 	for count := range maxPrefix + 1 {
 		prefix := ""
 		if count > 0 {
 			prefix = strings.Repeat(lo.Ternary(side < 0, "0", "z"), count) + "_"
 		}
-		candidate := stripStage(row, resolveEntryRel(mod, folder, prefix))
+		_, candidate := files.SplitStage(resolveEntryRel(mod, folder, prefix), row.Stages)
 		if lo.EveryBy(others, func(other string) bool { return files.CompareLoadOrder(candidate, other)*side > 0 }) {
 			return prefix, true
 		}

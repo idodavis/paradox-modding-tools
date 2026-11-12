@@ -12,6 +12,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/loc"
 )
 
 // Category is the color category of a key or a value in the editor. Each
@@ -83,6 +84,17 @@ type Copy struct {
 	// Alias is whether the name is the value of a key that its database also
 	// names definitions by.
 	Alias bool `json:"alias"`
+
+	// Sets is whether the name is one a nesting only switches on, as a key
+	// in parameters = { … } is.
+	Sets bool `json:"sets"`
+}
+
+// IsOwn reports whether the copy is a definition of its own. A second name
+// of another definition is none, nor a name a nesting only switches on, nor
+// a name a command saves while the game runs, such as a saved scope.
+func (c *Copy) IsOwn() bool {
+	return !c.Alias && !c.Sets && !slices.Contains(game.Links, c.Database)
 }
 
 // Reference is a name that a key or a value refers to, in a database, with
@@ -105,6 +117,19 @@ type Reference struct {
 // ToID returns the id of a referenced name: its database, a colon and its
 // name.
 func (r Reference) ToID() string { return r.Database + ":" + r.Name }
+
+// Document is one file parsed in the dialect of its format and walked. A
+// localization file's tree holds its text and lines only; its messages are
+// what it says, each with the walk's context of it in MessageContexts. A
+// script file has the walk's context of each statement of its tree in
+// Contexts. Any other file has neither.
+type Document struct {
+	File            files.File
+	Tree            *jomini.Tree
+	Messages        *loc.File
+	Contexts        []Context
+	MessageContexts []Context
+}
 
 // Saved is one scope that the definition saved before the current
 // statement, with the type it holds.
@@ -226,7 +251,6 @@ type walker struct {
 	database *Database
 
 	fileType game.FileType
-	nestings []game.Nesting
 
 	// declaring holds, by key, the database whose definition the key
 	// declares inline. It is nil outside an events file.
@@ -236,13 +260,9 @@ type walker struct {
 	// events file, and those a GUI file has declared so far.
 	inline map[string]*Definition
 
-	// winners holds the scripted definitions the open workspace changes, as
-	// lookupScripted reads them. modifiers and namespaces hold what the
-	// mods' modifier types take and the event namespaces the mods declare.
-	// All are as they were when the walk began.
-	winners    map[string]*Definition
-	modifiers  map[string]*Field
-	namespaces map[string]bool
+	// winners holds what the files of the open workspace's mods declare, as
+	// lookupScripted reads it and as it was when the walk began.
+	winners map[string]*Definition
 
 	// frames holds the frame of each level: frames[0] is the file's, and
 	// frames[n] that of the statements n levels down.
@@ -337,7 +357,7 @@ type shapeRow struct {
 	takes []string
 
 	// caller is the caller a call here is looked up by, among
-	// game.Callable.Callers. game.AnyCall means every callable.
+	// game.Declaration.Callers. game.AnyCall means every callable.
 	caller string
 
 	// values is the database every value in the block names. It is "" for
@@ -390,7 +410,8 @@ const (
 // block is a call of any callable, never judged: it may be an argument no
 // dump or file writes.
 var shapeRows = map[game.Shape]shapeRow{
-	game.ShapeFields: {takes: []string{takeOwn}},
+	game.ShapeFields:     {takes: []string{takeOwn}},
+	game.ShapeParameters: {takes: []string{takeOwn}},
 	game.ShapeTriggers: {
 		takes:  []string{takeCalls, takeDeclared, game.DumpTriggers, takeObserved, game.DumpLinks, takeUnknown},
 		caller: game.CallTrigger,
@@ -532,7 +553,7 @@ func (s *Schema) newWalker(tree *jomini.Tree, file files.File, contexts []Contex
 	contexts = contexts[:len(tree.Statements)]
 	walker := &walker{
 		schema: s, row: row, tree: tree, file: file, contexts: contexts, inline: map[string]*Definition{},
-		winners: mods.winners, modifiers: mods.modifiers, namespaces: mods.namespaces,
+		winners: mods.winners,
 	}
 	walker.rel = file.StageRel()
 	walker.stem = strings.TrimSuffix(path.Base(walker.rel), path.Ext(walker.rel))
@@ -541,24 +562,19 @@ func (s *Schema) newWalker(tree *jomini.Tree, file files.File, contexts []Contex
 		walker.database, _ = s.FindDatabase(file)
 	}
 
-	walker.nestings = row.FindNestings(walker.rel)
-	if database := walker.database; database != nil && slices.Contains(s.Setups, database.Row.Folder) {
-		walker.nestings = row.ListSetupNestings(database.Row.Folder)
-	}
-
 	// the walk writes every other context of the list as it reaches it
 	root := &contexts[0]
 	*root = Context{Shape: game.ShapeUnknown, References: root.References[:0]}
 	walker.frames = []frame{{context: root, wraps: true}, {}}
 	if database := walker.database; database != nil {
-		if database.Row.Contents == game.ContentsEvents {
+		if database.Declaration.Contents == game.ContentsEvents {
 			root.Namespaces = listNamespaces(tree)
 			walker.declaring = s.InlineDatabases
 			walker.declareInline()
 		}
 
-		if database.Row.DefinedBy == game.DefinedByFile && len(tree.Statements) > 1 {
-			walker.resolveDefinition(root, Copy{Database: database.Name, Name: walker.stem, Local: database.Callable.Local})
+		if database.Declaration.DefinedBy == game.DefinedByFile && len(tree.Statements) > 1 {
+			walker.resolveDefinition(root, Copy{Database: database.Name, Name: walker.stem, Local: database.Declaration.Local})
 		}
 	}
 
@@ -650,7 +666,7 @@ func (w *walker) findRunOrder(level int) []string {
 		return nil
 	}
 
-	return database.Row.RunOrder
+	return database.Declaration.RunOrder
 }
 
 // walkStatement resolves one statement and walks its block. A walk of the
@@ -686,7 +702,7 @@ func (w *walker) startsBody(context *Context) bool {
 
 	database := w.schema.Databases[context.Definition.Database]
 
-	return database != nil && database.Callable.Parameters
+	return database != nil && database.Declaration.Parameters
 }
 
 // resolve fills the context of a statement from the context of the block
@@ -784,7 +800,7 @@ func (w *walker) findDefinitionShape(database *Database) game.Shape {
 		return cmp.Or(w.fileType.Shape, game.ShapeFields)
 	}
 
-	return cmp.Or(database.Callable.Shape, database.Row.Shape, w.fileType.Shape, game.ShapeFields)
+	return cmp.Or(database.Declaration.Shape, w.fileType.Shape, game.ShapeFields)
 }
 
 // findRootScope returns the scope a definition's script starts in: the scope
@@ -796,7 +812,7 @@ func (w *walker) findRootScope(database *Database, definition Copy) string {
 		return ""
 	}
 
-	if value, ok := w.tree.FindChildValue(definition.Statement, database.Row.RootKey); ok {
+	if value, ok := w.tree.FindChildValue(definition.Statement, database.Declaration.RootKey); ok {
 		if w.schema.isScope(value) {
 			return value
 		}
@@ -804,7 +820,7 @@ func (w *walker) findRootScope(database *Database, definition Copy) string {
 		return ""
 	}
 
-	switch database.Row.Contents {
+	switch database.Declaration.Contents {
 	case game.ContentsEvents:
 		events := w.row.Events
 		eventType, _ := w.tree.FindChildValue(definition.Statement, events.TypeKey)
@@ -812,7 +828,9 @@ func (w *walker) findRootScope(database *Database, definition Copy) string {
 		return cmp.Or(strings.TrimSuffix(eventType, events.TypeSuffix), events.DefaultScope)
 
 	case game.ContentsOnActions:
-		return w.schema.OnActions[definition.Name].Scope
+		if declared := database.Definitions[definition.Name]; declared != nil {
+			return declared.Target
+		}
 	}
 
 	return ""
@@ -828,9 +846,17 @@ func (w *walker) resolveStatement(context *Context, statement int32, level int) 
 	current := w.tree.Statements[statement]
 	label, span := w.frames[level].label, w.frames[level].span
 	switch {
+	// a GUI block is also overridden as blockoverride = "name" { … }, the
+	// name read as the block's tag, as CK3 gui/interaction_marriage.gui:190
+	// writes. Its braces hold what the widget around it holds.
+	case w.file.Format == files.FormatGUI && label == game.GUI.BlockCalls && !current.Tag.IsEmpty():
+		name := w.tree.UnquotedSpan(current.Tag)
+		w.resolveLead(context, label, w.tree.Text(name), name)
+		context.Shape, context.Field, context.Scope = parent.Shape, parent.Field, parent.Scope
+
 	case label != "":
 		w.frames[level].wraps = w.frames[level-1].wraps && w.database != nil &&
-			slices.Contains(w.database.Row.WrapperKeys, label)
+			slices.Contains(w.database.Declaration.WrapperKeys, label)
 		w.resolveKey(context, statement, level)
 		w.resolveLead(context, w.findLead(statement), label, span)
 
@@ -841,7 +867,7 @@ func (w *walker) resolveStatement(context *Context, statement int32, level int) 
 		context.Field = parent.Field
 	}
 
-	if database := w.database; level == 1 && database != nil && database.Row.DefinedBy == game.DefinedByNothing {
+	if database := w.database; level == 1 && database != nil && database.Declaration.DefinedBy == game.DefinedByNothing {
 		context.Database, context.Field, context.Shape = database.Name, database.Field, w.findDefinitionShape(database)
 	}
 }
@@ -1090,7 +1116,7 @@ func (w *walker) take(entry string, parent *Context, key string, class jomini.Cl
 	case takeDocumented:
 		database := w.schema.Databases[parent.Database]
 
-		return match{mark: entry, field: parent.Field.findChild(key)}, database != nil && database.Documented[key]
+		return match{mark: entry, field: parent.Field.findChild(key)}, database != nil && database.declares(key)
 
 	case takeOwn:
 		child := parent.Field.findPatternChild(key, class)
@@ -1098,9 +1124,7 @@ func (w *walker) take(entry string, parent *Context, key string, class jomini.Cl
 		return match{mark: entry, field: child}, child != nil
 
 	case takeModifiers:
-		_, declared := w.schema.Modifiers[key]
-
-		return match{mark: entry, field: w.findModifierField(parent.Field, key)}, declared
+		return match{mark: entry, field: w.findModifierField(parent.Field, key)}, w.schema.declaresModifier(key)
 
 	case takeModifierTypes:
 		return match{mark: entry, field: w.findModifierField(parent.Field, key)},
@@ -1160,16 +1184,19 @@ func (w *walker) takeCommand(database string, parent *Context, key string) (matc
 	return fit, true
 }
 
-// findMatchShape returns the shape of the block of a key that fits: for a
-// link, what a link encloses in the block around it; for a command, what its
-// keys' field says, else unknown for the keys of an effect and a trigger
-// together, else the arguments of its own kind; for anything else, what its
-// field says, else unknown.
+// findMatchShape returns the shape of the block of a key that fits. A link's
+// block has the shape a link encloses in the block around it. A call to a
+// scripted definition with parameters holds its arguments. A command's block
+// has the shape its field states. Without one it is unknown where the field
+// holds an effect's and a trigger's keys together, and else the arguments of
+// its own kind. Any other block has the shape its field states, or unknown.
 func findMatchShape(parent *Context, fit match) game.Shape {
 	shape := findBlockShape(fit.field)
 	switch {
 	case fit.isLink():
 		return findEnclosing(parent)
+	case fit.callee != nil && fit.callee.Field != nil:
+		return game.ShapeParameters
 	case shape != "" || fit.definition == nil:
 		return cmp.Or(shape, game.ShapeUnknown)
 	case fit.field != nil && fit.field == fit.definition.Union:
@@ -1204,7 +1231,7 @@ func findBlockShape(field *Field) game.Shape {
 // A GUI widget type calls an empty one. It returns false if there is none.
 func (w *walker) findCalledDefinition(caller, key string) (*Definition, string, bool) {
 	if scripted, ok := w.inline[key]; ok {
-		callers := w.schema.Databases[scripted.Database].Callable.Callers
+		callers := w.schema.Databases[scripted.Database].Declaration.Callers
 		if len(callers) > 0 && (caller == game.AnyCall || slices.Contains(callers, caller)) {
 			return scripted, callers[0], true
 		}
@@ -1215,18 +1242,22 @@ func (w *walker) findCalledDefinition(caller, key string) (*Definition, string, 
 	}
 
 	callee := w.schema.lookupCall(w.winners, caller, key)
-	if callee == nil && caller == game.GUI.TagCalls && w.schema.WidgetTypes[key] {
-		return &Definition{}, caller, true
+	if callee == nil && caller == game.GUI.TagCalls {
+		callee = w.schema.Databases[game.GUI.WidgetTypes].Definitions[key]
 	}
 
 	return callee, caller, callee != nil && caller != ""
 }
 
 // findModifierField returns the field of a key in a modifiers block: what
-// the modifier type of that name takes, the game's before a mod's, else the
-// key's child of the given field. It returns nil if none has one.
+// the modifier type of that name takes, else the key's child of the given
+// field. It returns nil if none has one.
 func (w *walker) findModifierField(holder *Field, key string) *Field {
-	return cmp.Or(w.schema.ModifierFields[key], w.modifiers[key], holder.findChild(key))
+	if declared := w.schema.lookupScripted(w.winners, w.schema.ModifierTypes, key); declared != nil {
+		return declared.Field
+	}
+
+	return holder.findChild(key)
 }
 
 // FindCaller returns the caller that a call in the block of a context
@@ -1341,6 +1372,11 @@ func (w *walker) findKeyScope(
 	explained := fits && fit.mark != takeObserved
 	shaped := keyword != nil && !fits && keyword.Shape != ""
 	switch {
+	// a call's argument is read inside the called definition, so its scope
+	// is not known here
+	case context.Shape == game.ShapeParameters:
+		return ""
+
 	// an argument is read in a scope the command makes, but a conditional
 	// keyword such as limit in the scope of the command that holds it
 	case isArgument(parent, key) && (keyword == nil || keyword.Class != game.KeywordClassConditional):
@@ -1590,7 +1626,7 @@ func (w *walker) resolveAlias(context *Context, statement int32, level int) {
 		return
 	}
 
-	target, isAlias := database.Row.Aliases[w.frames[level].label]
+	target, isAlias := database.Declaration.Aliases[w.frames[level].label]
 	span := w.tree.UnquotedSpan(current.Value)
 	if label := w.tree.Text(span); isAlias && label != "" && current.ValueClass != jomini.ClassParameter {
 		context.Definition = &Copy{

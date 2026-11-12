@@ -7,7 +7,8 @@ import { computed } from "vue";
 
 import * as draw from "@services/draw/service";
 import type { Coat, Window } from "@services/draw/models";
-import type { Edit, Range as Span } from "@services/lsp/models";
+import type { Range as Span } from "@internal/jomini/models";
+import type { Edit } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 
 import { confirm } from "../../../lib/feedback";

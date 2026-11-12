@@ -50,13 +50,10 @@ type CoatShade struct {
 	Grain   CoatStrength
 }
 
-// CoatSlot is a color slot that a layer's shaders read.
+// CoatSlot is a color slot of a coat or of one of its layers.
 type CoatSlot struct {
 	// Key is the key that writes it, as color1 does.
 	Key string
-
-	// Required is whether the layer must write it.
-	Required bool
 }
 
 // CoatPlace is what one placement key does to a layer.
@@ -139,7 +136,7 @@ type CoatSpec struct {
 	Fallback string
 
 	// Slots are the color slots a coat or a layer writes, in order. The
-	// shaders read the first three.
+	// game draws with the first three.
 	Slots []CoatSlot
 
 	// Placement is what a placed layer's keys do to it, by the layer's type.
@@ -225,17 +222,19 @@ var Coat = CoatSpec{
 	},
 	Regions:  []string{"r", "g", "b"},
 	Fallback: "rgba(0, 0, 0, 0)",
-	// The shaders read three (coat_of_arms_pattern.fxh:7-9); an emblem names
-	// a coat's color4 (EU5 00_random_countries.txt:30-31,69, Vic3
+	// The game draws a coat with its first three colors. An emblem names a
+	// coat's color4 (EU5 00_random_countries.txt:30-31,69, Vic3
 	// 01_subs.txt:235).
-	Slots: []CoatSlot{{Key: "color1", Required: true}, {Key: "color2"}, {Key: "color3"}, {Key: "color4"}, {Key: "color5"}},
+	Slots: []CoatSlot{{Key: "color1"}, {Key: "color2"}, {Key: "color3"}, {Key: "color4"}, {Key: "color5"}},
 	Placement: map[string]map[string]CoatPlace{
 		"instance": {
 			"position": {Part: CoatPartCenter, Defaults: []float64{0.5, 0.5}},
 			"scale":    {Part: CoatPartSize, Defaults: []float64{1, 1}},
 			"rotation": {Part: CoatPartTurn, Defaults: []float64{0}},
-			// CK3 01_holy_order_coas.txt:139
-			"depth": {Part: CoatPartDepth, Defaults: []float64{0}},
+			// CK3 01_holy_order_coas.txt:139 writes one, and CK3
+			// _emblem_layouts.info:67 gives the default as 0.01. Vic3 and EU5
+			// ship no doc of it and are taken to share it.
+			"depth": {Part: CoatPartDepth, Defaults: []float64{0.01}},
 		},
 		"sub": {
 			"offset": {Part: CoatPartCorner, Defaults: []float64{0, 0}},

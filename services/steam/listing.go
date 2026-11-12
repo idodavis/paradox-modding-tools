@@ -23,7 +23,6 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"golang.org/x/mod/semver"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
@@ -146,8 +145,10 @@ func (stm *Service) findListing(modID, key string) (*workspace.Session, workspac
 	listing.VersionTag = resolveVersionTag(versions, listing.SupportedVersion)
 	mods := stm.Workspace.ListMods()
 	listing.Dependencies = lo.Map(mod.Descriptor.Dependencies, func(dependency workspace.Dependency, _ int) Dependency {
+		// a dependency the workspace has is shown by that mod's name, since
+		// Vic3 and EU5 descriptors name a dependency by an id
 		required, _ := workspace.FindMod(mods, dependency)
-		return Dependency{Name: dependency.ID, WorkshopID: required.ResolveWorkshopID()}
+		return Dependency{Name: cmp.Or(required.Descriptor.Name, dependency.ID), WorkshopID: required.ResolveWorkshopID()}
 	})
 	listing, err = loadPage(dir, listing)
 	return ws, mod, listing, err
@@ -373,7 +374,7 @@ func (stm *Service) ListListings(modID string) ([]Listing, error) {
 	keys := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (string, bool) {
 		return entry.Name(), isListing(mod.Dir, entry.Name())
 	})
-	slices.SortFunc(keys, func(first, second string) int { return semver.Compare("v"+second, "v"+first) })
+	slices.SortFunc(keys, func(first, second string) int { return game.CompareVersions(second, first) })
 	listings := []Listing{}
 	for _, key := range append([]string{""}, keys...) {
 		listing, err := stm.ReadListing(modID, key)

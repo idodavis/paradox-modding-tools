@@ -47,18 +47,18 @@ func (w *walker) findNested(statement int32, level int) (Copy, bool) {
 		label = w.tree.Text(span)
 	}
 
-	if label == "" {
+	if label == "" || w.database == nil {
 		return Copy{}, false
 	}
 
-	for _, nesting := range w.nestings {
+	for _, nesting := range w.database.Declaration.Nestings {
 		if !jomini.MatchKeyPath(nesting.KeyPath, w.frames[level-1].path) {
 			continue
 		}
 
-		database, same := w.findNestedDatabase(nesting)
-		holding := w.frames[level-1].context.Definition != nil || w.database != nil && w.database.Row.DefinedBy == game.DefinedByNothing
-		if database == "" || !holding && (same || path.Ext(nesting.Parent) == "") {
+		database, same := nesting.Label(), nesting.Database == ""
+		holding := w.frames[level-1].context.Definition != nil || w.database.Declaration.DefinedBy == game.DefinedByNothing
+		if !holding && (same || path.Ext(nesting.Parent) == "") {
 			continue
 		}
 
@@ -66,7 +66,7 @@ func (w *walker) findNested(statement int32, level int) (Copy, bool) {
 			continue
 		}
 
-		definition := Copy{Database: database, Name: label, Span: span, Statement: statement}
+		definition := Copy{Database: database, Name: label, Span: span, Statement: statement, Sets: nesting.Sets}
 		if nesting.NameKey != "" {
 			name, ok := w.findNameSpan(statement, nesting.NameKey)
 			if !ok {
@@ -86,26 +86,11 @@ func (w *walker) findNested(statement int32, level int) (Copy, bool) {
 	return Copy{}, false
 }
 
-// findNestedDatabase returns the database that a nesting defines in, and
-// whether it is the holder's own database. It returns "" and true where the
-// nesting names no database and the file has none.
-func (w *walker) findNestedDatabase(nesting game.Nesting) (string, bool) {
-	if nesting.Database != "" {
-		return nesting.Label(), false
-	}
-
-	if w.database == nil {
-		return "", true
-	}
-
-	return w.database.Name, true
-}
-
 // isNested reports whether a key in a definition's block defines a nested
-// definition rather than a field. A key the docs write for the database is
-// a field.
+// definition rather than a field. A key a row or the docs declare for the
+// database is a field.
 func (w *walker) isNested(key string, nesting game.Nesting, same bool) bool {
-	if w.database != nil && w.database.Documented[key] {
+	if w.database.declares(key) {
 		return false
 	}
 
@@ -153,7 +138,7 @@ func (w *walker) findGUIDefinition(statement int32, level int) (Copy, bool) {
 // call the definition. It returns false if the label is empty.
 func (w *walker) makeGUIDefinition(database, label string, span jomini.Span, statement int32) (Copy, bool) {
 	owner := w.schema.Databases[database]
-	local := owner != nil && owner.Callable.Local
+	local := owner != nil && owner.Declaration.Local
 	if local && label != "" {
 		w.inline[label], _ = makeScripted(owner, label, w.tree, statement)
 	}
@@ -217,11 +202,11 @@ func (w *walker) findScriptDefinition(statement int32, level int) (Copy, bool) {
 	}
 
 	switch {
-	case database.Row.DefinedBy != "":
+	case database.Declaration.DefinedBy != "":
 		return Copy{}, false
 
-	case database.Row.NameKey != "":
-		name, ok := w.findNameSpan(statement, database.Row.NameKey)
+	case database.Declaration.NameKey != "":
+		name, ok := w.findNameSpan(statement, database.Declaration.NameKey)
 		if !ok {
 			return Copy{}, false
 		}
@@ -231,12 +216,12 @@ func (w *walker) findScriptDefinition(statement int32, level int) (Copy, bool) {
 		span = jomini.Span{Start: name.Start, End: name.Start + len(label)}
 	}
 
-	if label == "" || slices.Contains(database.Row.WrapperKeys, label) {
+	if label == "" || slices.Contains(database.Declaration.WrapperKeys, label) {
 		return Copy{}, false
 	}
 
 	mode, label := w.row.SplitMode(label)
-	if database.Row.Contents == game.ContentsEvents && !w.isEvent(label, statement) {
+	if database.Declaration.Contents == game.ContentsEvents && !w.isEvent(label, statement) {
 		return Copy{}, false
 	}
 
@@ -247,8 +232,32 @@ func (w *walker) findScriptDefinition(statement int32, level int) (Copy, bool) {
 
 	return Copy{
 		Database: database.Name, Name: label, Span: span, Statement: statement, Mode: mode,
-		Priority: priority, Local: database.Callable.Local,
+		Priority: priority, Local: database.Declaration.Local,
 	}, true
+}
+
+// FindTextKey returns the statement that writes the localization key a
+// definition's statement names under the given key, as an event's title is
+// under game.TitleKey. A key written as a block, as a triggered description
+// is, gives the first text in the block. Only a value that is an identifier
+// is a key, so a quoted sentence is none. It returns false if the statement
+// writes no such key.
+func FindTextKey(tree *jomini.Tree, statement int32, key string) (int32, bool) {
+	child, ok := tree.FindChild(statement, key)
+	if !ok {
+		return 0, false
+	}
+
+	for position := child; position < tree.Statements[child].Last; position++ {
+		current := tree.Statements[position]
+		field := tree.Text(current.Key)
+		isText := field == game.DescriptionKey || field == game.LabelKey && current.Parent == child
+		if (position == child || isText) && current.ValueClass.IsIdentifier() {
+			return position, true
+		}
+	}
+
+	return 0, false
 }
 
 // isEvent reports whether a label names an event: a namespace that the file

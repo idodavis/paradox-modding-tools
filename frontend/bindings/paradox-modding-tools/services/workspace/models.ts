@@ -225,6 +225,13 @@ export interface Place {
      * format that has none of its own.
      */
     "language": string;
+
+    /**
+     * Hiding is why the game does not read the file, "" for a file it reads.
+     * Hider is the id of the mod that hides it, "" where no mod does.
+     */
+    "hiding": files$0.Hiding;
+    "hider": string;
 }
 
 /**

@@ -1,5 +1,5 @@
 // combine.go finds which definition the game keeps when several compete, by
-// the game package's rule, and why a copy the game does not read is hidden.
+// the game package's rule, and keeps the answer for each name asked about.
 
 package index
 
@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"slices"
 
-	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/schema"
 )
@@ -21,39 +20,64 @@ type Winner struct {
 	// Reason is why the game keeps the copy. It is "" for a lone copy.
 	Reason game.Reason `json:"reason"`
 
-	// Cause is what leaves an unsettled choice open. It is "" for a settled
-	// one.
-	Cause game.Cause `json:"cause,omitempty"`
+	// Cause is what leaves an unsettled choice open, and Prefix the entry
+	// mode's prefix that does, as INJECT: is. Each is "" where it does not
+	// apply.
+	Cause  game.Cause `json:"cause,omitempty"`
+	Prefix string     `json:"prefix,omitempty"`
 
 	// Merged holds the copies the game reads into the one definition: the
 	// winner and those merged into it. It may be empty where none merge.
 	Merged []Site `json:"merged,omitempty"`
+
+	// Beaten holds the other copies of the name, in load order: those the
+	// game reads and passes over, and those in files it does not read. Where
+	// the choice is unsettled, a copy in a file the game reads is not one.
+	Beaten []Site `json:"beaten,omitempty"`
 }
 
-// Outcome is what the game does with one copy of a name: whether it keeps
-// the copy, why, and what hides the copy's file where it does not read it.
+// Outcome is what the game does with one copy of a name.
 type Outcome struct {
 	// Kept is set for a copy the game keeps: the winner, or a copy merged
 	// into it.
 	Kept bool
 
-	// Reason is why the game keeps the copy or does not read it, or that no
-	// source says which copy it keeps. It is "" for a lone winner, and for a
-	// copy the game reads but does not keep.
+	// Reason is why the game keeps the copy, or that no source says which
+	// copy it keeps. It is "" for a lone winner, for a copy the game reads
+	// but does not keep, and for a copy in a file the game does not read.
 	Reason game.Reason
+}
 
-	// Hider is the origin of the mod that hides the copy's file. It is ""
-	// where nothing hides the file.
-	Hider string
+// decision is what FindKeptLocal keeps for one key of a database: its
+// winner, and whether the game keeps a copy at all.
+type decision struct {
+	winner Winner
+	kept   bool
+}
+
+// decisionKey is a database and a key in it, by their ordinals.
+type decisionKey struct {
+	database uint16
+	key      uint32
 }
 
 // FindWinner returns the definition the game keeps among the given sites, all
-// definitions of one name, by the database's precedence. It returns false if
-// the game keeps none.
+// definitions of one name, by the database's precedence, with the copies it
+// beats. It returns false if the game keeps none, and every copy is then
+// beaten.
 func (i *Index) FindWinner(sites []Site, precedence game.Precedence) (Winner, bool) {
-	ordered := slices.DeleteFunc(i.listLoadOrder(sites, precedence), func(site Site) bool {
-		return i.IsUnmounted(site.File)
-	})
+	every := i.listLoadOrder(sites, precedence)
+	winner, ok := i.findMounted(every, precedence)
+	winner.Beaten = slices.DeleteFunc(every, func(site Site) bool { return ok && i.isActing(winner, site) })
+
+	return winner, ok
+}
+
+// findMounted returns the winner among copies in load order, by the files
+// the game mounts and reads: a copy in a file it does not read wins nothing,
+// and changes only why the winner wins.
+func (i *Index) findMounted(every []Site, precedence game.Precedence) (Winner, bool) {
+	ordered := slices.DeleteFunc(slices.Clone(every), func(site Site) bool { return i.IsUnmounted(site.File) })
 	loaded := slices.DeleteFunc(slices.Clone(ordered), func(site Site) bool { return !i.IsLoaded(site.File) })
 
 	winner, ok := i.resolveWinner(loaded, precedence)
@@ -100,7 +124,7 @@ func (i *Index) resolveWinner(ordered []Site, precedence game.Precedence) (Winne
 		return Winner{}, false
 	}
 
-	winner := Winner{Site: ordered[placed.Copy], Reason: placed.Reason, Cause: placed.Cause}
+	winner := Winner{Site: ordered[placed.Copy], Reason: placed.Reason, Cause: placed.Cause, Prefix: placed.Prefix}
 	for _, position := range placed.Merged {
 		winner.Merged = append(winner.Merged, ordered[position])
 	}
@@ -145,35 +169,54 @@ func (i *Index) isReplaceOpen(loaded []Site, winner Winner, precedence game.Prec
 }
 
 // FindKept returns the definition the game keeps of a name in a database,
-// local ones aside. It returns false if there is none.
+// local ones aside. It returns false if the game keeps none, or the schema
+// has no such database.
 func (i *Index) FindKept(schema *schema.Schema, reference schema.Reference) (Winner, bool) {
-	return i.findKept(schema, reference, func(Site) bool { return false })
+	return i.FindKeptLocal(schema, reference, -1)
 }
 
 // FindKeptLocal is FindKept for a reference written in a file: that file's
-// local definitions count too. A file the index does not list has the
-// position -1, which counts none.
+// local definitions count too, and no other file's. A file the index does
+// not list has the position -1, which counts none.
+//
+// The answer for a name with several copies, none of them local, is worked
+// out once and kept until the index is scanned again. A lone copy has nothing
+// to decide, so it is not kept.
 func (i *Index) FindKeptLocal(schema *schema.Schema, reference schema.Reference, file int32) (Winner, bool) {
-	return i.findKept(schema, reference, func(site Site) bool { return site.File == file })
-}
-
-// findKept returns the definition the game keeps of a name in a database. A
-// local definition counts only if the given test accepts its site. It returns
-// false if the schema has no such database.
-func (i *Index) findKept(schema *schema.Schema, reference schema.Reference, isVisible func(Site) bool) (Winner, bool) {
 	database, ok := schema.Databases[reference.Database]
 	if !ok {
 		return Winner{}, false
 	}
 
-	return i.FindWinner(i.listDefining(database.Name, reference.Name, isVisible), database.Precedence)
+	sites := i.listPosting(toRole(database.Name), database.Name, reference.Name)
+	isLocal := func(site Site) bool { return i.Occurrence(site).Local }
+	if slices.ContainsFunc(sites, isLocal) {
+		visible := slices.DeleteFunc(slices.Clone(sites), func(site Site) bool { return isLocal(site) && site.File != file })
+
+		return i.FindWinner(visible, database.Precedence)
+	}
+
+	if len(sites) < 2 {
+		return i.FindWinner(sites, database.Precedence)
+	}
+
+	first := i.Occurrence(sites[0])
+	key := decisionKey{database: first.Database, key: first.Name}
+	if stored, ok := i.winners.Load(key); ok {
+		return stored.(decision).winner, stored.(decision).kept
+	}
+
+	winner, ok := i.FindWinner(sites, database.Precedence)
+	i.winners.Store(key, decision{winner: winner, kept: ok})
+
+	return winner, ok
 }
 
 // ListKept returns the definition the game keeps of each name in a database,
 // one for each name, in load order. A local definition never counts. It is
 // empty if the schema has no such database.
 func (i *Index) ListKept(schema *schema.Schema, database string) []Winner {
-	var kept []Winner
+	var winners []Winner
 	listed := map[string]bool{}
 
 	for _, site := range i.ListDefinitions(database) {
@@ -184,16 +227,17 @@ func (i *Index) ListKept(schema *schema.Schema, database string) []Winner {
 
 		listed[reference.Name] = true
 		if winner, ok := i.FindKept(schema, reference); ok {
-			kept = append(kept, winner)
+			winners = append(winners, winner)
 		}
 	}
 
-	return kept
+	return winners
 }
 
 // ResolveSite returns what the game does with a copy of a winner's name:
-// whether it keeps the copy, why, and the mod that hides the copy's file if
-// the game does not read it. An unsettled winner keeps none.
+// whether it keeps the copy, and why. An unsettled winner keeps none. A copy
+// in a file the game does not read is not kept, and files.Mounts.FindHiding
+// says what hides its file.
 func (i *Index) ResolveSite(winner Winner, site Site) Outcome {
 	unsettled := winner.Reason == game.ReasonUnsettled
 	switch {
@@ -206,31 +250,9 @@ func (i *Index) ResolveSite(winner Winner, site Site) Outcome {
 	case !unsettled && slices.Contains(winner.Merged, site):
 		return Outcome{Kept: true, Reason: game.ReasonCombined}
 
-	case !i.IsLoaded(site.File):
-		reason, hider := i.FindHider(site.File)
-
-		return Outcome{Reason: reason, Hider: hider}
-
-	case unsettled:
+	case unsettled && i.IsLoaded(site.File):
 		return Outcome{Reason: game.ReasonUnsettled}
 	}
 
 	return Outcome{}
-}
-
-// FindHider returns why the game does not read a file, dropped or shadowed,
-// and the origin of the mod that hides it. It returns "" and "" for a file
-// nothing hides.
-func (i *Index) FindHider(file int32) (game.Reason, string) {
-	current := i.Files[file]
-	loaded, hidden, _ := i.FindLoaded(current.Rel)
-	if !slices.ContainsFunc(hidden, func(other files.File) bool { return other.Key == current.Key }) {
-		return "", ""
-	}
-
-	if mod, ok := i.FindReplacingMod(file); ok {
-		return game.ReasonDropped, mod.Origin
-	}
-
-	return game.ReasonShadowed, loaded.Origin
 }

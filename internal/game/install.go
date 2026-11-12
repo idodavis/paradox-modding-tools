@@ -167,6 +167,46 @@ var (
 	buildIDRe       = regexp.MustCompile(`"buildid"\s*"(\d+)"`)
 )
 
+// CompareVersions orders two versions by their numbers, part by part,
+// however many parts each has: 1.20.1.2 comes after 1.20.1. A part one of
+// them lacks counts as 0, so 1.20 equals 1.20.0. A part that is no number,
+// as the X of 1.20.X, comes before every number. It returns a negative
+// number, 0 or a positive one, as cmp.Compare does.
+func CompareVersions(first, second string) int {
+	firstParts, secondParts := strings.Split(first, "."), strings.Split(second, ".")
+	for position := range max(len(firstParts), len(secondParts)) {
+		firstNumber, firstErr := toVersionPart(firstParts, position)
+		secondNumber, secondErr := toVersionPart(secondParts, position)
+		switch {
+		case firstErr != nil && secondErr != nil:
+			if order := strings.Compare(firstParts[position], secondParts[position]); order != 0 {
+				return order
+			}
+
+		case firstErr != nil:
+			return -1
+
+		case secondErr != nil:
+			return 1
+
+		case firstNumber != secondNumber:
+			return firstNumber - secondNumber
+		}
+	}
+
+	return 0
+}
+
+// toVersionPart returns the number of one part of a version, 0 for a part
+// the version lacks. It returns an error for a part that is no number.
+func toVersionPart(parts []string, position int) (int, error) {
+	if position >= len(parts) {
+		return 0, nil
+	}
+
+	return strconv.Atoi(parts[position])
+}
+
 // LoadVersion returns the version of an install of the game: from its
 // launcher settings, else from its debug log if the game started since its
 // last update, else from its revision log in the same case as "build <date>",

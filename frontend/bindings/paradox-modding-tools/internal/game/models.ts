@@ -107,8 +107,8 @@ export interface Guide {
 }
 
 /**
- * Reason is why the game keeps a copy of a name, why it does not read a copy,
- * or that no source says which copy it keeps.
+ * Reason is why the game keeps a copy of a name, or that no source says which
+ * copy it keeps.
  */
 export enum Reason {
     /**
@@ -170,14 +170,6 @@ export enum Reason {
      * ReasonUnsettled is that no source says which copy the game keeps.
      */
     ReasonUnsettled = "unsettled",
-
-    /**
-     * ReasonShadowed and ReasonDropped are a copy in a file the game does not
-     * read: a file at the same path later in the load order replaces it, or a
-     * mod's replace_path drops its folder.
-     */
-    ReasonShadowed = "shadowed",
-    ReasonDropped = "dropped",
 };
 
 /**

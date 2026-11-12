@@ -85,7 +85,7 @@ export interface Card {
     /**
      * Range is the word the card is about.
      */
-    "range": Range;
+    "range": jomini$0.Range;
 
     /**
      * Token is the token type the editor colors the card's word by, as
@@ -120,52 +120,42 @@ export interface Class {
  */
 export interface Code {
     /**
-     * the code's name in kebab case, such as wrong-scope
+     * ID is the code's name in kebab case, such as wrong-scope.
      */
     "id": string;
 
     /**
-     * compatibility, health or log
+     * Question is compatibility, health or log. Level is critical, error,
+     * warning or info, and Topic one such as syntax or localization; both
+     * are "" for the game's log.
      */
     "question": string;
-
-    /**
-     * critical, error, warning or info, or "" for the game log
-     */
     "level": string;
-
-    /**
-     * such as syntax or localization, or "" for the log
-     */
     "topic": string;
 
     /**
-     * the code's title
+     * Label is the code's title, and Description one plain sentence on what
+     * the check looks for.
      */
     "label": string;
-
-    /**
-     * one plain sentence on what the check looks for
-     */
     "description": string;
 
     /**
-     * a template the facts fill, such as {name}
+     * Message is a template the facts fill, such as {name}. Advice says what
+     * to do about it in plain words, and repeats no fact of the message.
      */
     "message": string;
-
-    /**
-     * what to do about it, in plain words; it repeats no fact of the message
-     */
     "advice": string;
 
     /**
-     * the message where a mod the file's mod does not depend on defines the name; "" if the code has none
+     * Elsewhere is the message where a mod the file's mod does not depend on
+     * defines the name. It is "" if the code has none.
      */
     "elsewhere"?: string;
 
     /**
-     * the editor never gives the code and only Health's report finds it
+     * HealthOnly is set for a code the editor never gives and only Health's
+     * report finds.
      */
     "healthOnly": boolean;
 }
@@ -174,7 +164,7 @@ export interface Code {
  * A ColorSite is one color written in a file: where it is and the color it stands for.
  */
 export interface ColorSite {
-    "range": Range;
+    "range": jomini$0.Range;
     "color": jomini$0.RGBA;
 }
 
@@ -240,19 +230,17 @@ export interface Diagnostic {
     "code": string;
 
     /**
-     * its code's
+     * Level is its code's, and Message its code's template filled with its
+     * facts, as text.
      */
     "level": string;
-
-    /**
-     * its code's template filled with its facts, as text
-     */
     "message": string;
-    "range": Range;
+    "range": jomini$0.Range;
     "facts": { [_ in string]?: string } | null;
 
     /**
-     * where the workspace defines a name the file's mod does not, in a mod it does not depend on
+     * Defined is where the workspace defines a name the file's mod does not,
+     * in a mod it does not depend on.
      */
     "defined"?: Site[] | null;
 }
@@ -273,7 +261,7 @@ export interface Draft {
  * An Edit is one change to a file's text: the range replaced and the text that replaces it.
  */
 export interface Edit {
-    "range": Range;
+    "range": jomini$0.Range;
     "text": string;
 }
 
@@ -298,6 +286,12 @@ export interface Fix {
      * where the caret goes once the fix is applied
      */
     "reveal"?: Site | null;
+
+    /**
+     * Note says in plain words what the fix leaves the game doing, as an
+     * override says which copy the game keeps. It is "" for none.
+     */
+    "note"?: string;
 }
 
 /**
@@ -333,8 +327,8 @@ export interface Legend {
 }
 
 /**
- * A Level is one level of a finding: its wording, its icon and color on the page, whether it counts as a problem and
- * whether the game loses something.
+ * A Level is one level of a finding: its wording, its icon and color on the
+ * page, whether it counts as a problem and whether the game loses something.
  */
 export interface Level {
     "id": string;
@@ -373,27 +367,16 @@ export interface Level {
 }
 
 /**
- * A Part is one piece of a sentence: plain text, or a fact drawn in its style, such as a mod's name, a code, a count
- * or a path.
+ * A Part is one piece of a sentence: plain text, or a fact drawn in its
+ * style, such as a mod's name, a code, a count or a path.
  */
 export interface Part {
     "text": string;
 
     /**
-     * "", mod, code, count or path
+     * Style is "", mod, code, count or path.
      */
     "style"?: string;
-}
-
-/**
- * A Range is a span as Monaco counts it: lines and columns from one, the column in UTF-16 code units, the end
- * exclusive.
- */
-export interface Range {
-    "startLineNumber": number;
-    "startColumn": number;
-    "endLineNumber": number;
-    "endColumn": number;
 }
 
 /**
@@ -410,42 +393,41 @@ export interface Signature {
 }
 
 /**
- * A Site is one place in a file that an answer points at: the file's place and a line. Where the answer has them, it
- * also has a range, the text of the line, and whether the game keeps the definition and why. A whole-file site lists
- * the names the file defines.
+ * A Site is one place in a file that an answer points at: the file's place
+ * and a line. Where the answer has them, it also has a range, the text of
+ * the line, and whether the game keeps the definition and why. A whole-file
+ * site lists the names the file defines.
  */
 export interface Site {
     "place": workspace$0.Place;
 
     /**
-     * counted from one
+     * Line counts from one. Range is the zero range where the answer has
+     * none, and Text the text of the line where the answer read the file.
      */
     "line": number;
-
-    /**
-     * the zero range where the answer has none
-     */
-    "range": Range;
-
-    /**
-     * the text of the line, where the answer read the file
-     */
+    "range": jomini$0.Range;
     "text"?: string;
-    "kept": boolean;
 
     /**
-     * as index.ResolveSite gives it; unsettled where no source says
+     * Kept is whether the game keeps the definition, and Reason why, as
+     * index.ResolveSite gives it: unsettled where no source says. A copy in
+     * a file the game does not read has no reason; its place says what
+     * hides the file.
      */
+    "kept": boolean;
     "reason"?: game$0.Reason;
 
     /**
-     * the reason in words, naming the mod that hides a copy
+     * Label is the reason in words, or what hides the copy's file, naming
+     * the mod that hides it.
      */
     "label"?: string;
     "defines"?: string[] | null;
 
     /**
-     * the name of the definition that holds a copy the game keeps whole
+     * Holder is the name of the definition that holds a copy the game keeps
+     * whole.
      */
     "holder"?: string;
 }
@@ -470,12 +452,12 @@ export interface Symbol {
     /**
      * the whole statement
      */
-    "range": Range;
+    "range": jomini$0.Range;
 
     /**
      * the name alone
      */
-    "nameRange": Range;
+    "nameRange": jomini$0.Range;
     "children"?: Symbol[] | null;
 }
 

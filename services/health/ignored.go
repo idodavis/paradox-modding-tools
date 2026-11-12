@@ -13,7 +13,6 @@ import (
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/app"
-	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -82,7 +81,7 @@ func listPairFindings(ws *workspace.Session, mods *index.Index, findings []Findi
 			ids = ordered
 		}
 		count := lo.CountBy(findings, func(finding Finding) bool { return slices.Contains(finding.Pairs, [2]string(ids)) })
-		facts := lsp.DescribeReference(schema.Reference{Name: ws.DescribeMod(ids[0])})
+		facts := index.DescribeReference(schema.Reference{Name: ws.DescribeMod(ids[0])})
 		facts["other"], facts["count"] = ws.DescribeMod(ids[1]), strconv.Itoa(count)
 		finding := makeFinding(mods, "ignored-pair", facts, nil)
 		finding.Origin, finding.Mods = ids[0], ids

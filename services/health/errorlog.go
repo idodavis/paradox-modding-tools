@@ -19,6 +19,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
+	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -165,7 +166,7 @@ func findLogSite(ws *workspace.Session, mods *index.Index, locations []*regexp.R
 			file, _, ok := mods.FindLoaded(match[location.SubexpIndex("path")])
 			number, err := strconv.Atoi(match[location.SubexpIndex("line")])
 			if ok && err == nil && file.Origin != files.OriginVanilla {
-				return lsp.Site{Place: ws.Locate(mods, file.Path), Line: number, Range: lsp.ToLineRange(number)}, true
+				return lsp.Site{Place: ws.Locate(mods, file.Path), Line: number, Range: jomini.ToLineRange(number)}, true
 			}
 		}
 	}

@@ -23,9 +23,14 @@
 //     messages.
 //   - A table file whose database names its definitions by their first
 //     column gives a definition for each row.
-//   - The game's own files keep the texts of their messages in the base
-//     language only, since another language's text can be read from its file
-//     when asked. A mod's files keep every language's.
+//   - The game's own localization is scanned in the base language only. A
+//     workspace in another language adds that one as a Translation, scanned
+//     once and cached. A mod's files are scanned in every language. A mod's
+//     file in a third language is so not checked against the game's keys in
+//     that language.
+//   - The message the game shows for a key in a language is the one in a
+//     file it reads, and of several, the one in the replace folder that
+//     ranks first.
 //   - A database whose names match in any letter case stores its names in
 //     lower case.
 //
@@ -106,6 +111,8 @@
 package index
 
 import (
+	"sync"
+
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
@@ -150,13 +157,18 @@ type Occurrence struct {
 	Role  Role
 	Local bool
 
-	// Alias is set for a second name of the definition the occurrence sits
-	// in, which is no definition of its own.
-	Alias bool
+	// Own is set for a definition of its own, as schema.Copy.IsOwn decides
+	// it. A reference has it unset.
+	Own bool
 
 	// Firing is set for a reference that fires the event, on_action or
 	// decision it names.
 	Firing bool
+
+	// Titles is set for a reference that is the localization key of its
+	// definition's title, and Describes for the key of its description, as
+	// schema.FindTextKey finds them.
+	Titles, Describes bool
 
 	// Nested is set for an occurrence inside a definition, and Parent is that
 	// definition's position among the file's occurrences. Parent is 0 for an
@@ -228,11 +240,18 @@ type Index struct {
 	// Game is the game's id.
 	Game string
 
+	// Stamp is when an install's index was scanned. A Translation holds only
+	// for the scan it was made on.
+	Stamp int64
+
+	// Unmarked holds the localization files that were read with no byte
+	// order mark, by their position in Files.
+	Unmarked map[int32]bool
+
 	// Occurrences holds each file's occurrences, as Files lists the files,
 	// each in source order with a definition before what it holds. Texts
-	// holds beside them the text of each message the index keeps: "" for an
-	// occurrence that is no message, and none for a file whose texts it does
-	// not keep.
+	// holds beside them the text of each message: "" for an occurrence that
+	// is no message, and none for a file that is no localization file.
 	Occurrences [][]Occurrence
 	Texts       [][]string
 
@@ -261,15 +280,20 @@ type Index struct {
 	// postings holds the sites of each posting's occurrences, by the ordinal
 	// of their name.
 	postings map[Posting]map[uint32][]Site
+
+	// winners holds the decisions FindKeptLocal has worked out, by
+	// decisionKey. They hold for this index's files and mods only.
+	winners *sync.Map
 }
 
 // Narrow returns a copy of a mods' index that answers for the install and the
 // given mods only: the other mods' files, definitions, references and
 // messages are left out of its lookups. It shares everything else with the
-// original.
+// original but the winners it has worked out, which other mods change.
 func (i *Index) Narrow(origins []string) *Index {
 	narrowed := *i
 	narrowed.Mounts = i.Mounts.Narrow(origins)
+	narrowed.winners = &sync.Map{}
 
 	return &narrowed
 }

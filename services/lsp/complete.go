@@ -62,7 +62,7 @@ func (lsp *Service) Complete(path string, line, column int) (CompletionList, err
 		return list, nil
 	}
 
-	offset := ToOffset(tree.Src, tree.Lines, line, column)
+	offset := jomini.ToOffset(tree.Src, tree.Lines, line, column)
 	statement, listed, ok := findValue(tree, offset)
 	if ok {
 		current := tree.Statements[statement]
@@ -151,7 +151,7 @@ func listValues(
 	var constants []string
 	switch {
 	case context.Callee != nil:
-		constants = game.Callables[context.Callee.Database].Values
+		constants = ws.Schema.Databases[context.Callee.Database].Declaration.Values
 	case expected.Type == schema.ValueTypeBool:
 		constants = game.Bools
 	case expected.Type == schema.ValueTypeChoice:
@@ -164,7 +164,7 @@ func listValues(
 	}
 
 	cut := false
-	for _, reference := range listTyped(ws.Schema, context, expected, start, offset) {
+	for _, reference := range listTyped(context, expected, start, offset) {
 		// the text before the reference, such as a link's prefix, is written
 		// before each of its names
 		head := typed[:reference.Span.Start-start]
@@ -227,10 +227,10 @@ func findExpected(context *schema.Context) (schema.Expected, map[string]int) {
 // declare, which the links and the commands are listed for. Before anything
 // is typed the walk has read no value, so the database the field claims
 // stands in for it. It returns none if the field claims no database either.
-func listTyped(language *schema.Schema, context *schema.Context, expected schema.Expected, start, offset int) []schema.Reference {
+func listTyped(context *schema.Context, expected schema.Expected, start, offset int) []schema.Reference {
 	references := slices.DeleteFunc(slices.Clone(context.References), func(reference schema.Reference) bool {
 		return reference.Span.Start < start || reference.Span.Start > offset ||
-			reference.Database == game.SavedScopes || language.ListKeys(reference.Database) != nil
+			reference.Database == game.SavedScopes || slices.Contains(game.Dumps, reference.Database)
 	})
 	claims := expected.Type == schema.ValueTypeReference || expected.Type == schema.ValueTypeTarget
 	if start == offset && len(references) == 0 && claims && expected.Database != "" {
@@ -275,7 +275,7 @@ func listNames(
 
 	case game.Localization:
 		var keys []string
-		keys, cut = mods.ListKeys(cmp.Or(ws.Language, game.BaseLanguage), reference.Name, keyLimit)
+		keys, cut = mods.ListKeys(ws.Languages(), reference.Name, keyLimit)
 		for _, key := range keys {
 			offer(key, "")
 		}
@@ -413,8 +413,10 @@ func listCalls(
 	caller := holder.FindCaller()
 	databases := language.Callees[caller]
 	if caller == game.AnyCall {
-		databases = slices.DeleteFunc(slices.Sorted(maps.Keys(game.Callables)), func(database string) bool {
-			return !holder.Takes(game.Callables[database].Command)
+		databases = slices.DeleteFunc(slices.Clone(game.Called), func(database string) bool {
+			owner := language.Databases[database]
+
+			return owner == nil || !holder.Takes(owner.Declaration.Command())
 		})
 	}
 

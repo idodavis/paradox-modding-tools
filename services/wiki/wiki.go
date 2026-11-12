@@ -12,6 +12,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/mod/semver"
 
+	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/services/workspace"
 )
@@ -78,7 +79,7 @@ func (wik *Service) ListNotes() ([]Note, error) {
 		return nil, errNoListing
 	}
 	versions := slices.Clone(listing.Versions)
-	slices.SortFunc(versions, func(first, second string) int { return compareVersions(second, first) })
+	slices.SortFunc(versions, func(first, second string) int { return game.CompareVersions(second, first) })
 	return lo.Map(versions, func(version string, _ int) Note {
 		title := resolvePatch(version)
 		page, _ := client.LoadPage(title)

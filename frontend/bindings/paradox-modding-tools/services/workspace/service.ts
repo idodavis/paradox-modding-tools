@@ -121,15 +121,6 @@ export function DeleteWorkspace(id: string): $CancellablePromise<void> {
 }
 
 /**
- * DescribePrecedence returns, in plain words, which copy the game with the given id keeps when several definitions of a
- * database share a name. The folder is the database's folder in the game's folder. It returns "" for a game this build
- * does not support.
- */
-export function DescribePrecedence(gameID: string, database: string, folder: string): $CancellablePromise<string> {
-    return $Call.ByID(3701070192, gameID, database, folder);
-}
-
-/**
  * DetectInstalls finds a game's installs on this machine. It finds none for a game this build does not support.
  */
 export function DetectInstalls(gameID: string): $CancellablePromise<game$0.DetectedInstall[] | null> {

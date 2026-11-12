@@ -3,5 +3,6 @@
 
 export type {
     RGBA,
+    Range,
     Span
 } from "./models.js";

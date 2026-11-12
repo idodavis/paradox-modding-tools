@@ -72,7 +72,7 @@ type Card struct {
 	Sites []Site `json:"sites,omitempty"`
 
 	// Range is the word the card is about.
-	Range Range `json:"range"`
+	Range jomini.Range `json:"range"`
 
 	// Token is the token type the editor colors the card's word by, as
 	// ListLegend names it. It is "" for a word with no color of its own.
@@ -156,14 +156,18 @@ func (lsp *Service) Hover(path string, line, column int) (*Card, error) {
 
 	tree, mods := document.Tree, ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	offset := ToOffset(tree.Src, tree.Lines, line, column)
+	offset := jomini.ToOffset(tree.Src, tree.Lines, line, column)
 	if place.Format != files.FormatLocalization {
 		return colorCard(document, lsp.describeHit(ws, mods, place, findCursor(document, offset))), nil
 	}
 
-	card, reference := describeMessage(ws, tree, place, offset)
-	if card != nil && reference.Name != "" {
+	card, reference := describeMessage(ws, document, offset)
+	switch {
+	case card == nil || reference.Name == "":
+	case reference.Database == game.Localization:
 		describeKey(ws, mods, place, card, reference)
+	default:
+		describeDefinitions(card, ws, mods, place, reference)
 	}
 
 	return colorCard(document, card), nil
@@ -181,7 +185,7 @@ func (lsp *Service) describeHit(ws *workspace.Session, mods *index.Index, place 
 	tree, context := cursor.tree, cursor.context
 	reference = resolveHit(mods, place, reference, context.References)
 	card := &Card{
-		Title: tree.Unquoted(span), Range: ToRange(tree.Src, tree.Lines, span), Within: listAncestors(cursor),
+		Title: tree.Unquoted(span), Range: jomini.ToRange(tree.Src, tree.Lines, span), Within: listAncestors(cursor),
 	}
 
 	hitsKey := tree.Statements[cursor.statement].Key.Contains(cursor.offset)
@@ -297,7 +301,7 @@ func findHit(cursor cursor) (jomini.Span, schema.Reference) {
 // findCursor returns the cursor at an offset of a document. A document the
 // walk does not read, such as a localization file's, gives the file itself
 // with an empty context.
-func findCursor(document workspace.Document, offset int) cursor {
+func findCursor(document schema.Document, offset int) cursor {
 	cursor := cursor{tree: document.Tree, offset: offset, context: &schema.Context{}}
 	if document.Contexts != nil {
 		cursor.statement = document.Tree.FindStatement(offset)
@@ -333,50 +337,41 @@ func listAncestors(cursor cursor) []string {
 }
 
 // describeMessage returns the card for a position in a localization file,
-// and the reference of the key it is on. The card is nil if the position is
-// on nothing, and the reference is empty on a data call.
-func describeMessage(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, offset int) (*Card, schema.Reference) {
-	document, err := ws.LoadDocument(place.Path)
-	if err != nil || document.Messages == nil {
+// and the reference of the name it is on: the message's own key, or a key,
+// an icon, a format, a game concept or a quoted name its text writes. On a
+// step of a data call that names nothing, the card is the function's and the
+// reference is empty. The card is nil if the position is on nothing.
+func describeMessage(ws *workspace.Session, document schema.Document, offset int) (*Card, schema.Reference) {
+	if document.Messages == nil {
 		return nil, schema.Reference{}
 	}
 
-	messages := document.Messages.Messages
+	tree, messages := document.Tree, document.Messages.Messages
 	position := slices.IndexFunc(messages, func(message loc.Message) bool { return message.Span.Contains(offset) })
-	if position < 0 {
+	if position < 0 || position >= len(document.MessageContexts) {
 		return nil, schema.Reference{}
 	}
 
-	message := messages[position]
-	key, span := message.Key, message.KeySpan
-	if !span.Contains(offset) {
-		segment := loc.Segment{}
-		for _, candidate := range message.Segments {
-			if candidate.Span.Contains(offset) {
-				segment = candidate
-			}
-		}
+	context := &document.MessageContexts[position]
+	references := slices.Concat([]schema.Reference{{
+		Database: game.Localization, Name: context.Definition.Name, Span: context.Definition.Span,
+	}}, context.References)
+	for _, reference := range references {
+		if reference.Database != "" && reference.Span.Contains(offset) {
+			card := &Card{Title: reference.Name, Range: jomini.ToRange(tree.Src, tree.Lines, reference.Span)}
 
-		switch segment.Markup {
-		case loc.MarkupKey:
-			key, span = segment.Text, segment.TextSpan
-
-		case loc.MarkupCall:
-			card := &Card{}
-			if segment.Call == nil || !describeFunction(card, ws, tree, *segment.Call, "", offset) {
-				return nil, schema.Reference{}
-			}
-
-			return card, schema.Reference{}
-
-		default:
-			return nil, schema.Reference{}
+			return card, reference
 		}
 	}
 
-	card := &Card{Title: key, Range: ToRange(tree.Src, tree.Lines, span)}
+	for _, segment := range messages[position].Segments {
+		card := &Card{}
+		if segment.Call != nil && segment.Span.Contains(offset) && describeFunction(card, ws, tree, *segment.Call, "", offset) {
+			return card, schema.Reference{}
+		}
+	}
 
-	return card, schema.Reference{Database: game.Localization, Name: key, Span: span}
+	return nil, schema.Reference{}
 }
 
 // describeKey fills a card with a localization key's text and the messages
@@ -401,7 +396,7 @@ func describeFunction(card *Card, ws *workspace.Session, tree *jomini.Tree, call
 	step := call.Steps[position]
 	function, _ := ws.Schema.FindFunction(call, datacontext, position)
 	card.What, card.Blurb = "data function", function.Blurb
-	card.Title, card.Range = step.Text, ToRange(tree.Src, tree.Lines, step.Span)
+	card.Title, card.Range = step.Text, jomini.ToRange(tree.Src, tree.Lines, step.Span)
 	card.add(rowReturns, schema.ReturnType(function))
 
 	return true
@@ -430,7 +425,7 @@ var returnsLabels = map[game.Shape]string{game.ShapeTriggers: "yes or no", game.
 // the first of them says of itself.
 func describeDefinitions(card *Card, ws *workspace.Session, mods *index.Index, place workspace.Place, reference schema.Reference) {
 	sites, winner := listSites(ws, mods, place, reference)
-	entries := listEntries(ws, mods, sites)
+	entries := listEntries(mods, sites)
 	card.What = game.DescribeDefinition(reference.Database, false)
 	card.Sites, card.Color = MakeSites(ws, mods, entries, winner), findDefinedColor(ws, mods, winner)
 	card.add(rowImage, describeImage(mods, reference))
@@ -439,9 +434,9 @@ func describeDefinitions(card *Card, ws *workspace.Session, mods *index.Index, p
 	}
 
 	if database := ws.Schema.Databases[reference.Database]; database != nil {
-		card.add(rowReturns, returnsLabels[database.Callable.Shape])
+		card.add(rowReturns, returnsLabels[database.Declaration.Shape])
 		if len(sites) > 0 {
-			card.Lexicon = findClass(database.Callable.Command).ID
+			card.Lexicon = findClass(database.Declaration.Command()).ID
 		}
 	}
 
@@ -473,10 +468,10 @@ func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, 
 }
 
 // dropTranslations returns the sites without the messages in languages other
-// than the key's: the file's own language, else the workspace's, else the
-// base language, whichever first has a message among the sites.
+// than the key's: the file's own language, else the first of the session's
+// languages, whichever first has a message among the sites.
 func dropTranslations(ws *workspace.Session, mods *index.Index, place workspace.Place, sites []index.Site) []index.Site {
-	for _, language := range []string{loc.FindSuffixLanguage(place.Path), ws.Language, game.BaseLanguage} {
+	for _, language := range slices.Concat([]string{loc.FindSuffixLanguage(place.Path)}, ws.Languages()) {
 		hasMessage := slices.ContainsFunc(sites, func(site index.Site) bool {
 			return mods.Occurrence(site).Role == index.RoleLocalizes && mods.Language(site) == language
 		})
@@ -510,13 +505,8 @@ func findKept(ws *workspace.Session, mods *index.Index, reference schema.Referen
 // It leaves out a second name of a definition, such as a trait's group, a
 // name a command makes, such as a saved scope, and a name a definition only
 // switches on.
-func listEntries(ws *workspace.Session, mods *index.Index, sites []index.Site) []index.Site {
-	return slices.DeleteFunc(slices.Clone(sites), func(site index.Site) bool {
-		occurrence := mods.Occurrence(site)
-		database := mods.Databases.Texts[occurrence.Database]
-
-		return occurrence.Alias || slices.Contains(game.Links, database) || occurrence.Nested && ws.Game.IsSet(database)
-	})
+func listEntries(mods *index.Index, sites []index.Site) []index.Site {
+	return slices.DeleteFunc(slices.Clone(sites), func(site index.Site) bool { return !mods.Occurrence(site).Own })
 }
 
 // findDefinedColor returns the CSS color that a winner writes as its block,
@@ -587,7 +577,7 @@ func describeEntry(card *Card, ws *workspace.Session, mods *index.Index, site in
 	}
 
 	card.Comment = strings.Join(lines, "\n")
-	if database := ws.Schema.Databases[mods.ToReference(site).Database]; database != nil && database.Callable.Parameters {
+	if database := ws.Schema.Databases[mods.ToReference(site).Database]; database != nil && database.Declaration.Parameters {
 		parameters := slices.Sorted(maps.Keys(schema.ListParameters(tree, statement).Children))
 		card.add(rowTakes, strings.Join(parameters, ", "))
 	}
@@ -810,7 +800,8 @@ func describeTakes(card *Card, field *schema.Field) bool {
 // block.
 var blockLabels = map[game.Shape]string{
 	game.ShapeFields: "fields", game.ShapeTriggers: "triggers", game.ShapeEffects: "effects",
-	game.ShapeArguments: "what the command takes", game.ShapeEffectArguments: "what the effect takes",
+	game.ShapeParameters: "its arguments",
+	game.ShapeArguments:  "what the command takes", game.ShapeEffectArguments: "what the effect takes",
 	game.ShapeTriggerArguments: "what the trigger takes", game.ShapeValue: "the steps that work out a number",
 	game.ShapeWidget: "a widget's properties and children", game.ShapeModifiers: "modifiers",
 	game.ShapeDescription: "texts, each with the trigger that picks it", game.ShapeSetup: "history fields and effects",
@@ -848,13 +839,13 @@ func (c *Card) add(label, text string) {
 // colorCard sets the token type of the word a card is about, so a page can
 // draw the card in the color the editor gives the word, and returns the
 // card. A nil card stays nil.
-func colorCard(document workspace.Document, card *Card) *Card {
+func colorCard(document schema.Document, card *Card) *Card {
 	if card == nil {
 		return nil
 	}
 
 	tree := document.Tree
-	tokens := listTokens(document, ToSpan(tree.Src, tree.Lines, card.Range), true)
+	tokens := listTokens(document, jomini.ToSpan(tree.Src, tree.Lines, card.Range), true)
 	first := slices.IndexFunc(tokens, func(current token) bool { return slices.Contains(legend, current.category) })
 	if first >= 0 {
 		card.Token = string(tokens[first].category)

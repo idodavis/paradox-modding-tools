@@ -63,6 +63,14 @@
   --syn-link: var(--link);
   --syn-call: color-mix(in oklab, var(--syn-command) 55%, var(--syn-string));
   --syn-reference: color-mix(in oklab, var(--syn-name) 60%, var(--fg-1));
+
+  /* The colors of nested bracket pairs, outermost first: the punctuation's
+     own color, a tint of it toward the macros' red, and a dimmer one toward
+     the comments' gray. None is a token's color, so a bracket never reads
+     as a number or a reference. */
+  --bracket-1: var(--syn-operator);
+  --bracket-2: color-mix(in oklab, var(--syn-operator) 62%, var(--syn-macro));
+  --bracket-3: color-mix(in oklab, var(--syn-operator) 55%, var(--syn-comment));
 }
 
 /* PMT; its terminal's colors and the three games' are the design system's */
@@ -87,7 +95,7 @@
   --purple: #b19cf5;
   --syn-name: #bd7bff;
   --syn-reference: #dbb7ff;
-  --syn-field: #cff0f8;
+  --syn-field: #bfe9f7;
   --syn-keyword: #ffd239;
   --syn-call: var(--syn-reference);
   --syn-command: #70e7cf;

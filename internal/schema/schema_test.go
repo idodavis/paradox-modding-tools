@@ -219,7 +219,7 @@ func TestParseDoc(t *testing.T) {
 	}
 
 	for _, each := range cases {
-		reader, ok := docs.parseDoc(each.text, each.rel, game.Database{})
+		reader, ok := docs.parseDoc(each.text, each.rel, game.Declaration{})
 		if !ok {
 			t.Errorf("%s: not read as a doc", each.name)
 
@@ -247,12 +247,12 @@ func findField(field *Field, path string) *Field {
 func TestParseDocDatabase(t *testing.T) {
 	docs := &Schema{}
 	text := "# Reference\nA building of a state.\n\nexample = {\n\tgroup = x\n}\n"
-	reader, ok := docs.parseDoc(text, "x/x.md", game.Database{})
+	reader, ok := docs.parseDoc(text, "x/x.md", game.Declaration{})
 	if !ok || strings.Join(reader.blurb, " ") != "A building of a state." {
 		t.Fatalf("database blurb: %v", reader)
 	}
 
-	if _, ok := docs.parseDoc("a = 1\nb = 2\nc = { d = 3 }\n", "x/00_example_templates.txt", game.Database{}); ok {
+	if _, ok := docs.parseDoc("a = 1\nb = 2\nc = { d = 3 }\n", "x/00_example_templates.txt", game.Declaration{}); ok {
 		t.Error("a data file named like a doc is read as one")
 	}
 }
@@ -265,7 +265,14 @@ func TestBuildFixtureLearns(t *testing.T) {
 		t.Errorf("events database: %q", built.Events)
 	}
 
-	if traits := built.Databases["traits"]; traits == nil || len(traits.Documented) == 0 {
+	documented := false
+	if traits := built.Databases["traits"]; traits != nil {
+		for key := range traits.Field.Children {
+			documented = documented || traits.declares(key)
+		}
+	}
+
+	if !documented {
 		t.Error("traits: no documented keys")
 	}
 }
@@ -299,11 +306,11 @@ func TestWalkEventsFixture(t *testing.T) {
 		t.Errorf("random_list's 90: %q", branch.context.Category)
 	}
 
-	if shape := resolveShapeClaim(Vanilla{Shapes: map[game.Shape]int{game.ShapeValue: 2, game.ShapeTriggers: 1}}); shape != game.ShapeValue {
+	if shape := resolveShapeClaim(Vanilla{shapes: map[game.Shape]int{game.ShapeValue: 2, game.ShapeTriggers: 1}}); shape != game.ShapeValue {
 		t.Errorf("a block of value keys and triggers: %q", shape)
 	}
 
-	if shape := resolveShapeClaim(Vanilla{Shapes: map[game.Shape]int{game.ShapeFields: 2, game.ShapeTriggers: 1}}); shape != game.ShapeUnknown {
+	if shape := resolveShapeClaim(Vanilla{shapes: map[game.Shape]int{game.ShapeFields: 2, game.ShapeTriggers: 1}}); shape != game.ShapeUnknown {
 		t.Errorf("a block of fields and triggers: %q", shape)
 	}
 }

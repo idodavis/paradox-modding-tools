@@ -556,9 +556,8 @@ func (s *Schema) buildDumps(row *game.Game, installPath string) error {
 	}
 
 	s.Dumps = state
-	s.Modifiers, s.Customs = dumps.Modifiers, dumps.Customs
-	s.OnActions, s.DataTypes = dumps.OnActions, dumps.DataTypes
-	s.buildTypes(dumps.Scopes)
+	s.Customs, s.DataTypes = dumps.Customs, dumps.DataTypes
+	s.buildTypes(dumps)
 	s.buildCommands(dumps.Commands)
 	s.buildPrefixes()
 	s.buildCommandKeys(row)
@@ -636,17 +635,35 @@ func (d *Dumps) applyCorrections(row *game.Game) {
 	}
 }
 
-// buildTypes builds the four databases the dumps fill, and a definition for
-// each type of scope the dumps declare. Script runs in a type where the dump
-// says triggers or effects do.
-func (s *Schema) buildTypes(scopes map[string]ScopeType) {
-	for _, database := range []string{game.DumpEffects, game.DumpTriggers, game.DumpLinks, game.DumpTypes} {
+// buildTypes builds the databases the dumps fill, and a definition for each
+// type of scope, each modifier and each on_action the dumps declare. Script
+// runs in a type where the dump says triggers or effects do. An on_action
+// is a definition of the game's database of on_actions, with the scope it
+// runs in, and is left out where the game has no such database.
+func (s *Schema) buildTypes(dumps *Dumps) {
+	for _, database := range game.Dumps {
 		s.Databases[database] = &Database{Name: database, Field: &Field{}, Definitions: map[string]*Definition{}}
 	}
 
 	types := s.Databases[game.DumpTypes]
-	for key, scope := range scopes {
+	for key, scope := range dumps.Scopes {
 		types.Definitions[key] = &Definition{Database: types.Name, Key: key, Runs: scope.Triggers || scope.Effects}
+	}
+
+	for key := range dumps.Modifiers {
+		s.Databases[game.DumpModifiers].Definitions[key] = &Definition{Database: game.DumpModifiers, Key: key}
+	}
+
+	actions := s.Databases[s.OnActions]
+	if actions == nil {
+		return
+	}
+
+	actions.Definitions = map[string]*Definition{}
+	for key, action := range dumps.OnActions {
+		actions.Definitions[key] = &Definition{
+			Database: actions.Name, Key: key, Target: action.Scope, Hardcoded: action.Hardcoded,
+		}
 	}
 }
 
@@ -754,7 +771,7 @@ func (s *Schema) buildPrefixes() {
 	}
 
 	for _, label := range slices.Sorted(maps.Keys(s.Databases)) {
-		for _, prefix := range s.Databases[label].Row.Prefixes {
+		for _, prefix := range s.Databases[label].Declaration.Prefixes {
 			claim(prefix, label)
 		}
 	}

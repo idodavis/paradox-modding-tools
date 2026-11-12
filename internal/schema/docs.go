@@ -151,7 +151,7 @@ func (s *Schema) buildDocs(installPath string, listing []files.File, folders []s
 			return err
 		}
 
-		if reader, ok := s.parseDoc(text.Text, file.Rel, database.Row); ok {
+		if reader, ok := s.parseDoc(text.Text, file.Rel, database.Declaration); ok {
 			if partial {
 				reader.blurb = nil
 			}
@@ -204,10 +204,11 @@ func findDocDatabase(rel string, folders []string) (string, bool, bool) {
 	return "", false, false
 }
 
-// parseDoc reads one doc file into a reader, given the row of the database
-// it describes. It returns false for a file that is data: one with no prose
-// and no comment, or a .txt file with more script lines than prose lines.
-func (s *Schema) parseDoc(text, rel string, row game.Database) (*docReader, bool) {
+// parseDoc reads one doc file into a reader, given the declaration of the
+// database it describes. It returns false for a file that is data: one with
+// no prose and no comment, or a .txt file with more script lines than prose
+// lines.
+func (s *Schema) parseDoc(text, rel string, row game.Declaration) (*docReader, bool) {
 	reader := &docReader{schema: s, root: &Field{}}
 
 	// where each file is one definition, the doc is read as already inside it
@@ -239,16 +240,12 @@ func (d *docReader) build(database *Database, readme string) {
 		database.Readme = readme
 	}
 
-	for key := range d.root.Children {
-		database.Documented[key] = true
-	}
-
-	switch cmp.Or(database.Callable.Shape, database.Row.Shape) {
+	switch database.Declaration.Shape {
 	case game.ShapeTriggers, game.ShapeEffects, game.ShapeValue:
 		return
 	}
 
-	shape := cmp.Or(database.Callable.Shape, database.Row.Shape, game.ShapeFields)
+	shape := cmp.Or(database.Declaration.Shape, game.ShapeFields)
 	buildDocFields(game.LookupGame(d.schema.Game), definition, d.root, "", shape)
 }
 

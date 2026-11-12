@@ -17,8 +17,8 @@
 //   - A game's own rows come before the rows of every game, and a lookup
 //     takes the first row that fits.
 //   - A row's comment cites where its fact comes from: a file of the install
-//     and its line, a dump line, a message in the game's executable or a wiki
-//     page. Nothing reads it; it lets a reader check the row against the game.
+//     and its line, a dump line or a wiki page. Nothing reads it; it lets a
+//     reader check the row against the game.
 //   - A row classifies and never accuses. Only a claim from the dumps, the
 //     docs, the wiki or a definition in the files is firm enough to fail a
 //     verdict (Source.CanAccuse).
@@ -406,7 +406,7 @@ var games = map[string]*Game{
 		},
 		Coat: GameCoat{
 			Folder: "common/coat_of_arms/coat_of_arms",
-			// game/gfx/FX/coat_of_arms
+			// how the game shades its own coats
 			Shade: CoatShade{
 				Texture: "gfx/coat_of_arms/coa_mask_texture.dds",
 				Overlay: CoatStrength{Channel: "b", Strength: 0.2},
@@ -549,7 +549,9 @@ func ListGames() []Game {
 	for position := range rows {
 		row := &rows[position]
 		_, folder := files.SplitStage(row.Example.Folder, row.Stages)
-		row.Example.Modes = row.LookupPrecedence(row.Example.Database, folder).Modes != ""
+		declaration, _ := row.FindDeclaration(folder)
+		declaration.Folder = folder
+		row.Example.Modes = row.LookupPrecedence(declaration, row.Example.Database).Modes != ""
 	}
 
 	return rows

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Format } from "@internal/files/models";
+import { Format, Hiding } from "@internal/files/models";
 import type { Place } from "@services/workspace/models";
 import { inApp } from "../../vitest.setup";
 import { closeModel } from "../pages/ide/editor/models";
@@ -25,6 +25,8 @@ function place(key: string, format = Format.FormatScript): Place {
     drawable: false,
     readme: "",
     language: "plaintext",
+    hiding: Hiding.$zero,
+    hider: "",
   };
 }
 

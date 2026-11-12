@@ -131,8 +131,9 @@ func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Exam
 // that acts as a command of the given class.
 func listScripted(ws *workspace.Session, mods *index.Index, class lsp.Class) []LexiconRow {
 	var rows []LexiconRow
-	for database, callable := range game.Callables {
-		if callable.Command != class.Database {
+	for _, database := range game.Called {
+		owner := ws.Schema.Databases[database]
+		if owner == nil || owner.Declaration.Command() != class.Database {
 			continue
 		}
 

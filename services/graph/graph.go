@@ -156,8 +156,8 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 	if hidden, ok := findCopy(ws, mods, site); ok {
 		node.CopyOrigin = mods.File(hidden).Origin
 	}
-	if database := ws.Schema.Databases[reference.Database]; database != nil && database.Row.Contents == game.ContentsOnActions {
-		node.Hardcoded = ws.Schema.OnActions[reference.Name].Hardcoded
+	if declared := ws.Schema.LookupDefinition(reference.Database, reference.Name); declared != nil {
+		node.Hardcoded = declared.Hardcoded
 	}
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
@@ -187,14 +187,12 @@ func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 	return node
 }
 
-// findCopy returns the latest-loaded copy of a definition's name that the definition hides, or false if it hides none.
+// findCopy returns the last copy in load order that the kept copy of a
+// definition's name beats. It returns false if it beats none.
 func findCopy(ws *workspace.Session, mods *index.Index, site index.Site) (index.Site, bool) {
-	reference := mods.ToReference(site)
-	acting := listActing(ws, mods, site)
-	hidden := lo.Reject(mods.Resolve(reference), func(other index.Site, _ int) bool {
-		return slices.Contains(acting, other)
-	})
-	return lo.Last(hidden)
+	winner, _ := mods.FindKeptLocal(ws.Schema, mods.ToReference(site), site.File)
+
+	return lo.Last(winner.Beaten)
 }
 
 // toID returns the id of the node of a definition: its database and its name.
@@ -466,10 +464,11 @@ func (gph *Service) FindRoots(query string, limit int) []Node {
 	})
 }
 
-// isKept reports whether a definition is the one the game keeps of its name.
+// isKept reports whether a definition takes part in what the game runs, as
+// the index says: the copy it keeps, one merged into it, or, where no source
+// says which copy it keeps, any copy in a file it reads.
 func isKept(ws *workspace.Session, mods *index.Index, site index.Site) bool {
-	winner, ok := mods.FindKeptLocal(ws.Schema, mods.ToReference(site), site.File)
-	return ok && winner.Site == site
+	return slices.Contains(listActing(ws, mods, site), site)
 }
 
 // ListOwnRoots returns the events the workspace's mods define that the game keeps. It returns nil if no workspace is

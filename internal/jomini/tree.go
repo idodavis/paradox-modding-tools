@@ -122,6 +122,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf16"
 )
 
 // Span is a half-open range of bytes in a text.
@@ -206,6 +207,77 @@ func (l Lines) ToPosition(offset int) Position {
 // line ending.
 func (l Lines) LineSpan(line int) Span {
 	return Span{Start: l.starts[line], End: l.ends[line]}
+}
+
+// Range is a span as an editor counts it: lines and columns from one, the
+// column in UTF-16 code units, the end exclusive.
+type Range struct {
+	StartLine   int `json:"startLineNumber"`
+	StartColumn int `json:"startColumn"`
+	EndLine     int `json:"endLineNumber"`
+	EndColumn   int `json:"endColumn"`
+}
+
+// ToRange converts a byte span in a text to an editor's range, using the
+// text's line index.
+func ToRange(text string, lines Lines, span Span) Range {
+	start, end := lines.ToPosition(span.Start), lines.ToPosition(span.End)
+
+	return Range{
+		StartLine: start.Line + 1, StartColumn: countColumn(text, lines, start) + 1,
+		EndLine: end.Line + 1, EndColumn: countColumn(text, lines, end) + 1,
+	}
+}
+
+// ToSpan converts an editor's range to a byte span in a text, using the
+// text's line index.
+func ToSpan(text string, lines Lines, bounds Range) Span {
+	return Span{
+		Start: ToOffset(text, lines, bounds.StartLine, bounds.StartColumn),
+		End:   ToOffset(text, lines, bounds.EndLine, bounds.EndColumn),
+	}
+}
+
+// ToLineRange returns the empty range at the start of a line, counted from
+// one.
+func ToLineRange(line int) Range {
+	return Range{StartLine: line, StartColumn: 1, EndLine: line, EndColumn: 1}
+}
+
+// ToOffset converts a line and a column as an editor counts them to a byte
+// offset in the text. A line past the text's last is the last, and a column
+// past a line's end is its end.
+func ToOffset(text string, lines Lines, line, column int) int {
+	span := lines.LineSpan(min(max(line-1, 0), lines.CountLines()-1))
+	units := 0
+	for offset, character := range text[span.Start:span.End] {
+		if units >= column-1 {
+			return span.Start + offset
+		}
+
+		units += utf16.RuneLen(character)
+	}
+
+	return span.End
+}
+
+// CountUnits returns the length of a text in UTF-16 code units, the units an
+// editor counts columns in. A character above U+FFFF counts two.
+func CountUnits(text string) int {
+	units := 0
+	for _, character := range text {
+		units += utf16.RuneLen(character)
+	}
+
+	return units
+}
+
+// countColumn returns the column of a position as an editor counts it from
+// zero: how many UTF-16 code units of its line lie before it.
+func countColumn(text string, lines Lines, position Position) int {
+	start := lines.LineSpan(position.Line).Start
+
+	return CountUnits(text[start : start+position.Column])
 }
 
 // Statement is one statement of a text: key op value, a value alone, or a
@@ -332,21 +404,6 @@ func (t *Tree) FindLead(statement int32) (int32, bool) {
 	}
 
 	return lead, true
-}
-
-// FindPrevious returns the statement just before a statement in its block. It
-// returns false if the statement is its block's first.
-func (t *Tree) FindPrevious(statement int32) (int32, bool) {
-	previous := int32(0)
-	for child := range t.Children(t.Statements[statement].Parent) {
-		if child == statement {
-			break
-		}
-
-		previous = child
-	}
-
-	return previous, previous > 0
 }
 
 // FindStatement returns the innermost statement that covers a byte offset. It

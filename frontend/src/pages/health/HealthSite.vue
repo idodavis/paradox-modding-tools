@@ -29,9 +29,12 @@ const {
   ignored?: boolean;
 }>();
 
-/** The site's own lines to highlight. A kept, ignored or unsettled copy shows its whole definition, with none. */
+/**
+ * The site's own lines to highlight. A kept, ignored, unsettled or unread
+ * copy shows its whole definition, with none.
+ */
 const focus = computed((): [number, number] | undefined =>
-  site.kept || site.reason || ignored ? undefined : [site.line, snippet?.last ?? site.line],
+  site.kept || site.reason || site.place.hiding || ignored ? undefined : [site.line, snippet?.last ?? site.line],
 );
 </script>
 

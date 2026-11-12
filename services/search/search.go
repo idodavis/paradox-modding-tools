@@ -232,7 +232,7 @@ func findSites(source string, expression *regexp.Regexp, wholeWord bool) []lsp.S
 		line := lines.LineSpan(position.Line)
 		return lsp.Site{
 			Line:  position.Line + 1,
-			Range: lsp.ToRange(source, lines, jomini.Span{Start: match[0], End: match[1]}),
+			Range: jomini.ToRange(source, lines, jomini.Span{Start: match[0], End: match[1]}),
 			Text:  source[line.Start:line.End],
 		}
 	})

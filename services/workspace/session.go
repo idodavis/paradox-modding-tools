@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,8 +31,6 @@ type Session struct {
 	Game        *game.Game
 	InstallPath string // the install's folder, which holds the game's folders
 	Schema      *schema.Schema
-	Effects     int // how many of the schema's commands are declared as effects
-	Triggers    int // how many are declared as triggers
 	Install     *index.Index
 	Mods        atomic.Pointer[index.Index] // on top of Install; a rescan replaces it whole
 	Order       atomic.Pointer[[]Mod]       // the mods in load order; a descriptor read again puts a new copy in place
@@ -41,27 +38,20 @@ type Session struct {
 	Language    string                      // the localization language shown beside the game's base language
 	updatedFrom string                      // the install's recorded version when the open found another
 	mu          sync.RWMutex                // over the buffers, the documents and the load order, one rescan at a time
-	buffers     map[string]Document         // the editor's open files, by the path's key
-	documents   *lru.Cache[string, Document]
+	buffers     map[string]schema.Document  // the editor's open files, by the path's key
+	documents   *lru.Cache[string, schema.Document]
 	watcher     *Watcher
 	caches      string // the folder the install's schema and index were loaded from or saved in
-}
-
-// A Document is one file as the session holds it, parsed once in the dialect
-// of its format and walked once. A localization file's tree holds its text
-// and lines only, and its messages are what it says. A script file has the
-// walk's context of each statement of its tree. Any other file has neither.
-type Document struct {
-	File     files.File
-	Tree     *jomini.Tree
-	Messages *loc.File
-	Contexts []schema.Context
 }
 
 // The names of the two caches in the caches' folder.
 const (
 	schemaFile = "schema.gob"
 	indexFile  = "index.gob"
+
+	// translationFile is the cache of the game's localization in one
+	// language beside the base one, with the language at %s.
+	translationFile = "index-%s.gob"
 )
 
 // openSession opens a workspace and starts its watcher. It returns an error if the workspace or its install is not
@@ -75,18 +65,17 @@ func (wsp *Service) openSession(workspaceID string, progress func(stage string, 
 	if err != nil {
 		return nil, err
 	}
-	documents, err := lru.New[string, Document](256)
+	documents, err := lru.New[string, schema.Document](256)
 	if err != nil {
 		return nil, err
 	}
 	ws := &Session{
 		ID: workspaceID, Game: row, InstallPath: install.Path, Language: record.Language,
-		buffers: map[string]Document{}, documents: documents, caches: folder,
+		buffers: map[string]schema.Document{}, documents: documents, caches: folder,
 	}
 	if err := ws.loadInstall(install.Path, resolveVersion(row, install), progress); err != nil {
 		return nil, err
 	}
-	ws.Effects, ws.Triggers = len(ws.Schema.ListKeys(game.DumpEffects)), len(ws.Schema.ListKeys(game.DumpTriggers))
 	// the caches of the game's other versions go; one that cannot be deleted now goes at a later open
 	_ = removeEntries(filepath.Dir(folder), filepath.Base(folder))
 	order := lo.Map(record.Mods, func(mod app.Mod, _ int) Mod { return readMod(row, mod) })
@@ -161,7 +150,7 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 	install, hasInstall := index.LoadIndex(indexCache)
 	if hasSchema && hasInstall {
 		ws.Schema, ws.Install = language, install
-		return nil
+		return ws.loadTranslation(progress)
 	}
 	progress("Listing the game's files", -1)
 	roots, err := ws.Game.ListInstallRoots(installPath)
@@ -194,7 +183,26 @@ func (ws *Session) loadInstall(installPath, version string, progress func(stage 
 		}
 	}
 	ws.Schema, ws.Install = language, install
-	return nil
+	return ws.loadTranslation(progress)
+}
+
+// loadTranslation adds the game's localization in the workspace's language
+// to the install's index, where that is not the base language. It reads the
+// language's cache, and scans the language and writes the cache where the
+// cache is missing or was made on another scan of the install.
+func (ws *Session) loadTranslation(progress func(stage string, percent int)) error {
+	if len(ws.Languages()) < 2 {
+		return nil
+	}
+
+	cache := filepath.Join(ws.caches, fmt.Sprintf(translationFile, ws.Language))
+	if translation, ok := files.LoadGob[index.Translation](cache); ok && ws.Install.Apply(translation) {
+		return nil
+	}
+
+	progress("Reading the game's "+loc.DescribeLanguage(ws.Language)+" texts", -1)
+
+	return files.SaveGob(cache, ws.Install.ScanTranslation(ws.Schema, ws.Language))
 }
 
 // removeEntries deletes every file and folder in a folder but the one of the given base name, or every one for "". It
@@ -269,39 +277,48 @@ func (ws *Session) Close() {
 }
 
 // WalkText parses the given text of a file in the dialect of its format and
-// walks a script file.
-func (ws *Session) WalkText(place Place, text string) Document {
-	document := parseDocument(place, text)
-	if place.Format.IsScript() {
-		document.Contexts = ws.Schema.Walk(document.Tree, place.File, nil)
+// walks it.
+func (ws *Session) WalkText(place Place, text string) schema.Document {
+	return ws.walk(parseDocument(place, text))
+}
+
+// walk gives a document what the walk decides: the context of each statement
+// of a script file, or of each message of a localization file. Any other
+// document comes back as it is.
+func (ws *Session) walk(document schema.Document) schema.Document {
+	switch {
+	case document.Messages != nil:
+		document.MessageContexts = ws.Schema.WalkMessages(document.Messages)
+	case document.File.Format.IsScript():
+		document.Contexts = ws.Schema.Walk(document.Tree, document.File, nil)
 	}
 	return document
 }
 
 // parseDocument parses the given text of a file in the dialect of its
 // format: a localization file's as messages, any other as script.
-func parseDocument(place Place, text string) Document {
+func parseDocument(place Place, text string) schema.Document {
 	if place.Format == files.FormatLocalization {
-		return Document{File: place.File, Tree: jomini.NewTree(text), Messages: loc.Parse(text, place.Path)}
+		return schema.Document{File: place.File, Tree: jomini.NewTree(text), Messages: loc.Parse(text, place.Path)}
 	}
-	return Document{File: place.File, Tree: jomini.Parse(text)}
+	return schema.Document{File: place.File, Tree: jomini.Parse(text)}
 }
 
 // WalkDocument returns the document of the file with the given path,
 // as LoadDocument finds it, with the walk's contexts if it is a script file.
 // A cached file is walked the first time it is asked for here, since most
 // readers of the cache read only the tree.
-func (ws *Session) WalkDocument(path string) (Document, error) {
+func (ws *Session) WalkDocument(path string) (schema.Document, error) {
 	// the lock is held through the walk, so no rescan runs before the
 	// walked document is cached
 	ws.mu.RLock()
 	defer ws.mu.RUnlock()
 	document, err := ws.findDocument(path)
-	if err != nil || document.Contexts != nil || !document.File.Format.IsScript() {
+	if err != nil || document.Contexts != nil || document.MessageContexts != nil {
 		return document, err
 	}
 
-	document.Contexts = ws.Schema.Walk(document.Tree, document.File, nil)
+	document = ws.walk(document)
 	ws.documents.Add(files.ToKey(path), document)
 
 	return document, nil
@@ -309,7 +326,7 @@ func (ws *Session) WalkDocument(path string) (Document, error) {
 
 // LoadDocument returns the document of the file with the given path. It is the editor's while the editor has the
 // file open, else the cached one, else the file is read and parsed. It returns an error if the file cannot be read.
-func (ws *Session) LoadDocument(path string) (Document, error) {
+func (ws *Session) LoadDocument(path string) (schema.Document, error) {
 	// the lock is held through the parse, so no rescan runs before the document is cached
 	ws.mu.RLock()
 	defer ws.mu.RUnlock()
@@ -318,7 +335,7 @@ func (ws *Session) LoadDocument(path string) (Document, error) {
 
 // findDocument does what LoadDocument does, for a caller that holds the
 // session's lock.
-func (ws *Session) findDocument(path string) (Document, error) {
+func (ws *Session) findDocument(path string) (schema.Document, error) {
 	key := files.ToKey(path)
 	if document, open := ws.buffers[key]; open {
 		return document, nil
@@ -328,7 +345,7 @@ func (ws *Session) findDocument(path string) (Document, error) {
 	}
 	text, err := files.ReadText(path)
 	if err != nil {
-		return Document{}, err
+		return schema.Document{}, err
 	}
 	document := parseDocument(ws.Locate(ws.Mods.Load(), path), text.Text)
 	ws.documents.Add(key, document)
@@ -386,79 +403,56 @@ func (ws *Session) LoadSource(path string) (string, error) {
 	return text.Text, err
 }
 
-// LookupText returns a localization key's text in the session's language, else in the base language, with the message
-// the game keeps. It returns false if neither language has the key.
-func (ws *Session) LookupText(mods *index.Index, key string) (text string, winner index.Winner, ok bool) {
-	messages := mods.ListMessages(key)
-	for _, language := range []string{ws.Language, game.BaseLanguage} {
-		candidates := lo.Filter(messages, func(message index.Site, _ int) bool {
-			return mods.Language(message) == language && mods.IsLoaded(message.File)
-		})
-		if len(candidates) == 0 {
-			continue
-		}
-		// a file in a replace folder ranks before one outside them, and the earlier folder ranks first
-		unreplaced := len(ws.Game.LocReplaceFolders)
-		rank := func(candidate index.Site) int {
-			position, replaces := ws.Game.FindLocReplacement(mods.File(candidate).Rel, language)
-			return lo.Ternary(replaces, position, unreplaced)
-		}
-		winner = index.Winner{Site: slices.MinFunc(candidates, func(first, second index.Site) int { return cmp.Compare(rank(first), rank(second)) })}
-		switch {
-		case lo.CountBy(candidates, func(candidate index.Site) bool { return rank(candidate) == rank(winner.Site) }) > 1:
-			winner.Reason = game.ReasonUnsettled
-		case rank(winner.Site) < unreplaced:
-			winner.Reason = game.ReasonReplaceFolder
-		}
-		return ws.findText(mods, winner.Site, language), winner, true
+// Languages returns the languages a text is looked up in, in order: the
+// workspace's own, then the base language. Every reader of a text follows
+// this order.
+func (ws *Session) Languages() []string {
+	if ws.Language == "" || ws.Language == game.BaseLanguage {
+		return []string{game.BaseLanguage}
 	}
-	return "", index.Winner{}, false
+
+	return []string{ws.Language, game.BaseLanguage}
 }
 
-// findText returns the text of the message at a site in the given language. The install keeps only the base language's
-// texts, so a game file's text in another language is read from its file. It returns "" if the file cannot be read or
-// has no such message.
-func (ws *Session) findText(mods *index.Index, site index.Site, language string) string {
-	file := mods.File(site)
-	if file.Origin != files.OriginVanilla || language == game.BaseLanguage {
-		return mods.Text(site)
+// LookupText returns a localization key's text in the first of the session's
+// languages that has it, with the message the game shows. It returns false
+// if no file the game reads has the key in either.
+func (ws *Session) LookupText(mods *index.Index, key string) (text string, winner index.Winner, ok bool) {
+	if winner, ok = mods.FindText(key, ws.Languages()); !ok {
+		return "", index.Winner{}, false
 	}
-	tree, err := ws.LoadTree(file.Path)
-	if err != nil {
-		return ""
-	}
-	number := int(mods.Occurrence(site).Line)
-	if number >= tree.Lines.CountLines() {
-		return ""
-	}
-	line := tree.Lines.LineSpan(number)
-	message, ok := loc.ParseMessage(tree.Src[line.Start:line.End], line.Start)
-	if !ok || mods.ToCaseless(game.Localization, message.Key) != mods.ToReference(site).Name {
-		return ""
-	}
-	return message.Text
+
+	return mods.Text(winner.Site), winner, true
 }
 
 // LookupDefinitionText returns a definition's text under the given key, game.TitleKey for its title or
 // game.DescriptionKey for its description. It is the text of the localization key the definition writes there, else
 // of the key the game builds from its name for its database. It returns "" if no such text exists.
 func (ws *Session) LookupDefinitionText(mods *index.Index, site index.Site, key string) string {
-	tree, statement, _ := ws.FindStatement(mods, site)
-	return ws.LookupStatementText(mods, tree, statement, mods.ToReference(site), key)
+	written, _ := mods.FindTextKey(site, key)
+	return ws.resolveText(mods, written, mods.ToReference(site), key)
 }
 
 // LookupStatementText returns the text of the definition that a statement of
-// a tree makes, under the given key, as LookupDefinitionText finds it. The
-// reference names the definition. A nil tree gives only the text of the key
-// the game builds.
+// a tree makes, under the given key, as LookupDefinitionText finds it, for a
+// text the index has not scanned. The reference names the definition.
 func (ws *Session) LookupStatementText(
 	mods *index.Index, tree *jomini.Tree, statement int32, reference schema.Reference, key string,
 ) string {
-	if tree != nil {
-		if written, ok := FindTextKey(tree, statement, key); ok {
-			if text, _, ok := ws.LookupText(mods, written); ok {
-				return text
-			}
+	written := ""
+	if position, ok := schema.FindTextKey(tree, statement, key); ok {
+		written = tree.Unquoted(tree.Statements[position].Value)
+	}
+	return ws.resolveText(mods, written, reference, key)
+}
+
+// resolveText returns the text of the localization key a definition writes,
+// "" for none, else of the key the game builds from the definition's name
+// for its database. It returns "" if no such text exists.
+func (ws *Session) resolveText(mods *index.Index, written string, reference schema.Reference, key string) string {
+	if written != "" {
+		if text, _, ok := ws.LookupText(mods, written); ok {
+			return text
 		}
 	}
 	pattern, ok := ws.Game.LookupTextKey(reference.Database, key)
@@ -467,25 +461,6 @@ func (ws *Session) LookupStatementText(
 	}
 	text, _, _ := ws.LookupText(mods, fmt.Sprintf(pattern, reference.Name))
 	return text
-}
-
-// FindTextKey returns the localization key a statement writes under the given key, such as an event's title. A key
-// written as a block, such as a triggered desc, gives the first text in it. It returns false if the statement writes
-// no such key.
-func FindTextKey(tree *jomini.Tree, statement int32, key string) (string, bool) {
-	child, ok := tree.FindChild(statement, key)
-	if !ok {
-		return "", false
-	}
-	for position := child; position < tree.Statements[child].Last; position++ {
-		current := tree.Statements[position]
-		field := tree.Text(current.Key)
-		isText := field == game.DescriptionKey || (field == game.LabelKey && current.Parent == child)
-		if (position == child || isText) && !current.Value.IsEmpty() {
-			return tree.Unquoted(current.Value), true
-		}
-	}
-	return "", false
 }
 
 // FindStatement returns the tree of a site's file and the statement that writes it. It returns an error if the file

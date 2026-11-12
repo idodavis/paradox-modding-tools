@@ -22,13 +22,13 @@ import (
 
 // A Symbol is one entry of a file: a definition, with the symbols nested inside it, or a localization key.
 type Symbol struct {
-	Name      string   `json:"name"`
-	Title     string   `json:"title"` // the text the game shows for it in the workspace's language; "" if none
-	Database  string   `json:"database"`
-	What      string   `json:"what"`      // what a definition of its database is called, such as "window"
-	Range     Range    `json:"range"`     // the whole statement
-	NameRange Range    `json:"nameRange"` // the name alone
-	Children  []Symbol `json:"children,omitempty"`
+	Name      string       `json:"name"`
+	Title     string       `json:"title"` // the text the game shows for it in the workspace's language; "" if none
+	Database  string       `json:"database"`
+	What      string       `json:"what"`      // what a definition of its database is called, such as "window"
+	Range     jomini.Range `json:"range"`     // the whole statement
+	NameRange jomini.Range `json:"nameRange"` // the name alone
+	Children  []Symbol     `json:"children,omitempty"`
 }
 
 // A WorkspaceSymbol is one definition found by the symbol search across the workspace.
@@ -47,13 +47,13 @@ func (lsp *Service) Definition(path string, line, column int) ([]Site, error) {
 	}
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	_, reference := findReference(ws, mods, document, place, ToOffset(document.Tree.Src, document.Tree.Lines, line, column))
+	_, reference := findReference(ws, mods, document, place, jomini.ToOffset(document.Tree.Src, document.Tree.Lines, line, column))
 	if reference.Database == game.File {
 		target, ok := mods.ResolveTexture(reference.Name)
 		if !ok {
 			return []Site{}, nil
 		}
-		return []Site{{Place: ws.Locate(mods, target), Line: 1, Range: ToLineRange(1)}}, nil
+		return []Site{{Place: ws.Locate(mods, target), Line: 1, Range: jomini.ToLineRange(1)}}, nil
 	}
 	if reference.Name == "" {
 		return []Site{}, nil
@@ -61,12 +61,9 @@ func (lsp *Service) Definition(path string, line, column int) ([]Site, error) {
 
 	// an effect, a trigger or a link is defined by its line of the game's
 	// dump, where the install has the dump
-	if declared := ws.Schema.LookupDefinition(reference.Database, reference.Name); declared != nil {
-		if declared.Path == "" {
-			return []Site{}, nil
-		}
-
-		return []Site{{Place: ws.Locate(mods, declared.Path), Line: declared.Line, Range: ToLineRange(declared.Line)}}, nil
+	declared := ws.Schema.LookupDefinition(reference.Database, reference.Name)
+	if declared != nil && declared.Path != "" {
+		return []Site{{Place: ws.Locate(mods, declared.Path), Line: declared.Line, Range: jomini.ToLineRange(declared.Line)}}, nil
 	}
 
 	sites, _ := listSites(ws, mods, place, reference)
@@ -101,29 +98,19 @@ func listBufferSites(ws *workspace.Session, mods *index.Index, path string, refe
 		return nil
 	}
 	name := mods.ToCaseless(reference.Database, reference.Name)
-	callable := len(game.Callables[reference.Database].Callers) > 0
+	callable := slices.Contains(game.Called, reference.Database)
 	matches := func(other schema.Reference) bool {
 		return (other.Database == reference.Database || callable && other.Database == game.AnyCall) &&
 			mods.ToCaseless(reference.Database, other.Name) == name
 	}
 	var spans []jomini.Span
-	for position := range document.Contexts {
-		context := &document.Contexts[position]
-		if definition := context.Definition; context.Defines && matches(schema.Reference{Database: definition.Database, Name: definition.Name}) {
-			spans = append(spans, definition.Span)
-		}
-		for _, other := range context.References {
-			if uses && matches(other) {
-				spans = append(spans, other.Span)
+	for _, contexts := range [][]schema.Context{document.Contexts, document.MessageContexts} {
+		for position := range contexts {
+			context := &contexts[position]
+			if definition := context.Definition; context.Defines && matches(schema.Reference{Database: definition.Database, Name: definition.Name}) {
+				spans = append(spans, definition.Span)
 			}
-		}
-	}
-	if document.Messages != nil {
-		for _, message := range document.Messages.Messages {
-			if matches(schema.Reference{Database: game.Localization, Name: message.Key}) {
-				spans = append(spans, message.KeySpan)
-			}
-			for _, other := range ws.Schema.ListTextReferences(message) {
+			for _, other := range context.References {
 				if uses && matches(other) {
 					spans = append(spans, other.Span)
 				}
@@ -134,17 +121,17 @@ func listBufferSites(ws *workspace.Session, mods *index.Index, path string, refe
 	return lo.Map(spans, func(span jomini.Span, _ int) Site {
 		line := tree.Lines.ToPosition(span.Start).Line
 		row := tree.Lines.LineSpan(line)
-		return Site{Place: place, Line: line + 1, Range: ToRange(tree.Src, tree.Lines, span), Text: tree.Src[row.Start:row.End]}
+		return Site{Place: place, Line: line + 1, Range: jomini.ToRange(tree.Src, tree.Lines, span), Text: tree.Src[row.Start:row.End]}
 	})
 }
 
 // findReference returns the reference a definition or a use makes at the given offset, with the span it is written at.
 // The reference has no name if the offset is on none.
 func findReference(
-	ws *workspace.Session, mods *index.Index, document workspace.Document, place workspace.Place, offset int,
+	ws *workspace.Session, mods *index.Index, document schema.Document, place workspace.Place, offset int,
 ) (jomini.Span, schema.Reference) {
 	if place.Format == files.FormatLocalization {
-		_, reference := describeMessage(ws, document.Tree, place, offset)
+		_, reference := describeMessage(ws, document, offset)
 		return reference.Span, reference
 	}
 	cursor := findCursor(document, offset)
@@ -180,7 +167,7 @@ func (lsp *Service) References(path string, line, column int) ([]Site, error) {
 	}
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	_, reference := findReference(ws, mods, document, place, ToOffset(document.Tree.Src, document.Tree.Lines, line, column))
+	_, reference := findReference(ws, mods, document, place, jomini.ToOffset(document.Tree.Src, document.Tree.Lines, line, column))
 	if reference.Name == "" {
 		return []Site{}, nil
 	}
@@ -196,14 +183,14 @@ func listOccurrences(mods *index.Index, place workspace.Place, reference schema.
 // PrepareRename returns the range of the name at a position. It returns nil
 // if the position is on no name, if nothing defines it, or if a file that
 // cannot be changed defines it too: one of the game's or of a Workshop mod.
-func (lsp *Service) PrepareRename(path string, line, column int) (*Range, error) {
+func (lsp *Service) PrepareRename(path string, line, column int) (*jomini.Range, error) {
 	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	span, reference := findReference(ws, mods, document, place, ToOffset(document.Tree.Src, document.Tree.Lines, line, column))
+	span, reference := findReference(ws, mods, document, place, jomini.ToOffset(document.Tree.Src, document.Tree.Lines, line, column))
 	if reference.Name == "" {
 		return nil, nil
 	}
@@ -212,7 +199,7 @@ func (lsp *Service) PrepareRename(path string, line, column int) (*Range, error)
 	if len(sites) == 0 || lo.SomeBy(sites, func(site index.Site) bool { return ws.Locate(mods, mods.File(site).Path).ReadOnly }) {
 		return nil, nil
 	}
-	renamable := ToRange(document.Tree.Src, document.Tree.Lines, span)
+	renamable := jomini.ToRange(document.Tree.Src, document.Tree.Lines, span)
 	return &renamable, nil
 }
 
@@ -231,7 +218,7 @@ func (lsp *Service) Rename(path string, line, column int, name string) (map[stri
 	}
 	mods := ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	_, reference := findReference(ws, mods, document, place, ToOffset(document.Tree.Src, document.Tree.Lines, line, column))
+	_, reference := findReference(ws, mods, document, place, jomini.ToOffset(document.Tree.Src, document.Tree.Lines, line, column))
 	if reference.Database == "" {
 		if databases := mods.ListDatabases(reference.Name); len(databases) > 1 {
 			slices.Sort(databases)
@@ -241,7 +228,7 @@ func (lsp *Service) Rename(path string, line, column int, name string) (map[stri
 	}
 	edits := map[string][]Edit{}
 	for _, site := range locateSites(ws, mods, reference, listOccurrences(mods, place, reference), true) {
-		if !site.Place.ReadOnly && site.Range != (Range{}) {
+		if !site.Place.ReadOnly && site.Range != (jomini.Range{}) {
 			edits[site.Place.Path] = append(edits[site.Place.Path], Edit{Range: site.Range, Text: name})
 		}
 	}
@@ -279,7 +266,7 @@ func ListFileSymbols(ws *workspace.Session, mods *index.Index, path string) ([]S
 // listSymbols returns the definitions of a walked document, nested as they
 // are written, each with the title its own statement gives it. A constant is
 // left out.
-func listSymbols(ws *workspace.Session, mods *index.Index, document workspace.Document) []Symbol {
+func listSymbols(ws *workspace.Session, mods *index.Index, document schema.Document) []Symbol {
 	tree, symbols := document.Tree, []Symbol{}
 	// path holds the position of each symbol around the statement among its
 	// siblings, the outermost first, and ends the statement that follows each
@@ -320,8 +307,8 @@ func makeSymbol(tree *jomini.Tree, reference schema.Reference, span jomini.Span,
 	return Symbol{
 		Name: reference.Name, Title: title, Database: reference.Database,
 		What:      game.DescribeDefinition(reference.Database, false),
-		Range:     ToRange(tree.Src, tree.Lines, span),
-		NameRange: ToRange(tree.Src, tree.Lines, reference.Span),
+		Range:     jomini.ToRange(tree.Src, tree.Lines, span),
+		NameRange: jomini.ToRange(tree.Src, tree.Lines, reference.Span),
 	}
 }
 

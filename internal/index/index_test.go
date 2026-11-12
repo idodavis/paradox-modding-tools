@@ -279,7 +279,7 @@ func describeFile(scanned *Index, position int32) string {
 
 		_, _ = fmt.Fprintln(hash, occurrence.Role, scanned.Databases.Texts[occurrence.Database],
 			scanned.Names.Texts[occurrence.Name], occurrence.Span, occurrence.Line, mode, occurrence.Priority, language,
-			occurrence.Local, occurrence.Alias, occurrence.Nested, occurrence.Firing, occurrence.Parent, occurrence.Statement)
+			occurrence.Local, occurrence.Own, occurrence.Nested, occurrence.Firing, occurrence.Parent, occurrence.Statement)
 	}
 
 	for _, text := range scanned.Texts[position] {

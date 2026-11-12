@@ -65,7 +65,8 @@ copy `FindKept` returns.
 | `index.go` | The package doc, and the index and its parts: occurrences, tables, sites and postings, and what a site points at. |
 | `scan.go` | Scanning an install, scanning the mods on top of it, rescanning changed files, and loading the cache. |
 | `lookup.go` | Lookups by name: what a reference resolves to, what uses a name, what a database defines. |
-| `combine.go` | What the game keeps: the winning definition of a name, found by [game](../game/README.md)'s rule over the copies in files the game reads, and what hides a copy. |
+| `combine.go` | What the game keeps: the winning definition of a name, found by [game](../game/README.md)'s rule over the copies in files the game reads, and kept for each name with several copies until the next scan. |
+| `translation.go` | The game's localization in a second language, scanned once on an install's index and cached by language, and the message the game shows for a key. |
 | `fires.go` | What fires what, and the rule that marks a reference as firing, with the fields it lists. |
 
 ## Terms

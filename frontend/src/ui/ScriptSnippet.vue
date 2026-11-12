@@ -58,19 +58,20 @@ const style = computed(() => {
   const { fontFamily, fontSize, padding } = settings.codeFont();
   return { fontFamily, fontSize: `${fontSize}px`, lineHeight: `${lineHeight.value}px`, paddingTop: `${padding.top}px` };
 });
-// Trailing line breaks are dropped, since they would draw as an empty line,
-// and so is the indent every line shares, so deeply nested code starts at
-// the left.
-const lines = computed(() => {
-  const rows = text.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/);
-  const indents = rows.filter((row) => row.trim()).map((row) => /^[\t ]*/.exec(row)?.[0] ?? "");
-  const shared = indents.reduce((common, indent) => {
+// Trailing line breaks are dropped, since they would draw as an empty line.
+const source = computed(() => text.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/));
+// The indent every line shares is not drawn, so nested code starts at the
+// left. Go gets the lines with it, to match them with the file.
+const indent = computed(() => {
+  const indents = source.value.filter((row) => row.trim()).map((row) => /^[\t ]*/.exec(row)?.[0] ?? "");
+  const shared = indents.reduce((common, own) => {
     let end = 0;
-    while (end < common.length && common[end] === indent[end]) end++;
+    while (end < common.length && common[end] === own[end]) end++;
     return common.slice(0, end);
   }, indents[0] ?? "");
-  return rows.map((row) => row.slice(shared.length));
+  return shared.length;
 });
+const lines = computed(() => source.value.map((row) => row.slice(indent.value)));
 const lineNumbers = computed(() => (line ? lines.value.map((_text, index) => line + index) : []));
 const gutter = computed(() => ({
   width: `${Math.max(settings.codeFont().lineNumbersMinChars, String(lineNumbers.value.at(-1)).length)}ch`,
@@ -92,13 +93,22 @@ const band = computed(() => {
 // and shows nothing, and a text drawn before is drawn again at once. With no
 // workspace open Go gives no colors and the text is drawn plain.
 const { data: legend, status: legendStatus } = useQuery(legendQuery);
-const { data: tokens, status } = useQuery(() => textColorsQuery({ path, format, text: lines.value.join("\n") }));
+const { data: tokens, status } = useQuery(() => textColorsQuery({ path, format, text: source.value.join("\n"), line }));
 const painted = computed(() => status.value !== "pending" && legendStatus.value !== "pending");
 const rows = computed<Piece[][]>(() =>
   tokens.value && legend.value
-    ? colorLines(lines.value, tokens.value, legend.value.tokenTypes ?? [])
+    ? colorLines(source.value, tokens.value, legend.value.tokenTypes ?? []).map(dedent)
     : lines.value.map((row) => [{ text: row }]),
 );
+
+/**
+ * dedent drops the shared indent from the start of a line's first piece. No
+ * token covers the indent.
+ */
+function dedent(pieces: Piece[]): Piece[] {
+  const [first, ...rest] = pieces;
+  return first && !first.color ? [{ text: first.text.slice(indent.value) }, ...rest] : pieces;
+}
 
 /**
  * colorLines cuts each line into pieces by Go's tokens, which come five

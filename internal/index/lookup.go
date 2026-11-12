@@ -6,9 +6,9 @@ package index
 
 import (
 	"cmp"
-	"maps"
 	"slices"
 	"strings"
+	"sync"
 
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/schema"
@@ -62,12 +62,9 @@ func ListCallees(reference schema.Reference) []schema.Reference {
 		return []schema.Reference{reference}
 	}
 
-	var callees []schema.Reference
-
-	for _, database := range slices.Sorted(maps.Keys(game.Callables)) {
-		if len(game.Callables[database].Callers) > 0 {
-			callees = append(callees, schema.Reference{Database: database, Name: reference.Name, Span: reference.Span})
-		}
+	callees := make([]schema.Reference, len(game.Called))
+	for position, database := range game.Called {
+		callees[position] = schema.Reference{Database: database, Name: reference.Name, Span: reference.Span}
 	}
 
 	return callees
@@ -93,7 +90,7 @@ func (i *Index) ListDatabases(name string) []string {
 // any callable database count too.
 func (i *Index) ListUses(database, name string) []Site {
 	uses := i.listPosting(RoleRefers, database, name)
-	if len(game.Callables[database].Callers) == 0 {
+	if !slices.Contains(game.Called, database) {
 		return uses
 	}
 
@@ -117,7 +114,7 @@ func (i *Index) IsUsedByGame(database, name string) bool {
 	install := cmp.Or(i.install, i)
 
 	return len(install.listPosting(RoleRefers, database, name)) > 0 ||
-		len(game.Callables[database].Callers) > 0 && len(install.listPosting(RoleRefers, game.AnyCall, name)) > 0
+		slices.Contains(game.Called, database) && len(install.listPosting(RoleRefers, game.AnyCall, name)) > 0
 }
 
 // ListDefinitions returns every definition in a database, in load order. The
@@ -151,13 +148,14 @@ func (i *Index) ListMessages(key string) []Site {
 }
 
 // ListKeys returns up to the given limit of the localization keys that
-// contain the given text, in any case, and have a loaded message in the given
-// language. A key that is the text itself comes first, then the keys that
+// contain the given text, in any case, and have a loaded message in one of
+// the given languages. A key that is the text itself comes first, then the
+// keys that
 // start with the text, then the ones that only contain it. Each key comes
 // once, and within each of the two the keys come in the order the index
 // first met them. It also reports whether the list is cut: it holds as many
 // keys as the limit allows, so more may match.
-func (i *Index) ListKeys(language, text string, limit int) ([]string, bool) {
+func (i *Index) ListKeys(languages []string, text string, limit int) ([]string, bool) {
 	databaseOrdinal, ok := i.Databases.Lookup(game.Localization)
 	if !ok {
 		return nil, false
@@ -166,7 +164,7 @@ func (i *Index) ListKeys(language, text string, limit int) ([]string, bool) {
 	posting, lower := Posting{Role: RoleLocalizes, Database: uint16(databaseOrdinal)}, strings.ToLower(text)
 	isWritten := func(nameOrdinal uint32) bool {
 		return slices.ContainsFunc(i.listKey(posting, nameOrdinal), func(site Site) bool {
-			return i.IsLoaded(site.File) && i.Language(site) == language
+			return i.IsLoaded(site.File) && slices.Contains(languages, i.Language(site))
 		})
 	}
 
@@ -272,13 +270,26 @@ func (i *Index) ToReference(site Site) schema.Reference {
 	return schema.Reference{Database: i.Databases.Texts[occurrence.Database], Name: i.Names.Texts[occurrence.Name]}
 }
 
-// CountDefinitions counts a file's definitions by database. An alias is no
-// definition of its own.
+// FindTextKey returns the localization key a definition writes for its title,
+// given game.TitleKey, or for its description, given game.DescriptionKey. It
+// returns false if the definition writes none.
+func (i *Index) FindTextKey(definition Site, key string) (string, bool) {
+	for _, site := range i.listReferences(definition) {
+		occurrence := i.Occurrence(site)
+		if key == game.TitleKey && occurrence.Titles || key == game.DescriptionKey && occurrence.Describes {
+			return i.Names.Texts[occurrence.Name], true
+		}
+	}
+
+	return "", false
+}
+
+// CountDefinitions counts a file's own definitions by database.
 func (i *Index) CountDefinitions(file int32) map[string]int {
 	counts := map[string]int{}
 
 	for _, occurrence := range i.Occurrences[file] {
-		if occurrence.Role == RoleDefines && !occurrence.Alias {
+		if occurrence.Own {
 			counts[i.Databases.Texts[occurrence.Database]]++
 		}
 	}
@@ -369,11 +380,12 @@ func compareSites(first, second Site) int {
 }
 
 // buildPostings fills the postings from the occurrences after a scan or a
-// load.
+// load, and drops the winners worked out before it.
 func (i *Index) buildPostings() {
 	// Only the index's own files are posted, since a lookup reads the
 	// install's postings as well.
 	i.postings = map[Posting]map[uint32][]Site{}
+	i.winners = &sync.Map{}
 
 	for file := int(i.countInstallFiles()); file < len(i.Occurrences); file++ {
 		for position, occurrence := range i.Occurrences[file] {

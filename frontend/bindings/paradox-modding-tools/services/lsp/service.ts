@@ -23,10 +23,15 @@ import * as jomini$0 from "../../internal/jomini/models.js";
 import * as $models from "./models.js";
 
 /**
- * BuildOverride returns the fix that overrides the entry at a position of a file: a copy of it, written as the game
- * keeps it over the others, in the mod with the given id or else the first other mod that can be written to. It
- * returns nil if the position is in no entry. It returns an error if the mod defines the entry already, the game
- * combines every copy of that kind of entry, or no mod can hold the copy.
+ * BuildOverride returns the fix that overrides the entry at a position of a
+ * file. The fix copies the entry into a mod, written so that the game keeps
+ * the copy. The mod is the one with the given id, or the first other mod
+ * that can be written to if the id is "". It returns nil if the position is
+ * in no entry.
+ * 
+ * It returns an error if the mod defines the entry already, the game joins
+ * every copy of that kind of entry, or no file name makes the copy win. With
+ * no mod id, those cases return nil and no error.
  */
 export function BuildOverride(path: string, line: number, column: number, modID: string): $CancellablePromise<$models.Fix | null> {
     return $Call.ByID(112820297, path, line, column, modID);
@@ -40,14 +45,17 @@ export function CloseFile(path: string): $CancellablePromise<void> {
 }
 
 /**
- * ColorText returns every token of a text that is not open in the editor,
- * such as a snippet a page shows, encoded as Tokens encodes them. The text is
- * read as the file with the given path would be, or as a file of the given
- * format in no folder where the path is "". Its comments, quoted texts and
- * operators are tokens too, so a page can draw it with no editor.
+ * ColorText returns the tokens of a text that is not open in the editor,
+ * such as a snippet on a page, encoded as Tokens encodes them. Comments,
+ * quoted texts and operators are tokens too, since no editor colors them.
+ * 
+ * The line is where the text starts in its file, from 1. The text then takes
+ * the colors those lines have in the file. With line 0, or if the file does
+ * not hold the text there, the text is read by itself: as a file at the
+ * path, or as a file of the given format if the path is "".
  */
-export function ColorText(path: string, format: files$0.Format, text: string): $CancellablePromise<number[] | null> {
-    return $Call.ByID(3057261305, path, format, text);
+export function ColorText(path: string, format: files$0.Format, text: string, line: number): $CancellablePromise<number[] | null> {
+    return $Call.ByID(3057261305, path, format, text, line);
 }
 
 /**
@@ -78,8 +86,8 @@ export function DescribeIndentation(path: string): $CancellablePromise<string> {
 }
 
 /**
- * Diagnose returns the problems of a file, judged against the open workspace. It leaves out the checks the user turned
- * off.
+ * Diagnose returns the problems of a file, judged against the open
+ * workspace. It leaves out the checks the user turned off.
  */
 export function Diagnose(path: string): $CancellablePromise<$models.Diagnostic[] | null> {
     return $Call.ByID(3833762539, path);
@@ -169,7 +177,7 @@ export function ListSymbols(path: string): $CancellablePromise<$models.Symbol[] 
  * if the position is on no name, if nothing defines it, or if a file that
  * cannot be changed defines it too: one of the game's or of a Workshop mod.
  */
-export function PrepareRename(path: string, line: number, column: number): $CancellablePromise<$models.Range | null> {
+export function PrepareRename(path: string, line: number, column: number): $CancellablePromise<jomini$0.Range | null> {
     return $Call.ByID(2522429872, path, line, column);
 }
 
@@ -178,7 +186,7 @@ export function PrepareRename(path: string, line: number, column: number): $Canc
  * range. If the range holds no color, it uses the form the game's coats write colors in. It returns an error if the
  * form cannot be written.
  */
-export function PresentColor(path: string, colorRange: $models.Range, color: jomini$0.RGBA): $CancellablePromise<string> {
+export function PresentColor(path: string, colorRange: jomini$0.Range, color: jomini$0.RGBA): $CancellablePromise<string> {
     return $Call.ByID(3581946373, path, colorRange, color);
 }
 
@@ -221,6 +229,6 @@ export function Signature(path: string, line: number, column: number): $Cancella
  * every key and piece of markup of a localization file. It returns none for
  * any other file.
  */
-export function Tokens(path: string, bounds: $models.Range): $CancellablePromise<number[] | null> {
+export function Tokens(path: string, bounds: jomini$0.Range): $CancellablePromise<number[] | null> {
     return $Call.ByID(1531108025, path, bounds);
 }

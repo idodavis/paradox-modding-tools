@@ -324,8 +324,8 @@ func applyEdits(t *testing.T, text string, edits []lsp.Edit, err error) (string,
 	converted := lo.Map(edits, func(edit lsp.Edit, _ int) jomini.Edit {
 		return jomini.Edit{
 			Span: jomini.Span{
-				Start: lsp.ToOffset(text, lines, edit.Range.StartLine, edit.Range.StartColumn),
-				End:   lsp.ToOffset(text, lines, edit.Range.EndLine, edit.Range.EndColumn),
+				Start: jomini.ToOffset(text, lines, edit.Range.StartLine, edit.Range.StartColumn),
+				End:   jomini.ToOffset(text, lines, edit.Range.EndLine, edit.Range.EndColumn),
 			},
 			Text: edit.Text,
 		}
@@ -677,7 +677,7 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 		len(listed.Layers[3].Sub.Layers) != 2 || listed.Layers[3].Instances[0].Position != [2]float64{0.5, 0} {
 		t.Errorf("a list of equal weights, a list that is missing and a sub: %+v", listed.Layers)
 	}
-	if len(equal.Instances) != 1 || equal.Instances[0].Range != (lsp.Range{}) {
+	if len(equal.Instances) != 1 || equal.Instances[0].Range != (jomini.Range{}) {
 		t.Errorf("a default instance has no range: %+v", equal.Instances)
 	}
 	picked, err := drw.ResolveCoat(coatFile, "d_listed", map[string]string{heavy.Lists[0].ID: otherFile})

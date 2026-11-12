@@ -181,6 +181,9 @@ func isScalarEnd(text string, offset int) bool {
 // CountBrackets returns how many bytes the bracketed text that opens at the
 // given [ runs, its matching ] included. Without one on its line it runs to
 // the line's end.
+//
+// Quotes are not read. The games' translations write quotes that do not
+// match, as ('recipient’) does.
 func CountBrackets(text string, offset int) int {
 	depth := 0
 	for i := offset; i < len(text); i++ {

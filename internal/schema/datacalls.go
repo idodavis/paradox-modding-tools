@@ -228,26 +228,33 @@ var textDatabases = map[loc.Markup]string{
 	loc.MarkupFormat: game.GUI.TextFormats,
 }
 
-// ListTextReferences returns what the text of one message refers to, in the
-// order the text writes it. For each piece of the text, a data call's
-// references come first, then the names the piece writes: a key refers to a
-// message, an icon to a text icon and a part of a format to a text format.
-func (s *Schema) ListTextReferences(message loc.Message) []Reference {
-	var references []Reference
-	for _, segment := range message.Segments {
-		if segment.Markup == loc.MarkupCall {
-			references = append(references, s.listTextCall(segment)...)
+// WalkMessages decides what each message of a localization file is. It
+// returns a context for each message, as the file lists them: the key is its
+// definition, and its references are what its text refers to, in the order
+// the text writes it. For each piece of the text, a data call's references
+// come first, then the names the piece writes: a key refers to a message, an
+// icon to a text icon and a part of a format to a text format.
+func (s *Schema) WalkMessages(file *loc.File) []Context {
+	contexts := make([]Context, len(file.Messages))
+	for position, message := range file.Messages {
+		context := &contexts[position]
+		context.Category, context.Defines = CategoryDefinition, true
+		context.Definition = &Copy{Database: game.Localization, Name: message.Key, Span: message.KeySpan}
+		for _, segment := range message.Segments {
+			if segment.Markup == loc.MarkupCall {
+				context.References = append(context.References, s.listTextCall(segment)...)
+			}
+
+			for _, piece := range loc.ListNames(segment) {
+				reference := Reference{Database: textDatabases[piece.Markup], Name: piece.Text, Span: piece.TextSpan}
+				context.References = append(context.References, reference)
+			}
 		}
 
-		for _, piece := range loc.ListNames(segment) {
-			reference := Reference{Database: textDatabases[piece.Markup], Name: piece.Text, Span: piece.TextSpan}
-			references = append(references, reference)
-		}
+		judge(context.References)
 	}
 
-	judge(references)
-
-	return references
+	return contexts
 }
 
 // conceptFormat is the format a data call in a localization text carries

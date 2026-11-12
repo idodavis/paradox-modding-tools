@@ -53,7 +53,7 @@ func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	}
 	tree := document.Tree
 	use := tree.FindStatement(mods.Occurrence(fire.Use).Span.Start)
-	firing := findFiring(document, use)
+	firing := findFiring(document, ws.Schema.Effects, use)
 	edge.Effect = tree.Text(tree.Statements[firing].Key)
 	edge.Delay = findDelay(tree, firing)
 	edge.Title = findTitle(ws, mods, tree, firing, game.TitleKey)
@@ -78,10 +78,10 @@ func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []E
 
 // findFiring returns the statement that writes a firing, given the statement its reference sits in. That is the block
 // around it where the reference is a list value, a numbered branch or a field of an effect, such as trigger_event's id.
-func findFiring(document workspace.Document, statement int32) int32 {
+func findFiring(document schema.Document, effects string, statement int32) int32 {
 	for {
 		current := document.Tree.Statements[statement]
-		isField := isEffect(&document.Contexts[current.Parent]) && !isEffect(&document.Contexts[statement])
+		isField := isEffect(&document.Contexts[current.Parent], effects) && !isEffect(&document.Contexts[statement], effects)
 		isHeld := current.IsListed() || current.KeyClass.IsNumberKey() || isField
 		if current.Parent == 0 || !isHeld {
 			return statement
@@ -91,10 +91,13 @@ func findFiring(document workspace.Document, statement int32) int32 {
 	}
 }
 
-// isEffect reports whether the walk decided a statement's key is an effect
-// the dumps declare.
-func isEffect(context *schema.Context) bool {
-	return context.Command != nil && context.Command.Database == game.DumpEffects
+// isEffect reports whether the walk decided a statement's key is an effect:
+// one the dumps declare, or a call of a scripted effect, whose database is
+// given. So a firing written as a scripted effect's argument, as in
+// my_effect = { EVENT = x.1 }, is the call and not the argument.
+func isEffect(context *schema.Context, effects string) bool {
+	return context.Command != nil && context.Command.Database == game.DumpEffects ||
+		context.Callee != nil && context.Callee.Database == effects
 }
 
 // findDelay returns the delay written for a firing, in words, or "" if none is written. It is the delay of the nearest
@@ -131,17 +134,17 @@ func describeDelay(tree *jomini.Tree, statement int32, unit string) string {
 // findTitle returns the text a field of a statement names, in words: a firing's title or an option's name. It returns
 // "" if the statement writes no such field or no message has its key.
 func findTitle(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32, field string) string {
-	key, ok := workspace.FindTextKey(tree, statement, field)
+	position, ok := schema.FindTextKey(tree, statement, field)
 	if !ok {
 		return ""
 	}
-	text, _, _ := ws.LookupText(mods, key)
+	text, _, _ := ws.LookupText(mods, tree.Unquoted(tree.Statements[position].Value))
 	return toTitle(ws, mods, text)
 }
 
 // listSteps returns the blocks a firing's statement sits in, from the top of the definition down, leaving out the
 // definition and the firing itself.
-func listSteps(ws *workspace.Session, mods *index.Index, document workspace.Document, firing, definition int32) []Step {
+func listSteps(ws *workspace.Session, mods *index.Index, document schema.Document, firing, definition int32) []Step {
 	var steps []Step
 	statements := document.Tree.Statements
 	for statement := statements[firing].Parent; statement > definition; statement = statements[statement].Parent {
@@ -162,7 +165,7 @@ var weightModifiers = []string{"modifier", "opinion_modifier", "compare_modifier
 // makeStep returns the step of one block a firing sits in, in the given
 // definition. Whether the block is a branch, a weighted branch or a list is
 // what the walk decided its key is.
-func makeStep(ws *workspace.Session, mods *index.Index, document workspace.Document, statement, definition int32) Step {
+func makeStep(ws *workspace.Session, mods *index.Index, document schema.Document, statement, definition int32) Step {
 	tree, context := document.Tree, &document.Contexts[statement]
 	current := tree.Statements[statement]
 	key, holder := tree.Text(current.Key), tree.Text(tree.Statements[current.Parent].Key)

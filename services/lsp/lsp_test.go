@@ -167,14 +167,14 @@ func TestToRangeCountsUtf16Units(t *testing.T) {
 	text := "a = \"é😀x\"\nnext = 1\n"
 	lines := jomini.NewLines(text)
 	start := strings.Index(text, "x")
-	if got, want := ToRange(text, lines, jomini.Span{Start: start, End: start + 1}), (Range{1, 9, 1, 10}); got != want {
+	if got, want := jomini.ToRange(text, lines, jomini.Span{Start: start, End: start + 1}), (jomini.Range{StartLine: 1, StartColumn: 9, EndLine: 1, EndColumn: 10}); got != want {
 		t.Errorf("after a surrogate pair: %+v, want %+v", got, want)
 	}
 	start = strings.Index(text, "next")
-	if got, want := ToRange(text, lines, jomini.Span{Start: start, End: start + 4}), (Range{2, 1, 2, 5}); got != want {
+	if got, want := jomini.ToRange(text, lines, jomini.Span{Start: start, End: start + 4}), (jomini.Range{StartLine: 2, StartColumn: 1, EndLine: 2, EndColumn: 5}); got != want {
 		t.Errorf("on the next line: %+v, want %+v", got, want)
 	}
-	if got, want := ToRange(text, lines, jomini.Span{Start: 0, End: len(text)}), (Range{1, 1, 3, 1}); got != want {
+	if got, want := jomini.ToRange(text, lines, jomini.Span{Start: 0, End: len(text)}), (jomini.Range{StartLine: 1, StartColumn: 1, EndLine: 3, EndColumn: 1}); got != want {
 		t.Errorf("the whole text: %+v, want %+v", got, want)
 	}
 }
@@ -188,15 +188,15 @@ func TestToOffsetInvertsToRange(t *testing.T) {
 		if offset < len(text) && !strings.HasPrefix(text[offset:], string([]rune(text[offset:])[:1])) {
 			continue
 		}
-		span := ToRange(text, lines, jomini.Span{Start: offset, End: offset})
-		if got := ToOffset(text, lines, span.StartLine, span.StartColumn); got != offset {
+		span := jomini.ToRange(text, lines, jomini.Span{Start: offset, End: offset})
+		if got := jomini.ToOffset(text, lines, span.StartLine, span.StartColumn); got != offset {
 			t.Errorf("offset %d came back as %d from %+v", offset, got, span)
 		}
 	}
-	if got := ToOffset(text, lines, 1, 99); got != strings.Index(text, "\n") {
+	if got := jomini.ToOffset(text, lines, 1, 99); got != strings.Index(text, "\n") {
 		t.Errorf("a column past the end of the line: %d", got)
 	}
-	if got := ToOffset(text, lines, 99, 1); got != len(text) {
+	if got := jomini.ToOffset(text, lines, 99, 1); got != len(text) {
 		t.Errorf("a line past the end of the text: %d", got)
 	}
 }
@@ -210,7 +210,7 @@ func TestSetTextAnswersWithProblemsUntilFileCloses(t *testing.T) {
 	if err != nil || !slices.Equal(listCodes(diagnostics), []string{"wrong-value"}) {
 		t.Fatalf("SetText answered %+v, %v", diagnostics, err)
 	}
-	if want := (Range{3, 14, 3, 25}); diagnostics[0].Range != want {
+	if want := (jomini.Range{StartLine: 3, StartColumn: 14, EndLine: 3, EndColumn: 25}); diagnostics[0].Range != want {
 		t.Errorf("the wrong value is at %+v, want %+v", diagnostics[0].Range, want)
 	}
 	if card, err := ide.Hover(target, 3, 3); err != nil || card == nil || card.Title != "diplomacy" || card.What != "field" {
@@ -297,7 +297,7 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 		return card
 	}
 	if card := hover(3, 1); card == nil || card.What != "event" || len(card.Sites) != 1 || !card.Sites[0].Kept ||
-		card.Sites[0].Place.Origin != fixtureModID || card.Sites[0].Line != 3 || card.Range != (Range{3, 1, 3, 4}) {
+		card.Sites[0].Place.Origin != fixtureModID || card.Sites[0].Line != 3 || card.Range != (jomini.Range{StartLine: 3, StartColumn: 1, EndLine: 3, EndColumn: 4}) {
 		t.Errorf("a definition: %+v", card)
 	}
 	if card := hover(11, 19); card == nil || card.What != "event" || card.Title != "v.2" || len(card.Sites) != 1 ||
@@ -394,7 +394,7 @@ func TestEncodeTokensWritesDeltas(t *testing.T) {
 // TestTokensEncodeWholeFile checks that Tokens writes five integers per token and that each type is in the legend.
 func TestTokensEncodeWholeFile(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
-	whole := Range{StartLine: 1, StartColumn: 1, EndLine: 1 << 20, EndColumn: 1}
+	whole := jomini.Range{StartLine: 1, StartColumn: 1, EndLine: 1 << 20, EndColumn: 1}
 	tokens, err := ide.Tokens(filepath.Join(dir, "events", "m_events.txt"), whole)
 	if err != nil || len(tokens) < 50 || len(tokens)%5 != 0 {
 		t.Fatalf("%d integers, %v", len(tokens), err)
@@ -439,8 +439,8 @@ func toByteEdits(tree *jomini.Tree, edits []Edit) []jomini.Edit {
 	return lo.Map(edits, func(edit Edit, _ int) jomini.Edit {
 		return jomini.Edit{
 			Span: jomini.Span{
-				Start: ToOffset(tree.Src, tree.Lines, edit.Range.StartLine, edit.Range.StartColumn),
-				End:   ToOffset(tree.Src, tree.Lines, edit.Range.EndLine, edit.Range.EndColumn),
+				Start: jomini.ToOffset(tree.Src, tree.Lines, edit.Range.StartLine, edit.Range.StartColumn),
+				End:   jomini.ToOffset(tree.Src, tree.Lines, edit.Range.EndLine, edit.Range.EndColumn),
 			},
 			Text: edit.Text,
 		}
@@ -508,7 +508,7 @@ func TestNavigationFollowsNamesAcrossFiles(t *testing.T) {
 	if err != nil || len(uses) != 2 {
 		t.Errorf("References: %+v, %v", uses, err)
 	}
-	if renamable, err := ide.PrepareRename(target, 3, 1); err != nil || renamable == nil || *renamable != (Range{3, 1, 3, 4}) {
+	if renamable, err := ide.PrepareRename(target, 3, 1); err != nil || renamable == nil || *renamable != (jomini.Range{StartLine: 3, StartColumn: 1, EndLine: 3, EndColumn: 4}) {
 		t.Errorf("PrepareRename on a mod's name: %+v, %v", renamable, err)
 	}
 	if refused, err := ide.PrepareRename(target, 11, 19); err != nil || refused != nil {
@@ -617,19 +617,19 @@ func TestSweepMods(t *testing.T) {
 
 // judgeAsMod returns a function that judges a file of a workspace as a mod's file is judged, a file of the game too.
 func judgeAsMod(ws *workspace.Session) func(path string) ([]Diagnostic, error) {
-	mods, parameters := ws.Mods.Load(), &sync.Map{}
+	mods := ws.Mods.Load()
 	return func(path string) ([]Diagnostic, error) {
 		place := ws.Locate(mods, path)
 		if !isDiagnosed(place) {
 			return nil, nil
 		}
-		document, err := ws.LoadDocument(path)
+		document, err := ws.WalkDocument(path)
 		if err != nil {
 			return nil, err
 		}
-		visitor := newVisitor(ws, mods, place, parameters)
-		visitor.parseOnly = false
-		return visitor.diagnoseTree(document), nil
+		// a file under no root is judged in full, against every mod
+		place.Origin = ""
+		return diagnoseDocument(ws, mods, place, document), nil
 	}
 }
 

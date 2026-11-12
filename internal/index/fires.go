@@ -186,30 +186,34 @@ func (i *Index) isActing(winner Winner, site Site) bool {
 	return outcome.Kept || outcome.Reason == game.ReasonUnsettled
 }
 
-// firingFields holds the key paths in the games' definitions where a name
-// fires the event, on_action or decision it names, as it would in effect
-// script. A row holds for the games its Games lists.
-var firingFields = []game.Reference{
+// firingFields holds, by database, the key paths in its definitions where a
+// name fires the event, on_action or decision it names, as it would in
+// effect script. A row holds for the games its Games lists.
+var firingFields = map[string][]game.Reference{
 	// CK3 common/council_tasks/00_chancellor_tasks.txt:150
-	{Games: []string{game.CK3}, Database: "council_tasks", KeyPath: "monthly_on_action"},
+	"council_tasks": {{Games: []string{game.CK3}, KeyPath: "monthly_on_action"}},
 	// CK3 common/schemes/scheme_types/coerce_contribution_scheme.txt:143
-	{Games: []string{game.CK3}, Database: "schemes/scheme_types", KeyPath: "on_monthly/**"},
+	"schemes/scheme_types": {{Games: []string{game.CK3}, KeyPath: "on_monthly/**"}},
 	// CK3 common/defines/00_defines.txt:1813-1816: "Default event to run when
 	// a player province is infected"
-	{Games: []string{game.CK3}, Database: "defines.define", KeyPath: "DEFAULT_HOLDER_INFECTION_EVENT"},
-	{Games: []string{game.CK3}, Database: "defines.define", KeyPath: "DEFAULT_LIEGE_INFECTION_EVENT"},
-	{Games: []string{game.CK3}, Database: "defines.define", KeyPath: "DEFAULT_REALM_INFECTION_EVENT"},
+	"defines.define": {
+		{Games: []string{game.CK3}, KeyPath: "DEFAULT_HOLDER_INFECTION_EVENT"},
+		{Games: []string{game.CK3}, KeyPath: "DEFAULT_LIEGE_INFECTION_EVENT"},
+		{Games: []string{game.CK3}, KeyPath: "DEFAULT_REALM_INFECTION_EVENT"},
+	},
 	// CK3 common/puppets/actions/puppet_actions.txt:26
-	{Games: []string{game.CK3}, Database: "puppets/actions", KeyPath: "decision"},
+	"puppets/actions": {{Games: []string{game.CK3}, KeyPath: "decision"}},
 	// Vic3 journal_entries.md:354-375: the fields that fire the events they
 	// name, as journal_entries.md:357, 00_belle_epoque.txt:215,
 	// 00_acw_entries.txt:61,120,68 and journal_entries.md:373-375 write them
-	{Games: []string{game.Vic3}, Database: "journal_entries", KeyPath: "on_weekly_pulse/random_events/<number>"},
-	{Games: []string{game.Vic3}, Database: "journal_entries", KeyPath: "on_weekly_pulse/events"},
-	{Games: []string{game.Vic3}, Database: "journal_entries", KeyPath: "on_monthly_pulse/random_events/<number>"},
-	{Games: []string{game.Vic3}, Database: "journal_entries", KeyPath: "on_monthly_pulse/events"},
-	{Games: []string{game.Vic3}, Database: "journal_entries", KeyPath: "on_yearly_pulse/random_events/<number>"},
-	{Games: []string{game.Vic3}, Database: "journal_entries", KeyPath: "on_yearly_pulse/events"},
+	"journal_entries": {
+		{Games: []string{game.Vic3}, KeyPath: "on_weekly_pulse/random_events/<number>"},
+		{Games: []string{game.Vic3}, KeyPath: "on_weekly_pulse/events"},
+		{Games: []string{game.Vic3}, KeyPath: "on_monthly_pulse/random_events/<number>"},
+		{Games: []string{game.Vic3}, KeyPath: "on_monthly_pulse/events"},
+		{Games: []string{game.Vic3}, KeyPath: "on_yearly_pulse/random_events/<number>"},
+		{Games: []string{game.Vic3}, KeyPath: "on_yearly_pulse/events"},
+	},
 }
 
 // isFiring reports whether a reference fires the event, on_action or decision
@@ -228,11 +232,11 @@ func (c *collector) isFiring(context *schema.Context, reference schema.Reference
 	if effect != nil && isEffect(effect, c.schema.Effects) {
 		target := c.schema.Databases[reference.Database]
 
-		return target == nil || target.Row.Contents != game.ContentsDecisions ||
+		return target == nil || target.Declaration.Contents != game.ContentsDecisions ||
 			slices.Contains(row.DecisionEffects, effect.Label)
 	}
 
-	if holder := c.schema.Databases[context.Database]; holder != nil && holder.Row.Contents == game.ContentsOnActions {
+	if holder := c.schema.Databases[context.Database]; holder != nil && holder.Declaration.Contents == game.ContentsOnActions {
 		return true
 	}
 
@@ -241,8 +245,8 @@ func (c *collector) isFiring(context *schema.Context, reference schema.Reference
 		keys = slices.Concat(keys, []string{context.Label})
 	}
 
-	return slices.ContainsFunc(firingFields, func(field game.Reference) bool {
-		return field.Database == context.Database && row.Matches(field.Games) && jomini.MatchKeyPath(field.KeyPath, keys)
+	return slices.ContainsFunc(firingFields[context.Database], func(field game.Reference) bool {
+		return row.Matches(field.Games) && jomini.MatchKeyPath(field.KeyPath, keys)
 	})
 }
 

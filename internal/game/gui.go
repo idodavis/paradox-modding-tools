@@ -241,8 +241,11 @@ type GUISpec struct {
 	DatabasePrefix string
 
 	// WidgetDatabase is the database of every top block that no key of
-	// Declares declares.
+	// Declares declares. WidgetTypes is the database of the widget types a
+	// block's key names where no type of a file has the name: those the game
+	// draws itself, and those the files define or build on.
 	WidgetDatabase string
+	WidgetTypes    string
 
 	// TagCalls is the caller of the type a block's key names, as
 	// Callable.Callers lists it.
@@ -478,6 +481,7 @@ var GUI = GUISpec{
 	WidgetKey:      guiWidgetKey,
 	DatabasePrefix: "gui.",
 	WidgetDatabase: "gui.widget",
+	WidgetTypes:    "gui.widget_type",
 	TagCalls:       guiTagCalls,
 	TemplateCalls:  guiTemplateCalls,
 	BlockCalls:     guiBlockCalls,
@@ -541,11 +545,13 @@ var GUI = GUISpec{
 	OverlayKey: "modify_texture", OverlayTextureKey: "texture",
 	// the dumps' Return type of the last function of every data call in the
 	// three installs' GUI texts; CPdxStringView is EU5's alone and int64
-	// Vic3's
+	// Vic3's. The four short integer types are the dumps' too, which a mod's
+	// text may end a call in.
 	CallOutputs: map[string]string{
 		"CString": "text", "CUTF8String": "text", "CPdxStringView": "text",
-		"int32": "number", "int64": "number", "uint32": "number", "uint64": "number", "CFixedPoint": "number",
-		"float": "number", "double": "number",
+		"int8": "number", "int16": "number", "int32": "number", "int64": "number",
+		"uint8": "number", "uint16": "number", "uint32": "number", "uint64": "number",
+		"CFixedPoint": "number", "float": "number", "double": "number",
 	},
 	// no data call in the three installs' GUI texts returns the dumps' Date
 	// type; the calls that write a date return CString, such as EU5's
@@ -636,7 +642,8 @@ var GUI = GUISpec{
 	},
 	DefineCall: guiDefineCall,
 	Booleans:   map[string]string{"And": "and", "Or": "or", "Nor": "nor", "Not": "not"},
-	Literals:   map[string]bool{"yes": true, "true": true, "no": false, "false": false},
+	// no GUI file of the three installs writes a property as true or false
+	Literals: map[string]bool{"yes": true, "no": false},
 	// CK3 gui/shared/lists.gui:2671, LessThanOrEqualTo_int32(
 	// GetDataModelSize(TraitArrays.GetPersonalityTraits), …)
 	Comparisons: map[string][]int{

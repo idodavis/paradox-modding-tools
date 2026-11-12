@@ -347,7 +347,7 @@ func (mcp *Service) describePages() string {
 	pages := lo.PartitionBy(queryKeys, func(row queryKey) string { return row.Page })
 	for _, rows := range pages {
 		keys := lo.Map(rows, func(row queryKey, _ int) string {
-			values := lo.Ternary(len(row.Values) > 0, lsp.JoinList(row.Values, "or")+": ", "")
+			values := lo.Ternary(len(row.Values) > 0, game.JoinList(row.Values, "or")+": ", "")
 			return fmt.Sprintf("%s (%s%s)", row.Key, values, row.Help)
 		})
 		fmt.Fprintf(&guide, "\n- %s: %s.", rows[0].Page, strings.Join(keys, "; "))
@@ -377,7 +377,7 @@ func (mcp *Service) describeWorkspace() (string, error) {
 	}
 	guide.WriteString("\nThe game's folders and what each holds:\n")
 	for _, database := range listFolderDatabases(ws) {
-		fmt.Fprintf(&guide, "- %s: %s\n", database.Row.Folder, game.DescribeDefinition(database.Name, true))
+		fmt.Fprintf(&guide, "- %s: %s\n", database.Declaration.Folder, game.DescribeDefinition(database.Name, true))
 	}
 	return guide.String(), nil
 }
@@ -392,7 +392,7 @@ func (mcp *Service) describeRules() (string, error) {
 	folders := map[string][]string{}
 	for _, database := range listFolderDatabases(ws) {
 		sentence := database.Precedence.Describe()
-		folders[sentence] = append(folders[sentence], database.Row.Folder)
+		folders[sentence] = append(folders[sentence], database.Declaration.Folder)
 	}
 	sentences := slices.SortedFunc(maps.Keys(folders), func(first, second string) int {
 		return cmp.Or(len(folders[second])-len(folders[first]), strings.Compare(first, second))
@@ -408,9 +408,11 @@ func (mcp *Service) describeRules() (string, error) {
 // listFolderDatabases returns the databases of a session's game that have a folder, sorted by folder.
 func listFolderDatabases(ws *workspace.Session) []*schema.Database {
 	databases := lo.Filter(slices.Collect(maps.Values(ws.Schema.Databases)), func(database *schema.Database, _ int) bool {
-		return database.Row.Folder != ""
+		return database.Declaration.Folder != ""
 	})
-	slices.SortFunc(databases, func(first, second *schema.Database) int { return strings.Compare(first.Row.Folder, second.Row.Folder) })
+	slices.SortFunc(databases, func(first, second *schema.Database) int {
+		return strings.Compare(first.Declaration.Folder, second.Declaration.Folder)
+	})
 	return databases
 }
 
@@ -427,7 +429,7 @@ func (mcp *Service) buildReport(filter findingFilter) (health.Report, error) {
 	}
 	levels := lo.Map(lsp.Levels, func(level lsp.Level, _ int) string { return level.ID })
 	if filter.Level != "" && !slices.Contains(levels, filter.Level) {
-		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", lsp.JoinList(levels, "or"), filter.Level))
+		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", game.JoinList(levels, "or"), filter.Level))
 	}
 	if err := errors.Join(errs...); err != nil {
 		return health.Report{}, err
@@ -559,7 +561,7 @@ func (mcp *Service) writeEdits(edits map[string][]lsp.Edit) ([]string, error) {
 		}
 		lines := jomini.NewLines(text.Text)
 		text.Text = jomini.ApplyEdits(text.Text, lo.Map(edits[target], func(edit lsp.Edit, _ int) jomini.Edit {
-			return jomini.Edit{Span: lsp.ToSpan(text.Text, lines, edit.Range), Text: edit.Text}
+			return jomini.Edit{Span: jomini.ToSpan(text.Text, lines, edit.Range), Text: edit.Text}
 		}))
 		if err := mcp.Workspace.Write(target, text); err != nil {
 			return paths[:position], err

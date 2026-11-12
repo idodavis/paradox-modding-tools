@@ -6,6 +6,7 @@ package lsp
 import (
 	"cmp"
 	"slices"
+	"strings"
 
 	"github.com/samber/lo"
 
@@ -59,7 +60,7 @@ var markupTokens = map[loc.Markup]schema.Category{
 // Monaco wants: the color of every key and value of a script file, and of
 // every key and piece of markup of a localization file. It returns none for
 // any other file.
-func (lsp *Service) Tokens(path string, bounds Range) ([]uint32, error) {
+func (lsp *Service) Tokens(path string, bounds jomini.Range) ([]uint32, error) {
 	_, document, err := lsp.loadDocument(path)
 	if err != nil {
 		return nil, err
@@ -67,18 +68,25 @@ func (lsp *Service) Tokens(path string, bounds Range) ([]uint32, error) {
 
 	tree := document.Tree
 
-	return encodeTokens(tree.Src, tree.Lines, listTokens(document, ToSpan(tree.Src, tree.Lines, bounds), false)), nil
+	return encodeTokens(tree.Src, tree.Lines, listTokens(document, jomini.ToSpan(tree.Src, tree.Lines, bounds), false)), nil
 }
 
-// ColorText returns every token of a text that is not open in the editor,
-// such as a snippet a page shows, encoded as Tokens encodes them. The text is
-// read as the file with the given path would be, or as a file of the given
-// format in no folder where the path is "". Its comments, quoted texts and
-// operators are tokens too, so a page can draw it with no editor.
-func (lsp *Service) ColorText(path string, format files.Format, text string) ([]uint32, error) {
+// ColorText returns the tokens of a text that is not open in the editor,
+// such as a snippet on a page, encoded as Tokens encodes them. Comments,
+// quoted texts and operators are tokens too, since no editor colors them.
+//
+// The line is where the text starts in its file, from 1. The text then takes
+// the colors those lines have in the file. With line 0, or if the file does
+// not hold the text there, the text is read by itself: as a file at the
+// path, or as a file of the given format if the path is "".
+func (lsp *Service) ColorText(path string, format files.Format, text string, line int) ([]uint32, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {
 		return nil, err
+	}
+
+	if colors, ok := colorLines(ws, path, text, line); ok {
+		return colors, nil
 	}
 
 	place := workspace.Place{File: files.File{Format: format}}
@@ -89,6 +97,39 @@ func (lsp *Service) ColorText(path string, format files.Format, text string) ([]
 	document := ws.WalkText(place, text)
 
 	return encodeTokens(text, document.Tree.Lines, listTokens(document, jomini.Span{End: len(text)}, true)), nil
+}
+
+// colorLines returns the tokens of a text that starts at a line of a file,
+// from 1, with the colors those lines have in the file. A snippet read by
+// itself loses what the file says above it, such as an event's namespace.
+// It returns false if there is no path or line, the file cannot be read, or
+// the file does not hold the text at that line.
+func colorLines(ws *workspace.Session, path, text string, line int) ([]uint32, bool) {
+	if path == "" || line < 1 {
+		return nil, false
+	}
+
+	document, err := ws.WalkDocument(path)
+	if err != nil {
+		return nil, false
+	}
+
+	tree, last := document.Tree, line-1+strings.Count(text, "\n")
+	if last >= tree.Lines.CountLines() {
+		return nil, false
+	}
+
+	bounds := jomini.Span{Start: tree.Lines.LineSpan(line - 1).Start, End: tree.Lines.LineSpan(last).End}
+	if strings.ReplaceAll(tree.Text(bounds), "\r\n", "\n") != text {
+		return nil, false
+	}
+
+	colors := encodeTokens(tree.Src, tree.Lines, listTokens(document, bounds, true))
+	if len(colors) > 0 {
+		colors[0] -= uint32(line - 1)
+	}
+
+	return colors, true
 }
 
 // ListLegend returns the legend the tokens are encoded against.
@@ -109,7 +150,7 @@ type token struct {
 // field. A localization file's keys are definitions, and its texts' markup
 // has the types of markupTokens. With the flag set, comments, operators,
 // quoted texts and a localization text's plain pieces are tokens too.
-func listTokens(document workspace.Document, bounds jomini.Span, whole bool) []token {
+func listTokens(document schema.Document, bounds jomini.Span, whole bool) []token {
 	tree := document.Tree
 	var tokens []token
 	add := func(span jomini.Span, category schema.Category) {
@@ -183,7 +224,7 @@ func encodeTokens(text string, lines jomini.Lines, tokens []token) []uint32 {
 	encoded := make([]uint32, 0, len(tokens)*5)
 	previousLine, previousColumn := 0, 0
 	for _, current := range tokens {
-		span := ToRange(text, lines, current.span)
+		span := jomini.ToRange(text, lines, current.span)
 		line, column := span.StartLine-1, span.StartColumn-1
 		// a span on more than one line is left out, which Monaco cannot draw,
 		// and so is one that overlaps the last

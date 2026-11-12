@@ -37,13 +37,13 @@ type Service struct {
 // A Property is one property of a widget, with the place where it is written. That place can be a template or the
 // widget's type instead of the widget itself.
 type Property struct {
-	Key    string    `json:"key"`
-	Value  string    `json:"value"` // what the game reads: a constant, an expression or a GetDefine call is worked out, also inside a block
-	Range  lsp.Range `json:"range"`
-	Place  int32     `json:"place"`  // the position of the file it is written in among its window's places
-	Origin string    `json:"origin"` // "widget", "template" or "type"; "missing" if no file defines the source
-	Writer string    `json:"writer"` // the type or template whose block it is written in; "" for no such block
-	Source string    `json:"source"` // where it comes from, in words
+	Key    string       `json:"key"`
+	Value  string       `json:"value"` // what the game reads: a constant, an expression or a GetDefine call is worked out, also inside a block
+	Range  jomini.Range `json:"range"`
+	Place  int32        `json:"place"`  // the position of the file it is written in among its window's places
+	Origin string       `json:"origin"` // "widget", "template" or "type"; "missing" if no file defines the source
+	Writer string       `json:"writer"` // the type or template whose block it is written in; "" for no such block
+	Source string       `json:"source"` // where it comes from, in words
 }
 
 // A Widget is one element of a resolved window, with everything needed to draw it. The page lays it out.
@@ -65,7 +65,7 @@ type Widget struct {
 	Placeholder string                   `json:"placeholder"`        // the shape among the page's placeholders that it draws where its picture has no file; "" for a widget with a picture, a background or no picture
 	Pictures    *PictureList             `json:"pictures,omitempty"` // where the pictures are listed that its picture binding may draw, where no file is found for the binding as written; it draws the first of them; nil means no list
 	Overlays    []int32                  `json:"overlays"`           // the positions of the textures laid over its own among its window's overlays
-	Range       lsp.Range                `json:"range"`
+	Range       jomini.Range             `json:"range"`
 	Place       int32                    `json:"place"` // the position of the file it is written in among its window's places
 }
 
@@ -102,9 +102,9 @@ type Window struct {
 
 // A Setting is one property to set in a block: the key and the value to write for it.
 type Setting struct {
-	Block lsp.Range `json:"block"` // starts where the block does
-	Key   string    `json:"key"`
-	Value string    `json:"value"`
+	Block jomini.Range `json:"block"` // starts where the block does
+	Key   string       `json:"key"`
+	Value string       `json:"value"`
 }
 
 // A clause is one statement of a file, with the type or template that wrote it where it is part of a widget.
@@ -179,9 +179,11 @@ const (
 // localizedKeys holds the keys whose value is a localization key.
 var localizedKeys = sync.OnceValue(func() map[string]bool {
 	keys := map[string]bool{}
-	for _, reference := range game.References {
-		if reference.Database == "" && reference.Target == game.Localization {
-			keys[reference.KeyPath] = true
+	for _, declaration := range game.Declarations {
+		for _, reference := range declaration.References {
+			if declaration.Name == game.GUI.WidgetDatabase && reference.Target == game.Localization {
+				keys[reference.KeyPath] = true
+			}
 		}
 	}
 	return keys
@@ -584,7 +586,7 @@ func (resolver *resolver) findWinner(sites []index.Site, precedence game.Precede
 // isBuiltin reports whether a type is one the engine draws without a file defining it.
 func (resolver *resolver) isBuiltin(owner clause, label string) bool {
 	definition, _ := resolver.findCalled(owner, game.GUI.TagCalls, label)
-	return resolver.ws.Schema.WidgetTypes[label] && !definition.dropped
+	return resolver.ws.Schema.LookupDefinition(game.GUI.WidgetTypes, label) != nil && !definition.dropped
 }
 
 // makeMissing returns the property that marks a type or template, which no file defines, used by a clause.
@@ -797,11 +799,16 @@ func (resolver *resolver) makeOverlay(field clause, depth int) int32 {
 	return resolver.overlays.add(fmt.Sprint(path, positions), func() Overlay { return Overlay{Path: path, Properties: positions} })
 }
 
-// makeProperty returns the property that a field writes. A block's value is its text, with its tag.
+// makeProperty returns the property that a field writes. A block's value is
+// its text, with its tag. A color written with a tag, as hsv { 0.5 1 1 }
+// is, is given as the plain color it makes, { red green blue alpha } from 0
+// to 1, which is what the page draws.
 func (resolver *resolver) makeProperty(field clause) Property {
 	current := field.tree.Statements[field.statement]
 	value := field.tree.Unquoted(current.Value)
-	if current.IsBlock() {
+	if color, ok := jomini.ToColor(field.tree, field.statement); ok && !current.Tag.IsEmpty() {
+		value = fmt.Sprintf("{ %.4g %.4g %.4g %.4g }", color.R, color.G, color.B, color.A)
+	} else if current.IsBlock() {
 		span := current.ResolveValueSpan()
 		var edits []jomini.Edit
 		for _, inner := range field.tree.Statements[field.statement+1 : current.Last] {
@@ -1139,10 +1146,10 @@ func resolveProperties(properties []Property) []Property {
 }
 
 // toRange returns where a clause is written, as the editor counts. A clause with no statement has no place.
-func toRange(field clause) lsp.Range {
+func toRange(field clause) jomini.Range {
 	var span jomini.Span
 	if field.statement != absentStatement {
 		span = field.tree.Statements[field.statement].Span
 	}
-	return lsp.ToRange(field.tree.Src, field.tree.Lines, span)
+	return jomini.ToRange(field.tree.Src, field.tree.Lines, span)
 }

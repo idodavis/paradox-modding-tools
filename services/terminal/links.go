@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"paradox-modding-tools/internal/files"
+	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/terminal"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -49,14 +50,14 @@ func (trm *Service) FindLinks(id, text string) []Link {
 		if !ok {
 			continue
 		}
-		link := Link{Start: lsp.CountUnits(text[:match[0]]), End: lsp.CountUnits(text[:match[1]]), Site: lsp.Site{Place: place}}
+		link := Link{Start: jomini.CountUnits(text[:match[0]]), End: jomini.CountUnits(text[:match[1]]), Site: lsp.Site{Place: place}}
 		// each form has a line group and a column group, four offsets; the first form whose line matched gives both
 		for group := 4; group < len(match); group += 4 {
 			if match[group] >= 0 {
 				link.Site.Line, _ = strconv.Atoi(text[match[group]:match[group+1]])
 				if match[group+2] >= 0 {
 					column, _ := strconv.Atoi(text[match[group+2]:match[group+3]])
-					link.Site.Range = lsp.Range{StartLine: link.Site.Line, StartColumn: column, EndLine: link.Site.Line, EndColumn: column}
+					link.Site.Range = jomini.Range{StartLine: link.Site.Line, StartColumn: column, EndLine: link.Site.Line, EndColumn: column}
 				}
 				break
 			}

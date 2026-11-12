@@ -62,6 +62,12 @@ func (s *Schema) FindCommand(key string) *Definition {
 	return nil
 }
 
+// declaresModifier reports whether the dumps declare a modifier of the given
+// key, as written.
+func (s *Schema) declaresModifier(key string) bool {
+	return s.Databases[game.DumpModifiers].Definitions[key] != nil
+}
+
 // makeField returns the definition's field. If it has none, it adds an empty
 // one from the given source.
 func (d *Definition) makeField(source game.Source) *Field {

@@ -162,11 +162,14 @@ function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeDat
   probe.dataset.theme = pageTheme;
   const style = getComputedStyle(probe);
   // A token written as a mix of other tokens is worked out by the browser.
+  // Every token is written out as six or eight hex digits: a built app's
+  // CSS shortens #ff5555 to #f55, and Monaco refuses a rule's color in
+  // three digits, which leaves the whole theme undrawn.
   const token = (key: string): string => {
     const color = style.getPropertyValue(`--${key}`).trim();
-    if (!color || color.startsWith("#")) return color;
+    if (!color) return color;
     probe.style.color = color;
-    return new Color(style.color).to("srgb").toString({ format: "hex" });
+    return new Color(style.color).to("srgb").toString({ format: "hex", collapse: false });
   };
   // A theme may give a syntax color a weight, which Monaco takes as a font
   // style.
@@ -210,9 +213,9 @@ function buildColors(token: (key: string) => string, dark: boolean): Record<stri
     "editorIndentGuide.background1": token("line-1"),
     "editorIndentGuide.activeBackground1": token("line-2"),
     "editorWhitespace.foreground": token("line-2"),
-    "editorBracketHighlight.foreground1": token("syn-command"),
-    "editorBracketHighlight.foreground2": token("syn-name"),
-    "editorBracketHighlight.foreground3": token("syn-number"),
+    "editorBracketHighlight.foreground1": token("bracket-1"),
+    "editorBracketHighlight.foreground2": token("bracket-2"),
+    "editorBracketHighlight.foreground3": token("bracket-3"),
     "editorBracketMatch.background": `${accent}26`,
     "editorBracketMatch.border": `${accent}80`,
     "editorError.foreground": token("red"),

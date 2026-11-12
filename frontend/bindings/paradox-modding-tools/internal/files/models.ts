@@ -106,6 +106,35 @@ export enum Format {
 };
 
 /**
+ * Hiding is why the game does not read a file. The zero Hiding is a file
+ * nothing hides.
+ */
+export enum Hiding {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * The ways a file is hidden from the game.
+     *
+     * HidingShadowed is a file at the same path later in the load order,
+     * which the game reads in its place.
+     */
+    HidingShadowed = "shadowed",
+
+    /**
+     * HidingDropped is a mod's replace_path that names the file's folder.
+     */
+    HidingDropped = "dropped",
+
+    /**
+     * HidingUnmounted is a file the game never mounts.
+     */
+    HidingUnmounted = "unmounted",
+};
+
+/**
  * Text is the text of a file. It remembers how the file was stored, so it can
  * be written back the same way.
  */

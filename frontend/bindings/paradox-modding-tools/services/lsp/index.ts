@@ -23,7 +23,6 @@ export type {
     Legend,
     Level,
     Part,
-    Range,
     Signature,
     Site,
     Symbol,

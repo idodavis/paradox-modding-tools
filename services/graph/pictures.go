@@ -4,6 +4,7 @@ package graph
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/samber/lo"
 
@@ -75,13 +76,60 @@ func findHop(ws *workspace.Session, mods *index.Index, step game.PictureStep, va
 		winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: step.Database, Name: values[0]})
 		return winner.Site, ok
 	}
-	for _, winner := range mods.ListKept(ws.Schema, step.Database) {
-		tree, statement, err := ws.FindStatement(mods, winner.Site)
-		if err == nil && lo.Every(listValues(tree, statement, step.Match), values) {
-			return winner.Site, true
+
+	for _, candidate := range listCandidates(ws, mods, step) {
+		if lo.Every(candidate.values, values) {
+			return candidate.site, true
 		}
 	}
+
 	return index.Site{}, false
+}
+
+// candidate is one kept definition a hop may lead to, with the values it
+// writes at the hop's match path.
+type candidate struct {
+	site   index.Site
+	values []string
+}
+
+// candidates holds, for one index of the mods, the candidates of each hop
+// that matches by a key path. Listing them reads every kept definition of
+// the hop's database, which a graph would else do again for each event it
+// draws. A scan puts a new index in place, and the old lists go.
+var candidates struct {
+	sync.Mutex
+	mods  *index.Index
+	lists map[game.PictureStep][]candidate
+}
+
+// listCandidates returns the candidates of a hop that matches by a key path,
+// in load order. A definition whose file cannot be read is left out.
+func listCandidates(ws *workspace.Session, mods *index.Index, step game.PictureStep) []candidate {
+	candidates.Lock()
+	list, listed := candidates.lists[step]
+	listed = listed && candidates.mods == mods
+	candidates.Unlock()
+	if listed {
+		return list
+	}
+
+	list = nil
+	for _, winner := range mods.ListKept(ws.Schema, step.Database) {
+		if tree, statement, err := ws.FindStatement(mods, winner.Site); err == nil {
+			list = append(list, candidate{site: winner.Site, values: listValues(tree, statement, step.Match)})
+		}
+	}
+
+	candidates.Lock()
+	if candidates.mods != mods {
+		candidates.mods, candidates.lists = mods, map[game.PictureStep][]candidate{}
+	}
+
+	candidates.lists[step] = list
+	candidates.Unlock()
+
+	return list
 }
 
 // listValues returns the values written at a path of keys joined by slashes, each picked by pickChild. It returns nil

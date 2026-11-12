@@ -374,14 +374,22 @@ function dimUndrawable(): void {
   );
 }
 
-/** buildRow returns the row of a place, with no trailing slash for a folder. It is "" if no root holds the place. */
+/**
+ * buildRow returns the row of a place, with no trailing slash for a folder. A file of a root that lies inside a listed
+ * root, as a DLC's folder lies inside the game's, has its row below that folder. It is "" if no listed root holds the
+ * place.
+ */
 function buildRow(place: Place): string {
-  const index = roots.findIndex(
-    (root) =>
-      root.origin === place.origin && (!root.rel || place.rel === root.rel || place.rel.startsWith(`${root.rel}/`)),
-  );
+  let index = roots.findIndex((root) => root.path === place.root);
+  if (index < 0) {
+    index = roots.findIndex(
+      (root) => place.root.startsWith(root.path) && /^[\\/]/.test(place.root.slice(root.path.length)),
+    );
+  }
   const root = roots[index];
-  return root ? `${labels.value[index]}/${place.rel.slice(root.rel ? root.rel.length + 1 : 0)}` : "";
+  if (!root) return "";
+  const folders = place.root.slice(root.path.length).split(/[\\/]/);
+  return `${labels.value[index]}/${[...folders, place.rel].filter(Boolean).join("/")}`;
 }
 
 /** select records the selected files with the editor store, and opens a file selected alone as a preview tab. */

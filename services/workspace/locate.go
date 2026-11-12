@@ -32,6 +32,11 @@ type Place struct {
 	// Language is the editor language the file is shown in, plain text for a
 	// format that has none of its own.
 	Language string `json:"language"`
+
+	// Hiding is why the game does not read the file, "" for a file it reads.
+	// Hider is the id of the mod that hides it, "" where no mod does.
+	Hiding files.Hiding `json:"hiding"`
+	Hider  string       `json:"hider"`
 }
 
 // plainLanguage is the editor language of a file whose format has none of its
@@ -75,7 +80,8 @@ func (ws *Session) Locate(mods *index.Index, path string) Place {
 	}
 	place.Drawable = place.Format == files.FormatGUI || place.Database == game.Coat.Database
 	if position, ok := mods.FindFile(path); ok {
-		place.Position = position
+		hiding, hider := mods.FindHiding(position)
+		place.Position, place.Hiding, place.Hider = position, hiding, hider.Origin
 	}
 	return place
 }

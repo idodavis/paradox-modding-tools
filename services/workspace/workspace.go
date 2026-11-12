@@ -117,18 +117,6 @@ func (wsp *Service) ServiceShutdown() error {
 // ListGames returns the supported games.
 func (wsp *Service) ListGames() []game.Game { return game.ListGames() }
 
-// DescribePrecedence returns, in plain words, which copy the game with the given id keeps when several definitions of a
-// database share a name. The folder is the database's folder in the game's folder. It returns "" for a game this build
-// does not support.
-func (wsp *Service) DescribePrecedence(gameID, database, folder string) string {
-	row := game.LookupGame(gameID)
-	if row == nil {
-		return ""
-	}
-	_, folder = files.SplitStage(folder, row.Stages)
-	return row.LookupPrecedence(database, folder).Describe()
-}
-
 // ListInstalls returns every recorded install of the given game.
 func (wsp *Service) ListInstalls(gameID string) []app.Install {
 	return lo.Filter(wsp.Config.Config().Installs, func(install app.Install, _ int) bool { return install.Game == gameID })
@@ -474,10 +462,11 @@ func (wsp *Service) State() State {
 	}
 	// a workspace that is not recorded leaves the install empty
 	_, install, _, _ := findRecords(wsp.Config.Config(), ws.ID)
+	count := func(dump string) int { return len(ws.Schema.ListKeys(dump)) }
 	return State{
 		Open: true, ID: ws.ID, Game: ws.Game, Install: install, InstallFound: files.IsFolder(install.Path),
 		UpdatedFrom: ws.updatedFrom, Dumps: ws.Schema.Dumps,
-		Effects: ws.Effects, Triggers: ws.Triggers, Scopes: len(ws.Schema.ListKeys(game.DumpTypes)),
+		Effects: count(game.DumpEffects), Triggers: count(game.DumpTriggers), Scopes: count(game.DumpTypes),
 	}
 }
 

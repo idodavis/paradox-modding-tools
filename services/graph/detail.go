@@ -201,8 +201,20 @@ func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.
 	return segments
 }
 
-// describeCustom returns the texts a call's customizable localization can show, joined by slashes, such as
-// "daughter/son". It returns "" for a call that names none, or one the workspace does not define.
+// customTexts is how a customizable localization is written, alike in the
+// three games: a block for each text it can show, which names the text's key
+// (CK3 _custom_loc.info:18-38, EU5 customizable_localization.info:1-10,
+// Vic3's files).
+var customTexts = struct {
+	// Block is the key of a block that holds one of the texts, and Key the
+	// key in that block that names the text's localization key.
+	Block string
+	Key   string
+}{"text", "localization_key"}
+
+// describeCustom returns the texts a call's customizable localization can
+// show, joined by slashes, such as "daughter/son". It returns "" for a call
+// that names none, or one the workspace does not define.
 func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) string {
 	position := slices.Index(game.GUI.CallTargets[step.Text], game.CustomLocalization)
 	if position < 0 || position >= len(step.Arguments) || !step.Arguments[position].Quoted {
@@ -219,8 +231,8 @@ func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) 
 	}
 	var texts []string
 	for child := range tree.Children(statement) {
-		key, ok := tree.FindChildValue(child, game.CustomTexts.Key)
-		if !ok || tree.Text(tree.Statements[child].Key) != game.CustomTexts.Block {
+		key, ok := tree.FindChildValue(child, customTexts.Key)
+		if !ok || tree.Text(tree.Statements[child].Key) != customTexts.Block {
 			continue
 		}
 		text, _, _ := ws.LookupText(mods, key)

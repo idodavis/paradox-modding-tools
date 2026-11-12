@@ -25,12 +25,12 @@ import (
 
 // An Instance is one placement of a layer on the field. Values the file does not set take the game's defaults.
 type Instance struct {
-	Position [2]float64 `json:"position"`
-	Scale    [2]float64 `json:"scale"`
-	Rotation float64    `json:"rotation"` // in degrees, clockwise
-	Depth    float64    `json:"depth"`
-	Rank     int        `json:"rank"` // its place among every instance of its coat in the order they draw, from 0
-	Range    lsp.Range  `json:"range"`
+	Position [2]float64   `json:"position"`
+	Scale    [2]float64   `json:"scale"`
+	Rotation float64      `json:"rotation"` // in degrees, clockwise
+	Depth    float64      `json:"depth"`
+	Rank     int          `json:"rank"` // its place among every instance of its coat in the order they draw, from 0
+	Range    jomini.Range `json:"range"`
 }
 
 // A Blend is a texture channel that weights a blend toward a color.
@@ -62,7 +62,7 @@ type Layer struct {
 	Emblem       bool              `json:"emblem"`       // the layer is an emblem, colored or textured
 	Writer       string            `json:"writer"`       // the parent coat that writes the layer; "" for the coat's own
 	Mask         string            `json:"mask"`         // the image file of the pattern whose regions an emblem shows in
-	MaskRange    lsp.Range         `json:"maskRange"`    // where the emblem's mask is written; zero where it writes none
+	MaskRange    jomini.Range      `json:"maskRange"`    // where the emblem's mask is written; zero where it writes none
 	Regions      []int             `json:"regions"`      // the pattern's color regions an emblem shows in; none means all of them
 	MaskChannels []string          `json:"maskChannels"` // the pattern channel of each of those regions; none without a mask
 	Colors       []string          `json:"colors"`       // CSS colors, the fallback first and then one for each slot of the game
@@ -72,7 +72,7 @@ type Layer struct {
 	Inputs       map[string]string `json:"inputs"`       // how the panel edits each key the layer's role may write, by key
 	Instances    []Instance        `json:"instances"`    // in the order written; each one's Rank says when the coat draws it
 	Sub          *Coat             `json:"sub,omitempty"`
-	Range        lsp.Range         `json:"range"`
+	Range        jomini.Range      `json:"range"`
 	Place        workspace.Place   `json:"place"` // the file the layer is written in
 }
 
@@ -80,7 +80,7 @@ type Layer struct {
 type Coat struct {
 	Name    string          `json:"name"`
 	Layers  []Layer         `json:"layers"`
-	Range   lsp.Range       `json:"range"`
+	Range   jomini.Range    `json:"range"`
 	Place   workspace.Place `json:"place"`
 	Width   int             `json:"width"`   // the width of its field in pixels; 0 for a sub-coat or where the game gives none
 	Height  int             `json:"height"`  // the height of its field in pixels; 0 for a sub-coat or where the game gives none
@@ -426,13 +426,19 @@ func (resolver *coatResolver) resolveValue(field clause) (string, []Group) {
 	return list.Picked, []Group{list}
 }
 
-// findCoatFile returns the image file of a coat's texture under the folder of the key that writes it, or "" if there
-// is none.
+// findCoatFile returns the image file of a coat's texture: the file under
+// the folder of the key that writes it, else the file at the texture's own
+// path where it is written with one. It returns "" if there is none.
 func (resolver *coatResolver) findCoatFile(key, texture string) string {
 	if texture == "" || strings.HasPrefix(texture, missingList) {
 		return ""
 	}
-	file, _ := resolver.mods.ResolveTexture(game.Coat.TextureFolders[key] + "/" + texture)
+
+	file, ok := resolver.mods.ResolveTexture(game.Coat.TextureFolders[key] + "/" + texture)
+	if !ok && strings.Contains(texture, "/") {
+		file, _ = resolver.mods.ResolveTexture(texture)
+	}
+
 	return file
 }
 
@@ -763,7 +769,7 @@ func (drw *Service) MoveLayer(path, coat string, source, target int) ([]lsp.Edit
 
 // RemoveBlock returns the edits that delete one layer or instance of a coat, including its line. It returns an error if
 // no statement starts where the given range does.
-func (drw *Service) RemoveBlock(path string, block lsp.Range) ([]lsp.Edit, error) {
+func (drw *Service) RemoveBlock(path string, block jomini.Range) ([]lsp.Edit, error) {
 	tree, statement, err := drw.findStatement(path, block)
 	if err != nil {
 		return nil, err
@@ -774,7 +780,7 @@ func (drw *Service) RemoveBlock(path string, block lsp.Range) ([]lsp.Edit, error
 
 // AddInstance returns the edits that add a placement to a layer of a coat. It returns an error if no block starts where
 // the given range does or the layer takes no placement.
-func (drw *Service) AddInstance(path string, layer lsp.Range) ([]lsp.Edit, error) {
+func (drw *Service) AddInstance(path string, layer jomini.Range) ([]lsp.Edit, error) {
 	tree, statement, err := drw.findBlock(path, layer)
 	if err != nil {
 		return nil, err
@@ -790,7 +796,7 @@ func (drw *Service) AddInstance(path string, layer lsp.Range) ([]lsp.Edit, error
 
 // findBlock returns the tree of a file and the block that starts where the given range does. It returns an error if no
 // block starts there.
-func (drw *Service) findBlock(path string, block lsp.Range) (*jomini.Tree, int32, error) {
+func (drw *Service) findBlock(path string, block jomini.Range) (*jomini.Tree, int32, error) {
 	tree, statement, err := drw.findStatement(path, block)
 	if err == nil && !tree.Statements[statement].IsBlock() {
 		err = fmt.Errorf("the statement at line %d, column %d of %q is no block", block.StartLine, block.StartColumn, path)
@@ -800,7 +806,7 @@ func (drw *Service) findBlock(path string, block lsp.Range) (*jomini.Tree, int32
 
 // findStatement returns the tree of a file and the statement that starts where the given range does. It returns an
 // error if no statement starts there.
-func (drw *Service) findStatement(path string, block lsp.Range) (*jomini.Tree, int32, error) {
+func (drw *Service) findStatement(path string, block jomini.Range) (*jomini.Tree, int32, error) {
 	ws, err := drw.Workspace.Session()
 	if err != nil {
 		return nil, 0, err
@@ -809,7 +815,7 @@ func (drw *Service) findStatement(path string, block lsp.Range) (*jomini.Tree, i
 	if err != nil {
 		return nil, 0, err
 	}
-	offset := lsp.ToOffset(tree.Src, tree.Lines, block.StartLine, block.StartColumn)
+	offset := jomini.ToOffset(tree.Src, tree.Lines, block.StartLine, block.StartColumn)
 	statement, ok := tree.LookupStatement(offset)
 	if !ok {
 		return nil, 0, fmt.Errorf("no statement starts at line %d, column %d of %q", block.StartLine, block.StartColumn, path)

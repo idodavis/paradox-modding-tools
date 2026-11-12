@@ -53,6 +53,10 @@ type Keyword struct {
 	// block's own.
 	Caller string
 
+	// Names is the database whose definitions its value may name, as a
+	// switch's trigger names a trigger. It is "" for none.
+	Names string
+
 	// Weighted is whether its key is a number whose share of its siblings'
 	// is its chance. Preview is whether its block is shown in the tooltip
 	// and never run.
@@ -87,13 +91,22 @@ const AnyKey = "<any>"
 // The databases the dumps fill, each from its own log: the effects
 // (effects.log), the triggers (triggers.log), the links, which the dumps
 // call event targets (event_targets.log), and the types of scope
-// (event_scopes.log).
+// (event_scopes.log). DumpModifiers holds the modifiers (modifiers.log); it
+// is not named modifiers, which is CK3's database of common/modifiers.
 const (
-	DumpEffects  = "effects"
-	DumpTriggers = "triggers"
-	DumpLinks    = "links"
-	DumpTypes    = "types"
+	DumpEffects   = "effects"
+	DumpTriggers  = "triggers"
+	DumpLinks     = "links"
+	DumpTypes     = "types"
+	DumpModifiers = "dumped_modifiers"
 )
+
+// Dumps are the databases the dumps fill.
+var Dumps = []string{DumpEffects, DumpTriggers, DumpLinks, DumpTypes, DumpModifiers}
+
+// EventNamespaces is the database of the namespaces that events files
+// declare.
+const EventNamespaces = "namespace"
 
 // The databases of the names script saves and reads back: saved scopes
 // (scope:x), variables of a scope (var:x), of the running effect
@@ -130,6 +143,10 @@ const (
 	// ShapeArguments a block of what a command takes.
 	ShapeFields    Shape = "fields"
 	ShapeArguments Shape = "arguments"
+
+	// ShapeParameters is the block of a call to a scripted definition. It
+	// holds the call's arguments and nothing else.
+	ShapeParameters Shape = "parameters"
 
 	// ShapeEffectArguments and ShapeTriggerArguments are the block of an
 	// effect and of a trigger: what the command takes, and the effects or the
@@ -212,7 +229,8 @@ var Keywords = []Keyword{
 	// trigger = <a trigger>, a block for each value, and fallback = { }
 	{Key: "switch", Class: KeywordClassConditional, Shape: ShapeEnclosing,
 		Blurb: "Reads one trigger and runs the case whose value matches, else the fallback."},
-	{Key: "trigger", Parent: "switch", Class: KeywordClassConditional, Blurb: "The trigger whose value picks the case."},
+	{Key: "trigger", Parent: "switch", Class: KeywordClassConditional, Names: DumpTriggers,
+		Blurb: "The trigger whose value picks the case."},
 	{Key: "fallback", Parent: "switch", Class: KeywordClassConditional, Shape: ShapeEnclosing, Blurb: "Runs when no case matches."},
 	{Key: AnyKey, Parent: "switch", Shape: ShapeEnclosing, Blurb: "One case of a switch: runs when the trigger's value is this."},
 

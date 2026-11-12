@@ -13,6 +13,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as jomini$0 from "../../internal/jomini/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as lsp$0 from "../lsp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -26,7 +29,7 @@ import * as $models from "./models.js";
  * AddInstance returns the edits that add a placement to a layer of a coat. It returns an error if no block starts where
  * the given range does or the layer takes no placement.
  */
-export function AddInstance(path: string, layer: lsp$0.Range): $CancellablePromise<lsp$0.Edit[] | null> {
+export function AddInstance(path: string, layer: jomini$0.Range): $CancellablePromise<lsp$0.Edit[] | null> {
     return $Call.ByID(781711686, path, layer);
 }
 
@@ -144,7 +147,7 @@ export function MoveLayer(path: string, coat: string, source: number, target: nu
  * RemoveBlock returns the edits that delete one layer or instance of a coat, including its line. It returns an error if
  * no statement starts where the given range does.
  */
-export function RemoveBlock(path: string, block: lsp$0.Range): $CancellablePromise<lsp$0.Edit[] | null> {
+export function RemoveBlock(path: string, block: jomini$0.Range): $CancellablePromise<lsp$0.Edit[] | null> {
     return $Call.ByID(1657945347, path, block);
 }
 

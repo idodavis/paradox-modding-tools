@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/samber/lo"
-	"golang.org/x/mod/semver"
 	"golang.org/x/net/html"
 
 	"paradox-modding-tools/internal/game"
@@ -114,20 +113,6 @@ func (wik *Service) SearchPages(term string) ([]Summary, error) {
 func resolveReleased(root *html.Node) string {
 	text := textOf(root)
 	return lo.NthOr(releasePattern.FindStringSubmatch(text[:min(len(text), releaseSpan)]), 1, "")
-}
-
-// compareVersions orders two patch versions as semver does, except that a minor version's hotfix notes, "1.20.X",
-// sort below every other version of that minor version.
-func compareVersions(first, second string) int {
-	hotfixFirst, hotfixSecond := strings.HasSuffix(first, ".X"), strings.HasSuffix(second, ".X")
-	first, second = strings.TrimSuffix(first, ".X"), strings.TrimSuffix(second, ".X")
-	if minors := semver.Compare(semver.MajorMinor("v"+first), semver.MajorMinor("v"+second)); minors != 0 {
-		return minors
-	}
-	if hotfixFirst != hotfixSecond {
-		return lo.Ternary(hotfixFirst, -1, 1)
-	}
-	return semver.Compare("v"+first, "v"+second)
 }
 
 // hasModding reports whether a page has a heading that holds the word "Modding".

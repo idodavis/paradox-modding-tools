@@ -6,7 +6,8 @@
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * A Change is one name whose kept copy moves to another mod in a previewed load order.
+ * A Change is one name whose kept copy moves to another mod in a previewed load
+ * order.
  */
 export interface Change {
     /**
@@ -169,7 +170,8 @@ export interface Finding {
 }
 
 /**
- * A GameLog is what the game's last run wrote to its error log, folded into rows.
+ * A GameLog is what the game's last run wrote to its error log, folded into
+ * rows.
  */
 export interface GameLog {
     "findings": Finding[] | null;
@@ -196,7 +198,8 @@ export interface GameLog {
 }
 
 /**
- * A Group is the findings of the workspace's compatibility or of one mod, folded, counted and sorted.
+ * A Group is the findings of the workspace's compatibility or of one mod,
+ * folded, counted and sorted.
  */
 export interface Group {
     /**
@@ -255,7 +258,8 @@ export interface Overview {
 }
 
 /**
- * A Report is the findings for one load order, grouped and counted, and what that order changes.
+ * A Report is the findings for one load order, grouped and counted, and what
+ * that order changes.
  */
 export interface Report {
     /**
@@ -329,7 +333,8 @@ export interface Tally {
 }
 
 /**
- * A Use is one name a finding is about, with how often the files the game reads use it and where they first do.
+ * A Use is one name a finding is about, with how often the files the game reads
+ * use it and where they first do.
  */
 export interface Use {
     "name": string;

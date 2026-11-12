@@ -1,5 +1,6 @@
-// Package lsp is the editor's language service. It answers what the editor asks about a file: hover cards,
-// completions, definitions, diagnostics, tokens, folds and the rest. Every range is in the editor's own form.
+// Package lsp is the editor's language service. It answers what the editor asks
+// about a file: hover cards, completions, definitions, diagnostics, tokens,
+// folds and the rest. Every range is in the editor's own form.
 package lsp
 
 import (
@@ -22,7 +23,8 @@ type Service struct {
 	Workspace *workspace.Service
 }
 
-// An Edit is one change to a file's text: the range replaced and the text that replaces it.
+// An Edit is one change to a file's text: the range replaced and the text that
+// replaces it.
 type Edit struct {
 	Range jomini.Range `json:"range"`
 	Text  string       `json:"text"`
@@ -93,8 +95,9 @@ func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Sit
 	})
 }
 
-// findHolder returns the name of the definition that holds a definition, where the game keeps every copy of the name.
-// It returns "" for a definition at the top of its file or in a database that keeps one copy.
+// findHolder returns the name of the definition that holds a definition, where
+// the game keeps every copy of the name. It returns "" for a definition at the
+// top of its file or in a database that keeps one copy.
 func findHolder(ws *workspace.Session, mods *index.Index, definition index.Site) string {
 	database := ws.Schema.Databases[mods.ToReference(definition).Database]
 	holder, nested := mods.FindDefinition(definition)
@@ -127,7 +130,8 @@ func ToEdits(text string, lines jomini.Lines, edits []jomini.Edit) []Edit {
 	})
 }
 
-// SetText gives the session the text the editor holds for an open file. It returns the file's problems.
+// SetText gives the session the text the editor holds for an open file. It
+// returns the file's problems.
 func (lsp *Service) SetText(path, text string) ([]Diagnostic, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {
@@ -137,7 +141,8 @@ func (lsp *Service) SetText(path, text string) ([]Diagnostic, error) {
 	return lsp.Diagnose(path)
 }
 
-// CloseFile drops an open file's text from the session. It does nothing if no workspace is open.
+// CloseFile drops an open file's text from the session. It does nothing if no
+// workspace is open.
 func (lsp *Service) CloseFile(path string) {
 	if ws, err := lsp.Workspace.Session(); err == nil {
 		ws.CloseBuffer(path)

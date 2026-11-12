@@ -15,7 +15,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Condition is one statement of a block of triggers in words, with the statements of its block under it.
+// A Condition is one statement of a block of triggers in words, with the
+// statements of its block under it.
 type Condition struct {
 	Subject    string      `json:"subject,omitempty"`    // what it is about, as written, read first: a key that names a scope, or the value of a keyword that reads its value first; "" for any other
 	Text       string      `json:"text,omitempty"`       // the key and its operator in words, such as "has trait"
@@ -83,7 +84,8 @@ func findPhrase(key string) (phrase, string) {
 	return phrase{}, ""
 }
 
-// findCondition returns the limit of a block in words, else its trigger. It returns nil if it holds neither.
+// findCondition returns the limit of a block in words, else its trigger. It
+// returns nil if it holds neither.
 func findCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Condition {
 	for _, key := range []string{game.LimitKey, game.TriggerKey} {
 		if child, ok := tree.FindChild(statement, key); ok && tree.Statements[child].IsBlock() {
@@ -93,7 +95,8 @@ func findCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	return nil
 }
 
-// listConditions returns the statements of a block of triggers in words, in the order written.
+// listConditions returns the statements of a block of triggers in words, in the
+// order written.
 func listConditions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, block int32) []Condition {
 	return lo.Map(slices.Collect(tree.Children(block)), func(child int32, _ int) Condition {
 		return makeCondition(ws, mods, tree, child)
@@ -147,8 +150,8 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	return foldCondition(condition, keyword)
 }
 
-// foldCondition folds a block that only wraps one condition into it: a negation makes it negated, and a scope becomes
-// its subject.
+// foldCondition folds a block that only wraps one condition into it: a negation
+// makes it negated, and a scope becomes its subject.
 func foldCondition(condition Condition, keyword phrase) Condition {
 	if len(condition.Conditions) != 1 {
 		return condition
@@ -165,8 +168,9 @@ func foldCondition(condition Condition, keyword phrase) Condition {
 	return condition
 }
 
-// describeCover returns the text a statement shows in place of the conditions it holds. If no message has the key it
-// names, it returns the statement's own key in words and that key.
+// describeCover returns the text a statement shows in place of the conditions
+// it holds. If no message has the key it names, it returns the statement's own
+// key in words and that key.
 func describeCover(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (string, string) {
 	key := tree.Unquoted(tree.Statements[statement].Value)
 	if label, ok := tree.FindChildValue(statement, game.LabelKey); ok {
@@ -184,8 +188,8 @@ func toWords(key string) string {
 	return strings.ReplaceAll(key, "_", " ")
 }
 
-// describeOperator returns the words an operator reads after a key. An = reads nothing where the key's words already
-// say what it checks.
+// describeOperator returns the words an operator reads after a key. An = reads
+// nothing where the key's words already say what it checks.
 func describeOperator(operator string, isBlock, isScope bool) string {
 	switch {
 	case operator == "=" && (isBlock || !isScope):

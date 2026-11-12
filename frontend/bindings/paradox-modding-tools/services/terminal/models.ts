@@ -6,21 +6,18 @@
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * A Link is a file name in a line of a shell's output, with the file's place in the workspace and the line it names.
+ * Link is a file name in a line of a shell's output, with its place and line.
  */
 export interface Link {
     /**
-     * where the name starts in the line, in UTF-16 code units
+     * Start and End are where the name and its line start and end, in UTF-16
+     * code units.
      */
     "start": number;
-
-    /**
-     * where the name and its line end, in UTF-16 code units
-     */
     "end": number;
 
     /**
-     * the empty range at the column the line names; the zero range where it names none
+     * Site is the empty range at the column the line names, or the zero range.
      */
     "site": lsp$0.Site;
 }

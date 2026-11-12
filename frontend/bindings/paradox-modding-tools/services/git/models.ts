@@ -6,91 +6,88 @@
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Change is one changed file as git status reports it.
+ * Change is one changed file as git status reports it.
  */
 export interface Change {
     "path": string;
 
     /**
-     * a rename's old path
+     * From is a rename's old path.
      */
     "from"?: string;
 
     /**
-     * modified, added, deleted, renamed, untracked, conflict
+     * Status is modified, added, deleted, renamed, untracked or conflict.
      */
     "status": string;
 
     /**
-     * the change is in the index
+     * Staged and Unstaged mark a change in the index and in the working tree.
      */
     "staged": boolean;
-
-    /**
-     * the change is in the working tree
-     */
     "unstaged": boolean;
 
     /**
-     * where the file is in the open workspace; empty while none is open
+     * Place is empty while no workspace is open.
      */
     "place": workspace$0.Place;
 }
 
 /**
- * A Commit is one commit of the log.
+ * Commit is one commit of the log.
  */
 export interface Commit {
     "hash": string;
 
     /**
-     * the abbreviated hash git chose
+     * Short is the abbreviated hash.
      */
     "short": string;
     "parents": string[] | null;
     "date": string;
     "subject": string;
-
-    /**
-     * the refs pointing here
-     */
     "refs": Ref[] | null;
 }
 
 /**
- * A LineChange is one run of lines a text changes from its file's last commit, by its lines in the text. A run of
- * removed lines has no line of its own, so it is marked on the line before it, or on the first line.
+ * LineChange is one run of lines changed from the last commit. A removed run
+ * has no line, so it is marked on the line before it.
  */
 export interface LineChange {
     /**
-     * "added", "changed" or "removed"
+     * Kind is "added", "changed" or "removed".
      */
     "kind": string;
+
+    /**
+     * Start and End count lines from 1.
+     */
     "start": number;
     "end": number;
 }
 
 /**
- * A Ref is one branch, remote branch or tag.
+ * Ref is one branch, remote branch or tag.
  */
 export interface Ref {
     "name": string;
 
     /**
-     * branch, remote, tag; "" for another name a commit is decorated with
+     * Type is branch, remote or tag, or "" for any other name a commit carries.
      */
     "type": string;
     "hash": string;
 
     /**
-     * when the commit it points to was made, or when an annotated tag was; the zero time if the object has no date
+     * Date is the commit's date, or an annotated tag's own. It is the zero time
+     * without one.
      */
     "date": string;
     "current": boolean;
 }
 
 /**
- * A Remote is one remote of a repository: its label and the address it fetches from.
+ * Remote is one remote of a repository.
  */
 export interface Remote {
     "label": string;
@@ -98,28 +95,28 @@ export interface Remote {
 }
 
 /**
- * A Repository is one git repository among the workspace's mods: its root folder, and the mods in it in load order.
+ * Repository is one git repository among the workspace's mods.
  */
 export interface Repository {
     "root": string;
 
     /**
-     * the mods' ids
+     * Mods holds the ids of its mods, in load order.
      */
     "mods": string[] | null;
 }
 
 /**
- * A Status is what git status reports for one repository.
+ * Status is what git status reports for one repository.
  */
 export interface Status {
     /**
-     * "" when detached
+     * Branch is "" when HEAD is detached.
      */
     "branch": string;
 
     /**
-     * "" when there is none
+     * Upstream is "" when the branch follows none.
      */
     "upstream": string;
     "ahead": number;
@@ -127,7 +124,7 @@ export interface Status {
     "changes": Change[] | null;
 
     /**
-     * where the files and folders git ignores are in the open workspace; empty places while none is open
+     * Ignored holds empty places while no workspace is open.
      */
     "ignored": workspace$0.Place[] | null;
 }

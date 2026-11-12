@@ -1,5 +1,6 @@
-// details.go answers the editor's smaller questions about a file: where it folds, the hints and color boxes it draws,
-// how a color is written, and the signature of the call under the cursor.
+// details.go answers the editor's smaller questions about a file: where it
+// folds, the hints and color boxes it draws, how a color is written, and the
+// signature of the call under the cursor.
 
 package lsp
 
@@ -31,8 +32,9 @@ const (
 	HintText = "text" // the text of a localization key
 )
 
-// A Hint is a text drawn inline beside the code, such as a date read in the mod's calendar. Its line and column are
-// Monaco's, counted from one, the column in UTF-16 code units.
+// A Hint is a text drawn inline beside the code, such as a date read in the
+// mod's calendar. Its line and column are Monaco's, counted from one, the
+// column in UTF-16 code units.
 type Hint struct {
 	Line   int    `json:"line"`
 	Column int    `json:"column"`
@@ -40,23 +42,27 @@ type Hint struct {
 	Kind   string `json:"kind"` // HintDate or HintText
 }
 
-// hintTextLength is how many characters of a localization key's text a hint shows.
+// hintTextLength is how many characters of a localization key's text a hint
+// shows.
 const hintTextLength = 60
 
-// A ColorSite is one color written in a file: where it is and the color it stands for.
+// A ColorSite is one color written in a file: where it is and the color it
+// stands for.
 type ColorSite struct {
 	Range jomini.Range `json:"range"`
 	Color jomini.RGBA  `json:"color"`
 }
 
-// A Signature is the parameter list of a scripted definition at a call, with the parameter the position is on.
+// A Signature is the parameter list of a scripted definition at a call, with
+// the parameter the position is on.
 type Signature struct {
 	Label      string   `json:"label"`
 	Parameters []string `json:"parameters"`
 	Active     *int     `json:"active,omitempty"` // the parameter the position is on; absent if none
 }
 
-// ListFolds returns a file's foldable regions: every block that spans more than one line.
+// ListFolds returns a file's foldable regions: every block that spans more than
+// one line.
 func (lsp *Service) ListFolds(path string) ([]Fold, error) {
 	_, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -69,8 +75,8 @@ func (lsp *Service) ListFolds(path string) ([]Fold, error) {
 	return folds, nil
 }
 
-// ListHints returns a file's inlay hints: each date read in the mod's calendar, and the text of each localization key
-// in the workspace's language.
+// ListHints returns a file's inlay hints: each date read in the mod's calendar,
+// and the text of each localization key in the workspace's language.
 func (lsp *Service) ListHints(path string) ([]Hint, error) {
 	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
@@ -113,14 +119,16 @@ func (h *hintList) addStatement(tree *jomini.Tree, statement int32, context *sch
 	}
 }
 
-// add records a hint of the given kind and text at the given offset in the tree's source.
+// add records a hint of the given kind and text at the given offset in the
+// tree's source.
 func (h *hintList) add(tree *jomini.Tree, offset int, kind, text string) {
 	point := jomini.ToRange(tree.Src, tree.Lines, jomini.Span{Start: offset, End: offset})
 	h.hints = append(h.hints, Hint{Line: point.StartLine, Column: point.StartColumn, Text: text, Kind: kind})
 }
 
-// describeText returns what a hint shows after a localization key: its text in quotes, cut at hintTextLength
-// characters, or "no text yet" if no language has it. It returns "" for a key only other languages write.
+// describeText returns what a hint shows after a localization key: its text in
+// quotes, cut at hintTextLength characters, or "no text yet" if no language has
+// it. It returns "" for a key only other languages write.
 func (h *hintList) describeText(key string) string {
 	text, _, ok := h.ws.LookupText(h.mods, key)
 	if !ok {
@@ -135,7 +143,8 @@ func (h *hintList) describeText(key string) string {
 	return `"` + text + `"`
 }
 
-// ListColorSites returns every color written in a file, with the color it makes.
+// ListColorSites returns every color written in a file, with the color it
+// makes.
 func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 	_, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -151,8 +160,9 @@ func (lsp *Service) ListColorSites(path string) ([]ColorSite, error) {
 	return sites, nil
 }
 
-// PresentColor returns the text that writes a color into a file, in the form of the color already written at the given
-// range. If the range holds no color, it uses the form the game's coats write colors in. It returns an error if the
+// PresentColor returns the text that writes a color into a file, in the form of
+// the color already written at the given range. If the range holds no color, it
+// uses the form the game's coats write colors in. It returns an error if the
 // form cannot be written.
 func (lsp *Service) PresentColor(path string, colorRange jomini.Range, color jomini.RGBA) (string, error) {
 	ws, tree, err := lsp.loadTree(path)
@@ -171,7 +181,8 @@ func (lsp *Service) PresentColor(path string, colorRange jomini.Range, color jom
 	return strings.TrimSpace(tag + " { " + strings.Join(encoded, " ") + " }"), nil
 }
 
-// Signature returns the signature help for the call at a position, or nil if the position is not inside a call.
+// Signature returns the signature help for the call at a position, or nil if
+// the position is not inside a call.
 func (lsp *Service) Signature(path string, line, column int) (*Signature, error) {
 	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
@@ -196,9 +207,10 @@ func (lsp *Service) Signature(path string, line, column int) (*Signature, error)
 	return &Signature{Label: key + "(" + strings.Join(parameters, ", ") + ")", Parameters: parameters, Active: active}, nil
 }
 
-// findCall returns the call to a scripted definition that holds the visited position: its statement, the field that
-// lists the definition's parameters, and the key it is called by. It returns false if the position is in no such call
-// or the definition takes no parameters.
+// findCall returns the call to a scripted definition that holds the visited
+// position: its statement, the field that lists the definition's parameters,
+// and the key it is called by. It returns false if the position is in no such
+// call or the definition takes no parameters.
 func findCall(ws *workspace.Session, cursor cursor) (int32, *schema.Field, string, bool) {
 	for statement, context := cursor.statement, cursor.context; statement > 0; {
 		current := cursor.tree.Statements[statement]

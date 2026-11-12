@@ -161,7 +161,8 @@ export interface Code {
 }
 
 /**
- * A ColorSite is one color written in a file: where it is and the color it stands for.
+ * A ColorSite is one color written in a file: where it is and the color it
+ * stands for.
  */
 export interface ColorSite {
     "range": jomini$0.Range;
@@ -246,7 +247,8 @@ export interface Diagnostic {
 }
 
 /**
- * A Draft is the file New file makes in a folder of a mod: the name it suggests and the text the file starts with.
+ * A Draft is the file New file makes in a folder of a mod: the name it suggests
+ * and the text the file starts with.
  */
 export interface Draft {
     "name": string;
@@ -258,7 +260,8 @@ export interface Draft {
 }
 
 /**
- * An Edit is one change to a file's text: the range replaced and the text that replaces it.
+ * An Edit is one change to a file's text: the range replaced and the text that
+ * replaces it.
  */
 export interface Edit {
     "range": jomini$0.Range;
@@ -266,7 +269,8 @@ export interface Edit {
 }
 
 /**
- * A Fix is one quick fix for a problem. It carries the edits that apply it, grouped by file.
+ * A Fix is one quick fix for a problem. It carries the edits that apply it,
+ * grouped by file.
  */
 export interface Fix {
     "title": string;
@@ -303,8 +307,9 @@ export interface Fold {
 }
 
 /**
- * A Hint is a text drawn inline beside the code, such as a date read in the mod's calendar. Its line and column are
- * Monaco's, counted from one, the column in UTF-16 code units.
+ * A Hint is a text drawn inline beside the code, such as a date read in the
+ * mod's calendar. Its line and column are Monaco's, counted from one, the
+ * column in UTF-16 code units.
  */
 export interface Hint {
     "line": number;
@@ -380,7 +385,8 @@ export interface Part {
 }
 
 /**
- * A Signature is the parameter list of a scripted definition at a call, with the parameter the position is on.
+ * A Signature is the parameter list of a scripted definition at a call, with
+ * the parameter the position is on.
  */
 export interface Signature {
     "label": string;
@@ -433,7 +439,8 @@ export interface Site {
 }
 
 /**
- * A Symbol is one entry of a file: a definition, with the symbols nested inside it, or a localization key.
+ * A Symbol is one entry of a file: a definition, with the symbols nested inside
+ * it, or a localization key.
  */
 export interface Symbol {
     "name": string;
@@ -470,7 +477,8 @@ export interface Topic {
 }
 
 /**
- * A WorkspaceSymbol is one definition found by the symbol search across the workspace.
+ * A WorkspaceSymbol is one definition found by the symbol search across the
+ * workspace.
  */
 export interface WorkspaceSymbol {
     "name": string;

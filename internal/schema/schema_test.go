@@ -114,7 +114,8 @@ func walkFixture(t *testing.T, built *Schema, install, rel string) *recorder {
 
 	tree, file := openFixture(t, install, rel)
 	seen := &recorder{}
-	for statement, context := range built.Walk(tree, file, nil) {
+	contexts, _ := built.Walk(tree, file, nil)
+	for statement, context := range contexts {
 		if statement == 0 && context.Definition == nil {
 			continue
 		}

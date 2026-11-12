@@ -45,7 +45,7 @@ flowchart TD
 | `vanilla.go` | The count of the game's own files, the claims it supports and the command patterns it finds. |
 | `scripted.go` | The scripted definitions, modifier types and event namespaces that files declare, the mods' included, and of the copies of each scripted definition the one the game keeps. |
 | `definitions.go` | What a statement defines, found during a walk. |
-| `walk.go` | The walk: `Walk`, `WalkDeclarations`, `Context`, what each key is (a keyword, or the first thing its block's shape takes that has it, by `shapeRows`), and the shape of its block. |
+| `walk.go` | The walk: `Walk`, `WalkDeclarations`, `Context`, what each key is (a keyword, or the first thing its block's shape takes that has it, by `shapeRows`), the shape of its block, and the problems a file shows by itself (`Problem`). |
 | `values.go` | What a statement's value refers to: by its class, its field's claim, the place it is written in, and as a formula's number. Also each reference's verdict, `Inferred`. |
 | `shipped.go` | The shipped backup of each game's dumps, embedded from `shipped/*.gob`. |
 

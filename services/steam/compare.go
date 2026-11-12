@@ -1,4 +1,4 @@
-// compare.go compares a listing's next upload with what Steam has of its item, the page and the files.
+// compare.go compares a listing's next upload with Steam's item.
 
 package steam
 
@@ -20,7 +20,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/samber/lo"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"golang.org/x/sync/errgroup"
 
@@ -29,135 +28,197 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Snapshot is what PMT keeps of a Workshop item's files as Steam has them: their hashes, and the folder Steam keeps
-// them in.
+// Snapshot is what PMT keeps of a Workshop item's files as Steam has them.
 type Snapshot struct {
-	WorkshopID string            `json:"workshopId"`
-	UpdatedAt  time.Time         `json:"updatedAt"` // when Steam last updated the item, as of the download
-	Dir        string            `json:"dir"`       // Steam's own folder of the item
-	Files      map[string]string `json:"files"`     // the SHA-256 of each file, by its Rel path
+	WorkshopID string    `json:"workshopId"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+
+	// Dir is the folder Steam keeps the item's files in.
+	Dir string `json:"dir"`
+
+	// Files is the SHA-256 of each file, by its Rel path.
+	Files map[string]string `json:"files"`
 }
 
 // Details is what Steam reports about an item.
 type Details struct {
-	Title        string    `json:"title"`
-	Description  string    `json:"description"`
-	UpdatedAt    time.Time `json:"updatedAt"`
-	Visibility   string    `json:"visibility"`
-	Owned        bool      `json:"owned"` // the signed-in Steam user owns the item
-	Tags         []string  `json:"tags"`
-	Previews     []Preview `json:"previews"`
-	DLC          []string  `json:"dlc"`          // nil when Steam's library cannot read them
-	DLCCount     int       `json:"dlcCount"`     // how many DLC it requires, which may be more than DLC holds
-	Dependencies []string  `json:"dependencies"` // the Workshop ids of the items it requires, or nil as for DLC
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	Visibility  string    `json:"visibility"`
+	Owned       bool      `json:"owned"`
+	Tags        []string  `json:"tags"`
+	Previews    []Preview `json:"previews"`
+
+	// DLC and Dependencies are nil when Steam's library cannot read them.
+	DLC []string `json:"dlc"`
+
+	// DLCCount is how many DLC the item requires, which may be more than DLC
+	// holds.
+	DLCCount int `json:"dlcCount"`
+
+	Dependencies []string `json:"dependencies"`
 }
 
-// A Difference is one thing the next upload changes on Steam.
+// Difference is one thing the next upload changes on Steam.
 type Difference struct {
-	Field   string   `json:"field"` // title, description, tags, previews, dlc, dependencies, version or file
+	// Field is title, description, tags, previews, dlc, dependencies, version
+	// or file.
+	Field string `json:"field"`
+
 	Rel     string   `json:"rel,omitempty"`
-	Status  string   `json:"status"` // added, changed or removed
+	Status  string   `json:"status"`
 	Before  string   `json:"before,omitempty"`
 	After   string   `json:"after,omitempty"`
-	Added   []string `json:"added,omitempty"`   // the tags, pictures, DLC or items the upload adds
-	Removed []string `json:"removed,omitempty"` // those it takes away
-	Gained  int      `json:"gained"`            // the lines the upload adds, or paragraphs for the description
-	Lost    int      `json:"lost"`
+	Added   []string `json:"added,omitempty"`
+	Removed []string `json:"removed,omitempty"`
+
+	// Gained and Lost are lines, or paragraphs for the description.
+	Gained int `json:"gained"`
+	Lost   int `json:"lost"`
 }
 
-// A Comparison is what the next upload changes against what Steam has of the item.
+// Comparison is what the next upload changes against what Steam has.
 type Comparison struct {
-	Page      []Difference `json:"page"`
-	Files     []Difference `json:"files"`     // the version first, then each file by its path
-	Upload    Upload       `json:"upload"`    // the files the next upload sends and leaves out
-	CheckedAt time.Time    `json:"checkedAt"` // when Steam was last asked for the item
-	Steam     *Details     `json:"steam,omitempty"`
-	Reason    string       `json:"reason"` // why Steam's side is missing, or ""
-	Status    string       `json:"status"` // new, same, changed, or unknown when Steam could not be asked
+	Page []Difference `json:"page"`
+
+	// Files is the version first, then each file by its path.
+	Files []Difference `json:"files"`
+
+	Upload    Upload    `json:"upload"`
+	CheckedAt time.Time `json:"checkedAt"`
+	Steam     *Details  `json:"steam,omitempty"`
+
+	// Reason is why Steam's side is missing, or "".
+	Reason string `json:"reason"`
+
+	// Status is new, same, changed, or unknown when Steam could not be asked.
+	Status string `json:"status"`
 }
 
-// The states of a mod's next upload against its Workshop item.
 const (
-	statusNew     = "new"     // the listing has no item yet
-	statusUnknown = "unknown" // Steam could not be asked for the item or its files
-	statusSame    = "same"    // the next upload sends what Steam has
-	statusChanged = "changed" // the next upload changes files or the page
+	statusNew     = "new"
+	statusUnknown = "unknown"
+	statusSame    = "same"
+	statusChanged = "changed"
 )
 
-// What a difference does to Steam's side.
 const (
 	changeAdded   = "added"
 	changeChanged = "changed"
 	changeRemoved = "removed"
 )
 
-// blankLines matches the blank lines between two paragraphs of a normalized text.
-var blankLines = regexp.MustCompile(`\n{2,}`)
-
-// CompareUpload compares the next upload of a mod's listing with what Steam has. It returns an error if there is no
-// such mod or listing, or a file cannot be read.
-func (stm *Service) CompareUpload(modID, key string) (Comparison, error) {
-	ws, mod, listing, err := stm.findListing(modID, key)
+// CompareUpload compares the next upload of a mod's listing with what Steam
+// has.
+func (s *Service) CompareUpload(modID, key string) (Comparison, error) {
+	ws, mod, listing, err := s.findListing(modID, key)
 	if err != nil {
 		return Comparison{}, err
 	}
-	src, err := stm.openSource(ws, mod, listing)
+
+	src, err := s.openSource(ws, mod, listing)
 	if err != nil {
 		return Comparison{}, err
 	}
 	defer func() { _ = src.close() }()
-	upload, exclusions, err := stm.buildUpload(mod, src)
+
+	upload, exclusions, err := s.buildUpload(mod, src)
 	if err != nil {
 		return Comparison{}, err
 	}
+
 	comparison := Comparison{Page: []Difference{}, Files: []Difference{}, Upload: upload, Status: statusNew}
 	if listing.WorkshopID == "" {
 		return comparison, nil
 	}
-	answer := stm.resolveAnswer(ws, listing.WorkshopID)
+
+	answer := s.resolveAnswer(ws, listing.WorkshopID)
 	comparison.Steam, comparison.Reason, comparison.CheckedAt = answer.Steam, answer.Reason, answer.CheckedAt
 	if answer.Steam != nil {
-		modIDs := lo.Keys(stm.listModTitles())
-		comparison.Page = comparePage(listing, *answer.Steam, modIDs, sync.OnceValue(stm.listSteamNames))
+		titles := s.listModTitles()
+		modIDs := slices.AppendSeq(make([]string, 0, len(titles)), maps.Keys(titles))
+		comparison.Page = comparePage(listing, *answer.Steam, modIDs, sync.OnceValue(s.listSteamNames))
 	}
+
 	if answer.Reason == "" {
-		if comparison.Files, err = stm.compareFiles(ws, exclusions, listing, src, upload); err != nil {
+		if comparison.Files, err = s.compareFiles(ws, exclusions, listing, src, upload); err != nil {
 			return Comparison{}, err
 		}
 	}
 	comparison.Status = toStatus(comparison)
+
 	return comparison, nil
 }
 
-// FetchItem asks Steam again about the Workshop item of one of a mod's listings and returns the comparison. It returns
-// an error as CompareUpload does.
-func (stm *Service) FetchItem(modID, key string) (Comparison, error) {
-	listing, err := stm.ReadListing(modID, key)
+// FetchItem asks Steam again about a listing's Workshop item and returns the
+// comparison.
+func (s *Service) FetchItem(modID, key string) (Comparison, error) {
+	listing, err := s.ReadListing(modID, key)
 	if err != nil {
 		return Comparison{}, err
 	}
-	stm.removeAnswer(listing.WorkshopID)
-	return stm.CompareUpload(modID, key)
+
+	s.removeAnswer(listing.WorkshopID)
+
+	return s.CompareUpload(modID, key)
 }
 
-// resolveAnswer returns Steam's answer about a Workshop item, kept or fetched. Calls for one item share one fetch.
-func (stm *Service) resolveAnswer(ws *workspace.Session, workshopID string) Comparison {
-	stm.mu.Lock()
-	answer, ok := stm.answers[workshopID]
-	stm.mu.Unlock()
+// CompareFile returns one file as Steam has it and as the upload sends it, ""
+// for a missing side.
+func (s *Service) CompareFile(modID, key, rel string) ([]string, error) {
+	ws, mod, listing, err := s.findListing(modID, key)
+	if err != nil {
+		return nil, err
+	}
+
+	src, err := s.openSource(ws, mod, listing)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = src.close() }()
+
+	snapshot, err := s.loadSnapshot(ws, listing.WorkshopID)
+	if err != nil {
+		return nil, err
+	}
+
+	steamText, err := files.LoadText(files.Join(snapshot.Dir, rel))
+	if err != nil {
+		return nil, err
+	}
+
+	text, err := src.loadText(rel)
+	if err != nil {
+		return nil, err
+	}
+
+	return []string{steamText.Text, text.Text}, nil
+}
+
+// resolveAnswer returns Steam's answer about a Workshop item, kept or fetched.
+// Calls for one item share one fetch.
+func (s *Service) resolveAnswer(ws *workspace.Session, workshopID string) Comparison {
+	s.mu.Lock()
+	answer, ok := s.answers[workshopID]
+	s.mu.Unlock()
 	if ok {
 		return answer
 	}
-	shared, _, _ := stm.flight.Do(workshopID, func() (any, error) { return stm.fetchAnswer(ws, workshopID), nil })
+
+	shared, _, _ := s.flight.Do(workshopID, func() (any, error) { return s.fetchAnswer(ws, workshopID), nil })
+
 	return shared.(Comparison)
 }
 
-// fetchAnswer asks Steam about a Workshop item, keeps the answer and returns it. A failure becomes the answer's reason.
-func (stm *Service) fetchAnswer(ws *workspace.Session, workshopID string) Comparison {
+// fetchAnswer asks Steam about a Workshop item and keeps the answer. A failure
+// becomes the answer's reason.
+func (s *Service) fetchAnswer(ws *workspace.Session, workshopID string) Comparison {
 	answer := Comparison{CheckedAt: time.Now()}
-	params, err := stm.buildParams(ws)
+	params, err := s.buildParams(ws)
 	if err == nil {
 		params.WorkshopID = workshopID
+
 		var details Details
 		err = startCopy(context.Background(), detailsFlag, params, func(line string) {
 			_ = json.Unmarshal([]byte(line), &details)
@@ -165,48 +226,52 @@ func (stm *Service) fetchAnswer(ws *workspace.Session, workshopID string) Compar
 		if err == nil {
 			answer.Steam = &details
 			params.UpdatedAt = details.UpdatedAt
-			err = refreshSnapshot(stm.Workspace.Config.Dirs.Cache, params)
+			err = refreshSnapshot(s.Workspace.Config.Dirs.Cache, params)
 		}
 	}
+
 	if err != nil {
 		answer.Reason = err.Error()
 	}
-	stm.mu.Lock()
-	defer stm.mu.Unlock()
-	if stm.answers == nil {
-		stm.answers = map[string]Comparison{}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.answers == nil {
+		s.answers = map[string]Comparison{}
 	}
-	stm.answers[workshopID] = answer
+	s.answers[workshopID] = answer
+
 	return answer
 }
 
-// removeAnswer drops the answer kept for a Workshop item, so the next comparison asks Steam again.
-func (stm *Service) removeAnswer(workshopID string) {
-	stm.mu.Lock()
-	defer stm.mu.Unlock()
-	delete(stm.answers, workshopID)
+func (s *Service) removeAnswer(workshopID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.answers, workshopID)
 }
 
-// refreshSnapshot downloads an item's files into PMT's kept copy, unless that copy is up to date.
 func refreshSnapshot(cacheDir string, params Params) error {
 	if snapshot, ok := LoadSnapshot(cacheDir, params.WorkshopID); ok && snapshot.UpdatedAt.Equal(params.UpdatedAt) {
 		return nil
 	}
+
 	return startCopy(context.Background(), downloadFlag, params, nil)
 }
 
-// listSteamNames returns the names of the open workspace's mods and DLCs by their Steam ids. It leaves out the DLCs if
-// a descriptor cannot be read.
-func (stm *Service) listSteamNames() map[string]string {
-	names := stm.listModTitles()
-	dlcs, _ := stm.ListDLC()
+// listSteamNames returns the names of the workspace's mods and DLCs by their
+// Steam ids.
+func (s *Service) listSteamNames() map[string]string {
+	names := s.listModTitles()
+	dlcs, _ := s.ListDLC()
 	for _, dlc := range dlcs {
 		names[dlc.ID] = dlc.Name
 	}
+
 	return names
 }
 
-// comparePage lists what an upload of a listing changes on its item's page. An empty description changes nothing.
+// comparePage lists what an upload changes on its item's page. An empty
+// description changes nothing.
 func comparePage(listing Listing, details Details, modIDs []string, names func() map[string]string) []Difference {
 	differences := []Difference{}
 	if listing.Title != details.Title {
@@ -214,6 +279,7 @@ func comparePage(listing Listing, details Details, modIDs []string, names func()
 			Field: "title", Status: changeChanged, Before: details.Title, After: listing.Title,
 		})
 	}
+
 	before, after := toPlainText(details.Description), toPlainText(listing.Description)
 	if listing.Description != "" && before != after {
 		gained, lost := countLines(toParagraphs(before), toParagraphs(after))
@@ -221,21 +287,24 @@ func comparePage(listing Listing, details Details, modIDs []string, names func()
 			Field: "description", Status: changeChanged, Before: before, After: after, Gained: gained, Lost: lost,
 		})
 	}
+
 	return append(differences, compareLists(listing, details, modIDs, names)...)
 }
 
-// compareLists lists what an upload of a listing changes in the lists of its item's page. A list that Steam's library
-// cannot read is left out.
+// compareLists lists what an upload changes in the lists of its item's page,
+// leaving out a list Steam's library cannot read.
 func compareLists(listing Listing, details Details, modIDs []string, names func() map[string]string) []Difference {
 	tagsAdded, tagsRemoved := diffTags(toSentTags(listing), details.Tags)
 	labelsAdded, labelsRemoved := diffLabels(listing.Previews, details.Previews)
 	dlcAdded, dlcRemoved := diffDLC(listing.DLC, details)
 	requiredAdded, requiredRemoved := diffRequired(listing.Dependencies, details.Dependencies, modIDs)
+
 	var dlcNote []string
 	if missing := details.DLCCount - len(details.DLC); missing > 0 {
 		dlcNote = []string{fmt.Sprintf("and %d more that Steam did not list", missing)}
 	}
-	// a list is known when Steam's side could be read, and named when its entries are Steam ids
+
+	// A list is named when its entries are Steam ids.
 	lists := []struct {
 		field                       string
 		steam, added, removed, note []string
@@ -246,42 +315,57 @@ func compareLists(listing Listing, details Details, modIDs []string, names func(
 		{"dlc", details.DLC, dlcAdded, dlcRemoved, dlcNote, details.DLC != nil, true},
 		{"dependencies", details.Dependencies, requiredAdded, requiredRemoved, nil, details.Dependencies != nil, true},
 	}
+
 	differences := []Difference{}
 	for _, row := range lists {
 		if !row.known || len(row.added)+len(row.removed) == 0 {
 			continue
 		}
-		after := slices.Concat(lo.Without(row.steam, row.removed...), row.added)
+
+		kept := slices.DeleteFunc(slices.Clone(row.steam), func(entry string) bool { return slices.Contains(row.removed, entry) })
+		after := slices.Concat(kept, row.added)
 		if row.named {
 			row.steam, after = toNames(row.steam, names()), toNames(after, names())
 			row.added, row.removed = toNames(row.added, names()), toNames(row.removed, names())
 		}
+
 		differences = append(differences, Difference{
 			Field: row.field, Status: changeChanged, Before: strings.Join(slices.Concat(row.steam, row.note), "\n"),
 			After: strings.Join(slices.Concat(after, row.note), "\n"), Added: row.added, Removed: row.removed,
 		})
 	}
+
 	return differences
 }
 
-// toNames returns the name of each Steam id, or the id itself if it has none.
 func toNames(ids []string, names map[string]string) []string {
-	return lo.Map(ids, func(id string, _ int) string { return cmp.Or(names[id], id) })
+	named := make([]string, len(ids))
+	for position, id := range ids {
+		named[position] = cmp.Or(names[id], id)
+	}
+
+	return named
 }
 
-// listLabels returns the label of each preview of a gallery, in its order.
 func listLabels(previews []Preview) []string {
-	return lo.Map(previews, func(preview Preview, _ int) string { return toLabel(preview) })
+	labels := make([]string, len(previews))
+	for position, preview := range previews {
+		labels[position] = toLabel(preview)
+	}
+
+	return labels
 }
 
-// toPlainText returns a text without Windows line ends, trailing spaces or trailing blank lines.
 func toPlainText(text string) string {
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	for position, line := range lines {
 		lines[position] = strings.TrimRight(line, " \t")
 	}
+
 	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
 }
+
+var blankLines = regexp.MustCompile(`\n{2,}`)
 
 // toParagraphs returns a text with each paragraph on one line.
 func toParagraphs(text string) string {
@@ -289,12 +373,14 @@ func toParagraphs(text string) string {
 	for position, paragraph := range paragraphs {
 		paragraphs[position] = strings.ReplaceAll(paragraph, "\n", " ")
 	}
+
 	return strings.Join(paragraphs, "\n")
 }
 
-// countLines returns how many lines a change from one text to another adds and how many it removes.
+// countLines returns how many lines a change from one text to another adds and
+// removes.
 func countLines(before, after string) (gained, lost int) {
-	// go-diff's line mode turns each line into one rune, so a piece's runes count its lines
+	// go-diff's line mode turns each line into one rune.
 	diff := diffmatchpatch.New()
 	first, second, _ := diff.DiffLinesToRunes(before, after)
 	for _, piece := range diff.DiffMainRunes(first, second, false) {
@@ -305,31 +391,38 @@ func countLines(before, after string) (gained, lost int) {
 			lost += utf8.RuneCountInString(piece.Text)
 		}
 	}
+
 	return gained, lost
 }
 
-// compareFiles lists what an upload from a source changes in its item's files. It returns an error if PMT has no
-// snapshot of the item, or Steam cannot download the item again.
-func (stm *Service) compareFiles(
+// compareFiles lists what an upload changes in its item's files. It returns an
+// error if PMT has no snapshot of the item.
+func (s *Service) compareFiles(
 	ws *workspace.Session, exclusions []exclusion, listing Listing, src source, upload Upload,
 ) ([]Difference, error) {
-	snapshot, err := stm.loadSnapshot(ws, listing.WorkshopID)
+	snapshot, err := s.loadSnapshot(ws, listing.WorkshopID)
 	if err != nil {
 		return nil, err
 	}
+
 	maps.DeleteFunc(snapshot.Files, func(rel, _ string) bool {
 		_, excluded := findExclusion(exclusions, rel)
+
 		return excluded
 	})
+
 	differences := []Difference{}
 	if descriptor, _ := workspace.ReadDescriptor(ws.Game, snapshot.Dir); descriptor.Version != listing.Version {
 		differences = append(differences, Difference{
 			Field: "version", Status: changeChanged, Before: descriptor.Version, After: listing.Version,
 		})
 	}
-	hashes := stm.buildUploadHashes(src, upload.Files)
-	rels := lo.Uniq(slices.Concat(slices.Collect(maps.Keys(hashes)), slices.Collect(maps.Keys(snapshot.Files))))
+
+	hashes := s.buildUploadHashes(src, upload.Files)
+	rels := slices.Concat(slices.Collect(maps.Keys(hashes)), slices.Collect(maps.Keys(snapshot.Files)))
 	slices.Sort(rels)
+	rels = slices.Compact(rels)
+
 	for _, rel := range rels {
 		hash, ours := hashes[rel]
 		last, theirs := snapshot.Files[rel]
@@ -344,75 +437,90 @@ func (stm *Service) compareFiles(
 		default:
 			continue
 		}
+
 		if files.Classify(rel).IsText() {
-			counts := stm.countChange(
-				lo.Ternary(theirs, files.Join(snapshot.Dir, rel), ""), last, src, lo.Ternary(ours, rel, ""), hash,
-			)
+			steamFile, uploadRel := "", ""
+			if theirs {
+				steamFile = files.Join(snapshot.Dir, rel)
+			}
+			if ours {
+				uploadRel = rel
+			}
+
+			counts := s.countChange(steamFile, last, src, uploadRel, hash)
 			difference.Gained, difference.Lost = counts.Gained, counts.Lost
 		}
 		differences = append(differences, difference)
 	}
+
 	return differences, nil
 }
 
-// buildUploadHashes returns the SHA-256 of each file of an upload from a source, by its Rel path. It hashes only the
-// files that changed since an earlier call.
-func (stm *Service) buildUploadHashes(src source, list []files.File) map[string]string {
+// buildUploadHashes returns the SHA-256 of each file of an upload, by its Rel
+// path. It hashes only the files that changed since an earlier call.
+func (s *Service) buildUploadHashes(src source, list []files.File) map[string]string {
 	keys := make([]string, len(list))
 	for position, file := range list {
 		keys[position] = src.hashKey(file)
 	}
+
 	hashes := make(map[string]string, len(list))
 	var changed []files.File
-	stm.mu.Lock()
+	s.mu.Lock()
 	for position, file := range list {
-		if hash, ok := stm.hashes[keys[position]]; ok && keys[position] != "" {
+		if hash, ok := s.hashes[keys[position]]; ok && keys[position] != "" {
 			hashes[file.Rel] = hash
 		} else {
 			changed = append(changed, file)
 		}
 	}
-	stm.mu.Unlock()
+	s.mu.Unlock()
+
 	fresh := buildHashes(src, changed)
-	stm.mu.Lock()
-	defer stm.mu.Unlock()
-	if stm.hashes == nil {
-		stm.hashes = map[string]string{}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hashes == nil {
+		s.hashes = map[string]string{}
 	}
+
 	for position, file := range list {
 		if hash, ok := fresh[file.Rel]; ok {
 			hashes[file.Rel] = hash
 			if keys[position] != "" {
-				stm.hashes[keys[position]] = hash
+				s.hashes[keys[position]] = hash
 			}
 		}
 	}
+
 	return hashes
 }
 
-// countChange returns how many lines a file gains and loses from Steam's copy, at its path, to the upload's, at its Rel
-// path in a source. A side without the file has "" for its path and hash.
-func (stm *Service) countChange(steamFile, steamHash string, src source, rel, hash string) Difference {
+// countChange returns how many lines a file gains and loses from Steam's copy
+// to the upload's. A side without the file has "" for its path and hash.
+func (s *Service) countChange(steamFile, steamHash string, src source, rel, hash string) Difference {
 	key := steamHash + " " + hash
-	stm.mu.Lock()
-	counts, ok := stm.lines[key]
-	stm.mu.Unlock()
+	s.mu.Lock()
+	counts, ok := s.lines[key]
+	s.mu.Unlock()
 	if ok {
 		return counts
 	}
+
 	steamText, _ := files.LoadText(steamFile)
 	text, _ := src.loadText(rel)
 	counts.Gained, counts.Lost = countLines(steamText.Text, text.Text)
-	stm.mu.Lock()
-	defer stm.mu.Unlock()
-	if stm.lines == nil {
-		stm.lines = map[string]Difference{}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lines == nil {
+		s.lines = map[string]Difference{}
 	}
-	stm.lines[key] = counts
+	s.lines[key] = counts
+
 	return counts
 }
 
-// toStatus returns whether a comparison is unknown, the same or changed.
 func toStatus(comparison Comparison) string {
 	switch {
 	case comparison.Reason != "":
@@ -420,76 +528,56 @@ func toStatus(comparison Comparison) string {
 	case len(comparison.Page)+len(comparison.Files) == 0:
 		return statusSame
 	}
+
 	return statusChanged
 }
 
-// CompareFile returns one file as Steam has it and as the upload sends it, "" for a missing side. It returns an error
-// if there is no such mod or listing, PMT has no snapshot of the item, or a file cannot be read.
-func (stm *Service) CompareFile(modID, key, rel string) ([]string, error) {
-	ws, mod, listing, err := stm.findListing(modID, key)
-	if err != nil {
-		return nil, err
-	}
-	src, err := stm.openSource(ws, mod, listing)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = src.close() }()
-	snapshot, err := stm.loadSnapshot(ws, listing.WorkshopID)
-	if err != nil {
-		return nil, err
-	}
-	steamText, err := files.LoadText(files.Join(snapshot.Dir, rel))
-	if err != nil {
-		return nil, err
-	}
-	text, err := src.loadText(rel)
-	if err != nil {
-		return nil, err
-	}
-	return []string{steamText.Text, text.Text}, nil
-}
-
-// loadSnapshot loads the snapshot of a Workshop item, with Steam downloading the item again if the folder it kept the
-// files in is gone. It returns an error if PMT has no snapshot of the item, or Steam cannot download it.
-func (stm *Service) loadSnapshot(ws *workspace.Session, workshopID string) (Snapshot, error) {
-	cacheDir := stm.Workspace.Config.Dirs.Cache
+// loadSnapshot loads an item's snapshot, having Steam download the item again
+// if its folder is gone. It returns an error if PMT has no snapshot.
+func (s *Service) loadSnapshot(ws *workspace.Session, workshopID string) (Snapshot, error) {
+	cacheDir := s.Workspace.Config.Dirs.Cache
 	snapshot, ok := LoadSnapshot(cacheDir, workshopID)
 	if !ok {
 		return Snapshot{}, errors.New("PMT has not read the item's files from Steam: check again to download them")
 	}
+
 	if files.IsFolder(snapshot.Dir) {
 		return snapshot, nil
 	}
-	params, err := stm.buildParams(ws)
+
+	params, err := s.buildParams(ws)
 	if err != nil {
 		return Snapshot{}, err
 	}
+
 	params.WorkshopID, params.UpdatedAt = workshopID, snapshot.UpdatedAt
 	if err := startCopy(context.Background(), downloadFlag, params, nil); err != nil {
 		return Snapshot{}, err
 	}
 	snapshot, _ = LoadSnapshot(cacheDir, workshopID)
+
 	return snapshot, nil
 }
 
-// LoadSnapshot loads the snapshot saved for a Workshop item. It returns false if there is none or the id is empty.
+// LoadSnapshot loads the snapshot saved for an item. It returns false if there
+// is none or the id is empty.
 func LoadSnapshot(cacheDir, workshopID string) (Snapshot, bool) {
 	snapshot, err := app.LoadJSON[Snapshot](resolveSnapshotPath(cacheDir, workshopID))
+
 	return snapshot, err == nil && workshopID != "" && snapshot.WorkshopID == workshopID
 }
 
-// SaveSnapshot saves a snapshot under the id of its Workshop item.
+// SaveSnapshot saves a snapshot.
 func SaveSnapshot(cacheDir string, snapshot Snapshot) error {
 	return app.SaveJSON(resolveSnapshotPath(cacheDir, snapshot.WorkshopID), snapshot)
 }
 
-// resolveSnapshotPath returns the path of the file that keeps the snapshot of a Workshop item.
 func resolveSnapshotPath(cacheDir, workshopID string) string {
 	return filepath.Join(cacheDir, snapshotPrefix+workshopID+".json")
 }
 
-// buildHashes returns the SHA-256 of each file of a source by its Rel path. A file that cannot be read has the hash "".
+// buildHashes returns the SHA-256 of each file of a source, by its Rel path. A
+// file that cannot be read has the hash "".
 func buildHashes(src source, list []files.File) map[string]string {
 	hashes := make([]string, len(list))
 	var group errgroup.Group
@@ -500,19 +588,23 @@ func buildHashes(src source, list []files.File) map[string]string {
 			if err != nil {
 				return nil
 			}
+
 			digest := sha256.New()
 			_, err = io.Copy(digest, handle)
 			_ = handle.Close()
 			if err == nil {
 				hashes[position] = hex.EncodeToString(digest.Sum(nil))
 			}
+
 			return nil
 		})
 	}
 	_ = group.Wait()
+
 	byRel := make(map[string]string, len(list))
 	for position, file := range list {
 		byRel[file.Rel] = hashes[position]
 	}
+
 	return byRel
 }

@@ -40,7 +40,7 @@ linters:
       - path: internal/(game/(databases|language|coat|gui)|schema/(dumps|docs)|index/fires)\.go
         linters: [goconst]
       # each problem the engine reports names its own facts
-      - path: internal/index/problems\.go
+      - path: internal/(index/problems|schema/walk)\.go
         linters: [goconst]
       # the databases' role and precedence words are plain words the rows and their readers share
       - linters: [goconst]

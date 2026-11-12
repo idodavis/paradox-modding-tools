@@ -22,7 +22,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// newApp returns the one application the tests send events through. It is never run.
+// newApp returns the one application the tests send events through. It is never
+// run.
 var newApp = sync.OnceValue(func() *application.App { return application.New(application.Options{}) })
 
 // resolveFixture returns the absolute path of a folder under internal/testdata.
@@ -35,7 +36,8 @@ func resolveFixture(t *testing.T, parts ...string) string {
 	return dir
 }
 
-// openService opens a workspace on the CK3 fixture install and returns the wiki service over it with its session.
+// openService opens a workspace on the CK3 fixture install and returns the wiki
+// service over it with its session.
 func openService(t *testing.T) (*Service, *workspace.Session) {
 	t.Helper()
 	newApp()
@@ -76,7 +78,8 @@ func keepPage(t *testing.T, client *Client, html, title string) {
 	}
 }
 
-// TestSanitizeKeepsAndDropsElements checks what Sanitize keeps and drops from a page of every kind of element.
+// TestSanitizeKeepsAndDropsElements checks what Sanitize keeps and drops from a
+// page of every kind of element.
 func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 	input := `<script>alert(1)</script><style>p{}</style><noscript>none</noscript><nav>menu</nav>` +
 		`<div class="navbox"><p>navigation</p></div><div id="toc"><ul><li>contents</li></ul></div><!-- comment -->` +
@@ -106,7 +109,8 @@ func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 	}
 }
 
-// TestFindPagesRanksTitles checks the order of the pages for a script file and for a GUI file.
+// TestFindPagesRanksTitles checks the order of the pages for a script file and
+// for a GUI file.
 func TestFindPagesRanksTitles(t *testing.T) {
 	wik, ws := openService(t)
 	titles := []string{
@@ -143,8 +147,9 @@ func TestFindPagesRanksTitles(t *testing.T) {
 	}
 }
 
-// TestListNotesOrdersNewestFirst checks that the patch notes come newest first, a hotfix note after its release, and
-// that the pages with a Modding heading are marked.
+// TestListNotesOrdersNewestFirst checks that the patch notes come newest first,
+// a hotfix note after its release, and that the pages with a Modding heading
+// are marked.
 func TestListNotesOrdersNewestFirst(t *testing.T) {
 	wik, ws := openService(t)
 	client := wik.resolveClient(ws)
@@ -167,7 +172,8 @@ func TestListNotesOrdersNewestFirst(t *testing.T) {
 	}
 }
 
-// TestResolveClientFollowsGame checks that the service keeps one client for a game and makes another for the next.
+// TestResolveClientFollowsGame checks that the service keeps one client for a
+// game and makes another for the next.
 func TestResolveClientFollowsGame(t *testing.T) {
 	wik := &Service{Workspace: &workspace.Service{Config: &app.ConfigFile{Dirs: app.Dirs{Cache: t.TempDir()}}}}
 	ck3 := &workspace.Session{Game: game.LookupGame("ck3")}
@@ -181,8 +187,8 @@ func TestResolveClientFollowsGame(t *testing.T) {
 	}
 }
 
-// TestClientRefreshesFromServer checks a refresh against a test wiki. A page that is already cached is not fetched
-// again.
+// TestClientRefreshesFromServer checks a refresh against a test wiki. A page
+// that is already cached is not fetched again.
 func TestClientRefreshesFromServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
@@ -232,7 +238,8 @@ func TestClientRefreshesFromServer(t *testing.T) {
 	}
 }
 
-// TestRefreshEmitsUpdatedWithoutWorkspace checks that a refresh with no workspace open still sends wiki:updated.
+// TestRefreshEmitsUpdatedWithoutWorkspace checks that a refresh with no
+// workspace open still sends wiki:updated.
 func TestRefreshEmitsUpdatedWithoutWorkspace(t *testing.T) {
 	newApp()
 	sent := make(chan struct{}, 1)
@@ -249,8 +256,9 @@ func TestRefreshEmitsUpdatedWithoutWorkspace(t *testing.T) {
 	}
 }
 
-// TestBuildLexiconListsEffectsAndFunctions checks the effect, scope and function rows over the CK3 fixture install,
-// and the error for an unknown class.
+// TestBuildLexiconListsEffectsAndFunctions checks the effect, scope and
+// function rows over the CK3 fixture install, and the error for an unknown
+// class.
 func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 	wik, ws := openService(t)
 	effects, err := wik.BuildLexicon("effect")
@@ -294,7 +302,8 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 	}
 }
 
-// checkFunctions checks that there is a function row for each data function of the schema.
+// checkFunctions checks that there is a function row for each data function of
+// the schema.
 func checkFunctions(t *testing.T, wik *Service, ws *workspace.Session) {
 	t.Helper()
 	rows, err := wik.BuildLexicon("function")
@@ -323,7 +332,8 @@ func checkFunctions(t *testing.T, wik *Service, ws *workspace.Session) {
 	}
 }
 
-// TestRefreshInstalls refreshes the real wiki of each game whose PMT_TEST_INSTALL_<GAME> is set.
+// TestRefreshInstalls refreshes the real wiki of each game whose
+// PMT_TEST_INSTALL_<GAME> is set.
 func TestRefreshInstalls(t *testing.T) {
 	for _, gameID := range []string{"ck3", "vic3", "eu5"} {
 		t.Run(gameID, func(t *testing.T) {

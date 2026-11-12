@@ -9,7 +9,8 @@ import * as loc$0 from "../../internal/loc/models.js";
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * A Condition is one statement of a block of triggers in words, with the statements of its block under it.
+ * A Condition is one statement of a block of triggers in words, with the
+ * statements of its block under it.
  */
 export interface Condition {
     /**
@@ -49,7 +50,8 @@ export interface Condition {
 }
 
 /**
- * A Detail is what the page shows about one node: its texts, its keys, its firings and the game rules it reads.
+ * A Detail is what the page shows about one node: its texts, its keys, its
+ * firings and the game rules it reads.
  */
 export interface Detail {
     /**
@@ -166,7 +168,8 @@ export interface Graph {
 }
 
 /**
- * A Node is one entry of the event graph, or a fold standing for the rest of a node's firings.
+ * A Node is one entry of the event graph, or a fold standing for the rest of a
+ * node's firings.
  */
 export interface Node {
     /**

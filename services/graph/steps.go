@@ -37,9 +37,10 @@ const (
 	kindBlock  = "block"  // any other block
 )
 
-// makeEdge returns the edge of one firing. A firing written as a weighted entry of a list that picks one, such as an
-// on_action's random_events, has that entry as its last step. If the file cannot be read, the edge has only its ends
-// and its place.
+// makeEdge returns the edge of one firing. A firing written as a weighted entry
+// of a list that picks one, such as an on_action's random_events, has that
+// entry as its last step. If the file cannot be read, the edge has only its
+// ends and its place.
 func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	edge := Edge{
 		From: toID(mods, fire.Source), To: toID(mods, fire.Target),
@@ -66,7 +67,8 @@ func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	return edge
 }
 
-// makeEdges returns the edges of some firings, one for each place a firing is written.
+// makeEdges returns the edges of some firings, one for each place a firing is
+// written.
 func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []Edge {
 	type firing struct {
 		source, target, path string
@@ -76,8 +78,10 @@ func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []E
 	return lo.UniqBy(edges, func(edge Edge) firing { return firing{edge.From, edge.To, edge.Site.Place.Path, edge.Site.Line} })
 }
 
-// findFiring returns the statement that writes a firing, given the statement its reference sits in. That is the block
-// around it where the reference is a list value, a numbered branch or a field of an effect, such as trigger_event's id.
+// findFiring returns the statement that writes a firing, given the statement
+// its reference sits in. That is the block around it where the reference is a
+// list value, a numbered branch or a field of an effect, such as
+// trigger_event's id.
 func findFiring(document schema.Document, effects string, statement int32) int32 {
 	for {
 		current := document.Tree.Statements[statement]
@@ -100,8 +104,9 @@ func isEffect(context *schema.Context, effects string) bool {
 		context.Callee != nil && context.Callee.Database == effects
 }
 
-// findDelay returns the delay written for a firing, in words, or "" if none is written. It is the delay of the nearest
-// block around the firing that writes one.
+// findDelay returns the delay written for a firing, in words, or "" if none is
+// written. It is the delay of the nearest block around the firing that writes
+// one.
 func findDelay(tree *jomini.Tree, statement int32) string {
 	for ; statement > 0; statement = tree.Statements[statement].Parent {
 		holders := []int32{statement}
@@ -119,8 +124,8 @@ func findDelay(tree *jomini.Tree, statement int32) string {
 	return ""
 }
 
-// describeDelay returns a delay in words, such as 7 days, 1 day or 10–30 days, from the statement that writes it and
-// the key of its unit.
+// describeDelay returns a delay in words, such as 7 days, 1 day or 10–30 days,
+// from the statement that writes it and the key of its unit.
 func describeDelay(tree *jomini.Tree, statement int32, unit string) string {
 	amount := tree.Unquoted(tree.Statements[statement].Value)
 	if tree.Statements[statement].IsBlock() {
@@ -131,8 +136,9 @@ func describeDelay(tree *jomini.Tree, statement int32, unit string) string {
 	return amount + " " + lo.Ternary(amount == "1", strings.TrimSuffix(unit, "s"), unit)
 }
 
-// findTitle returns the text a field of a statement names, in words: a firing's title or an option's name. It returns
-// "" if the statement writes no such field or no message has its key.
+// findTitle returns the text a field of a statement names, in words: a firing's
+// title or an option's name. It returns "" if the statement writes no such
+// field or no message has its key.
 func findTitle(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32, field string) string {
 	position, ok := schema.FindTextKey(tree, statement, field)
 	if !ok {
@@ -142,8 +148,8 @@ func findTitle(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, stat
 	return toTitle(ws, mods, text)
 }
 
-// listSteps returns the blocks a firing's statement sits in, from the top of the definition down, leaving out the
-// definition and the firing itself.
+// listSteps returns the blocks a firing's statement sits in, from the top of
+// the definition down, leaving out the definition and the firing itself.
 func listSteps(ws *workspace.Session, mods *index.Index, document schema.Document, firing, definition int32) []Step {
 	var steps []Step
 	statements := document.Tree.Statements

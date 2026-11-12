@@ -13,9 +13,8 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// findDefinition returns the definition that a statement makes: a constant,
-// a name that a nesting defines, or what the file's format and database say
-// is defined there. It returns false if the statement defines nothing.
+// findDefinition returns the definition a statement makes. It returns false if
+// the statement defines nothing.
 func (w *walker) findDefinition(statement int32, level int) (Copy, bool) {
 	if label := w.frames[level].label; strings.HasPrefix(label, "@") {
 		return Copy{Database: game.Constant, Name: label, Span: w.frames[level].span, Statement: statement, Local: true}, true
@@ -35,10 +34,8 @@ func (w *walker) findDefinition(statement int32, level int) (Copy, bool) {
 	return w.findScriptDefinition(statement, level)
 }
 
-// findNested returns the definition a statement makes in a nested database:
-// its key, or the value it writes alone, or the value of the nesting's name
-// key, joined to its holder's name where it has a holder. It returns false
-// if it makes none.
+// findNested returns the nested definition a statement makes, named after its
+// holder if it has one. It returns false if the statement makes none.
 func (w *walker) findNested(statement int32, level int) (Copy, bool) {
 	current := w.tree.Statements[statement]
 	label, span := w.frames[level].label, w.frames[level].span
@@ -86,9 +83,8 @@ func (w *walker) findNested(statement int32, level int) (Copy, bool) {
 	return Copy{}, false
 }
 
-// isNested reports whether a key in a definition's block defines a nested
-// definition rather than a field. A key a row or the docs declare for the
-// database is a field.
+// isNested reports whether a key defines a nested definition rather than a
+// field. A key the database declares is a field.
 func (w *walker) isNested(key string, nesting game.Nesting, same bool) bool {
 	if w.database.declares(key) {
 		return false
@@ -99,17 +95,13 @@ func (w *walker) isNested(key string, nesting game.Nesting, same bool) bool {
 	return fits || !same && nesting.Keys == ""
 }
 
-// findNameSpan returns where the value of a key in a statement's block is
-// written, without quotes. It returns false if the block lacks the key.
 func (w *walker) findNameSpan(statement int32, nameKey string) (jomini.Span, bool) {
 	child, ok := w.tree.FindChild(statement, nameKey)
 
 	return w.tree.UnquotedSpan(w.tree.Statements[child].Value), ok
 }
 
-// findGUIDefinition returns the definition a statement of a GUI file makes:
-// a name a declaring lead or key gives, the value of a GUI name key, or a
-// window at the top of the file. It returns false if it makes none.
+// findGUIDefinition returns the definition a statement of a GUI file makes.
 func (w *walker) findGUIDefinition(statement int32, level int) (Copy, bool) {
 	current := w.tree.Statements[statement]
 	label, span := w.frames[level].label, w.frames[level].span
@@ -133,9 +125,9 @@ func (w *walker) findGUIDefinition(statement int32, level int) (Copy, bool) {
 	return Copy{}, false
 }
 
-// makeGUIDefinition returns a definition in a GUI database. Where that
-// database's definitions are local to their file, the rest of the file can
-// call the definition. It returns false if the label is empty.
+// makeGUIDefinition returns a definition in a GUI database. If the database is
+// local to its file, the file can call it. It returns false if the label is
+// empty.
 func (w *walker) makeGUIDefinition(database, label string, span jomini.Span, statement int32) (Copy, bool) {
 	owner := w.schema.Databases[database]
 	local := owner != nil && owner.Declaration.Local
@@ -146,8 +138,8 @@ func (w *walker) makeGUIDefinition(database, label string, span jomini.Span, sta
 	return Copy{Database: database, Name: label, Span: span, Statement: statement, Local: local}, label != ""
 }
 
-// findWindowLabel returns the name of a window at the top of a GUI file, or
-// the file's name if it is the only window. It returns "" otherwise.
+// findWindowLabel returns the name of a top window of a GUI file, or the
+// file's name if it holds only that window. It returns "" otherwise.
 func (w *walker) findWindowLabel(statement int32) string {
 	if value, _ := w.tree.FindChildValue(statement, game.GUI.WidgetKey); value != "" {
 		return value
@@ -163,11 +155,9 @@ func (w *walker) findWindowLabel(statement int32) string {
 	return w.stem
 }
 
-// findAssetDefinition returns the definition that a top block of an asset or
-// font file makes. Its database is named for the file's extension and the
-// block's key, and its name is the value of the key that the file type
-// names. It returns false if the statement is no keyed top block or its name
-// is empty.
+// findAssetDefinition returns the definition a top block of an asset or font
+// file makes, in a database named for the file's extension and the block's
+// key, as in "asset.entity".
 func (w *walker) findAssetDefinition(statement int32, level int) (Copy, bool) {
 	current := w.tree.Statements[statement]
 	key, span := w.frames[level].label, w.frames[level].span
@@ -186,10 +176,7 @@ func (w *walker) findAssetDefinition(statement int32, level int) (Copy, bool) {
 }
 
 // findScriptDefinition returns the definition a statement of a script file
-// makes: one a lead declares inline, or one of the file's database, named
-// by its key or by the value of its name key, after any entry mode. An
-// event's name opens with a namespace the file declares above it. It
-// returns false if the statement makes none.
+// makes. An event's name must open with a namespace declared above it.
 func (w *walker) findScriptDefinition(statement int32, level int) (Copy, bool) {
 	label, span := w.frames[level].label, w.frames[level].span
 	if owner := w.schema.Databases[w.declaring[w.findLead(statement)]]; owner != nil && label != "" {
@@ -211,7 +198,7 @@ func (w *walker) findScriptDefinition(statement int32, level int) (Copy, bool) {
 			return Copy{}, false
 		}
 
-		// a macro's name is written before its parameters
+		// a macro's name comes before its parameters
 		label, _, _ = strings.Cut(w.tree.Text(name), "(")
 		span = jomini.Span{Start: name.Start, End: name.Start + len(label)}
 	}
@@ -236,12 +223,28 @@ func (w *walker) findScriptDefinition(statement int32, level int) (Copy, bool) {
 	}, true
 }
 
+// judgeMode records an entry mode written where its database reads none.
+func (w *walker) judgeMode(statement int32, definition Copy) {
+	database := w.schema.Databases[definition.Database]
+	if database == nil || definition.Mode == "" || !definition.IsOwn() {
+		return
+	}
+
+	top := w.tree.Statements[statement].Parent == 0
+	if precedence := database.Precedence; precedence.Modes == "" || precedence.ReadsMode(top) {
+		return
+	}
+
+	facts := DescribeReference(Reference{Database: definition.Database, Name: definition.Name})
+	facts["mode"] = definition.Mode
+	mode := jomini.Span{Start: definition.Span.Start - len(definition.Mode) - 1, End: definition.Span.Start}
+	w.record(ProblemMode, mode, facts)
+}
+
 // FindTextKey returns the statement that writes the localization key a
-// definition's statement names under the given key, as an event's title is
-// under game.TitleKey. A key written as a block, as a triggered description
-// is, gives the first text in the block. Only a value that is an identifier
-// is a key, so a quoted sentence is none. It returns false if the statement
-// writes no such key.
+// definition names under the given key, such as an event's title. A key
+// written as a block, as a triggered description is, gives the first text in
+// it. A quoted sentence is no key. It returns false if there is none.
 func FindTextKey(tree *jomini.Tree, statement int32, key string) (int32, bool) {
 	child, ok := tree.FindChild(statement, key)
 	if !ok {
@@ -260,8 +263,7 @@ func FindTextKey(tree *jomini.Tree, statement int32, key string) (int32, bool) {
 	return 0, false
 }
 
-// isEvent reports whether a label names an event: a namespace that the file
-// declares above the statement, a dot and an id.
+// isEvent reports whether a label is a declared namespace, a dot and an id.
 func (w *walker) isEvent(label string, statement int32) bool {
 	return slices.ContainsFunc(w.frames[0].context.Namespaces, func(declaring int32) bool {
 		namespace := w.tree.Unquoted(w.tree.Statements[declaring].Value)

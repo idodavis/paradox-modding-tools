@@ -15,7 +15,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// findPicture returns the path of the picture an event shows, or "" if there is none.
+// findPicture returns the path of the picture an event shows, or "" if there is
+// none.
 func findPicture(ws *workspace.Session, mods *index.Index, site index.Site, picture game.Picture) string {
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
@@ -33,8 +34,9 @@ func findPicture(ws *workspace.Session, mods *index.Index, site index.Site, pict
 	return ""
 }
 
-// resolveChain returns the path of the picture a chain of definitions ends in, from the given values for its first
-// step, or "" if it reaches none. If the last definition names no file, the chain's Fallback key names another to try.
+// resolveChain returns the path of the picture a chain of definitions ends in,
+// from the given values for its first step, or "" if it reaches none. If the
+// last definition names no file, the chain's Fallback key names another to try.
 func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureChain, values []string) string {
 	var tree *jomini.Tree
 	var statement int32
@@ -67,7 +69,8 @@ func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureCh
 	return path
 }
 
-// findHop returns the definition a hop leads to from the given values, or false if there is none.
+// findHop returns the definition a hop leads to from the given values, or false
+// if there is none.
 func findHop(ws *workspace.Session, mods *index.Index, step game.PictureStep, values []string) (index.Site, bool) {
 	if len(values) == 0 {
 		return index.Site{}, false
@@ -132,8 +135,9 @@ func listCandidates(ws *workspace.Session, mods *index.Index, step game.PictureS
 	return list
 }
 
-// listValues returns the values written at a path of keys joined by slashes, each picked by pickChild. It returns nil
-// if the path is empty or a key is not written.
+// listValues returns the values written at a path of keys joined by slashes,
+// each picked by pickChild. It returns nil if the path is empty or a key is not
+// written.
 func listValues(tree *jomini.Tree, statement int32, path string) []string {
 	if path == "" {
 		return nil
@@ -157,9 +161,11 @@ func listValues(tree *jomini.Tree, statement int32, path string) []string {
 	return values
 }
 
-// pickChild returns the child of a statement with the given key, or false if there is none. A key written
-// key[field=value] picks the child that writes the value at the field. Of several plain ones, such as a background
-// written for some cases and then for the rest, it picks the first with no trigger of its own, else the first.
+// pickChild returns the child of a statement with the given key, or false if
+// there is none. A key written key[field=value] picks the child that writes the
+// value at the field. Of several plain ones, such as a background written for
+// some cases and then for the rest, it picks the first with no trigger of its
+// own, else the first.
 func pickChild(tree *jomini.Tree, statement int32, key string) (int32, bool) {
 	key, selector, isSelected := strings.Cut(strings.TrimSuffix(key, "]"), "[")
 	field, value, _ := strings.Cut(selector, "=")

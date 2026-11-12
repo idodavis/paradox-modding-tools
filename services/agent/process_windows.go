@@ -1,4 +1,4 @@
-// process_windows.go holds an agent's programs in a job object, so that they all end together.
+// process_windows.go holds an agent's programs in a job object.
 
 package agent
 
@@ -10,24 +10,23 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// A group is a job object that holds an agent's program and every program it starts.
 type group struct {
 	job windows.Handle
 }
 
-// prepareCommand makes a command start with no console window of its own.
 func prepareCommand(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 }
 
-// startGroup starts a command in a new job object, which ends every program in it when it closes. The command joins
-// the job just after it starts, but an agent starts no program before its first message arrives. It returns an error
-// if the job cannot be made or the command cannot be started or joined.
+// startGroup starts a command in a new job object. The command joins the job
+// just after it starts, which is safe because an agent starts no program
+// before its first message.
 func startGroup(command *exec.Cmd) (group, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return group{}, err
 	}
+
 	limits := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE},
 	}
@@ -38,8 +37,10 @@ func startGroup(command *exec.Cmd) (group, error) {
 	}
 	if err != nil {
 		_ = windows.CloseHandle(job)
+
 		return group{}, err
 	}
+
 	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false,
 		uint32(command.Process.Pid))
 	if err == nil {
@@ -49,10 +50,11 @@ func startGroup(command *exec.Cmd) (group, error) {
 	if err != nil {
 		_ = command.Process.Kill()
 		_ = windows.CloseHandle(job)
+
 		return group{}, err
 	}
+
 	return group{job: job}, nil
 }
 
-// end ends every program in the group.
-func (group group) end() { _ = windows.CloseHandle(group.job) }
+func (g group) end() { _ = windows.CloseHandle(g.job) }

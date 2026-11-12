@@ -125,7 +125,7 @@ var Codes = []Code{
 		Label: "Missing value", Description: "A key with an operator and no value after it.",
 		Message: "This key has an operator and no value.",
 		Advice:  "Write the value after the operator, or delete the key."},
-	{ID: index.ProblemFollows, Question: QuestionHealth, Level: LevelError, Topic: "syntax",
+	{ID: schema.ProblemFollows, Question: QuestionHealth, Level: LevelError, Topic: "syntax",
 		Label: "An else with no if before it", Description: "An else that does not come right after an if.",
 		Message: "{name} must come right after {follows}.",
 		Advice:  "Move it right after the block it belongs to, or delete it."},
@@ -193,15 +193,15 @@ var Codes = []Code{
 		Label: "Unknown data function", Description: "A data function that its type does not have.",
 		Message: "{type} has no data function {name}.",
 		Advice:  "Fix the spelling, or use a function the type has."},
-	{ID: index.ProblemScope, Question: QuestionHealth, Level: LevelError, Topic: "values",
+	{ID: schema.ProblemScope, Question: QuestionHealth, Level: LevelError, Topic: "values",
 		Label: "Wrong scope", Description: "A key used in a scope where it does not work.",
 		Message: "{name} runs in {allowed}, not in {scope}.",
 		Advice:  "Move the line to a scope where it works, or switch to a scope that allows it first."},
-	{ID: index.ProblemValue, Question: QuestionHealth, Level: LevelError, Topic: "values",
+	{ID: schema.ProblemValue, Question: QuestionHealth, Level: LevelError, Topic: "values",
 		Label: "Wrong value", Description: "A value of another kind than its key takes.",
 		Message: "{name} takes {expected}.",
 		Advice:  "Write a value of the kind the key takes."},
-	{ID: index.ProblemDate, Question: QuestionHealth, Level: LevelError, Topic: "values",
+	{ID: schema.ProblemDate, Question: QuestionHealth, Level: LevelError, Topic: "values",
 		Label: "Impossible date", Description: "A date with a month or a day that does not exist.",
 		Message: "{name} is no date: a month runs from 1 to 12, and a day from 1 to 31.",
 		Advice:  "Write a real date as year.month.day."},
@@ -209,21 +209,21 @@ var Codes = []Code{
 		Label: "Missing key", Description: "A definition that leaves out a key it must write.",
 		Message: "The {database} {name} does not write {key}, which it must.",
 		Advice:  "Add the key to the entry."},
-	{ID: index.ProblemUnknownKey, Question: QuestionHealth, Level: LevelWarning, Topic: "values",
+	{ID: schema.ProblemUnknownKey, Question: QuestionHealth, Level: LevelWarning, Topic: "values",
 		Label: "Unknown key", Description: "A key that the block it is written in does not take.",
 		Message: "{name} is not a key a {database} takes here.",
 		Advice:  "Fix the spelling, or delete the key."},
-	{ID: index.ProblemArgument, Question: QuestionHealth, Level: LevelWarning, Topic: "values",
+	{ID: schema.ProblemArgument, Question: QuestionHealth, Level: LevelWarning, Topic: "values",
 		Label:       "Argument not read or not given",
 		Description: "A call and the definition it calls that disagree about an argument.",
 		Message:     "The argument {name} {why} {callee}.",
 		Advice:      "Fix the argument's spelling, or add or delete it so the call and the definition match."},
-	{ID: index.ProblemNamespace, Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
+	{ID: schema.ProblemNamespace, Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label:       "Wrong namespace",
 		Description: "An event whose name is not in a namespace its file declares.",
 		Message:     "The {database} {name} is not in a namespace this file declares ({namespace}).",
 		Advice:      "Declare the namespace at the top of the file, or rename the event to start with one the file declares."},
-	{ID: index.ProblemMode, Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
+	{ID: schema.ProblemMode, Question: QuestionHealth, Level: LevelCritical, Topic: "definitions",
 		Label:       "Misplaced entry mode",
 		Description: "An entry mode, such as REPLACE, where the game does not take one.",
 		Message:     "The {database} {name} cannot be written with {mode} here.",
@@ -521,7 +521,7 @@ func diagnoseDocument(ws *workspace.Session, mods *index.Index, place workspace.
 
 	for _, problem := range narrowed.ListProblems(ws.Schema, mods, document, ws.Languages(), ws.LoadTree) {
 		// what a wrong value must be is put in words here
-		if problem.Code == index.ProblemValue {
+		if problem.Code == schema.ProblemValue {
 			problem.Facts["expected"] = describeExpected(problem.Expected)
 		}
 
@@ -660,7 +660,7 @@ func diagnoseDescriptor(ws *workspace.Session, place workspace.Place, tree *jomi
 			span = jomini.Span{Start: key + value, End: key + value + len(descriptor.SupportedVersion)}
 		}
 	}
-	facts := index.DescribeReference(schema.Reference{Name: cmp.Or(descriptor.Name, "This mod")})
+	facts := schema.DescribeReference(schema.Reference{Name: cmp.Or(descriptor.Name, "This mod")})
 	facts["mod"], facts["supported"], facts["version"] = facts["name"], descriptor.SupportedVersion, version
 	return []Diagnostic{makeDiagnostic(tree, span, "supported-version", facts)}
 }

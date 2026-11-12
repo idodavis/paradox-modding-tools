@@ -15,103 +15,104 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * AddPreview adds a picture or a video to the gallery of one of a mod's listings. It returns an error if the preview's
- * type is unknown, the mod has no such listing, or the gallery has the preview already.
+ * AddPreview adds a picture or a video to a listing's gallery. It returns an
+ * error if the type is unknown or the gallery has the preview already.
  */
 export function AddPreview(modID: string, key: string, preview: $models.Preview): $CancellablePromise<void> {
     return $Call.ByID(3467365419, modID, key, preview);
 }
 
 /**
- * CompareFile returns one file as Steam has it and as the upload sends it, "" for a missing side. It returns an error
- * if there is no such mod or listing, PMT has no snapshot of the item, or a file cannot be read.
+ * CompareFile returns one file as Steam has it and as the upload sends it, ""
+ * for a missing side.
  */
 export function CompareFile(modID: string, key: string, rel: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(2982231799, modID, key, rel);
 }
 
 /**
- * CompareUpload compares the next upload of a mod's listing with what Steam has. It returns an error if there is no
- * such mod or listing, or a file cannot be read.
+ * CompareUpload compares the next upload of a mod's listing with what Steam
+ * has.
  */
 export function CompareUpload(modID: string, key: string): $CancellablePromise<$models.Comparison> {
     return $Call.ByID(2248433080, modID, key);
 }
 
 /**
- * CreateListing makes an older listing of a mod for a game version from a zip. It returns an error if the version is
- * not valid or taken, or the zip holds no descriptor.
+ * CreateListing makes an older listing of a mod for a game version from a zip.
+ * It returns an error if the version is invalid or taken.
  */
 export function CreateListing(modID: string, supportedVersion: string, zipPath: string): $CancellablePromise<$models.Listing> {
     return $Call.ByID(4079047830, modID, supportedVersion, zipPath);
 }
 
 /**
- * DescribeSteam returns why Steam cannot take an upload for the open workspace's game now, or "" if it can.
+ * DescribeSteam returns why Steam cannot take an upload for the workspace's
+ * game now, or "" if it can.
  */
 export function DescribeSteam(): $CancellablePromise<string> {
     return $Call.ByID(1376412513);
 }
 
 /**
- * ExportDescription writes a listing's description, in the BBCode or Markdown the page made of it, to the given file,
- * which may be anywhere. It returns an error if the file cannot be written.
+ * ExportDescription writes a listing's description to a file, which may be
+ * anywhere.
  */
 export function ExportDescription(target: string, text: string): $CancellablePromise<void> {
     return $Call.ByID(1320959106, target, text);
 }
 
 /**
- * FetchItem asks Steam again about the Workshop item of one of a mod's listings and returns the comparison. It returns
- * an error as CompareUpload does.
+ * FetchItem asks Steam again about a listing's Workshop item and returns the
+ * comparison.
  */
 export function FetchItem(modID: string, key: string): $CancellablePromise<$models.Comparison> {
     return $Call.ByID(3415381133, modID, key);
 }
 
 /**
- * FetchPreviews copies the gallery of a listing's Workshop item into the listing, adding what it lacks. It returns an
- * error if the listing has no item, Steam cannot be asked or a download fails.
+ * FetchPreviews copies the gallery of a listing's Workshop item into the
+ * listing, adding what it lacks. It returns an error if the listing has no
+ * item.
  */
 export function FetchPreviews(modID: string, key: string): $CancellablePromise<void> {
     return $Call.ByID(502807331, modID, key);
 }
 
 /**
- * ImportListing makes an older listing of a mod from a Workshop item, saving its files as a zip. It returns an error
- * if Steam has no such item or its version is taken.
+ * ImportListing makes an older listing of a mod from a Workshop item, saving
+ * its files as a zip. It returns an error if the item's version is taken.
  */
 export function ImportListing(modID: string, item: string, zipPath: string): $CancellablePromise<$models.Listing> {
     return $Call.ByID(3769493145, modID, item, zipPath);
 }
 
 /**
- * LinkItem links a mod's listing to a Workshop item, or unlinks it for "". It returns an error if the text names no
- * item.
+ * LinkItem links a mod's listing to a Workshop item, or unlinks it for "".
  */
 export function LinkItem(modID: string, key: string, item: string): $CancellablePromise<void> {
     return $Call.ByID(3880710777, modID, key, item);
 }
 
 /**
- * ListChangeNotes returns drafts of the next change note, from git and from the changelog file. It returns an error
- * if there is no such mod or listing, git fails, or a file cannot be read.
+ * ListChangeNotes returns the drafts of the next change note, from git and from
+ * the changelog file. It returns an error if git fails or a file is unreadable.
  */
 export function ListChangeNotes(modID: string, key: string): $CancellablePromise<$models.ChangeNote[] | null> {
     return $Call.ByID(3956444119, modID, key);
 }
 
 /**
- * ListDLC returns the DLCs of the open workspace's install that have a Steam id. It returns an error if no workspace is
- * open or a descriptor cannot be read.
+ * ListDLC returns the DLCs of the open workspace's install that have a Steam
+ * id. It returns an error if a descriptor cannot be read.
  */
 export function ListDLC(): $CancellablePromise<$models.DLC[] | null> {
     return $Call.ByID(2231577319);
 }
 
 /**
- * ListListings returns a mod's listings, its own first and then the older ones, newest game version first. It returns
- * an error if the workspace has no such mod or a listing cannot be read.
+ * ListListings returns a mod's listings, its own first and then the older ones,
+ * newest game version first.
  */
 export function ListListings(modID: string): $CancellablePromise<$models.Listing[] | null> {
     return $Call.ByID(238800551, modID);
@@ -125,78 +126,77 @@ export function ListRules(): $CancellablePromise<$models.Rule[] | null> {
 }
 
 /**
- * ListTags returns the Workshop tags a listing of the game may carry. It returns an error if no workspace is open, or
- * the fetch fails with no tags kept.
+ * ListTags returns the Workshop tags a listing of the game may carry. It falls
+ * back to the tags kept in the cache when the fetch fails.
  */
 export function ListTags(): $CancellablePromise<$models.Tags> {
     return $Call.ByID(1665772319);
 }
 
 /**
- * ListUpload returns the files the next upload of a mod's listing sends and leaves out. It returns an error if there
- * is no such mod or listing, or a file cannot be read.
+ * ListUpload returns the files the next upload sends and leaves out.
  */
 export function ListUpload(modID: string, key: string): $CancellablePromise<$models.Upload> {
     return $Call.ByID(2971639899, modID, key);
 }
 
 /**
- * Publish uploads a mod's listing to the Workshop. An empty visibility keeps the item's own. It returns an error if
- * the upload fails or is canceled.
+ * Publish uploads a mod's listing to the Workshop. An empty visibility keeps
+ * the item's own.
  */
 export function Publish(modID: string, key: string, visibility: string): $CancellablePromise<void> {
     return $Call.ByID(2971821953, modID, key, visibility);
 }
 
 /**
- * ReadIgnore returns the text of the .workshop-ignore file in a mod's folder, or "" if there is none.
+ * ReadIgnore returns the text of a mod's .workshop-ignore file, or "" if there
+ * is none.
  */
 export function ReadIgnore(modID: string): $CancellablePromise<string> {
     return $Call.ByID(4047341220, modID);
 }
 
 /**
- * ReadListing returns one of a mod's listings. It returns an error if the workspace has no such mod or listing, or a
- * file cannot be read.
+ * ReadListing returns one of a mod's listings.
  */
 export function ReadListing(modID: string, key: string): $CancellablePromise<$models.Listing> {
     return $Call.ByID(1516292290, modID, key);
 }
 
 /**
- * RemovePreview removes a picture or a video from the gallery of one of a mod's listings. It returns an error if the
- * preview's type is unknown, the mod has no such listing, or the gallery does not have the preview.
+ * RemovePreview removes a picture or a video from a listing's gallery. It
+ * returns an error if the type is unknown or the gallery lacks the preview.
  */
 export function RemovePreview(modID: string, key: string, preview: $models.Preview): $CancellablePromise<void> {
     return $Call.ByID(3457834658, modID, key, preview);
 }
 
 /**
- * ToBBCode returns the visual editor's HTML as Steam's BBCode. A tag typed as text is kept in noparse, so Steam shows
- * it as written. It returns "" if the HTML cannot be read.
+ * ToBBCode returns the editor's HTML as Steam's BBCode, keeping a tag typed as
+ * text in noparse. It returns "" if the HTML cannot be read.
  */
 export function ToBBCode(markup: string): $CancellablePromise<string> {
     return $Call.ByID(4261456446, markup);
 }
 
 /**
- * ToHTML returns BBCode as the HTML Steam draws it as. Only Steam's tags become elements, and a link only to a web
- * page. BBCode that ToBBCode wrote comes back as the HTML it came from.
+ * ToHTML returns BBCode as the HTML Steam draws it as. A link is drawn only to
+ * a web page.
  */
 export function ToHTML(bbcode: string): $CancellablePromise<string> {
     return $Call.ByID(1647860818, bbcode);
 }
 
 /**
- * WriteIgnore writes a mod's upload exclusions to the .workshop-ignore file in its folder.
+ * WriteIgnore writes a mod's own exclusions to its .workshop-ignore file.
  */
 export function WriteIgnore(modID: string): $CancellablePromise<void> {
     return $Call.ByID(346436595, modID);
 }
 
 /**
- * WriteListing writes the changed parts of a mod's listing, but its gallery and Workshop id. It returns an error if
- * there is no such mod or listing, or a file cannot be written.
+ * WriteListing writes the changed parts of a mod's listing, but not its gallery
+ * or Workshop id.
  */
 export function WriteListing(modID: string, key: string, listing: $models.Listing): $CancellablePromise<void> {
     return $Call.ByID(4064273359, modID, key, listing);

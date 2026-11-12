@@ -1,5 +1,4 @@
-// lexicon.go builds the lexicon of a class of script commands, each with
-// places the files write it.
+// lexicon.go builds the rows of the script command lexicon.
 
 package wiki
 
@@ -10,8 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samber/lo"
-
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/schema"
@@ -19,58 +16,67 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A LexiconRow is one effect, trigger, link, scope or data function the
-// game's dumps declare, or one scripted effect or trigger. Its examples are
-// the first uses the index finds; a data function's are the first places the
-// game's own files call it, as the schema keeps them.
+// LexiconRow is one effect, trigger, link, scope or data function the dumps
+// declare, or one scripted effect or trigger.
 type LexiconRow struct {
-	Class    string     `json:"class"` // effect, trigger, link, scope, function
-	Name     string     `json:"name"`
-	Blurb    string     `json:"blurb"`
-	Usage    string     `json:"usage"`
-	Scopes   []string   `json:"scopes,omitempty"`
-	Target   string     `json:"target,omitempty"`
+	Class  string   `json:"class"`
+	Name   string   `json:"name"`
+	Blurb  string   `json:"blurb"`
+	Usage  string   `json:"usage"`
+	Scopes []string `json:"scopes,omitempty"`
+	Target string   `json:"target,omitempty"`
+
+	// Examples are the first uses the index finds, or for a data function the
+	// first calls in the game's files.
 	Examples []lsp.Site `json:"examples"`
-	Defined  *lsp.Site  `json:"defined,omitempty"` // where the game's copy of a scripted effect or trigger is; nil for what the dumps declare
+
+	// Defined is where the game's copy of a scripted effect or trigger is. It
+	// is nil for what the dumps declare.
+	Defined *lsp.Site `json:"defined,omitempty"`
 }
 
-// ListClasses returns the lexicon's classes, in the order its tabs show them.
-func (wik *Service) ListClasses() []lsp.Class { return lsp.Classes }
+// ListClasses returns the lexicon's classes in the order its tabs show them.
+func (s *Service) ListClasses() []lsp.Class { return lsp.Classes }
 
-// BuildLexicon returns the rows of the given class (effect, trigger, link,
-// scope or function), sorted by name. Effects and triggers include the
-// scripted ones. It returns an error if no workspace is open or the class is
-// unknown.
-func (wik *Service) BuildLexicon(class string) ([]LexiconRow, error) {
-	ws, err := wik.Workspace.Session()
+// BuildLexicon returns the rows of a class, sorted by name, scripted effects
+// and triggers included. It returns an error if no workspace is open or the
+// class is unknown.
+func (s *Service) BuildLexicon(class string) ([]LexiconRow, error) {
+	ws, err := s.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
 
 	mods := ws.Mods.Load()
-	wik.mu.Lock()
-	defer wik.mu.Unlock()
-	if wik.mods != mods {
-		wik.lexicon, wik.mods = map[string][]LexiconRow{}, mods
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.mods != mods {
+		s.lexicon, s.mods = map[string][]LexiconRow{}, mods
 	}
 
-	if rows, ok := wik.lexicon[class]; ok {
+	if rows, ok := s.lexicon[class]; ok {
 		return rows, nil
 	}
 
 	rows, err := buildLexicon(ws, mods, class)
 	if err == nil {
-		wik.lexicon[class] = rows
+		s.lexicon[class] = rows
 	}
 
 	return rows, err
 }
 
-// buildLexicon builds the rows of the class with the given id. It returns an
-// error if the id is not a lexicon class.
 func buildLexicon(ws *workspace.Session, mods *index.Index, id string) ([]LexiconRow, error) {
 	var rows []LexiconRow
-	class, _ := lo.Find(lsp.Classes, func(class lsp.Class) bool { return class.ID == id })
+	var class lsp.Class
+	for _, candidate := range lsp.Classes {
+		if candidate.ID == id {
+			class = candidate
+
+			break
+		}
+	}
+
 	switch {
 	case class.Database != "":
 		for _, key := range ws.Schema.ListKeys(class.Database) {
@@ -109,26 +115,21 @@ func buildLexicon(ws *workspace.Session, mods *index.Index, id string) ([]Lexico
 	return rows, nil
 }
 
-// listExamples returns the first places the index finds a name of a database
-// used, up to schema.ExampleCount.
+// listExamples returns the first uses of a name in the index, up to
+// schema.ExampleCount.
 func listExamples(ws *workspace.Session, mods *index.Index, database, name string) []lsp.Site {
 	uses := mods.ListUses(database, name)
+	uses = uses[:min(len(uses), schema.ExampleCount)]
+	sites := make([]lsp.Site, len(uses))
+	for position, use := range uses {
+		sites[position] = lsp.MakeSite(ws, mods, use)
+	}
 
-	return lo.Map(uses[:min(len(uses), schema.ExampleCount)], func(use index.Site, _ int) lsp.Site {
-		return lsp.MakeSite(ws, mods, use)
-	})
+	return sites
 }
 
-// toExamples turns the schema's examples into sites, with lines counted from
-// one.
-func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Example) []lsp.Site {
-	return lo.Map(examples, func(example schema.Example, _ int) lsp.Site {
-		return lsp.Site{Place: ws.Locate(mods, example.Path), Line: example.Line + 1}
-	})
-}
-
-// listScripted returns a row for each scripted definition the game keeps
-// that acts as a command of the given class.
+// listScripted returns a row for each scripted definition that acts as a
+// command of a class.
 func listScripted(ws *workspace.Session, mods *index.Index, class lsp.Class) []LexiconRow {
 	var rows []LexiconRow
 	for _, database := range game.Called {
@@ -145,9 +146,8 @@ func listScripted(ws *workspace.Session, mods *index.Index, class lsp.Class) []L
 	return rows
 }
 
-// makeScripted returns the lexicon row of a scripted definition, with where
-// the game's copy is defined and the first places that use it. Its usage is
-// "" if the definition reads no parameter.
+// makeScripted returns the row of a scripted definition. Its usage is "" when
+// the definition reads no parameter.
 func makeScripted(ws *workspace.Session, mods *index.Index, class string, reference schema.Reference, kept index.Site) LexiconRow {
 	usage := ""
 	if tree, statement, err := ws.FindStatement(mods, kept); err == nil {
@@ -169,4 +169,14 @@ func makeScripted(ws *workspace.Session, mods *index.Index, class string, refere
 		Class: class, Name: reference.Name, Usage: usage, Defined: &defined,
 		Examples: listExamples(ws, mods, reference.Database, reference.Name),
 	}
+}
+
+// toExamples turns the schema's examples into sites, counting lines from one.
+func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Example) []lsp.Site {
+	sites := make([]lsp.Site, len(examples))
+	for position, example := range examples {
+		sites[position] = lsp.Site{Place: ws.Locate(mods, example.Path), Line: example.Line + 1}
+	}
+
+	return sites
 }

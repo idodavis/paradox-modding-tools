@@ -417,7 +417,7 @@ func (c *collector) collect(tree *jomini.Tree, file files.File) []Occurrence {
 	list := contextPool.Get().(*[]schema.Context)
 	defer contextPool.Put(list)
 
-	contexts := c.schema.Walk(tree, file, *list)
+	contexts, _ := c.schema.Walk(tree, file, *list)
 	*list = contexts
 	c.holders, c.texts = make([]int32, len(contexts)), map[int32][2]int32{}
 

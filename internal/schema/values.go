@@ -1,6 +1,4 @@
-// values.go reads the value of a statement: what it refers to, by its class,
-// by what its field claims, by where it is written, and as a formula's
-// number. It also gives each reference its verdict.
+// values.go reads what a statement's value refers to.
 
 package schema
 
@@ -15,13 +13,8 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// lookupValue resolves what the value of a scalar statement refers to, and
-// gives the value its color category. A parameter refers to nothing, a
-// constant to itself and the constants it uses, and a data call to what its
-// arguments name. Any other value refers to the names listNames finds, unless
-// it holds a parameter or a bracket, or is a name the statement saves or
-// reads back. A value that refers to nothing and is a chain of links is a
-// link, but never a yes or a no.
+// lookupValue records what the value of a scalar statement refers to, and its
+// category. A chain of links that refers to nothing is a link, never yes or no.
 func (w *walker) lookupValue(context *Context, statement int32, level int) {
 	current := w.tree.Statements[statement]
 	if current.IsBlock() || current.Value.IsEmpty() {
@@ -74,17 +67,15 @@ func (w *walker) lookupValue(context *Context, statement int32, level int) {
 	}
 }
 
-// isChoice reports whether a value is one of the choices that the field of a
-// context takes.
 func (w *walker) isChoice(context *Context, text string) bool {
 	field := context.Field
 
 	return field != nil && field.Value.Value.Type == ValueTypeChoice && w.schema.MatchValue(field.Value.Value, text)
 }
 
-// isSavedName reports whether the value written at a span is a name of one
-// of game.Links that its statement saves or reads back, such as a flag. Such
-// a name names nothing else, even where it is shaped like an event id.
+// isSavedName reports whether the value in the span is a name its statement
+// saves or reads back, such as a flag. It names nothing else, even if it looks
+// like an event id.
 func isSavedName(context *Context, span jomini.Span) bool {
 	if context.Defines && context.Definition.Span == span && slices.Contains(game.Links, context.Definition.Database) {
 		return true
@@ -95,27 +86,22 @@ func isSavedName(context *Context, span jomini.Span) bool {
 	})
 }
 
-// listNames returns the references a plain value makes, in this order: a
-// name of each database its field claims, of its keyword's database, of the
-// database its place names and of the one its block's shape gives a text; an
-// event where it is shaped
-// like an event id; a script value; and the names after its links' prefixes.
-// A math keyword's value that is a command's name with an argument in
-// parentheses makes the references of its argument alone.
+// listNames returns the references a plain value makes to the databases its
+// field, keyword, place and block give it, to an event or script value, and
+// after link prefixes.
 func (w *walker) listNames(context *Context, statement int32, level int, span jomini.Span) []Reference {
 	current := w.tree.Statements[statement]
 	text, class := w.tree.Text(span), current.ValueClass
 
 	// a math keyword's value such as opinion(scope:ruler) stands for the
-	// command's number, so its argument makes the references
+	// command's number, so only its argument makes references
 	if step, command, ok := w.schema.findKeyCall(text, span.Start); ok && context.isMath() {
 		return w.listArgumentReferences(command, command.Field, step.Arguments[0])
 	}
 
 	claim, databases := w.listClaimed(context, text)
 
-	// a switch's trigger may be a trigger's name, as has_culture is, or a
-	// link
+	// a switch's trigger may be a trigger such as has_culture, or a link
 	if keyword := context.Keyword; keyword != nil && keyword.Names != "" && w.schema.LookupDefinition(keyword.Names, text) != nil {
 		databases = append(databases, keyword.Names)
 	}
@@ -130,16 +116,14 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 		databases = append(databases, database)
 	}
 
-	// a value shaped like an event id names an event where its field claims
-	// events, and where its field claims nothing and an events file declares
-	// its namespace
+	// an event id names an event if its field claims events, or nothing and
+	// an events file declares its namespace
 	if w.schema.Events != "" && w.file.Format == files.FormatScript && class == jomini.ClassEventID &&
 		(claim == w.schema.Events || claim == "" && w.hasNamespace(text)) {
 		databases = append(databases, w.schema.Events)
 	}
 
-	// the claim is inferred if it rests on the game's own files and no other
-	// rule makes it
+	// the claim is inferred if no rule but the game's files makes it
 	inferred := claim != "" && !context.Field.Value.Source.CanAccuse() && !slices.Contains(databases[1:], claim)
 	var references []Reference
 	for position, database := range databases {
@@ -167,17 +151,14 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 	return append(references, w.listPrefixed(text, span.Start)...)
 }
 
-// isMath reports whether the statement's key is a math keyword, such as
-// value or add, whose value is a number.
+// isMath reports whether the statement's key is a math keyword, such as add.
 func (c *Context) isMath() bool {
 	return c.Keyword != nil && c.Keyword.Class == game.KeywordClassMath
 }
 
-// listArgumentReferences returns the references that the argument in
-// parentheses after a command's name makes. The argument fills the command's
-// ArgumentKey, one of the given keys the command takes. Where that key takes
-// a name from a database, the argument is such a name, unless it is a link.
-// Any other argument is read as a chain of links.
+// listArgumentReferences returns the references the argument in parentheses
+// after a command's name makes. It fills the command's ArgumentKey, so it
+// names an entry of that key's database unless it is a link.
 func (w *walker) listArgumentReferences(command *Definition, arguments *Field, argument jomini.Argument) []Reference {
 	field := arguments.findChild(command.ArgumentKey)
 	if field != nil && field.Value.Value.Type == ValueTypeReference && field.Value.Value.Database != "" &&
@@ -191,14 +172,11 @@ func (w *walker) listArgumentReferences(command *Definition, arguments *Field, a
 	return w.listPrefixed(argument.Text, argument.Span.Start)
 }
 
-// listClaimed returns the database that a value's field claims it names, and
-// that database with the ones nested in it where the field says so, as a
-// dialect is nested in its language. It returns "" and nil if the field
-// claims none or the value is a link, even one written with an argument in
-// parentheses. A link key's field is its holder's, so it claims nothing for
-// the link's value. A text key may open as a link, as CK3's
-// great_holy_war.0051.generic.start.tt does, so where a text key is claimed
-// only a value whose every step is a link is one.
+// listClaimed returns the database a value's field claims it names, with the
+// ones nested in it if the field says so. It returns "" and nil if the field
+// claims none, or the key or the value is a link. A text key may open like a
+// link, as CK3's great_holy_war.0051.generic.start.tt does, so there only a
+// chain of links is one.
 func (w *walker) listClaimed(context *Context, text string) (string, []string) {
 	field := context.Field
 	if !field.claimsDatabase() || context.Category == CategoryLink {
@@ -220,15 +198,11 @@ func (w *walker) listClaimed(context *Context, text string) (string, []string) {
 	return claim, databases
 }
 
-// findScriptValue returns the reference a value of the given class makes to
-// a script value: the last step of a chain of links, a math keyword's value,
-// or the value of a field that takes a script value. It returns false if the
-// value makes none: a number, a command, a link, yes or no, a plain name
-// written in quotes, which is text, and a math keyword's value in a formula
-// that picks something other than a number. The reference is inferred where
-// only the field makes it and the field learned so from the game's own
-// files. A link key's field is its holder's, so it gives the link's value
-// none.
+// findScriptValue returns the reference a value makes to a script value: the
+// last step of a chain of links, a math keyword's value, or the value of a
+// field that takes one. It returns false for a number, a command, a link, yes,
+// no and a plain name in quotes, which is text. The reference is inferred if
+// only the field makes it from the game's files.
 func (w *walker) findScriptValue(context *Context, span jomini.Span, class jomini.Class, quoted bool) (Reference, bool) {
 	links := jomini.Links(w.tree.Text(span), span.Start)
 	tail := links[len(links)-1].Span
@@ -253,9 +227,8 @@ func (w *walker) findScriptValue(context *Context, span jomini.Span, class jomin
 }
 
 // findFormula returns the context of the key that opens the formula a
-// statement is written in: the nearest block around it that is no math
-// keyword's, no enclosing keyword's, no link's and no list's, each of which
-// holds the formula's math again.
+// statement is in: the nearest block around it that is no math keyword's,
+// enclosing keyword's, link's or list's.
 func findFormula(context *Context) *Context {
 	opener := context.Parent
 	for opener.Parent != nil {
@@ -272,10 +245,9 @@ func findFormula(context *Context) *Context {
 	return opener
 }
 
-// takesNumber reports whether the key that opens a formula takes a number.
-// It does unless a source that can accuse says its value is something else,
-// as EU5's docs say a situation's secondary_map_color is a color: there the
-// same if, else and value pick a color, and a value names no script value.
+// takesNumber reports whether the key that opens a formula takes a number,
+// unless a firm source says otherwise, as EU5's docs do for a situation's
+// secondary_map_color.
 func (w *walker) takesNumber(opener *Context) bool {
 	if opener.Field == nil || !opener.Field.Value.Source.CanAccuse() {
 		return true
@@ -291,12 +263,10 @@ func (w *walker) takesNumber(opener *Context) bool {
 	return false
 }
 
-// findPlace returns the database that a statement's value names by the place
-// it is written in, and the folder of a file it names with no folder of its
-// own. The place is a row of the game's references, a step of its event
-// pictures, an alias key of the statement's database, or a key of a coat of
-// arms, tried in that order. A value with a slash names no picture step's
-// database. It returns false if the place names no database.
+// findPlace returns the database a statement's value names by where it is
+// written, and the folder of a file it names with no folder of its own. Rows
+// of references, event picture steps, aliases and coat of arms keys are tried
+// in that order. It returns false if the place names none.
 func (w *walker) findPlace(context *Context, statement int32, level int, text string) (string, string, bool) {
 	key := w.frames[level].label
 	keys := w.frames[level-1].path
@@ -336,11 +306,8 @@ func (w *walker) findPlace(context *Context, statement int32, level int, text st
 	return w.findCoatDatabase(statement, level, text)
 }
 
-// findCoatDatabase returns the database that a statement's value names in a
-// coat of arms, and the folder of the image it names: a template list after
-// a list tag, a named color at a color slot unless it names a slot, and an
-// image at a pattern key or at the texture key of an emblem. It returns
-// false anywhere else.
+// findCoatDatabase returns the database a statement's value names in a coat of
+// arms, and the folder of its image. It returns false anywhere else.
 func (w *walker) findCoatDatabase(statement int32, level int, text string) (string, string, bool) {
 	if w.database == nil || w.database.Name != game.Coat.Database {
 		return "", "", false
@@ -364,11 +331,10 @@ func (w *walker) findCoatDatabase(statement int32, level int, text string) (stri
 	return "", "", false
 }
 
-// findPictureDatabase returns the database whose definition a value names as
-// one step of the game's event pictures, given the database the value is
-// written in and the keys that lead to it. A step that picks its block by a
-// field, or matches the value elsewhere than in a name, names none here. It
-// returns false if no step reads the value.
+// findPictureDatabase returns the database a value names as one step of the
+// game's event pictures, given the database it is written in and the keys
+// that lead to it. Steps that pick a block by a field or match the value
+// elsewhere than in a name are skipped. It returns false for none.
 func (w *walker) findPictureDatabase(database string, keys []string) (string, bool) {
 	for _, chain := range w.row.Events.Picture.Chains {
 		start := w.schema.Events
@@ -385,16 +351,14 @@ func (w *walker) findPictureDatabase(database string, keys []string) (string, bo
 	return "", false
 }
 
-// hasNamespace reports whether an events file of the game or of the
-// workspace's mods declares the namespace of an event id.
+// hasNamespace reports whether an events file declares the namespace of an
+// event id.
 func (w *walker) hasNamespace(id string) bool {
 	namespace, _, _ := strings.Cut(id, ".")
 
 	return w.schema.lookupScripted(w.winners, game.EventNamespaces, namespace) != nil
 }
 
-// allowsUndefined reports whether a reference to the given database needs
-// no entry there, as its row says.
 func (w *walker) allowsUndefined(label string) bool {
 	database := w.schema.Databases[label]
 
@@ -402,10 +366,8 @@ func (w *walker) allowsUndefined(label string) bool {
 }
 
 // listPrefixed returns the references a chain of links makes after prefixes
-// that have a database. A name that is itself a chain of links, as
-// scope:overlord is in relations:scope:overlord, makes the references of its
-// own prefixes. A name a script saves is the name itself, whatever a link is
-// called.
+// that have a database. A name that is itself a chain, as scope:overlord is in
+// relations:scope:overlord, makes its own.
 func (w *walker) listPrefixed(chain string, base int) []Reference {
 	var references []Reference
 	for _, link := range jomini.Links(chain, base) {
@@ -426,8 +388,8 @@ func (w *walker) listPrefixed(chain string, base int) []Reference {
 	return references
 }
 
-// listLabelReferences returns the references a prefixed link's label makes,
-// such as the group NAI and the define NAI|X for define:NAI|X.
+// listLabelReferences returns the references a prefixed link's label makes: for
+// define:NAI|X, the group NAI and the define NAI|X.
 func (w *walker) listLabelReferences(database, label string, start int) []Reference {
 	owner := w.schema.Databases[database]
 	if owner == nil || owner.Declaration.Separator == "" {
@@ -452,19 +414,77 @@ func (w *walker) listLabelReferences(database, label string, start int) []Refere
 	return references
 }
 
-// judge gives each of the given references its verdict: Inferred is set for
-// one that is never an error, whatever the name. That is a reference to no
-// database or to a database of names script saves, such as a scope or a
-// variable; a call through any caller or as a GUI tag; and a name with a
-// prefix or a parameter in it.
+// judgeValue records a value that is not the type its key takes, if a firm
+// source states the type and every value the game's files write fits it.
+func (w *walker) judgeValue(context *Context, statement int32) {
+	field, current := context.Field, w.tree.Statements[statement]
+	eligible := context.Category == CategoryField || context.Category == CategoryReference ||
+		context.Category == CategoryCommand
+	if !eligible || field == nil || !field.Value.IsStated() || !field.Value.Source.CanAccuse() || current.IsBlock() ||
+		current.Value.IsEmpty() || context.ValueGroup == CategoryReference {
+		return
+	}
+
+	expected, text := field.Value.Value, w.tree.Text(current.Value)
+	if expected.Database == game.File || expected.Type == ValueTypeText || expected.Type == ValueTypeBlock {
+		return
+	}
+
+	// the game reads a script value, or a trigger that returns a number,
+	// where a number is expected
+	if expected.Type == ValueTypeNumber && current.ValueClass.IsIdentifier() || strings.ContainsAny(text, "[$@") ||
+		w.schema.MatchValue(expected, text) {
+		return
+	}
+
+	for value := range field.Vanilla.Values {
+		if !w.schema.MatchValue(expected, value) {
+			return
+		}
+	}
+
+	w.problems = append(w.problems, Problem{
+		Code: ProblemValue, Span: current.Value, Expected: expected,
+		Facts: DescribeReference(Reference{Name: w.tree.Unquoted(current.Key)}),
+	})
+}
+
+// judgeDate records a date the game cannot have, in a key or in the value of a
+// field a firm source says takes a date.
+func (w *walker) judgeDate(context *Context, statement int32) {
+	current := w.tree.Statements[statement]
+	spans := make([]jomini.Span, 0, 2)
+	if current.KeyClass == jomini.ClassDate {
+		spans = append(spans, current.Key)
+	}
+
+	field := context.Field
+	if field != nil && !current.IsBlock() && field.Value.Value.Type == ValueTypeDate && field.Value.Source.CanAccuse() {
+		spans = append(spans, current.Value)
+	}
+
+	for _, span := range spans {
+		if date, ok := jomini.ParseDate(w.tree.Unquoted(span)); ok && !date.IsValid() {
+			w.record(ProblemDate, span, DescribeReference(Reference{Name: w.tree.Unquoted(span)}))
+		}
+	}
+}
+
+// judge sets Inferred on each reference that is never an error, such as one
+// to names script saves, or a name with a prefix or a parameter in it.
 func judge(references []Reference) {
 	for position := range references {
 		reference := &references[position]
-		prefixed := slices.ContainsFunc(jomini.Links(reference.Name, 0), func(link jomini.Link) bool {
-			return !link.Prefix.IsEmpty()
-		})
 		reference.Inferred = reference.Inferred || reference.Database == "" || slices.Contains(game.Links, reference.Database) ||
-			reference.Caller == game.AnyCall || reference.Caller == game.GUI.TagCalls || prefixed ||
+			reference.Caller == game.AnyCall || reference.Caller == game.GUI.TagCalls || hasPrefix(reference.Name) ||
 			strings.Contains(reference.Name, "$")
 	}
+}
+
+// hasPrefix reports whether a chain writes a link with a name after a colon,
+// also inside a link's parentheses.
+func hasPrefix(chain string) bool {
+	return slices.ContainsFunc(jomini.Links(chain, 0), func(link jomini.Link) bool {
+		return !link.Prefix.IsEmpty() || !link.Argument.IsEmpty() && hasPrefix(chain[link.Argument.Start:link.Argument.End])
+	})
 }

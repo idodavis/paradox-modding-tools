@@ -1,5 +1,6 @@
-// ignored.go adds and removes the pairs of mods whose conflicts the open workspace ignores, and lists a finding for
-// each pair. It also lists the mods the compatibility checks judge: all but those the workspace leaves out.
+// ignored.go adds and removes the pairs of mods whose conflicts the open
+// workspace ignores, and lists a finding for each pair. It also lists the mods
+// the compatibility checks judge: all but those the workspace leaves out.
 
 package health
 
@@ -16,8 +17,9 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// AddIgnoredPair makes the open workspace ignore the conflicts between two of its mods. It returns an error if they
-// are not two mods of the workspace, or the config cannot be saved.
+// AddIgnoredPair makes the open workspace ignore the conflicts between two of
+// its mods. It returns an error if they are not two mods of the workspace, or
+// the config cannot be saved.
 func (hlt *Service) AddIgnoredPair(first, second string) error {
 	return hlt.updatePairs(first, second, func(pairs [][2]string, pair [2]string) ([][2]string, error) {
 		if slices.Contains(pairs, pair) {
@@ -27,8 +29,9 @@ func (hlt *Service) AddIgnoredPair(first, second string) error {
 	})
 }
 
-// RemoveIgnoredPair makes the open workspace show the conflicts between two of its mods again. It returns an error if
-// they are not two mods of the workspace, the pair is not ignored, or the config cannot be saved.
+// RemoveIgnoredPair makes the open workspace show the conflicts between two of
+// its mods again. It returns an error if they are not two mods of the
+// workspace, the pair is not ignored, or the config cannot be saved.
 func (hlt *Service) RemoveIgnoredPair(first, second string) error {
 	return hlt.updatePairs(first, second, func(pairs [][2]string, pair [2]string) ([][2]string, error) {
 		if !slices.Contains(pairs, pair) {
@@ -38,8 +41,9 @@ func (hlt *Service) RemoveIgnoredPair(first, second string) error {
 	})
 }
 
-// updatePairs changes the ignored pairs in the open workspace's record. It returns an error if the mods are not two of
-// the workspace's, or the change or the save fails.
+// updatePairs changes the ignored pairs in the open workspace's record. It
+// returns an error if the mods are not two of the workspace's, or the change or
+// the save fails.
 func (hlt *Service) updatePairs(first, second string, change func(pairs [][2]string, pair [2]string) ([][2]string, error)) error {
 	ws, err := hlt.Workspace.Session()
 	if err != nil {
@@ -61,15 +65,16 @@ func (hlt *Service) updatePairs(first, second string, change func(pairs [][2]str
 	})
 }
 
-// listChecked returns the mods of a load order that the compatibility checks judge: all but those the workspace leaves
-// out.
+// listChecked returns the mods of a load order that the compatibility checks
+// judge: all but those the workspace leaves out.
 func listChecked(order []string, record app.Workspace) []string {
 	leftOut := lo.FilterMap(record.Mods, func(mod app.Mod, _ int) (string, bool) { return mod.ID, mod.LeftOut })
 	return lo.Without(order, leftOut...)
 }
 
-// listPairFindings lists a finding for each ignored pair whose mods are both in the workspace. It counts the contests
-// and the shared localization keys between the two.
+// listPairFindings lists a finding for each ignored pair whose mods are both in
+// the workspace. It counts the contests and the shared localization keys
+// between the two.
 func listPairFindings(ws *workspace.Session, mods *index.Index, findings []Finding, pairs [][2]string) []Finding {
 	var pairFindings []Finding
 	for _, pair := range pairs {
@@ -81,7 +86,7 @@ func listPairFindings(ws *workspace.Session, mods *index.Index, findings []Findi
 			ids = ordered
 		}
 		count := lo.CountBy(findings, func(finding Finding) bool { return slices.Contains(finding.Pairs, [2]string(ids)) })
-		facts := index.DescribeReference(schema.Reference{Name: ws.DescribeMod(ids[0])})
+		facts := schema.DescribeReference(schema.Reference{Name: ws.DescribeMod(ids[0])})
 		facts["other"], facts["count"] = ws.DescribeMod(ids[1]), strconv.Itoa(count)
 		finding := makeFinding(mods, "ignored-pair", facts, nil)
 		finding.Origin, finding.Mods = ids[0], ids
@@ -90,7 +95,8 @@ func listPairFindings(ws *workspace.Session, mods *index.Index, findings []Findi
 	return pairFindings
 }
 
-// findPair returns two mods in load order. It returns false if either is not in the workspace or they are one mod.
+// findPair returns two mods in load order. It returns false if either is not in
+// the workspace or they are one mod.
 func findPair(ws *workspace.Session, first, second string) ([]string, bool) {
 	ids := lo.FilterMap(*ws.Order.Load(), func(mod workspace.Mod, _ int) (string, bool) {
 		return mod.ID, mod.ID == first || mod.ID == second

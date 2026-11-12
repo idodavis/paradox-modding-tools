@@ -55,7 +55,8 @@ var (
 	modCoatPath   = filepath.Join("common", "coat_of_arms", "coat_of_arms", "d_coats.txt")
 )
 
-// listsPath is the file the fixture install gets for its template lists, from the install's folder.
+// listsPath is the file the fixture install gets for its template lists, from
+// the install's folder.
 var listsPath = filepath.Join("game", "common", "coat_of_arms", "template_lists", "v_lists.txt")
 
 // listsText is what the fixture install's template lists file holds.
@@ -75,7 +76,8 @@ const listsText = `coat_of_arms_template_lists = {
 }
 `
 
-// modFiles are the files the fixture mod adds: windows, types and templates, and coats.
+// modFiles are the files the fixture mod adds: windows, types and templates,
+// and coats.
 var modFiles = map[string]string{
 	modWindowPath: `template d_tint {
 	alpha = 0.5
@@ -195,7 +197,8 @@ d_alias = d_parent
 `,
 }
 
-// createApp makes the application the workspace service sends its events through, once for the whole test run.
+// createApp makes the application the workspace service sends its events
+// through, once for the whole test run.
 var createApp = sync.OnceFunc(func() { application.New(application.Options{}) })
 
 // resolveFixture returns the absolute path of a folder under internal/testdata.
@@ -208,7 +211,8 @@ func resolveFixture(t *testing.T, parts ...string) string {
 	return dir
 }
 
-// createMod copies the CK3 fixture mod into a temporary folder, adds the given files and returns its record.
+// createMod copies the CK3 fixture mod into a temporary folder, adds the given
+// files and returns its record.
 func createMod(t *testing.T, added map[string]string) app.Mod {
 	t.Helper()
 	dir := t.TempDir()
@@ -219,8 +223,8 @@ func createMod(t *testing.T, added map[string]string) app.Mod {
 	return app.Mod{ID: modID, Dir: dir}
 }
 
-// createInstall copies the CK3 fixture install into a temporary folder, adds a file of template lists and returns its
-// folder.
+// createInstall copies the CK3 fixture install into a temporary folder, adds a
+// file of template lists and returns its folder.
 func createInstall(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -245,7 +249,8 @@ func writeFiles(t *testing.T, dir string, added map[string]string) {
 	}
 }
 
-// openService opens a workspace on an install with the given mods and returns the draw service over it.
+// openService opens a workspace on an install with the given mods and returns
+// the draw service over it.
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	createApp()
@@ -273,15 +278,17 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	return &Service{Workspace: wsp}
 }
 
-// openFixture opens a copy of the CK3 fixture install with the fixture mod, and returns the service with the path of
-// the install's GUI file and the folder of the mod.
+// openFixture opens a copy of the CK3 fixture install with the fixture mod, and
+// returns the service with the path of the install's GUI file and the folder of
+// the mod.
 func openFixture(t *testing.T) (drw *Service, installFile, modDir string) {
 	t.Helper()
 	mod, install := createMod(t, modFiles), createInstall(t)
 	return openService(t, "ck3", install, mod), filepath.Join(install, "game", "gui", "v_window.gui"), mod.Dir
 }
 
-// findWidget returns the widget of a window with the given name, and fails the test if it has none.
+// findWidget returns the widget of a window with the given name, and fails the
+// test if it has none.
 func findWidget(t *testing.T, window Window, name string) Widget {
 	t.Helper()
 	widget, ok := lo.Find(window.Widgets, func(widget Widget) bool { return widget.Name == name })
@@ -291,7 +298,8 @@ func findWidget(t *testing.T, window Window, name string) Widget {
 	return widget
 }
 
-// listChildNames returns the names of the widgets directly inside a widget, in order.
+// listChildNames returns the names of the widgets directly inside a widget, in
+// order.
 func listChildNames(window Window, parent int32) []string {
 	return lo.FilterMap(window.Widgets, func(widget Widget, _ int) (string, bool) {
 		return widget.Name, widget.Parent == parent
@@ -303,8 +311,9 @@ func listNames(window Window) []string {
 	return lo.Map(window.Widgets, func(widget Widget, _ int) string { return widget.Name })
 }
 
-// makeEditor returns a function that applies the editor's edits to a text and parses the result again. It fails the
-// test if the edits are an error or leave the text with a parse error.
+// makeEditor returns a function that applies the editor's edits to a text and
+// parses the result again. It fails the test if the edits are an error or leave
+// the text with a parse error.
 func makeEditor(t *testing.T, text string) func(edits []lsp.Edit, err error) (string, *jomini.Tree) {
 	t.Helper()
 	return func(edits []lsp.Edit, err error) (string, *jomini.Tree) {
@@ -313,8 +322,9 @@ func makeEditor(t *testing.T, text string) func(edits []lsp.Edit, err error) (st
 	}
 }
 
-// applyEdits returns a text with the editor's edits applied and parsed again. It fails the test if the edits are an
-// error or leave the text with a parse error.
+// applyEdits returns a text with the editor's edits applied and parsed again.
+// It fails the test if the edits are an error or leave the text with a parse
+// error.
 func applyEdits(t *testing.T, text string, edits []lsp.Edit, err error) (string, *jomini.Tree) {
 	t.Helper()
 	if err != nil {
@@ -338,14 +348,16 @@ func applyEdits(t *testing.T, text string, edits []lsp.Edit, err error) (string,
 	return edited, tree
 }
 
-// listKeys returns the keys written directly inside a top-level statement of a text.
+// listKeys returns the keys written directly inside a top-level statement of a
+// text.
 func listKeys(tree *jomini.Tree, name string) []string {
 	return lo.Map(slices.Collect(tree.Children(lo.Must(tree.FindChild(0, name)))), func(child int32, _ int) string {
 		return tree.Text(tree.Statements[child].Key)
 	})
 }
 
-// openCoatFile opens the fixture and returns the service, the path of the mod's coat file and its text.
+// openCoatFile opens the fixture and returns the service, the path of the mod's
+// coat file and its text.
 func openCoatFile(t *testing.T) (drw *Service, coatFile, text string) {
 	t.Helper()
 	drw, _, modDir := openFixture(t)
@@ -357,8 +369,9 @@ func openCoatFile(t *testing.T) (drw *Service, coatFile, text string) {
 	return drw, coatFile, string(data)
 }
 
-// TestResolveWindowAppliesTypesTemplatesAndOverrides checks a widget made of a type, a template and an override, and
-// that each property is the last written, with where it was written.
+// TestResolveWindowAppliesTypesTemplatesAndOverrides checks a widget made of a
+// type, a template and an override, and that each property is the last written,
+// with where it was written.
 func TestResolveWindowAppliesTypesTemplatesAndOverrides(t *testing.T) {
 	drw, installFile, _ := openFixture(t)
 	window, err := drw.ResolveWindow(installFile, "v_layout_window")
@@ -407,8 +420,9 @@ func TestResolveWindowAppliesTypesTemplatesAndOverrides(t *testing.T) {
 	}
 }
 
-// TestResolveWindowPassesOverridesDown checks that an override reaches the types of a widget's children, that a type is
-// found written in another case, and that a type that holds itself nests once.
+// TestResolveWindowPassesOverridesDown checks that an override reaches the
+// types of a widget's children, that a type is found written in another case,
+// and that a type that holds itself nests once.
 func TestResolveWindowPassesOverridesDown(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -429,8 +443,9 @@ func TestResolveWindowPassesOverridesDown(t *testing.T) {
 	}
 }
 
-// TestResolveWindowOrdersChildrenAndOpensStates checks the order of a widget's children, that an attachment is not a
-// child, and that the end values of an opening state are the widget's own.
+// TestResolveWindowOrdersChildrenAndOpensStates checks the order of a widget's
+// children, that an attachment is not a child, and that the end values of an
+// opening state are the widget's own.
 func TestResolveWindowOrdersChildrenAndOpensStates(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	window, err := drw.ResolveWindow(filepath.Join(modDir, modWindowPath), "d_order_window")
@@ -452,8 +467,9 @@ func TestResolveWindowOrdersChildrenAndOpensStates(t *testing.T) {
 	}
 }
 
-// TestResolveWindowDrawsTypesAndTemplatesAlone checks that a window wins over a type of its name, a type is drawn as a
-// widget of it, and a template as a plain widget that uses it.
+// TestResolveWindowDrawsTypesAndTemplatesAlone checks that a window wins over a
+// type of its name, a type is drawn as a widget of it, and a template as a
+// plain widget that uses it.
 func TestResolveWindowDrawsTypesAndTemplatesAlone(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -481,8 +497,8 @@ func TestResolveWindowDrawsTypesAndTemplatesAlone(t *testing.T) {
 	}
 }
 
-// TestResolveWindowMarksMissingTemplate checks that a template nothing defines is a property marked missing, and one
-// the file defines is applied.
+// TestResolveWindowMarksMissingTemplate checks that a template nothing defines
+// is a property marked missing, and one the file defines is applied.
 func TestResolveWindowMarksMissingTemplate(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -505,7 +521,8 @@ func TestResolveWindowMarksMissingTemplate(t *testing.T) {
 	}
 }
 
-// TestResolveWindowShowsTextsAndBindings checks the texts a localization key, a data call and a raw text show.
+// TestResolveWindowShowsTextsAndBindings checks the texts a localization key, a
+// data call and a raw text show.
 func TestResolveWindowShowsTextsAndBindings(t *testing.T) {
 	drw, installFile, modDir := openFixture(t)
 	window, err := drw.ResolveWindow(installFile, "v_concepts")
@@ -538,8 +555,10 @@ func TestResolveWindowShowsTextsAndBindings(t *testing.T) {
 	}
 }
 
-// TestEvaluateStatesHidesByPick checks the groups a window's conditions make, the values the window opens with, that a
-// pick changes which widgets are hidden, and that a choice between two values gives the one its condition chooses.
+// TestEvaluateStatesHidesByPick checks the groups a window's conditions make,
+// the values the window opens with, that a pick changes which widgets are
+// hidden, and that a choice between two values gives the one its condition
+// chooses.
 func TestEvaluateStatesHidesByPick(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -592,8 +611,8 @@ func TestEvaluateStatesHidesByPick(t *testing.T) {
 	}
 }
 
-// TestRevealPicksShowWidget checks that the picks that reveal a widget satisfy the conditions above it, and that
-// contradicting conditions give no picks.
+// TestRevealPicksShowWidget checks that the picks that reveal a widget satisfy
+// the conditions above it, and that contradicting conditions give no picks.
 func TestRevealPicksShowWidget(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -625,8 +644,9 @@ func TestRevealPicksShowWidget(t *testing.T) {
 	}
 }
 
-// TestResolveCoatReadsLayersParentsAndLists checks a coat's layers, colors and instances, a coat with a parent, one
-// that is the name of another, and the option a template list draws.
+// TestResolveCoatReadsLayersParentsAndLists checks a coat's layers, colors and
+// instances, a coat with a parent, one that is the name of another, and the
+// option a template list draws.
 func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	coatFile := filepath.Join(modDir, modCoatPath)
@@ -689,8 +709,9 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 	}
 }
 
-// TestEditPropertiesReplacesOrAddsKey checks that an edit replaces a key the block writes and adds one it does not, and
-// that a range where no block starts is an error.
+// TestEditPropertiesReplacesOrAddsKey checks that an edit replaces a key the
+// block writes and adds one it does not, and that a range where no block starts
+// is an error.
 func TestEditPropertiesReplacesOrAddsKey(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile, coatFile := filepath.Join(modDir, modWindowPath), filepath.Join(modDir, modCoatPath)
@@ -742,8 +763,9 @@ func TestEditPropertiesReplacesOrAddsKey(t *testing.T) {
 	}
 }
 
-// TestEditCoatLayers checks that each edit of a coat's layers leaves the coat as the edit says, and that a second
-// pattern and a coat written as another's name are errors.
+// TestEditCoatLayers checks that each edit of a coat's layers leaves the coat
+// as the edit says, and that a second pattern and a coat written as another's
+// name are errors.
 func TestEditCoatLayers(t *testing.T) {
 	drw, coatFile, text := openCoatFile(t)
 	edit := makeEditor(t, text)
@@ -780,8 +802,9 @@ func errOf(_ []lsp.Edit, err error) error {
 	return err
 }
 
-// TestResolveWindowsOnInstalls resolves every window of each real install that PMT_TEST_INSTALL_<GAME> names, with no
-// mods, and evaluates its states. A window that fails to resolve fails the test.
+// TestResolveWindowsOnInstalls resolves every window of each real install that
+// PMT_TEST_INSTALL_<GAME> names, with no mods, and evaluates its states. A
+// window that fails to resolve fails the test.
 func TestResolveWindowsOnInstalls(t *testing.T) {
 	for _, gameID := range installGames {
 		t.Run(gameID, func(t *testing.T) {
@@ -807,8 +830,9 @@ func TestResolveWindowsOnInstalls(t *testing.T) {
 	}
 }
 
-// TestResolveCoatsOnInstalls resolves every coat of each real install that PMT_TEST_INSTALL_<GAME> names, with no
-// mods. A coat that fails to resolve fails the test.
+// TestResolveCoatsOnInstalls resolves every coat of each real install that
+// PMT_TEST_INSTALL_<GAME> names, with no mods. A coat that fails to resolve
+// fails the test.
 func TestResolveCoatsOnInstalls(t *testing.T) {
 	for _, gameID := range installGames {
 		t.Run(gameID, func(t *testing.T) {
@@ -845,7 +869,8 @@ type gateTotals struct {
 	missing                                                       map[string][]string
 }
 
-// add resolves every window of a GUI file, evaluates its states and counts the result.
+// add resolves every window of a GUI file, evaluates its states and counts the
+// result.
 func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 	t.Helper()
 	if totals.missing == nil {
@@ -877,8 +902,9 @@ func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 	}
 }
 
-// count adds the missing types and templates, texts and textures of one of a window's widgets to the totals. A picture
-// written as a data call is one only the running game answers.
+// count adds the missing types and templates, texts and textures of one of a
+// window's widgets to the totals. A picture written as a data call is one only
+// the running game answers.
 func (totals *gateTotals) count(ws *workspace.Session, window *Window, path string, widget Widget) {
 	mods := resolveIndex(ws, path)
 	for property := range window.listProperties(widget) {
@@ -901,7 +927,8 @@ func (totals *gateTotals) count(ws *workspace.Session, window *Window, path stri
 	}
 }
 
-// log prints the totals, then each missing type or template with the files that use it.
+// log prints the totals, then each missing type or template with the files that
+// use it.
 func (totals *gateTotals) log(t *testing.T, elapsed time.Duration) {
 	t.Helper()
 	t.Logf("%d windows, %d errors, %d widgets, %d groups, %d hidden as the windows open, %s", totals.windows, totals.errors,

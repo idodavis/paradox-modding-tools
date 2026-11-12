@@ -19,58 +19,58 @@ import * as lsp$0 from "../lsp/models.js";
 import * as $models from "./models.js";
 
 /**
- * BuildLexicon returns the rows of the given class (effect, trigger, link,
- * scope or function), sorted by name. Effects and triggers include the
- * scripted ones. It returns an error if no workspace is open or the class is
- * unknown.
+ * BuildLexicon returns the rows of a class, sorted by name, scripted effects
+ * and triggers included. It returns an error if no workspace is open or the
+ * class is unknown.
  */
 export function BuildLexicon($class: string): $CancellablePromise<$models.LexiconRow[] | null> {
     return $Call.ByID(2321752544, $class);
 }
 
 /**
- * FindPages returns the wiki pages that belong to the file at the given path, best match first. It returns an error if
- * no workspace is open or no refresh has fetched the listing yet.
+ * FindPages returns the wiki pages that belong to a file, best match first. It
+ * returns an error if no workspace is open or the listing has not been fetched.
  */
 export function FindPages(path: string): $CancellablePromise<$models.Summary[] | null> {
     return $Call.ByID(2861154981, path);
 }
 
 /**
- * ListClasses returns the lexicon's classes, in the order its tabs show them.
+ * ListClasses returns the lexicon's classes in the order its tabs show them.
  */
 export function ListClasses(): $CancellablePromise<lsp$0.Class[] | null> {
     return $Call.ByID(3673744072);
 }
 
 /**
- * ListNotes returns the patch notes, newest first. A note whose page is not cached has no Modding section. It returns
- * an error if no workspace is open or no refresh has fetched the listing yet.
+ * ListNotes returns the patch notes, newest first. It returns an error if no
+ * workspace is open or the listing has not been fetched.
  */
 export function ListNotes(): $CancellablePromise<$models.Note[] | null> {
     return $Call.ByID(665702169);
 }
 
 /**
- * ReadPage returns the wiki page with the given title, fetching it if it is not cached. It returns an error if no
- * workspace is open or the fetch fails.
+ * ReadPage returns a wiki page, fetching it if it is not cached. It returns an
+ * error if no workspace is open or the fetch fails.
  */
 export function ReadPage(title: string): $CancellablePromise<$models.Page> {
     return $Call.ByID(4144614779, title);
 }
 
 /**
- * Refresh fetches the page listing and every page that is missing or stale. It sends wiki:progress for each page and
- * wiki:updated at the end. It returns an error if no workspace is open or a fetch fails.
+ * Refresh fetches the listing and every missing or stale page, sending
+ * wiki:progress for each page and wiki:updated at the end. It returns an error
+ * if no workspace is open or a fetch fails.
  */
 export function Refresh(): $CancellablePromise<void> {
     return $Call.ByID(2930339879);
 }
 
 /**
- * SearchPages returns the wiki's modding pages that hold the given text, letter case aside, those with it in the title
- * first. A page that is not cached is searched by its title alone. It returns an error if no workspace is open or no
- * refresh has fetched the listing yet.
+ * SearchPages returns the modding pages that hold a text, title matches first.
+ * A page that is not cached is searched by title alone. It returns the errors
+ * FindPages does.
  */
 export function SearchPages(term: string): $CancellablePromise<$models.Summary[] | null> {
     return $Call.ByID(217338472, term);

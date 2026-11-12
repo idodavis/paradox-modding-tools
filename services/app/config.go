@@ -1,5 +1,5 @@
-// Package app is the service for the app itself, such as its updates, settings and windows. It also holds config.json,
-// which every other service reads and writes.
+// config.go holds PMT's folders, the config.json records and ConfigFile.
+
 package app
 
 import (
@@ -9,74 +9,26 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
-	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
 )
 
-// Dirs is the set of folders PMT keeps its files in on this machine.
+// Dirs is the set of folders PMT keeps its files in.
 type Dirs struct {
-	App   string // config.json
-	Cache string // the caches, wiki pages and Steam snapshots
-	Log   string // pmt.log
-	Trash string // deleted files, emptied at each start
+	App   string
+	Cache string
+	Log   string
+
+	// Trash holds deleted files until the next start empties it.
+	Trash string
 }
 
-// ResolveDirs finds PMT's folders and creates any that are missing, but the trash. It returns an error if the system
-// has no config or cache folder.
-func ResolveDirs() (Dirs, error) {
-	const folder = "paradox-modding-tools"
-	config, err := os.UserConfigDir()
-	if err != nil {
-		return Dirs{}, err
-	}
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return Dirs{}, err
-	}
-	// the log is open while the app runs, so it sits beside the cache folder, which a reset empties
-	dirs := Dirs{App: filepath.Join(config, folder), Log: filepath.Join(cache, folder)}
-	dirs.Cache = filepath.Join(dirs.Log, "cache")
-	dirs.Trash = filepath.Join(dirs.Cache, "trash")
-	for _, dir := range []string{dirs.App, dirs.Cache, dirs.Log} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return Dirs{}, err
-		}
-	}
-	return dirs, nil
-}
-
-// LoadJSON reads a JSON file into a value. A missing file gives the zero value and no error. The error of a file that
-// cannot be read or decoded names the file.
-func LoadJSON[T any](path string) (T, error) {
-	var value, zero T
-	content, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return zero, nil
-	}
-	if err != nil {
-		return zero, err
-	}
-	if err := json.Unmarshal(content, &value); err != nil {
-		return zero, fmt.Errorf("%s: %w", path, err)
-	}
-	return value, nil
-}
-
-// SaveJSON writes a value to a file as indented JSON. A failed write leaves the old file.
-func SaveJSON(path string, value any) error {
-	content, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	return files.WriteAtomic(path, append(content, '\n'))
-}
-
-// An Install is one game install that PMT has recorded.
+// Install is one game install PMT has recorded.
 type Install struct {
 	ID        string    `json:"id"`
 	Game      string    `json:"game"`
@@ -86,60 +38,87 @@ type Install struct {
 	ScannedAt time.Time `json:"scannedAt"`
 }
 
-// An Era is one era of a mod's calendar.
+// Era is one era of a mod's calendar.
 type Era struct {
 	Name string `json:"name"`
 	Year int    `json:"year"`
 }
 
-// A Calendar is how a mod counts years and names months.
+// Calendar is how a mod counts years and names months.
 type Calendar struct {
-	Eras   []Era    `json:"eras"`
-	Months []string `json:"months,omitempty"` // twelve names, or none for the game's
+	Eras []Era `json:"eras"`
+
+	// Months are twelve names, or none for the game's.
+	Months []string `json:"months,omitempty"`
 }
 
-// A Mod is one mod that a workspace records.
+// Mod is one mod that a workspace records.
 type Mod struct {
-	ID         string   `json:"id"`
-	Dir        string   `json:"dir"`
-	Color      string   `json:"color"` // a slot `o1`…`o16`, or a CSS color
-	Calendar   Calendar `json:"calendar"`
-	WorkshopID string   `json:"workshopId"` // "" unpublished
-	Ignore     string   `json:"ignore"`     // the upload exclusions, one pattern per line
-	LeftOut    bool     `json:"leftOut"`    // left out of the workspace's compatibility checks
-	External   bool     `json:"external"`   // someone else's mod, which the workspace checks its own mods against
+	ID  string `json:"id"`
+	Dir string `json:"dir"`
+
+	// Color is a slot `o1` to `o16`, or a CSS color.
+	Color string `json:"color"`
+
+	Calendar Calendar `json:"calendar"`
+
+	// WorkshopID is "" for an unpublished mod.
+	WorkshopID string `json:"workshopId"`
+
+	// Ignore is the upload exclusions, one pattern per line.
+	Ignore string `json:"ignore"`
+
+	// LeftOut keeps the mod out of the compatibility checks.
+	LeftOut bool `json:"leftOut"`
+
+	// External is someone else's mod, which the workspace checks its own mods
+	// against.
+	External bool `json:"external"`
 }
 
-// A Workspace is one recorded workspace, a game install and the mods loaded with it.
+// Workspace is one recorded workspace: a game install and its mods.
 type Workspace struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	Install       string            `json:"install"`
-	Mods          []Mod             `json:"mods"`
-	Language      string            `json:"language"`      // the localization language beside the game's base language
-	HomePage      string            `json:"homePage"`      // the page it opens on
-	GameColor     string            `json:"gameColor"`     // the color of the game's files, as a slot or a CSS color; "" for its own
-	ResetTabs     bool              `json:"resetTabs"`     // the IDE opens with no tabs rather than those left open
-	HideChecklist bool              `json:"hideChecklist"` // the Library's card does not show the first-mod checklist
-	HideStartPage bool              `json:"hideStartPage"` // the IDE does not open the start page
-	Settings      map[string]string `json:"settings"`      // the user's values of the per-workspace settings, by key
-	IgnoredPairs  [][2]string       `json:"ignoredPairs"`  // the sorted pairs of mods whose conflicts the workspace ignores
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Install  string `json:"install"`
+	Mods     []Mod  `json:"mods"`
+	Language string `json:"language"`
+	HomePage string `json:"homePage"`
+
+	// GameColor is a slot or a CSS color, or "" for the game's own.
+	GameColor string `json:"gameColor"`
+
+	ResetTabs     bool              `json:"resetTabs"`
+	HideChecklist bool              `json:"hideChecklist"`
+	HideStartPage bool              `json:"hideStartPage"`
+	Settings      map[string]string `json:"settings"`
+
+	// IgnoredPairs are sorted pairs of mods whose conflicts are ignored.
+	IgnoredPairs [][2]string `json:"ignoredPairs"`
 }
 
-// An Agent is one coding agent PMT can start for a chat: one PMT offers, or one the user adds as their own program.
+// Agent is one coding agent PMT can start for a chat.
 type Agent struct {
-	ID       string   `json:"id"` // the registry's id of one PMT offers
-	Name     string   `json:"name"`
-	Program  string   `json:"program,omitempty"` // the program the user's agent runs; "" for one PMT offers
-	Args     []string `json:"args,omitempty"`
-	Register string   `json:"register,omitempty"` // how PMT's tools are registered with it for use outside PMT
-	Files    []string `json:"files,omitempty"`    // its instruction files and folders, by their names in a mod
+	ID   string `json:"id"`
+	Name string `json:"name"`
+
+	// Program is the user's own agent, "" for one PMT offers.
+	Program string   `json:"program,omitempty"`
+	Args    []string `json:"args,omitempty"`
+
+	// Register is how PMT's tools are registered with the agent outside PMT.
+	Register string `json:"register,omitempty"`
+
+	// Files are the agent's instruction files and folders, by name in a mod.
+	Files []string `json:"files,omitempty"`
 }
 
-// A Window is how the main window was left: its size and whether it was maximized.
+// Window is how the main window was left.
 type Window struct {
-	Width     int  `json:"width"`  // in device-independent pixels; 0 before the first close
-	Height    int  `json:"height"` // in device-independent pixels; 0 before the first close
+	// Width and Height are in device-independent pixels, 0 before the first
+	// close.
+	Width     int  `json:"width"`
+	Height    int  `json:"height"`
 	Maximized bool `json:"maximized"`
 }
 
@@ -148,24 +127,52 @@ type Config struct {
 	Installs   []Install         `json:"installs"`
 	Workspaces []Workspace       `json:"workspaces"`
 	Settings   map[string]string `json:"settings"`
-	Agents     []Agent           `json:"agents"`  // the agents the user adds
-	Window     Window            `json:"window"`  // the main window as it was last closed
-	Skipped    string            `json:"skipped"` // the release the user went back from, which the updater skips
+
+	Agents []Agent `json:"agents"`
+	Window Window  `json:"window"`
+
+	// Skipped is the release the user went back from.
+	Skipped string `json:"skipped"`
 }
 
-// A Setting is one row of the catalog of settings.
+// Setting is one row of the catalog of settings.
 type Setting struct {
-	Key       string   `json:"key"` // `<area>.<noun>`
-	Label     string   `json:"label"`
-	Help      string   `json:"help"`
-	Section   string   `json:"section"`   // appearance, terminal, or an IDE area (editor, language, checks, …)
-	Workspace bool     `json:"workspace"` // it is kept per workspace
-	Type      string   `json:"type"`      // switch, choice, number, port (a number written as its digits), text
-	Default   string   `json:"default"`
-	Choices   []string `json:"choices,omitempty"`
-	Min       int      `json:"min,omitempty"` // a number's range; both 0 when it has none
-	Max       int      `json:"max,omitempty"`
-	Words     string   `json:"words"` // what the palette's search also matches
+	// Key is `<area>.<noun>`.
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Help  string `json:"help"`
+
+	// Section is appearance, terminal, or an IDE area such as editor or checks.
+	Section string `json:"section"`
+
+	// Workspace is true for a setting kept per workspace.
+	Workspace bool `json:"workspace"`
+
+	// Type is switch, choice, number, port (a number written as its digits) or
+	// text.
+	Type    string   `json:"type"`
+	Default string   `json:"default"`
+	Choices []string `json:"choices,omitempty"`
+
+	// Min and Max are a number's range, both 0 for none.
+	Min int `json:"min,omitempty"`
+	Max int `json:"max,omitempty"`
+
+	// Words are what the palette's search also matches.
+	Words string `json:"words"`
+}
+
+// ConfigFile is config.json held in memory for every service. An unreadable
+// file gives an empty, read-only config.
+type ConfigFile struct {
+	Dirs     Dirs
+	path     string
+	mu       sync.RWMutex
+	config   Config
+	revision int
+
+	// fault is why config.json could not be read, or nil if it was.
+	fault error
 }
 
 // Catalog lists every setting.
@@ -336,8 +343,8 @@ var Catalog = []Setting{
 		Section: "visual", Type: "number", Default: "3", Min: 1, Max: 20,
 		Help:  "How many times the Visual view draws the item of a data model.",
 		Words: "gui preview list repeat items"},
-	// The default is the size each game designs for. CK3 and Vic3 scale their 1920 by 1080 main menu art to the
-	// screen (frontend_main.gui). EU5's files declare no size.
+	// The default is the size each game designs for: CK3 and Vic3 scale their
+	// 1920 by 1080 menu art to the screen. EU5's files declare no size.
 	{Key: "draw.resolution", Label: "Resolution",
 		Section: "visual", Type: "choice", Default: "1920x1080",
 		Choices: []string{"1920x1080", "2560x1080", "1920x1200"},
@@ -349,83 +356,150 @@ var Catalog = []Setting{
 		Words: "gui preview mode code coat"},
 }
 
-// A ConfigFile is config.json held in memory for every service. A file that cannot be read gives an empty, read-only
-// config, so the real file is never overwritten.
-type ConfigFile struct {
-	Dirs     Dirs // PMT's folders
-	path     string
-	mu       sync.RWMutex
-	config   Config
-	revision int   // how many times Update has changed the config since the app started
-	fault    error // why config.json could not be read when the app started, which makes the config read-only; nil if it was read
-}
+// ResolveDirs finds PMT's folders and creates those that are missing, the trash
+// aside.
+func ResolveDirs() (Dirs, error) {
+	const folder = "paradox-modding-tools"
 
-// openConfig loads config.json from the app folder. A file that cannot be read gives an empty, read-only config.
-func openConfig(dirs Dirs) *ConfigFile {
-	file := &ConfigFile{Dirs: dirs, path: filepath.Join(dirs.App, "config.json")}
-	file.config, file.fault = LoadJSON[Config](file.path)
-	return file
-}
-
-// Config returns the config, which Update replaces whole. The caller may keep it but must not change it.
-func (file *ConfigFile) Config() Config {
-	file.mu.RLock()
-	defer file.mu.RUnlock()
-	return file.config
-}
-
-// Revision returns how many times Update has changed the config since the app started.
-func (file *ConfigFile) Revision() int {
-	file.mu.RLock()
-	defer file.mu.RUnlock()
-	return file.revision
-}
-
-// Update runs a change on a copy of the config, saves the result and emits config:changed with the given section
-// ("" for all). It returns the change's error, or an error if the config is read-only or cannot be saved. A failed
-// change or save leaves the config as it was.
-func (file *ConfigFile) Update(section string, change func(config *Config) error) error {
-	file.mu.Lock()
-	defer file.mu.Unlock()
-	if file.fault != nil {
-		return errors.New("config.json could not be read when the app started, so it is not written")
+	config, err := os.UserConfigDir()
+	if err != nil {
+		return Dirs{}, err
 	}
-	content, err := json.Marshal(file.config)
+
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return Dirs{}, err
+	}
+
+	// The log is open while the app runs, so it stays out of the cache a reset
+	// empties.
+	dirs := Dirs{App: filepath.Join(config, folder), Log: filepath.Join(cache, folder)}
+	dirs.Cache = filepath.Join(dirs.Log, "cache")
+	dirs.Trash = filepath.Join(dirs.Cache, "trash")
+
+	for _, dir := range []string{dirs.App, dirs.Cache, dirs.Log} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return Dirs{}, err
+		}
+	}
+
+	return dirs, nil
+}
+
+// LoadJSON reads a JSON file into a value. A missing file gives the zero value
+// and no error.
+func LoadJSON[T any](path string) (T, error) {
+	var value, zero T
+
+	content, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return zero, nil
+	}
+	if err != nil {
+		return zero, err
+	}
+
+	if err := json.Unmarshal(content, &value); err != nil {
+		return zero, fmt.Errorf("%s: %w", path, err)
+	}
+
+	return value, nil
+}
+
+// SaveJSON writes a value as indented JSON. A failed write leaves the old file.
+func SaveJSON(path string, value any) error {
+	content, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
+
+	return files.WriteAtomic(path, append(content, '\n'))
+}
+
+// openConfig loads config.json, read-only if it cannot be read.
+func openConfig(dirs Dirs) *ConfigFile {
+	file := &ConfigFile{Dirs: dirs, path: filepath.Join(dirs.App, "config.json")}
+	file.config, file.fault = LoadJSON[Config](file.path)
+
+	return file
+}
+
+// Config returns the config as held. The caller must not change it.
+func (c *ConfigFile) Config() Config {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.config
+}
+
+// Revision returns how many times Update has changed the config.
+func (c *ConfigFile) Revision() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.revision
+}
+
+// Update runs the change on a copy of the config, saves it and emits
+// config:changed with the section ("" for all). It returns an error, and keeps
+// the config as it was, if the config is read-only or the change or save fails.
+func (c *ConfigFile) Update(section string, change func(config *Config) error) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.fault != nil {
+		return errors.New("config.json could not be read when the app started, so it is not written")
+	}
+
+	content, err := json.Marshal(c.config)
+	if err != nil {
+		return err
+	}
+
 	var next Config
 	if err := json.Unmarshal(content, &next); err != nil {
 		return err
 	}
+
 	if err := change(&next); err != nil {
 		return err
 	}
-	if err := SaveJSON(file.path, next); err != nil {
+
+	if err := SaveJSON(c.path, next); err != nil {
 		return err
 	}
-	file.config = next
-	file.revision++
+
+	c.config = next
+	c.revision++
 	application.Get().Event.Emit(EventConfigChanged, section)
+
 	return nil
 }
 
-// LookupSetting returns a setting's value in a workspace, or the catalog's default if it was never set. It returns
-// false if the catalog does not have the setting.
-func (file *ConfigFile) LookupSetting(workspaceID, key string) (string, bool) {
-	setting, ok := lo.Find(Catalog, func(setting Setting) bool { return setting.Key == key })
-	if !ok {
+// LookupSetting returns a setting's value in a workspace, or the catalog's
+// default. It returns false if the catalog has no such setting.
+func (c *ConfigFile) LookupSetting(workspaceID, key string) (string, bool) {
+	row := slices.IndexFunc(Catalog, func(setting Setting) bool { return setting.Key == key })
+	if row < 0 {
 		return "", false
 	}
-	file.mu.RLock()
-	defer file.mu.RUnlock()
-	values := file.config.Settings
+	setting := Catalog[row]
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	values := c.config.Settings
 	if setting.Workspace {
-		record, _ := lo.Find(file.config.Workspaces, func(record Workspace) bool { return record.ID == workspaceID })
-		values = record.Settings
+		values = nil
+		position := slices.IndexFunc(c.config.Workspaces, func(record Workspace) bool { return record.ID == workspaceID })
+		if position >= 0 {
+			values = c.config.Workspaces[position].Settings
+		}
 	}
+
 	if value, ok := values[key]; ok {
 		return value, true
 	}
+
 	return setting.Default, true
 }

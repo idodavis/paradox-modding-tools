@@ -1,5 +1,6 @@
-// edits.go formats a script file and offers quick fixes for its problems. It also builds the copy a mod makes to
-// override an entry. Each is returned as the edits that apply it, in Monaco's ranges.
+// edits.go formats a script file and offers quick fixes for its problems. It
+// also builds the copy a mod makes to override an entry. Each is returned as
+// the edits that apply it, in Monaco's ranges.
 
 package lsp
 
@@ -26,7 +27,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Fix is one quick fix for a problem. It carries the edits that apply it, grouped by file.
+// A Fix is one quick fix for a problem. It carries the edits that apply it,
+// grouped by file.
 type Fix struct {
 	Title   string            `json:"title"`
 	Code    string            `json:"code"` // the diagnostic it fixes
@@ -39,16 +41,19 @@ type Fix struct {
 	Note string `json:"note,omitempty"`
 }
 
-// A Draft is the file New file makes in a folder of a mod: the name it suggests and the text the file starts with.
+// A Draft is the file New file makes in a folder of a mod: the name it suggests
+// and the text the file starts with.
 type Draft struct {
 	Name string     `json:"name"`
 	Text files.Text `json:"text"` // the header of a localization file, the namespace line in an events folder, else empty
 }
 
-// fixDistance is how many edits away a name may be and still be offered as the fix for an unresolved reference.
+// fixDistance is how many edits away a name may be and still be offered as the
+// fix for an unresolved reference.
 const fixDistance = 3
 
-// maxPrefix is how many characters of z or 0 a file's name may start with to load after or before the others.
+// maxPrefix is how many characters of z or 0 a file's name may start with to
+// load after or before the others.
 const maxPrefix = 8
 
 // Format returns the edits that format a file's text, keeping the file's own
@@ -73,8 +78,8 @@ func (lsp *Service) Format(path string, tabSize int, insertSpaces bool) ([]Edit,
 	return ToEdits(tree.Src, tree.Lines, tree.Format(unit)), nil
 }
 
-// DescribeIndentation returns what a file indents one level with, in words: "Tabs" or "4 spaces". It returns "" if the
-// file indents nothing.
+// DescribeIndentation returns what a file indents one level with, in words:
+// "Tabs" or "4 spaces". It returns "" if the file indents nothing.
 func (lsp *Service) DescribeIndentation(path string) (string, error) {
 	_, tree, err := lsp.loadTree(path)
 	if err != nil {
@@ -90,7 +95,8 @@ func (lsp *Service) DescribeIndentation(path string) (string, error) {
 	}
 }
 
-// ListFixes returns the quick fixes for the given problems of a file, one for each problem that has a fix.
+// ListFixes returns the quick fixes for the given problems of a file, one for
+// each problem that has a fix.
 func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, error) {
 	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
@@ -110,7 +116,7 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 			title, edits = buildReferenceFix(ws.Schema, mods, walk(diagnostic), diagnostic)
 		case index.ProblemRequired:
 			title, edits = buildMissingFix(ws.Schema, walk(diagnostic), diagnostic)
-		case index.ProblemMode:
+		case schema.ProblemMode:
 			title, edits = "Remove mode", []Edit{{Range: diagnostic.Range}}
 		}
 		if len(edits) > 0 {
@@ -125,9 +131,11 @@ func (lsp *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, err
 	return fixes, nil
 }
 
-// buildKeysFix returns the fix that adds an empty message for each localization key the file uses but has no
-// base-language text for, in the localization file PMT makes for the file's mod. It returns false for a read-only
-// file, a mod with no name, a game with no localization folder, or a file that lacks no text.
+// buildKeysFix returns the fix that adds an empty message for each localization
+// key the file uses but has no base-language text for, in the localization file
+// PMT makes for the file's mod. It returns false for a read-only file, a mod
+// with no name, a game with no localization folder, or a file that lacks no
+// text.
 func (lsp *Service) buildKeysFix(
 	ws *workspace.Session, mods *index.Index, place workspace.Place, code string,
 ) (Fix, bool) {
@@ -163,8 +171,8 @@ func (lsp *Service) buildKeysFix(
 	return fix, true
 }
 
-// buildAppendFix returns the fix that adds text to the end of a file's text, with the caret the given number of
-// characters into the added text.
+// buildAppendFix returns the fix that adds text to the end of a file's text,
+// with the caret the given number of characters into the added text.
 func buildAppendFix(ws *workspace.Session, mods *index.Index, target, source, addition string, caret int) Fix {
 	end := jomini.Span{Start: len(source), End: len(source)}
 	whole := source + addition
@@ -176,9 +184,10 @@ func buildAppendFix(ws *workspace.Session, mods *index.Index, target, source, ad
 	}
 }
 
-// buildReferenceFix returns the fix for a reference nothing defines: a change to the nearest name its database defines.
-// A reference to a callable database also draws on the commands the block it is written in takes. The edits are empty
-// if no name is near enough.
+// buildReferenceFix returns the fix for a reference nothing defines: a change
+// to the nearest name its database defines. A reference to a callable database
+// also draws on the commands the block it is written in takes. The edits are
+// empty if no name is near enough.
 func buildReferenceFix(
 	language *schema.Schema, mods *index.Index, cursor cursor, diagnostic Diagnostic,
 ) (string, []Edit) {
@@ -201,7 +210,8 @@ func buildReferenceFix(
 			}
 		}
 		for _, key := range lo.Uniq(keys) {
-			// names that differ in length by the best distance so far or more are that far apart
+			// names that differ in length by the best distance so far or more are
+			// that far apart
 			if max(utf8.RuneCountInString(key)-length, length-utf8.RuneCountInString(key)) >= best {
 				continue
 			}
@@ -216,8 +226,9 @@ func buildReferenceFix(
 	return "Change to " + nearest, []Edit{{Range: diagnostic.Range, Text: nearest}}
 }
 
-// buildMissingFix returns the fix for a definition that lacks a key it must write: a line that adds the key with its
-// default. The edits are empty if the key has no default.
+// buildMissingFix returns the fix for a definition that lacks a key it must
+// write: a line that adds the key with its default. The edits are empty if the
+// key has no default.
 func buildMissingFix(schema *schema.Schema, cursor cursor, diagnostic Diagnostic) (string, []Edit) {
 	tree, definition, key := cursor.tree, cursor.context.Definition, diagnostic.Facts["key"]
 	if definition == nil || !tree.Statements[definition.Statement].IsBlock() {
@@ -232,13 +243,15 @@ func buildMissingFix(schema *schema.Schema, cursor cursor, diagnostic Diagnostic
 	return "Add " + statement, ToEdits(tree.Src, tree.Lines, []jomini.Edit{insertion})
 }
 
-// hasFolder reports whether a database has a folder of its own, one that holds many files, not a single file.
+// hasFolder reports whether a database has a folder of its own, one that holds
+// many files, not a single file.
 func hasFolder(database *schema.Database) bool {
 	return database != nil && database.Declaration.Folder != "" && path.Ext(database.Declaration.Folder) == ""
 }
 
-// DraftFile returns the file New file makes in a folder of a mod: the name it suggests and the text it starts with. It
-// returns an error if no workspace is open or the folder is not in a mod that can be written to.
+// DraftFile returns the file New file makes in a folder of a mod: the name it
+// suggests and the text it starts with. It returns an error if no workspace is
+// open or the folder is not in a mod that can be written to.
 func (lsp *Service) DraftFile(folder string) (Draft, error) {
 	ws, err := lsp.Workspace.FindWritable(folder)
 	if err != nil {
@@ -250,7 +263,8 @@ func (lsp *Service) DraftFile(folder string) (Draft, error) {
 		return Draft{}, fmt.Errorf("the mod %s is not in the workspace", place.Origin)
 	}
 	if database := ws.Schema.Databases[place.Database]; hasFolder(database) {
-		// the mod's own name for its files is its namespace, as the part before an event's dot is
+		// the mod's own name for its files is its namespace, as the part before an
+		// event's dot is
 		namespace := buildNamespace(database, resolveModStem(mod), "")
 		base := path.Base(resolveEntryRel(mod, place.Rel, ""))
 		return makeDraft(place.Rel, findFreeName(folder, base, path.Ext(base)), namespace), nil
@@ -263,15 +277,17 @@ func (lsp *Service) DraftFile(folder string) (Draft, error) {
 	return makeDraft(place.Rel, findFreeName(folder, "new_file"+extension, extension), ""), nil
 }
 
-// makeDraft returns the draft of a new file of the given name in a mod's folder, the folder given from the mod's root,
-// with the given text in the encoding its format is written in.
+// makeDraft returns the draft of a new file of the given name in a mod's
+// folder, the folder given from the mod's root, with the given text in the
+// encoding its format is written in.
 func makeDraft(folderRel, name, text string) Draft {
 	encoding := files.Classify(path.Join(folderRel, name)).DefaultEncoding()
 	return Draft{Name: name, Text: files.Text{Text: text, Encoding: encoding}}
 }
 
-// findFreeName returns a name for a new file in a folder that nothing in the folder has: the given name, else numbered
-// from 2 before the given ending, the part the game reads at the end of a name, such as _l_english.yml.
+// findFreeName returns a name for a new file in a folder that nothing in the
+// folder has: the given name, else numbered from 2 before the given ending, the
+// part the game reads at the end of a name, such as _l_english.yml.
 func findFreeName(folder, base, ending string) string {
 	stem := strings.TrimSuffix(base, ending)
 	free := base
@@ -281,8 +297,9 @@ func findFreeName(folder, base, ending string) string {
 	return free
 }
 
-// findLanguage returns the localization language of a folder, given by its path from its root. It returns "" for a
-// folder in no language folder or in a language the install lacks.
+// findLanguage returns the localization language of a folder, given by its path
+// from its root. It returns "" for a folder in no language folder or in a
+// language the install lacks.
 func (lsp *Service) findLanguage(folder string) string {
 	language := loc.FindFolderLanguage(folder + "/")
 	languages, _ := lsp.Workspace.ListLanguages(lsp.Workspace.State().Install.ID)
@@ -292,8 +309,9 @@ func (lsp *Service) findLanguage(folder string) string {
 	return ""
 }
 
-// findScriptExtension returns the script extension the game's files in a folder use, the folder given by its path from
-// its root. It returns .txt if they use none or more than one.
+// findScriptExtension returns the script extension the game's files in a folder
+// use, the folder given by its path from its root. It returns .txt if they use
+// none or more than one.
 func findScriptExtension(ws *workspace.Session, folder string) string {
 	extensions := lo.Uniq(lo.FilterMap(ws.Install.Files, func(file files.File, _ int) (string, bool) {
 		extension := strings.ToLower(path.Ext(file.Rel))
@@ -306,18 +324,20 @@ func findScriptExtension(ws *workspace.Session, folder string) string {
 	return ".txt"
 }
 
-// resolveEntryRel returns the path, from a mod's folder, of the file the mod keeps its entries of a folder in: the
-// prefix, the mod's own name for its files, an underscore and the folder's last part.
+// resolveEntryRel returns the path, from a mod's folder, of the file the mod
+// keeps its entries of a folder in: the prefix, the mod's own name for its
+// files, an underscore and the folder's last part.
 func resolveEntryRel(mod workspace.Mod, folder, prefix string) string {
 	return path.Join(folder, prefix+resolveModStem(mod)+"_"+path.Base(folder)+".txt")
 }
 
-// resolveModStem returns a mod's own name for its files: its folder's name made a file name, in lower case with its
-// words joined by underscores.
+// resolveModStem returns a mod's own name for its files: its folder's name made
+// a file name, in lower case with its words joined by underscores.
 func resolveModStem(mod workspace.Mod) string { return files.ToSlug(filepath.Base(mod.Dir)) }
 
-// buildNamespace returns the line that declares the namespace of an event with the given key, and a blank line after
-// it. It returns "" if the given text of the file already declares it, and for a database whose definitions are not
+// buildNamespace returns the line that declares the namespace of an event with
+// the given key, and a blank line after it. It returns "" if the given text of
+// the file already declares it, and for a database whose definitions are not
 // events.
 func buildNamespace(database *schema.Database, key, source string) string {
 	if database == nil || database.Declaration.Contents != game.ContentsEvents {
@@ -334,8 +354,9 @@ func buildNamespace(database *schema.Database, key, source string) string {
 	return game.EventNamespaceKey + " = " + namespace + "\n\n"
 }
 
-// buildEntryFix returns the fix that adds an entry to the end of a mod's script file, with the caret at the start of
-// the new text. It creates the file if it does not exist.
+// buildEntryFix returns the fix that adds an entry to the end of a mod's script
+// file, with the caret at the start of the new text. It creates the file if it
+// does not exist.
 func buildEntryFix(ws *workspace.Session, mods *index.Index, target, source, entry string) Fix {
 	gap := ""
 	if strings.TrimSpace(source) != "" {
@@ -450,8 +471,9 @@ func findEntry(ws *workspace.Session, document schema.Document, offset int) *sch
 	return context.Definition
 }
 
-// listRivals returns the copies of a name that an override has to load after or before: the ones written with an
-// entry mode where the database takes modes, since the modes act after every plain copy, and else all of them.
+// listRivals returns the copies of a name that an override has to load after or
+// before: the ones written with an entry mode where the database takes modes,
+// since the modes act after every plain copy, and else all of them.
 func listRivals(mods *index.Index, sites []index.Site, precedence game.Precedence) []index.Site {
 	if precedence.Modes == "" {
 		return sites
@@ -459,9 +481,11 @@ func listRivals(mods *index.Index, sites []index.Site, precedence game.Precedenc
 	return lo.Filter(sites, func(site index.Site, _ int) bool { return mods.Occurrence(site).Mode != 0 })
 }
 
-// resolveOverrideFolder returns the folder, from a mod's folder, that a copy of an entry goes in. A copy that must load
-// after the given rivals goes beside the one that loads last, since a folder's files load before its subfolders'. Any
-// other goes in the entry's database folder, under the entry's stage folder.
+// resolveOverrideFolder returns the folder, from a mod's folder, that a copy of
+// an entry goes in. A copy that must load after the given rivals goes beside
+// the one that loads last, since a folder's files load before its subfolders'.
+// Any other goes in the entry's database folder, under the entry's stage
+// folder.
 func resolveOverrideFolder(
 	mods *index.Index, place workspace.Place, database *schema.Database, rivals []index.Site, side int,
 ) string {
@@ -474,8 +498,9 @@ func resolveOverrideFolder(
 	return path.Join(place.Stage, database.Declaration.Folder)
 }
 
-// findOverrideMod returns the mod that holds the copy an override makes: the one with the given id, or else the first
-// that can be written to and is not the file's own. It returns an error if there is none.
+// findOverrideMod returns the mod that holds the copy an override makes: the
+// one with the given id, or else the first that can be written to and is not
+// the file's own. It returns an error if there is none.
 func (lsp *Service) findOverrideMod(place workspace.Place, modID string) (workspace.Mod, error) {
 	mods := lsp.Workspace.ListMods()
 	if modID == "" {
@@ -495,9 +520,11 @@ func (lsp *Service) findOverrideMod(place workspace.Place, modID string) (worksp
 	return mod, err
 }
 
-// findPrefix returns the shortest prefix for a mod's file in a folder that makes the game load it before every one of
-// the given rivals if the side is negative, or after every one if it is positive. A file that already loads so, or a
-// side of zero, gets "". It returns false if no prefix of up to maxPrefix characters does.
+// findPrefix returns the shortest prefix for a mod's file in a folder that
+// makes the game load it before every one of the given rivals if the side is
+// negative, or after every one if it is positive. A file that already loads so,
+// or a side of zero, gets "". It returns false if no prefix of up to maxPrefix
+// characters does.
 func findPrefix(
 	row *game.Game, mods *index.Index, mod workspace.Mod, folder string, side int, rivals []index.Site,
 ) (string, bool) {
@@ -519,8 +546,9 @@ func findPrefix(
 	return "", false
 }
 
-// buildModeCopy returns an entry written with the REPLACE entry mode. Where the game writes the mode inside a block,
-// the copy is wrapped in the block that holds the entry.
+// buildModeCopy returns an entry written with the REPLACE entry mode. Where the
+// game writes the mode inside a block, the copy is wrapped in the block that
+// holds the entry.
 func buildModeCopy(tree *jomini.Tree, definition *schema.Copy, precedence game.Precedence) string {
 	statement := tree.Statements[definition.Statement]
 	entry := "REPLACE:" + tree.Src[definition.Span.Start:statement.Span.End]
@@ -531,8 +559,9 @@ func buildModeCopy(tree *jomini.Tree, definition *schema.Copy, precedence game.P
 	return tree.Text(holder.Key) + " = {\n" + cmp.Or(tree.Indentation(), "\t") + entry + "\n}"
 }
 
-// buildPriorityCopy returns a copy of an entry that sets the key holding its override priority to the given number.
-// Where a higher priority replaces only some of the entry's keys, the copy holds those and no others.
+// buildPriorityCopy returns a copy of an entry that sets the key holding its
+// override priority to the given number. Where a higher priority replaces only
+// some of the entry's keys, the copy holds those and no others.
 func buildPriorityCopy(tree *jomini.Tree, definition *schema.Copy, precedence game.Precedence, priority int) string {
 	statement := tree.Statements[definition.Statement]
 	if len(precedence.Overrides) > 0 {

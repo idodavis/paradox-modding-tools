@@ -203,7 +203,8 @@ export interface Image {
 }
 
 /**
- * An Instance is one placement of a layer on the field. Values the file does not set take the game's defaults.
+ * An Instance is one placement of a layer on the field. Values the file does
+ * not set take the game's defaults.
  */
 export interface Instance {
     "position": number[];
@@ -310,7 +311,8 @@ export interface Layer {
 }
 
 /**
- * A Missing is one type or template that a widget of a window uses and no file defines.
+ * A Missing is one type or template that a widget of a window uses and no file
+ * defines.
  */
 export interface Missing {
     /**
@@ -338,7 +340,8 @@ export interface NamedColor {
 }
 
 /**
- * An Overlay is one texture laid over a widget's own, as a modify_texture block writes it.
+ * An Overlay is one texture laid over a widget's own, as a modify_texture block
+ * writes it.
  */
 export interface Overlay {
     /**
@@ -409,8 +412,9 @@ export interface PictureList {
 }
 
 /**
- * A Property is one property of a widget, with the place where it is written. That place can be a template or the
- * widget's type instead of the widget itself.
+ * A Property is one property of a widget, with the place where it is written.
+ * That place can be a template or the widget's type instead of the widget
+ * itself.
  */
 export interface Property {
     "key": string;
@@ -443,7 +447,8 @@ export interface Property {
 }
 
 /**
- * A Recolor is how the game colors the texture of a layer, with the layer's colors as CSS.
+ * A Recolor is how the game colors the texture of a layer, with the layer's
+ * colors as CSS.
  */
 export interface Recolor {
     /**
@@ -477,7 +482,8 @@ export interface Row {
 }
 
 /**
- * A Setting is one property to set in a block: the key and the value to write for it.
+ * A Setting is one property to set in a block: the key and the value to write
+ * for it.
  */
 export interface Setting {
     /**
@@ -534,7 +540,8 @@ export interface States {
 }
 
 /**
- * A Widget is one element of a resolved window, with everything needed to draw it. The page lays it out.
+ * A Widget is one element of a resolved window, with everything needed to draw
+ * it. The page lays it out.
  */
 export interface Widget {
     "id": number;
@@ -619,8 +626,9 @@ export interface Widget {
 }
 
 /**
- * A Window is one GUI window resolved for drawing. Its widgets are in document order, and its holders are the game
- * windows that contain it, outermost first, each its own widget alone.
+ * A Window is one GUI window resolved for drawing. Its widgets are in document
+ * order, and its holders are the game windows that contain it, outermost first,
+ * each its own widget alone.
  */
 export interface Window {
     "name": string;

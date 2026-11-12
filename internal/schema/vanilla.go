@@ -157,7 +157,7 @@ func (s *Schema) CountVanilla(listing []files.File, parse func(path string) (*jo
 // count walks a file and counts each of its statements, in the tree's order.
 // The file's own context counts only where the file is one definition.
 func (c *counter) count(tree *jomini.Tree, file files.File) {
-	c.contexts = c.schema.Walk(tree, file, c.contexts)
+	c.contexts, _ = c.schema.Walk(tree, file, c.contexts)
 	c.holders = slices.Grow(c.holders[:0], len(c.contexts))[:len(c.contexts)]
 	c.holders[0] = holder{}
 

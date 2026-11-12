@@ -67,6 +67,7 @@ copy `FindKept` returns.
 | `lookup.go` | Lookups by name: what a reference resolves to, what uses a name, what a database defines. |
 | `combine.go` | What the game keeps: the winning definition of a name, found by [game](../game/README.md)'s rule over the copies in files the game reads, and kept for each name with several copies until the next scan. |
 | `translation.go` | The game's localization in a second language, scanned once on an install's index and cached by language, and the message the game shows for a key. |
+| `problems.go` | The problems of a walked file that need every file: a name nothing defines, a text written twice or missing, a required key no copy writes, an entry mode with nothing to act on, a priority tie and an unknown data call. `ListProblems` returns them with the ones the walk recorded. |
 | `fires.go` | What fires what, and the rule that marks a reference as firing, with the fields it lists. |
 
 ## Terms

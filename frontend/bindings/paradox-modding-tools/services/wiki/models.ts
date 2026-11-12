@@ -6,93 +6,80 @@
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * A LexiconRow is one effect, trigger, link, scope or data function the
- * game's dumps declare, or one scripted effect or trigger. Its examples are
- * the first uses the index finds; a data function's are the first places the
- * game's own files call it, as the schema keeps them.
+ * LexiconRow is one effect, trigger, link, scope or data function the dumps
+ * declare, or one scripted effect or trigger.
  */
 export interface LexiconRow {
-    /**
-     * effect, trigger, link, scope, function
-     */
     "class": string;
     "name": string;
     "blurb": string;
     "usage": string;
     "scopes"?: string[] | null;
     "target"?: string;
+
+    /**
+     * Examples are the first uses the index finds, or for a data function the
+     * first calls in the game's files.
+     */
     "examples": lsp$0.Site[] | null;
 
     /**
-     * where the game's copy of a scripted effect or trigger is; nil for what the dumps declare
+     * Defined is where the game's copy of a scripted effect or trigger is. It
+     * is nil for what the dumps declare.
      */
     "defined"?: lsp$0.Site | null;
 }
 
 /**
- * A Note is one patch's notes page.
+ * Note is one patch's notes page.
  */
 export interface Note {
     "version": string;
 
     /**
-     * the version a hotfix belongs to, such as 1.14 for 1.14.2; "" for a release
+     * Parent is the version a hotfix belongs to, such as 1.14 for 1.14.2. It is
+     * "" for a release.
      */
     "parent": string;
 
     /**
-     * the release date as the note writes it; "" if it gives none
+     * Released is the date the note gives for its release, or "" for none.
      */
     "released": string;
     "title": string;
-
-    /**
-     * the page has a Modding section
-     */
     "modding": boolean;
 }
 
 /**
- * A Page is one wiki page as the cache keeps it, its HTML sanitized.
+ * Page is one wiki page as the cache keeps it.
  */
 export interface Page {
     "title": string;
-
-    /**
-     * the page on the wiki
-     */
     "url": string;
     "html": string;
     "fetchedAt": string;
 
     /**
-     * the page has a heading that holds the word Modding
+     * Modding is true when a heading of the page holds the word Modding.
      */
     "modding": boolean;
 
     /**
-     * the release date a patch note gives in its opening text; "" if none
+     * Released is the release date a patch note gives, or "" for none.
      */
     "released": string;
 }
 
 /**
- * A Progress is the data of the wiki:progress event.
+ * Progress is the data of the wiki:progress event.
  */
 export interface Progress {
-    /**
-     * the pages a refresh has fetched so far
-     */
     "done": number;
-
-    /**
-     * the pages it fetches in all
-     */
     "total": number;
 }
 
 /**
- * A Summary is one page in the listing.
+ * Summary is one page in the listing.
  */
 export interface Summary {
     "title": string;

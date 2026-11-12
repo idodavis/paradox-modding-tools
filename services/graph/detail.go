@@ -18,7 +18,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Detail is what the page shows about one node: its texts, its keys, its firings and the game rules it reads.
+// A Detail is what the page shows about one node: its texts, its keys, its
+// firings and the game rules it reads.
 type Detail struct {
 	Node     Node            `json:"node"`     // its Fires are every firing it makes
 	Language string          `json:"language"` // the workspace's language, or the base language if it has none
@@ -67,11 +68,13 @@ type RuleOption struct {
 // callKind is the kind of a data call's segment once it holds the call's words.
 const callKind = "text"
 
-// textKeys are the keys at the top of a definition whose value is always a localization key.
+// textKeys are the keys at the top of a definition whose value is always a
+// localization key.
 var textKeys = []string{game.TitleKey, game.DescriptionKey}
 
-// BuildDetail returns the detail of the node with the given id. It returns an error if no workspace is open, the game
-// keeps no definition of the node or its file cannot be read.
+// BuildDetail returns the detail of the node with the given id. It returns an
+// error if no workspace is open, the game keeps no definition of the node or
+// its file cannot be read.
 func (gph *Service) BuildDetail(id string) (Detail, error) {
 	ws, err := gph.Workspace.Session()
 	if err != nil {
@@ -119,7 +122,8 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 	return detail, nil
 }
 
-// makeSection returns the section of one statement at the top of a definition, with its texts.
+// makeSection returns the section of one statement at the top of a definition,
+// with its texts.
 func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Section {
 	current := tree.Statements[statement]
 	section := Section{Key: tree.Text(current.Key), Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Key)}
@@ -160,11 +164,13 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 	return versions
 }
 
-// makeVersion returns the text a statement shows. It returns false if the statement writes no localization key.
+// makeVersion returns the text a statement shows. It returns false if the
+// statement writes no localization key.
 func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (Version, bool) {
 	label := statement
 	if tree.Statements[statement].IsBlock() {
-		// FindChild leaves 0 when there is no desc, and statement 0 is the file, which has no value.
+		// FindChild leaves 0 when there is no desc, and statement 0 is the file,
+		// which has no value.
 		label, _ = tree.FindChild(statement, game.DescriptionKey)
 		if label == 0 {
 			label, _ = tree.FindChild(statement, game.LabelKey)
@@ -184,8 +190,9 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	}, true
 }
 
-// describeCalls returns a text's pieces with each data call replaced by its words, which leave out the function's
-// ending that only turns off its tooltip. A call keeps its markup and has the kind callKind.
+// describeCalls returns a text's pieces with each data call replaced by its
+// words, which leave out the function's ending that only turns off its tooltip.
+// A call keeps its markup and has the kind callKind.
 func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.Segment {
 	segments := loc.Segments(text, 0)
 	for position, segment := range segments {
@@ -241,7 +248,8 @@ func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) 
 	return strings.Join(lo.Uniq(lo.Compact(texts)), "/")
 }
 
-// toTitle returns a text as the one line a player reads, each data call in its words between brackets.
+// toTitle returns a text as the one line a player reads, each data call in its
+// words between brackets.
 func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
 	var title strings.Builder
 	for _, segment := range describeCalls(ws, mods, text) {
@@ -255,7 +263,8 @@ func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
 	return strings.TrimSpace(title.String())
 }
 
-// resolveLanguage returns the workspace's language, or the game's base language if it has none.
+// resolveLanguage returns the workspace's language, or the game's base language
+// if it has none.
 func resolveLanguage(ws *workspace.Session) string {
 	return cmp.Or(ws.Language, game.BaseLanguage)
 }
@@ -299,7 +308,8 @@ func findRule(ws *workspace.Session, mods *index.Index, setting string) (Rule, b
 	return makeRule(ws, mods, tree, statement), true
 }
 
-// makeRule returns the game rule a statement defines. Its default is the setting it names as one, else its first.
+// makeRule returns the game rule a statement defines. Its default is the
+// setting it names as one, else its first.
 func makeRule(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Rule {
 	preset, hasDefault := tree.FindChildValue(statement, game.GameRules.DefaultKey)
 	options := []RuleOption{}

@@ -1,4 +1,4 @@
-// pages.go finds and searches the wiki's pages and reads the facts of a patch note.
+// pages.go finds and searches pages and reads a patch note's facts.
 
 package wiki
 
@@ -9,41 +9,40 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samber/lo"
 	"golang.org/x/net/html"
 
 	"paradox-modding-tools/internal/game"
 )
 
-// A Note is one patch's notes page.
+// Note is one patch's notes page.
 type Note struct {
-	Version  string `json:"version"`
-	Parent   string `json:"parent"`   // the version a hotfix belongs to, such as 1.14 for 1.14.2; "" for a release
-	Released string `json:"released"` // the release date as the note writes it; "" if it gives none
+	Version string `json:"version"`
+
+	// Parent is the version a hotfix belongs to, such as 1.14 for 1.14.2. It is
+	// "" for a release.
+	Parent string `json:"parent"`
+
+	// Released is the date the note gives for its release, or "" for none.
+	Released string `json:"released"`
 	Title    string `json:"title"`
-	Modding  bool   `json:"modding"` // the page has a Modding section
+	Modding  bool   `json:"modding"`
 }
 
-// releasePattern matches the release date in a patch note, such as "released on 2026-09-30".
-var releasePattern = regexp.MustCompile(`released on (?:the )?(\d{4}-\d{2}-\d{2})`)
-
-// releaseSpan is how many bytes of a note are searched for its release date.
-const releaseSpan = 2000
-
-// errNoListing is the error of a call that needs the listing before a refresh has fetched it.
 var errNoListing = errors.New("the wiki's listing has not been fetched yet")
 
-// FindPages returns the wiki pages that belong to the file at the given path, best match first. It returns an error if
-// no workspace is open or no refresh has fetched the listing yet.
-func (wik *Service) FindPages(path string) ([]Summary, error) {
-	ws, err := wik.Workspace.Session()
+// FindPages returns the wiki pages that belong to a file, best match first. It
+// returns an error if no workspace is open or the listing has not been fetched.
+func (s *Service) FindPages(path string) ([]Summary, error) {
+	ws, err := s.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
-	listing, ok := wik.resolveClient(ws).LoadListing()
+
+	listing, ok := s.resolveClient(ws).LoadListing()
 	if !ok {
 		return nil, errNoListing
 	}
+
 	place := ws.Locate(ws.Mods.Load(), path)
 	singular := strings.ToLower(game.DescribeDefinition(place.Database, false))
 	plural := strings.ToLower(game.DescribeDefinition(place.Database, true))
@@ -54,6 +53,7 @@ func (wik *Service) FindPages(path string) ([]Summary, error) {
 			topics = append(topics, topic.Terms...)
 		}
 	}
+
 	holds := func(title, term string) bool { return term != "" && strings.Contains(title, term) }
 	holdsTopic := func(title string) bool {
 		return slices.ContainsFunc(topics, func(term string) bool { return holds(title, term) })
@@ -70,57 +70,88 @@ func (wik *Service) FindPages(path string) ([]Summary, error) {
 		case slices.Contains(topics, title):
 			return 3
 		}
+
 		return 4
 	}
-	pages := lo.Filter(listing.Pages, func(summary Summary, _ int) bool {
+
+	pages := make([]Summary, 0, len(listing.Pages))
+	for _, summary := range listing.Pages {
 		title := strings.ToLower(summary.Title)
-		return holds(title, singular) || holds(title, plural) || holdsTopic(title)
-	})
+		if holds(title, singular) || holds(title, plural) || holdsTopic(title) {
+			pages = append(pages, summary)
+		}
+	}
+
 	slices.SortStableFunc(pages, func(first, second Summary) int {
 		return cmp.Compare(rank(first.Title), rank(second.Title))
 	})
+
 	return pages, nil
 }
 
-// SearchPages returns the wiki's modding pages that hold the given text, letter case aside, those with it in the title
-// first. A page that is not cached is searched by its title alone. It returns an error if no workspace is open or no
-// refresh has fetched the listing yet.
-func (wik *Service) SearchPages(term string) ([]Summary, error) {
-	ws, err := wik.Workspace.Session()
+// SearchPages returns the modding pages that hold a text, title matches first.
+// A page that is not cached is searched by title alone. It returns the errors
+// FindPages does.
+func (s *Service) SearchPages(term string) ([]Summary, error) {
+	ws, err := s.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
-	client := wik.resolveClient(ws)
+
+	client := s.resolveClient(ws)
 	listing, ok := client.LoadListing()
 	if !ok {
 		return nil, errNoListing
 	}
+
 	term = strings.ToLower(term)
-	pages, rest := lo.FilterReject(listing.Pages, func(summary Summary, _ int) bool {
-		return strings.Contains(strings.ToLower(summary.Title), term)
-	})
-	return append(pages, lo.Filter(rest, func(summary Summary, _ int) bool {
+	pages := make([]Summary, 0, len(listing.Pages))
+	var rest []Summary
+	for _, summary := range listing.Pages {
+		if strings.Contains(strings.ToLower(summary.Title), term) {
+			pages = append(pages, summary)
+		} else {
+			rest = append(rest, summary)
+		}
+	}
+
+	for _, summary := range rest {
 		page, ok := client.LoadPage(summary.Title)
 		if !ok {
-			return false
+			continue
 		}
+
 		root, err := parseFragment(page.HTML)
-		return err == nil && strings.Contains(strings.ToLower(textOf(root)), term)
-	})...), nil
+		if err == nil && strings.Contains(strings.ToLower(textOf(root)), term) {
+			pages = append(pages, summary)
+		}
+	}
+
+	return pages, nil
 }
 
-// resolveReleased returns the release date a patch note gives, or "" if it gives none.
+var releasePattern = regexp.MustCompile(`released on (?:the )?(\d{4}-\d{2}-\d{2})`)
+
+const releaseSpan = 2000
+
+// resolveReleased returns the release date a note gives, or "" for none.
 func resolveReleased(root *html.Node) string {
 	text := textOf(root)
-	return lo.NthOr(releasePattern.FindStringSubmatch(text[:min(len(text), releaseSpan)]), 1, "")
+	match := releasePattern.FindStringSubmatch(text[:min(len(text), releaseSpan)])
+	if len(match) < 2 {
+		return ""
+	}
+
+	return match[1]
 }
 
-// hasModding reports whether a page has a heading that holds the word "Modding".
+// hasModding reports whether a heading of the page holds the word Modding.
 func hasModding(root *html.Node) bool {
 	for node := range root.Descendants() {
 		if elements[node.DataAtom].heading && strings.Contains(textOf(node), "Modding") {
 			return true
 		}
 	}
+
 	return false
 }

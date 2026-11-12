@@ -1,6 +1,5 @@
-// shapes.go gives a written word its class, splits a chain into its links
-// and a text into its parameters, reads dates, matches key paths and works
-// out the numbers a file writes.
+// shapes.go gives a written word its class and reads its parts. A base is
+// where a text starts in its file, and the spans returned are the file's.
 
 package jomini
 
@@ -16,8 +15,7 @@ import (
 // Class is what a key, a tag or a value is written as, inside any quotes.
 type Class uint8
 
-// The classes a written word can have. The package doc says what each one is
-// written as, and in which order Classify tries them.
+// The package doc says what each class is written as.
 const (
 	// ClassNone is a part a statement does not write, and an empty text.
 	ClassNone Class = iota
@@ -35,36 +33,29 @@ const (
 	ClassText
 )
 
-// Link is one link of a chain, as scope:x in scope:x.father. Its spans are
-// in the file's own offsets.
+// Link is one link of a chain, as scope:x in scope:x.father.
 type Link struct {
 	Span Span
 
-	// Prefix and Name are the two sides of the link's first colon, as scope
-	// and x in scope:x. Both are empty where the link has no colon with text
-	// on each side. The colon is found without regard to parentheses, so in
-	// opinion(scope:ruler) the prefix is "opinion(scope" and the name is
-	// "ruler)".
+	// Prefix and Name are the sides of the first colon, as scope and x in
+	// scope:x. Both are empty if either side has no text.
 	Prefix Span
 	Name   Span
 
-	// Argument is the text between the link's first ( and the ) that ends
-	// it, as scope:ruler in opinion(scope:ruler). It is empty for a link that
-	// does not end in parentheses after a name.
+	// Argument is the text in the link's parentheses, as scope:ruler in
+	// opinion(scope:ruler). It is empty for a link with none.
 	Argument Span
 }
 
-// Parameter is one parameter written in a text, as $AMOUNT$ or $AMOUNT|1$.
-// Its spans are in the file's own offsets.
+// Parameter is one parameter in a text, as $AMOUNT$ or $AMOUNT|1$.
 type Parameter struct {
 	Span Span
 
-	// Name is the parameter's name without the $ around it, as AMOUNT.
+	// Name is the name without the $, as AMOUNT.
 	Name Span
 
 	// Default is the text after the bar, as 1 in $AMOUNT|1$. It is empty
-	// where no bar is written, and where the bar has nothing after it, as in
-	// $AMOUNT|$.
+	// without a bar, and in $AMOUNT|$.
 	Default Span
 }
 
@@ -75,16 +66,13 @@ type Date struct {
 	Day   int `json:"day"`
 }
 
-// NumberKey is the key that matches a key written as a number or a date,
-// such as one of random_list's branches.
+// NumberKey matches a key written as a number or a date, as in random_list.
 const NumberKey = "<number>"
 
-// precedences holds how tightly each operator of an expression binds.
 var precedences = map[string]int{"+": 1, "-": 1, "*": 2, "/": 2}
 
-// Classify returns what a text is written as. It tries the classes in the
-// order the package doc lists them and returns the first that fits, so 1.5
-// is a number and never a date. It returns ClassNone for "".
+// Classify returns what a text is written as, trying the classes in the
+// package doc's order. It returns ClassNone for "".
 func Classify(text string) Class {
 	switch {
 	case text == "":
@@ -103,29 +91,27 @@ func Classify(text string) Class {
 		return ClassDate
 	case strings.TrimLeftFunc(text, isIdentifierRune) == "":
 		return classifyIdentifier(text)
-	case isParenthesized(text):
+	}
+
+	if _, ok := ParseParenthesized(text, 0); ok {
 		return ClassParenthesized
 	}
 
 	return ClassText
 }
 
-// IsIdentifier reports whether the class is an identifier, a chain or an
-// event id: a text of letters, digits and the characters _ - . ' : that is no
-// number and no date.
+// IsIdentifier reports whether the class is an identifier, chain or event id.
 func (c Class) IsIdentifier() bool {
 	return c == ClassIdentifier || c == ClassChain || c == ClassEventID
 }
 
-// IsNumberKey reports whether the class is a number or a date, the keys that
-// NumberKey stands for.
+// IsNumberKey reports whether the class is one NumberKey stands for.
 func (c Class) IsNumberKey() bool {
 	return c == ClassNumber || c == ClassDate
 }
 
-// isNumber reports whether a text is a number as the game writes one: an
-// optional sign, digits, an optional fraction and an optional %, or a 0x
-// hexadecimal value. A fraction may end in the f of a C float, as in 3.0f.
+// isNumber reports whether a text is a number, with 0x values, a % and C
+// floats such as 3.0f.
 func isNumber(text string) bool {
 	if hex, ok := strings.CutPrefix(text, "0x"); ok {
 		return hex != "" && strings.Trim(hex, "0123456789abcdefABCDEF") == ""
@@ -142,18 +128,14 @@ func isNumber(text string) bool {
 	return isDigits(whole) && (!dotted || isDigits(fraction))
 }
 
-// isDate reports whether a text is shaped like a date, as ParseDate reads
-// one.
 func isDate(text string) bool {
 	_, ok := ParseDate(text)
 
 	return ok
 }
 
-// classifyIdentifier returns the class of a text of identifier characters
-// that is no number and no date: an event id where it is a namespace, a dot
-// and a number, a chain where it holds a dot or a colon, and an identifier
-// otherwise.
+// classifyIdentifier returns an event id such as my_events.1, a chain if the
+// text holds a dot or a colon, else an identifier.
 func classifyIdentifier(text string) Class {
 	namespace, id, dotted := strings.Cut(text, ".")
 
@@ -167,21 +149,23 @@ func classifyIdentifier(text string) Class {
 	return ClassIdentifier
 }
 
-// isParenthesized reports whether a text is one name with one argument in
-// parentheses that end it, as opinion(scope:ruler) is.
-func isParenthesized(text string) bool {
+// ParseParenthesized parses one name with one argument in parentheses, as
+// opinion(scope:ruler). It returns false for any other text.
+func ParseParenthesized(text string, base int) (Step, bool) {
 	if !strings.HasSuffix(text, ")") {
-		return false
+		return Step{}, false
 	}
 
-	call, ok := ParseCall(text, 0)
+	call, ok := ParseCall(text, base)
+	if !ok || len(call.Steps) != 1 || len(call.Steps[0].Arguments) != 1 || call.Span.End != base+len(text) {
+		return Step{}, false
+	}
 
-	return ok && len(call.Steps) == 1 && len(call.Steps[0].Arguments) == 1 && call.Span.End == len(text)
+	return call.Steps[0], true
 }
 
-// ParseDate parses a text shaped like a date, year.month.day. A missing day
-// is 0. It does not check the ranges, which IsValid does. It returns false
-// for any other shape.
+// ParseDate parses year.month.day. A missing day is 0. The ranges are
+// IsValid's. It returns false for any other shape.
 func ParseDate(text string) (Date, bool) {
 	text, negative := strings.CutPrefix(text, "-")
 	parts := strings.Count(text, ".") + 1
@@ -208,16 +192,14 @@ func ParseDate(text string) (Date, bool) {
 	return date, true
 }
 
-// IsValid reports whether the date's month is from 1 to 12 and its day from 0
-// to 31, where 0 means no day.
+// IsValid reports whether the month is 1 to 12 and the day 0 to 31, where 0 is
+// no day.
 func (d Date) IsValid() bool {
 	return d.Month >= 1 && d.Month <= 12 && d.Day >= 0 && d.Day <= 31
 }
 
-// Links splits a chain into its links, as root.father into root and father.
-// A dot inside brackets or quotes does not split, so @[a.b].c is two links.
-// The given base is where the text starts in its file. A text with no dot is
-// one link, and "" is one empty link.
+// Links splits a chain at its dots, as root.father into root and father. A dot
+// in brackets or quotes does not split. "" is one empty link.
 func Links(text string, base int) []Link {
 	var links []Link
 	depth, quoted, start := 0, false, 0
@@ -241,28 +223,27 @@ func Links(text string, base int) []Link {
 	return append(links, parseLink(text[start:], base+start))
 }
 
-// parseLink returns the link that a text writes, where the text starts at
-// the given offset in its file.
 func parseLink(text string, start int) Link {
 	link := Link{Span: Span{Start: start, End: start + len(text)}}
 
-	if prefix, name, ok := strings.Cut(text, ":"); ok && prefix != "" && name != "" {
-		link.Prefix = Span{Start: start, End: start + len(prefix)}
-		link.Name = Span{Start: link.Prefix.End + 1, End: link.Span.End}
-	}
-
+	// a colon inside the parentheses is the argument's own
+	head := text
 	if open := strings.IndexByte(text, '('); open > 0 && strings.HasSuffix(text, ")") {
 		link.Argument = Span{Start: start + open + 1, End: link.Span.End - 1}
+		head = text[:open]
+	}
+
+	if prefix, name, ok := strings.Cut(head, ":"); ok && prefix != "" && name != "" {
+		link.Prefix = Span{Start: start, End: start + len(prefix)}
+		link.Name = Span{Start: link.Prefix.End + 1, End: link.Span.End}
 	}
 
 	return link
 }
 
-// Parameters returns each parameter that a text writes, $NAME$ or
-// $NAME|default$, in order. A name is ASCII letters, digits, underscores
-// and percent signs, as CK3's $SUCCESS_%$ is, and a default runs to the
-// next $. The given base is where the text starts in its file. A $ that
-// starts no parameter is passed over.
+// Parameters returns each $NAME$ or $NAME|default$ in a text. A name is ASCII
+// letters, digits, underscores and %, as in $SUCCESS_%$. A $ that starts no
+// parameter is skipped.
 func Parameters(text string, base int) []Parameter {
 	var parameters []Parameter
 
@@ -287,9 +268,8 @@ func Parameters(text string, base int) []Parameter {
 	return parameters
 }
 
-// parseParameter parses the parameter whose $ is at the given offset of a
-// text. It returns false if none starts there: no name follows the $, or no
-// $ closes the parameter.
+// parseParameter parses the parameter whose $ is at the given offset, or
+// returns false.
 func parseParameter(text string, start, base int) (Parameter, bool) {
 	end := len(text) - len(strings.TrimLeftFunc(text[start+1:], func(r rune) bool {
 		return isAlphanumericRune(r) || r == '%'
@@ -320,9 +300,9 @@ func parseParameter(text string, start, base int) (Parameter, bool) {
 	return parameter, true
 }
 
-// MatchKeyPath reports whether the keys above a statement, outermost first,
-// fit a path of segments joined by /. A segment is a glob, NumberKey, or **
-// for any depth. An empty path fits only the file's top.
+// MatchKeyPath reports whether the keys above a statement fit a path of
+// segments joined by /, each a glob, NumberKey, or ** for any depth. An empty
+// path fits only the file's top.
 func MatchKeyPath(pattern string, keys []string) bool {
 	if pattern == "" {
 		return len(keys) == 0
@@ -331,7 +311,6 @@ func MatchKeyPath(pattern string, keys []string) bool {
 	return matchSegments(strings.Split(pattern, "/"), keys)
 }
 
-// matchSegments reports whether keys fit the segments of a key path.
 func matchSegments(segments, keys []string) bool {
 	if len(segments) == 0 {
 		return len(keys) == 0
@@ -359,9 +338,9 @@ func matchSegments(segments, keys []string) bool {
 	return fits && matchSegments(segments[1:], keys[1:])
 }
 
-// ResolveNumber returns the number the text of a span stands for: a number, a
+// ResolveNumber returns the number a span's text stands for: a number, a
 // constant declared earlier in the file, or an expression @[…] of them. It
-// returns false for any other text and for an expression it cannot compute.
+// returns false for any other text or an expression it cannot compute.
 func (t *Tree) ResolveNumber(span Span) (float64, bool) {
 	text := t.Text(span)
 	if number, ok := parseNumber(text); ok {
@@ -382,9 +361,8 @@ func (t *Tree) ResolveNumber(span Span) (float64, bool) {
 	return number, ok && cursor == len(tokens)
 }
 
-// parseNumber parses a number as the game writes one, a 0x value as its
-// integer and a C float without its f. It returns false for any other text,
-// and for a number with a %, which isNumber accepts.
+// parseNumber parses a number. It returns false for other text and for a
+// number with a %, which isNumber accepts.
 func parseNumber(text string) (float64, bool) {
 	if !isNumber(text) {
 		return 0, false
@@ -401,9 +379,9 @@ func parseNumber(text string) (float64, bool) {
 	return number, err == nil
 }
 
-// resolveConstant returns the number of the last @name = value of the given
-// name that ends at or before the given offset. It returns false if there is
-// none or its value is no number.
+// resolveConstant returns the number of the last @name = value that ends at
+// or before the given offset. It returns false if there is none or it is no
+// number.
 func (t *Tree) resolveConstant(name string, offset int) (float64, bool) {
 	declared := "@" + name
 	count := sort.Search(len(t.Statements), func(i int) bool { return t.Statements[i].Span.Start >= offset })
@@ -418,10 +396,9 @@ func (t *Tree) resolveConstant(name string, offset int) (float64, bool) {
 	return 0, false
 }
 
-// ListConstants returns the span of each constant that an expression @[…]
-// uses, without the @. The given base is where the text starts in its file.
-// It returns nothing for a text that is no expression, or that holds a data
-// call or anything else but numbers, names, operators and brackets.
+// ListConstants returns the span of each constant in an expression @[…],
+// without the @. It returns nothing if the text holds anything but numbers,
+// names, operators and brackets.
 func ListConstants(text string, base int) []Span {
 	var spans []Span
 
@@ -441,9 +418,8 @@ func ListConstants(text string, base int) []Span {
 	return spans
 }
 
-// splitExpression splits an expression @[…] into the span of each token,
-// leaving out white space. The given base is where the text starts in its
-// file. It returns nothing for a text that is no expression.
+// splitExpression splits an expression @[…] into token spans, leaving out
+// white space. It returns nothing for a text that is no expression.
 func splitExpression(text string, base int) []Span {
 	inner, ok := strings.CutPrefix(text, "@[")
 	if !ok {
@@ -481,10 +457,9 @@ func splitExpression(text string, base int) []Span {
 	return tokens
 }
 
-// evaluate computes the expression from the given token on, as far as its
-// operators bind at least as tightly as the given precedence. It returns the
-// number and the index of the token after the part it computed, or false for
-// anything it cannot compute, such as a division by zero.
+// evaluate computes the expression from the given token while operators bind
+// at least as tightly as the given precedence. It returns the number and the
+// next token's index, or false for a part it cannot compute.
 func (t *Tree) evaluate(tokens []Span, cursor, precedence int) (float64, int, bool) {
 	left, cursor, ok := t.evaluateOperand(tokens, cursor)
 
@@ -517,7 +492,7 @@ func (t *Tree) evaluate(tokens []Span, cursor, precedence int) (float64, int, bo
 }
 
 // evaluateOperand computes the operand that starts at the given token. It
-// returns the number and the index of the token after it.
+// returns the number and the next token's index.
 func (t *Tree) evaluateOperand(tokens []Span, cursor int) (float64, int, bool) {
 	if cursor >= len(tokens) {
 		return 0, cursor, false
@@ -548,25 +523,20 @@ func (t *Tree) evaluateOperand(tokens []Span, cursor int) (float64, int, bool) {
 	return number, cursor + 1, ok
 }
 
-// isIdentifierRune reports whether the rune may be written in an identifier.
 func isIdentifierRune(r rune) bool {
 	return r >= utf8.RuneSelf || unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("_-.':", r)
 }
 
-// isDigits reports whether the text is a run of decimal digits, and not
-// empty.
 func isDigits(text string) bool {
 	return text != "" && strings.Trim(text, "0123456789") == ""
 }
 
 // isAlphanumeric reports whether the text is a run of ASCII letters, digits
-// and underscores, and not empty.
+// and underscores.
 func isAlphanumeric(text string) bool {
 	return text != "" && strings.TrimLeftFunc(text, isAlphanumericRune) == ""
 }
 
-// isAlphanumericRune reports whether the rune is an ASCII letter, a digit or
-// an underscore.
 func isAlphanumericRune(r rune) bool {
 	return r < utf8.RuneSelf && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
 }

@@ -1,5 +1,6 @@
-// navigate.go finds where a name is defined and used and renames it. It also lists the symbols of a file and finds
-// definitions by name across the workspace.
+// navigate.go finds where a name is defined and used and renames it. It also
+// lists the symbols of a file and finds definitions by name across the
+// workspace.
 
 package lsp
 
@@ -20,7 +21,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Symbol is one entry of a file: a definition, with the symbols nested inside it, or a localization key.
+// A Symbol is one entry of a file: a definition, with the symbols nested inside
+// it, or a localization key.
 type Symbol struct {
 	Name      string       `json:"name"`
 	Title     string       `json:"title"` // the text the game shows for it in the workspace's language; "" if none
@@ -31,15 +33,17 @@ type Symbol struct {
 	Children  []Symbol     `json:"children,omitempty"`
 }
 
-// A WorkspaceSymbol is one definition found by the symbol search across the workspace.
+// A WorkspaceSymbol is one definition found by the symbol search across the
+// workspace.
 type WorkspaceSymbol struct {
 	Name     string `json:"name"`
 	Database string `json:"database"`
 	Site     Site   `json:"site"`
 }
 
-// Definition returns where the name at a position is defined, with the definition the game keeps first. For an image
-// path it returns the image file. It returns an empty list if the position is on no name.
+// Definition returns where the name at a position is defined, with the
+// definition the game keeps first. For an image path it returns the image file.
+// It returns an empty list if the position is on no name.
 func (lsp *Service) Definition(path string, line, column int) ([]Site, error) {
 	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
@@ -125,8 +129,9 @@ func listBufferSites(ws *workspace.Session, mods *index.Index, path string, refe
 	})
 }
 
-// findReference returns the reference a definition or a use makes at the given offset, with the span it is written at.
-// The reference has no name if the offset is on none.
+// findReference returns the reference a definition or a use makes at the given
+// offset, with the span it is written at. The reference has no name if the
+// offset is on none.
 func findReference(
 	ws *workspace.Session, mods *index.Index, document schema.Document, place workspace.Place, offset int,
 ) (jomini.Span, schema.Reference) {
@@ -139,9 +144,11 @@ func findReference(
 	return span, resolveHit(mods, place, reference, cursor.context.References)
 }
 
-// resolveHit returns the reference the name under the cursor stands for: the first of the references written at the
-// given reference's span whose database defines the name, as seen from the place's file. A call that may name any
-// callable database is tried against each. If none defines it, the given reference comes back.
+// resolveHit returns the reference the name under the cursor stands for: the
+// first of the references written at the given reference's span whose database
+// defines the name, as seen from the place's file. A call that may name any
+// callable database is tried against each. If none defines it, the given
+// reference comes back.
 func resolveHit(mods *index.Index, place workspace.Place, reference schema.Reference, references []schema.Reference) schema.Reference {
 	candidates := lo.Filter(references, func(other schema.Reference, _ int) bool { return other.Span == reference.Span })
 	if reference.Database == game.AnyCall {
@@ -158,8 +165,9 @@ func resolveHit(mods *index.Index, place workspace.Place, reference schema.Refer
 	return reference
 }
 
-// References returns where the name at a position is defined and where it is used. A localization key's translations
-// are left out. It returns an empty list if the position is on no name.
+// References returns where the name at a position is defined and where it is
+// used. A localization key's translations are left out. It returns an empty
+// list if the position is on no name.
 func (lsp *Service) References(path string, line, column int) ([]Site, error) {
 	ws, document, err := lsp.loadDocument(path)
 	if err != nil {
@@ -175,7 +183,8 @@ func (lsp *Service) References(path string, line, column int) ([]Site, error) {
 	return locateSites(ws, mods, reference, occurrences, true), nil
 }
 
-// listOccurrences returns the sites of a name, its definitions and then its uses, as seen from the given file.
+// listOccurrences returns the sites of a name, its definitions and then its
+// uses, as seen from the given file.
 func listOccurrences(mods *index.Index, place workspace.Place, reference schema.Reference) []index.Site {
 	return slices.Concat(mods.ResolveLocal(reference, place.Position), mods.ListUses(reference.Database, reference.Name))
 }
@@ -194,7 +203,8 @@ func (lsp *Service) PrepareRename(path string, line, column int) (*jomini.Range,
 	if reference.Name == "" {
 		return nil, nil
 	}
-	// a name a read-only file also defines cannot be renamed, since that definition stays
+	// a name a read-only file also defines cannot be renamed, since that
+	// definition stays
 	sites := mods.ResolveLocal(reference, place.Position)
 	if len(sites) == 0 || lo.SomeBy(sites, func(site index.Site) bool { return ws.Locate(mods, mods.File(site).Path).ReadOnly }) {
 		return nil, nil
@@ -235,7 +245,8 @@ func (lsp *Service) Rename(path string, line, column int, name string) (map[stri
 	return edits, nil
 }
 
-// ListSymbols returns a file's definitions, nested as they are written, or a localization file's keys.
+// ListSymbols returns a file's definitions, nested as they are written, or a
+// localization file's keys.
 func (lsp *Service) ListSymbols(path string) ([]Symbol, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {
@@ -244,9 +255,10 @@ func (lsp *Service) ListSymbols(path string) ([]Symbol, error) {
 	return ListFileSymbols(ws, ws.Mods.Load(), path)
 }
 
-// ListFileSymbols returns the definitions of a file in the given session, nested as they are written, or the keys of
-// a localization file, each with its title in the session's language. It returns none for a file that is neither, and
-// an error if the file cannot be read.
+// ListFileSymbols returns the definitions of a file in the given session,
+// nested as they are written, or the keys of a localization file, each with its
+// title in the session's language. It returns none for a file that is neither,
+// and an error if the file cannot be read.
 func ListFileSymbols(ws *workspace.Session, mods *index.Index, path string) ([]Symbol, error) {
 	document, err := ws.WalkDocument(path)
 	if err != nil {
@@ -301,8 +313,9 @@ func listSymbols(ws *workspace.Session, mods *index.Index, document schema.Docum
 	return symbols
 }
 
-// makeSymbol returns the symbol for a name the tree defines, with the given title. The reference holds the name and
-// the span it is written at. The given span covers the whole definition, a statement or a message.
+// makeSymbol returns the symbol for a name the tree defines, with the given
+// title. The reference holds the name and the span it is written at. The given
+// span covers the whole definition, a statement or a message.
 func makeSymbol(tree *jomini.Tree, reference schema.Reference, span jomini.Span, title string) Symbol {
 	return Symbol{
 		Name: reference.Name, Title: title, Database: reference.Database,
@@ -312,10 +325,11 @@ func makeSymbol(tree *jomini.Tree, reference schema.Reference, span jomini.Span,
 	}
 }
 
-// FindSymbols returns up to the given limit of names that contain the query: the definitions, or the localization keys
-// when the second argument is true. The best match comes first: the name that is the query, then the names that start
-// with it, then the rest. Within each of these the mods' files come before the game's. It returns an empty list for an
-// empty query.
+// FindSymbols returns up to the given limit of names that contain the query:
+// the definitions, or the localization keys when the second argument is true.
+// The best match comes first: the name that is the query, then the names that
+// start with it, then the rest. Within each of these the mods' files come
+// before the game's. It returns an empty list for an empty query.
 func (lsp *Service) FindSymbols(query string, localization bool, limit int) ([]WorkspaceSymbol, error) {
 	ws, err := lsp.Workspace.Session()
 	if err != nil {

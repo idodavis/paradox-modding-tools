@@ -38,7 +38,8 @@ export function BuildOverride(path: string, line: number, column: number, modID:
 }
 
 /**
- * CloseFile drops an open file's text from the session. It does nothing if no workspace is open.
+ * CloseFile drops an open file's text from the session. It does nothing if no
+ * workspace is open.
  */
 export function CloseFile(path: string): $CancellablePromise<void> {
     return $Call.ByID(934988783, path);
@@ -70,16 +71,17 @@ export function Complete(path: string, line: number, column: number): $Cancellab
 }
 
 /**
- * Definition returns where the name at a position is defined, with the definition the game keeps first. For an image
- * path it returns the image file. It returns an empty list if the position is on no name.
+ * Definition returns where the name at a position is defined, with the
+ * definition the game keeps first. For an image path it returns the image file.
+ * It returns an empty list if the position is on no name.
  */
 export function Definition(path: string, line: number, column: number): $CancellablePromise<$models.Site[] | null> {
     return $Call.ByID(3801469422, path, line, column);
 }
 
 /**
- * DescribeIndentation returns what a file indents one level with, in words: "Tabs" or "4 spaces". It returns "" if the
- * file indents nothing.
+ * DescribeIndentation returns what a file indents one level with, in words:
+ * "Tabs" or "4 spaces". It returns "" if the file indents nothing.
  */
 export function DescribeIndentation(path: string): $CancellablePromise<string> {
     return $Call.ByID(1536803193, path);
@@ -94,18 +96,20 @@ export function Diagnose(path: string): $CancellablePromise<$models.Diagnostic[]
 }
 
 /**
- * DraftFile returns the file New file makes in a folder of a mod: the name it suggests and the text it starts with. It
- * returns an error if no workspace is open or the folder is not in a mod that can be written to.
+ * DraftFile returns the file New file makes in a folder of a mod: the name it
+ * suggests and the text it starts with. It returns an error if no workspace is
+ * open or the folder is not in a mod that can be written to.
  */
 export function DraftFile(folder: string): $CancellablePromise<$models.Draft> {
     return $Call.ByID(48556312, folder);
 }
 
 /**
- * FindSymbols returns up to the given limit of names that contain the query: the definitions, or the localization keys
- * when the second argument is true. The best match comes first: the name that is the query, then the names that start
- * with it, then the rest. Within each of these the mods' files come before the game's. It returns an empty list for an
- * empty query.
+ * FindSymbols returns up to the given limit of names that contain the query:
+ * the definitions, or the localization keys when the second argument is true.
+ * The best match comes first: the name that is the query, then the names that
+ * start with it, then the rest. Within each of these the mods' files come
+ * before the game's. It returns an empty list for an empty query.
  */
 export function FindSymbols(query: string, localization: boolean, limit: number): $CancellablePromise<$models.WorkspaceSymbol[] | null> {
     return $Call.ByID(3280846261, query, localization, limit);
@@ -130,29 +134,32 @@ export function Hover(path: string, line: number, column: number): $CancellableP
 }
 
 /**
- * ListColorSites returns every color written in a file, with the color it makes.
+ * ListColorSites returns every color written in a file, with the color it
+ * makes.
  */
 export function ListColorSites(path: string): $CancellablePromise<$models.ColorSite[] | null> {
     return $Call.ByID(1388028654, path);
 }
 
 /**
- * ListFixes returns the quick fixes for the given problems of a file, one for each problem that has a fix.
+ * ListFixes returns the quick fixes for the given problems of a file, one for
+ * each problem that has a fix.
  */
 export function ListFixes(path: string, diagnostics: $models.Diagnostic[] | null): $CancellablePromise<$models.Fix[] | null> {
     return $Call.ByID(1404606734, path, diagnostics);
 }
 
 /**
- * ListFolds returns a file's foldable regions: every block that spans more than one line.
+ * ListFolds returns a file's foldable regions: every block that spans more than
+ * one line.
  */
 export function ListFolds(path: string): $CancellablePromise<$models.Fold[] | null> {
     return $Call.ByID(3678250401, path);
 }
 
 /**
- * ListHints returns a file's inlay hints: each date read in the mod's calendar, and the text of each localization key
- * in the workspace's language.
+ * ListHints returns a file's inlay hints: each date read in the mod's calendar,
+ * and the text of each localization key in the workspace's language.
  */
 export function ListHints(path: string): $CancellablePromise<$models.Hint[] | null> {
     return $Call.ByID(1184030859, path);
@@ -166,7 +173,8 @@ export function ListLegend(): $CancellablePromise<$models.Legend> {
 }
 
 /**
- * ListSymbols returns a file's definitions, nested as they are written, or a localization file's keys.
+ * ListSymbols returns a file's definitions, nested as they are written, or a
+ * localization file's keys.
  */
 export function ListSymbols(path: string): $CancellablePromise<$models.Symbol[] | null> {
     return $Call.ByID(1323311336, path);
@@ -182,8 +190,9 @@ export function PrepareRename(path: string, line: number, column: number): $Canc
 }
 
 /**
- * PresentColor returns the text that writes a color into a file, in the form of the color already written at the given
- * range. If the range holds no color, it uses the form the game's coats write colors in. It returns an error if the
+ * PresentColor returns the text that writes a color into a file, in the form of
+ * the color already written at the given range. If the range holds no color, it
+ * uses the form the game's coats write colors in. It returns an error if the
  * form cannot be written.
  */
 export function PresentColor(path: string, colorRange: jomini$0.Range, color: jomini$0.RGBA): $CancellablePromise<string> {
@@ -191,8 +200,9 @@ export function PresentColor(path: string, colorRange: jomini$0.Range, color: jo
 }
 
 /**
- * References returns where the name at a position is defined and where it is used. A localization key's translations
- * are left out. It returns an empty list if the position is on no name.
+ * References returns where the name at a position is defined and where it is
+ * used. A localization key's translations are left out. It returns an empty
+ * list if the position is on no name.
  */
 export function References(path: string, line: number, column: number): $CancellablePromise<$models.Site[] | null> {
     return $Call.ByID(2236984049, path, line, column);
@@ -210,14 +220,16 @@ export function Rename(path: string, line: number, column: number, name: string)
 }
 
 /**
- * SetText gives the session the text the editor holds for an open file. It returns the file's problems.
+ * SetText gives the session the text the editor holds for an open file. It
+ * returns the file's problems.
  */
 export function SetText(path: string, text: string): $CancellablePromise<$models.Diagnostic[] | null> {
     return $Call.ByID(2776350530, path, text);
 }
 
 /**
- * Signature returns the signature help for the call at a position, or nil if the position is not inside a call.
+ * Signature returns the signature help for the call at a position, or nil if
+ * the position is not inside a call.
  */
 export function Signature(path: string, line: number, column: number): $CancellablePromise<$models.Signature | null> {
     return $Call.ByID(2623624791, path, line, column);

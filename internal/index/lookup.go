@@ -10,8 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/texture"
 )
 
@@ -19,21 +18,21 @@ import (
 // local definition never counts. A reference with no database names the
 // definitions in every database that defines its name. The result is empty if
 // the name is undefined.
-func (i *Index) Resolve(reference schema.Reference) []Site {
+func (i *Index) Resolve(reference lang.Reference) []Site {
 	return i.listResolved(reference, func(Site) bool { return false })
 }
 
 // ResolveLocal is Resolve for a reference written in the file at a position
 // in Files: that file's local definitions count too. A file the index does
 // not list has the position -1, which counts none.
-func (i *Index) ResolveLocal(reference schema.Reference, file int32) []Site {
+func (i *Index) ResolveLocal(reference lang.Reference, file int32) []Site {
 	return i.listResolved(reference, func(site Site) bool { return site.File == file })
 }
 
 // listResolved returns the definitions that a reference names, as Resolve
 // orders them. A local definition counts only if the given test accepts its
 // site.
-func (i *Index) listResolved(reference schema.Reference, isVisible func(Site) bool) []Site {
+func (i *Index) listResolved(reference lang.Reference, isVisible func(Site) bool) []Site {
 	var sites []Site
 
 	if reference.Database != "" {
@@ -55,16 +54,16 @@ func (i *Index) listResolved(reference schema.Reference, isVisible func(Site) bo
 }
 
 // ListCallees returns the references that a reference stands for. A
-// reference in game.AnyCall stands for the name in each callable database, in
+// reference in lang.AnyCall stands for the name in each callable database, in
 // database name order. Any other reference stands for itself.
-func ListCallees(reference schema.Reference) []schema.Reference {
-	if reference.Database != game.AnyCall {
-		return []schema.Reference{reference}
+func ListCallees(reference lang.Reference) []lang.Reference {
+	if reference.Database != lang.AnyCall {
+		return []lang.Reference{reference}
 	}
 
-	callees := make([]schema.Reference, len(game.Called))
-	for position, database := range game.Called {
-		callees[position] = schema.Reference{Database: database, Name: reference.Name, Span: reference.Span}
+	callees := make([]lang.Reference, len(lang.Called))
+	for position, database := range lang.Called {
+		callees[position] = lang.Reference{Database: database, Name: reference.Name, Span: reference.Span}
 	}
 
 	return callees
@@ -90,11 +89,11 @@ func (i *Index) ListDatabases(name string) []string {
 // any callable database count too.
 func (i *Index) ListUses(database, name string) []Site {
 	uses := i.listPosting(RoleRefers, database, name)
-	if !slices.Contains(game.Called, database) {
+	if !slices.Contains(lang.Called, database) {
 		return uses
 	}
 
-	calls := i.listPosting(RoleRefers, game.AnyCall, name)
+	calls := i.listPosting(RoleRefers, lang.AnyCall, name)
 
 	return slices.SortedFunc(slices.Values(slices.Concat(uses, calls)), compareSites)
 }
@@ -114,7 +113,7 @@ func (i *Index) IsUsedByGame(database, name string) bool {
 	install := cmp.Or(i.install, i)
 
 	return len(install.listPosting(RoleRefers, database, name)) > 0 ||
-		slices.Contains(game.Called, database) && len(install.listPosting(RoleRefers, game.AnyCall, name)) > 0
+		slices.Contains(lang.Called, database) && len(install.listPosting(RoleRefers, lang.AnyCall, name)) > 0
 }
 
 // ListDefinitions returns every definition in a database, in load order. The
@@ -144,7 +143,7 @@ func (i *Index) ListDefinitions(database string) []Site {
 // ListMessages returns every message with the given key, one per language and
 // file, in load order.
 func (i *Index) ListMessages(key string) []Site {
-	return i.listPosting(RoleLocalizes, game.Localization, key)
+	return i.listPosting(RoleLocalizes, lang.Localization, key)
 }
 
 // ListKeys returns up to the given limit of the localization keys that
@@ -156,7 +155,7 @@ func (i *Index) ListMessages(key string) []Site {
 // first met them. It also reports whether the list is cut: it holds as many
 // keys as the limit allows, so more may match.
 func (i *Index) ListKeys(languages []string, text string, limit int) ([]string, bool) {
-	databaseOrdinal, ok := i.Databases.Lookup(game.Localization)
+	databaseOrdinal, ok := i.Databases.Lookup(lang.Localization)
 	if !ok {
 		return nil, false
 	}
@@ -264,19 +263,19 @@ func (i *Index) FindDefinition(site Site) (Site, bool) {
 
 // ToReference returns the database and the name that one occurrence is
 // written with.
-func (i *Index) ToReference(site Site) schema.Reference {
+func (i *Index) ToReference(site Site) lang.Reference {
 	occurrence := i.Occurrence(site)
 
-	return schema.Reference{Database: i.Databases.Texts[occurrence.Database], Name: i.Names.Texts[occurrence.Name]}
+	return lang.Reference{Database: i.Databases.Texts[occurrence.Database], Name: i.Names.Texts[occurrence.Name]}
 }
 
 // FindTextKey returns the localization key a definition writes for its title,
-// given game.TitleKey, or for its description, given game.DescriptionKey. It
+// given lang.TitleKey, or for its description, given lang.DescriptionKey. It
 // returns false if the definition writes none.
 func (i *Index) FindTextKey(definition Site, key string) (string, bool) {
 	for _, site := range i.listReferences(definition) {
 		occurrence := i.Occurrence(site)
-		if key == game.TitleKey && occurrence.Titles || key == game.DescriptionKey && occurrence.Describes {
+		if key == lang.TitleKey && occurrence.Titles || key == lang.DescriptionKey && occurrence.Describes {
 			return i.Names.Texts[occurrence.Name], true
 		}
 	}
@@ -320,7 +319,7 @@ func (i *Index) listDefining(database, name string, isVisible func(Site) bool) [
 // database. A localization key is defined by its messages, and every other
 // name by its definitions.
 func toRole(database string) Role {
-	if database == game.Localization {
+	if database == lang.Localization {
 		return RoleLocalizes
 	}
 

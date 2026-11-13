@@ -9,7 +9,7 @@ import * as files$0 from "../../internal/files/models.js";
 import * as game$0 from "../../internal/game/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as schema$0 from "../../internal/schema/models.js";
+import * as lang$0 from "../../internal/lang/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as app$0 from "../app/models.js";
@@ -151,23 +151,17 @@ export interface ModFolder {
  */
 export interface Place {
     "path": string;
-
-    /**
-     * Key is the one key two paths are compared by: the path cleaned,
-     * lower-cased and with forward slashes.
-     */
     "key": string;
 
     /**
-     * Rel is the path from the file's root, with forward slashes, and Origin
-     * is that root's.
+     * Rel is the path below the file's root, with slashes, and Origin is that
+     * root's.
      */
     "rel": string;
     "origin": string;
 
     /**
-     * Stage is the stage folder Rel opens with, as Rel writes it. It is ""
-     * for a file under no stage.
+     * Stage is the stage folder Rel opens with, or "" for none.
      */
     "stage": string;
     "format": files$0.Format;
@@ -235,7 +229,7 @@ export interface State {
      * UpdatedFrom is the recorded version, when opening found another.
      */
     "updatedFrom": string;
-    "dumps": schema$0.SourceState;
+    "dumps": lang$0.SourceState;
 
     /**
      * Effects, Triggers and Scopes count what the schema declares.

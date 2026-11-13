@@ -13,7 +13,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
@@ -465,7 +465,7 @@ func buildDetail(t *testing.T, gph *Service, id string) Detail {
 
 // findDescription returns the text of a detail's first description, or "" if it writes none.
 func findDescription(detail Detail) string {
-	section, _ := lo.Find(detail.Sections, func(section Section) bool { return section.Key == game.DescriptionKey })
+	section, _ := lo.Find(detail.Sections, func(section Section) bool { return section.Key == lang.DescriptionKey })
 	return lo.FirstOr(section.Texts, Version{}).Text
 }
 

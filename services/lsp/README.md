@@ -9,7 +9,7 @@ There is no protocol, no stream and no document table. Each of Monaco's provider
 the bindings type it from end to end. The session's buffers are the open files. An answer is computed when asked and
 nothing is kept between calls.
 
-It decides nothing about the language. What a key means is the [schema](../../internal/schema/README.md)'s, where a name
+It decides nothing about the language. What a key means is [lang](../../internal/lang/README.md)'s, where a name
 is defined and which copy the game keeps is the [index](../../internal/index/README.md)'s, and the open session is the
 [workspace](../workspace/README.md)'s. This package adds the editor's view of them: the cards, the lists and the
 problems in words.
@@ -17,7 +17,7 @@ problems in words.
 **Uses** [app](../app/README.md), [workspace](../workspace/README.md), [files](../../internal/files/README.md),
 [game](../../internal/game/README.md), [index](../../internal/index/README.md),
 [jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
-[schema](../../internal/schema/README.md), [texture](../../internal/texture/README.md) · **Used by**
+[lang](../../internal/lang/README.md), [texture](../../internal/texture/README.md) · **Used by**
 [draw](../draw/README.md), [graph](../graph/README.md), [health](../health/README.md), [mcp](../mcp/README.md),
 [search](../search/), [terminal](../terminal/README.md), [wiki](../wiki/README.md).
 
@@ -27,7 +27,7 @@ problems in words.
 flowchart LR
   monaco["Monaco's provider"] -->|path, line, column| method["A Service method"]
   method --> tree["The file's tree<br/>the editor's text if open, else the disk"]
-  tree --> walk["schema.Walk or WalkTo<br/>with this answer's visitor"]
+  tree --> walk["lang.Schema.Walk<br/>a Context for each statement"]
   walk --> index["The index<br/>sites, winners"]
   walk --> answer["The answer<br/>in Monaco's ranges"]
   index --> answer
@@ -128,7 +128,7 @@ and Health's rows both read the level from it. `SplitMessage` fills a template a
 
 **A check accuses only on firm ground.** A reference is dangling only where the walk did not mark it `Inferred`: its
 database is known, holds no names made as the script runs, and the claim that makes it is not inferred from the
-game's files alone (`schema`'s `judge` gives the one verdict). A name the game's own
+game's files alone (`lang`'s `judge` gives the one verdict). A name the game's own
 files use is never dangling, unless every definition of it lies in a file the game does not read. A key is unknown, or
 a value of the wrong type, only where a source that can accuse describes the block and the game's own files never
 write otherwise.
@@ -148,8 +148,7 @@ write otherwise.
 | `hover.go` | The hover card and the lexicon classes. |
 | `complete.go` | Completion. |
 | `navigate.go` | Definitions, references, rename and symbols. |
-| `diagnostics.go` | The table of codes, levels and topics, the messages, and the checks of a script file. |
-| `messages.go` | The checks of a localization file. |
+| `diagnostics.go` | The table of codes, levels and topics, the messages, and the checks of a file. |
 | `tokens.go` | The semantic tokens. |
 | `edits.go` | Formatting, quick fixes, overrides and new files. |
 | `details.go` | Folds, hints, color sites and signature help. |

@@ -37,13 +37,13 @@
 // # Which copy the game keeps
 //
 // Only the copies of a name in files the game reads take part, and the
-// database's game.Precedence decides between them. The copies are put in load
+// database's lang.Precedence decides between them. The copies are put in load
 // order first: by their paths from their stages, or by their roots where the
 // playset decides, and within one file as written.
 //
 //   - Where the database takes entry modes, the first plain copy stands, and
 //     where it keeps every copy, each later plain copy joins it. The modes act
-//     after every plain copy, kind by kind in the order of game.EntryModes and
+//     after every plain copy, kind by kind in the order of lang.EntryModes and
 //     then in load order (the Vic3 and EU5 wikis' Mod compatibility,
 //     Processing order). A mode that replaces takes the standing copy's
 //     place, one that adds joins it, and one with nothing to act on does
@@ -114,8 +114,8 @@ import (
 	"sync"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 )
 
 // Role is what an occurrence does with its name.
@@ -270,8 +270,9 @@ type Index struct {
 	// postings it reads. It is nil for the install's own index.
 	install *Index
 
-	// row is the game's row, looked up once when the index is made or loaded.
-	row *game.Game
+	// dialect is the game's dialect, looked up once when the index is made or
+	// loaded.
+	dialect *lang.Dialect
 
 	// unread holds the keys of the files the game does not read, as they
 	// were when a file was last listed or dropped. Only a mods' index has it.
@@ -325,8 +326,8 @@ func (i *Index) Text(site Site) string {
 
 // FindMode returns the entry mode a definition is written with. It returns
 // false for a plain definition.
-func (i *Index) FindMode(site Site) (game.EntryMode, bool) {
-	return game.LookupEntryMode(i.Modes.Texts[i.Occurrence(site).Mode])
+func (i *Index) FindMode(site Site) (lang.EntryMode, bool) {
+	return lang.LookupEntryMode(i.Modes.Texts[i.Occurrence(site).Mode])
 }
 
 // ListOwnFiles returns the positions in Files of the files this index scanned

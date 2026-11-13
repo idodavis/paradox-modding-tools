@@ -11,6 +11,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
+	"paradox-modding-tools/internal/lang"
 )
 
 // Place is where one file sits in the workspace, with the root it is under
@@ -83,7 +84,7 @@ func (s *Session) Locate(mods *index.Index, path string) Place {
 		}
 	}
 
-	place.Drawable = place.Format == files.FormatGUI || place.Database == game.Coat.Database
+	place.Drawable = place.Format == files.FormatGUI || place.Database == lang.CoatDatabase
 	if position, ok := mods.FindFile(path); ok {
 		hiding, hider := mods.FindHiding(position)
 		place.Position, place.Hiding, place.Hider = position, hiding, hider.Origin

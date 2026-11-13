@@ -9,9 +9,9 @@ The tools hold no logic of their own. Each answers through the method of another
 question for a page: the editor's, Health's, the Event Graph's, the wiki's, the Visual view's, the search's and the
 workspace's. What the assistant pane says to an agent is [agent](../agent/README.md)'s.
 
-**Uses** [files](../../internal/files/README.md), [game](../../internal/game/README.md),
-[jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
-[schema](../../internal/schema/README.md), [terminal](../../internal/terminal/README.md),
+**Uses** [files](../../internal/files/README.md), [jomini](../../internal/jomini/README.md),
+[lang](../../internal/lang/README.md), [loc](../../internal/loc/README.md),
+[terminal](../../internal/terminal/README.md),
 [draw](../draw/README.md), [graph](../graph/README.md),
 [health](../health/README.md), [lsp](../lsp/README.md), [search](../search/), [wiki](../wiki/README.md),
 [workspace](../workspace/README.md) · **Used by** [agent](../agent/README.md), [terminal](../terminal/README.md).

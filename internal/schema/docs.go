@@ -1,5 +1,6 @@
-// docs.go reads the documentation files a game ships beside its script into
-// the fields, types and defaults they describe.
+// docs.go reads the doc files a game ships beside its script, such as CK3's
+// _traits.info and EU5's readme.txt, into the fields they describe: each
+// field's hover text, its type, whether it must be written and its default.
 
 package schema
 
@@ -12,136 +13,175 @@ import (
 	"unicode"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 )
 
-// docReader reads one doc file line by line into the fields it describes.
+// docReader holds what has been read of one doc file so far, while the file
+// is read line by line.
 type docReader struct {
-	schema *Schema
+	schema *lang.Schema
 
-	// root is the doc's definition: the fields its example writes, each
-	// under the block that holds it.
-	root *Field
+	// root holds the fields the doc writes at its top.
+	root *lang.Field
 
-	// blocks holds, for each block the line is in, the field its keys belong
-	// to.
-	blocks []*Field
+	// blocks holds, for each block that is open on the line being read, the
+	// field its keys are added to.
+	blocks []*lang.Field
 
-	// current is the field the text attaches to. It is nil before the first.
-	current *Field
+	// current is the field the next sentences are about. It is nil before
+	// the first field.
+	current *lang.Field
 
-	// headed is whether the current field came from a header and no
-	// statement has followed it.
-	headed bool
+	// isHeader is whether current came from a "### Brief:" header that no
+	// statement or field has followed yet.
+	isHeader bool
 
-	// header is the key of the last header while no statement of it has
-	// followed. It is "" if none.
+	// header is the key such a header names, until a statement follows it.
+	// It is "" otherwise.
 	header string
 
-	// comments are the comment lines directly above the next statement.
+	// comments are the sentences read since the last statement. They
+	// describe the next one.
 	comments []string
 
-	// list is the list a label opened for the current field.
+	// list is the list the last label opened, which the list items under it
+	// belong to.
 	list labelList
 
-	// blurb is the first paragraph of prose before the first statement.
+	// blurb holds the sentences before the first field, up to the first
+	// blank line. They describe the database as a whole.
 	blurb []string
 
-	// started is whether a statement, a header or a field has been read, and
-	// ended whether the first paragraph has ended.
-	started bool
-	ended   bool
+	// hasFields is whether a statement, a header's field or a "key: text"
+	// field has been read. isBlurbOver is whether a blank line has ended the
+	// opening sentences.
+	hasFields   bool
+	isBlurbOver bool
 
-	// script is the count of script lines and prose the count of other lines
-	// with text, which tell a data file from a doc.
+	// script and prose count the lines that are script and the lines that
+	// are not. They tell a data file from a doc.
 	script int
 	prose  int
 }
 
-// labelList is the list that a label in a doc opens for the field above it,
-// as "Possible values:" opens a list of choices.
+// labelList is the kind of list a label line opens for the field above it,
+// as "Supported scopes:" opens a list of scopes.
 type labelList string
 
-// The lists a label opens: none, choices or scopes.
 const (
 	labelListNone    labelList = ""
 	labelListChoices labelList = "choices"
 	labelListScopes  labelList = "scopes"
 )
 
-// docType is what a type in the games' own docs stands for, such as bool or
-// localization key.
+// docType is what one of the types the docs write means, as "bool" or
+// "localization key".
 type docType struct {
-	// Value is bool, number, date, text, reference, color, block, or unknown
-	// for a key or a block.
-	Value ValueType
+	Value lang.ValueType
 
-	// Database is the database a reference names. It is "" where that is not
-	// known.
+	// Database is the database a name belongs to. It is "" where the type
+	// does not say.
 	Database string
 
-	// Shape is a Shapes key for a block. It is "" for none.
-	Shape game.Shape
+	// Shape is what a block of this type holds. It is "" where the type
+	// does not say.
+	Shape lang.Shape
 
-	// Values is whether the term takes a script value.
+	// Values is whether a script value may be written for the number.
 	Values bool
 }
 
-// docTypes are the types the games' own docs (.info, .md and readme files)
-// write, each with what it stands for.
+// docTypes holds what each type the docs write means. A type is looked up
+// as words in lower case, so LocalizationKey is "localization key".
 var docTypes = map[string]docType{
-	"bool": {Value: ValueTypeBool}, "boolean": {Value: ValueTypeBool}, "yes/no": {Value: ValueTypeBool},
-	"int": {Value: ValueTypeNumber}, "integer": {Value: ValueTypeNumber}, "int32": {Value: ValueTypeNumber}, "number": {Value: ValueTypeNumber},
-	"float": {Value: ValueTypeNumber}, "decimal": {Value: ValueTypeNumber}, "fixed point": {Value: ValueTypeNumber},
-	// CK3 common/script_values/_script_values.info, "Inlining": "Formulas can
-	// be written inline wherever scripted values work", so a block written
-	// there is a value block
-	"value":                {Value: ValueTypeNumber, Values: true, Shape: game.ShapeValue},
-	"script value":         {Value: ValueTypeNumber, Values: true, Shape: game.ShapeValue},
-	"scripted value":       {Value: ValueTypeNumber, Values: true, Shape: game.ShapeValue},
-	"scripted value int32": {Value: ValueTypeNumber},
-	"date":                 {Value: ValueTypeDate},
-	"string":               {Value: ValueTypeText}, "text": {Value: ValueTypeText}, "name": {Value: ValueTypeText}, "identifier": {Value: ValueTypeText},
-	"localization key": {Value: ValueTypeReference, Database: game.Localization},
-	"loc key":          {Value: ValueTypeReference, Database: game.Localization},
-	"localisation key": {Value: ValueTypeReference, Database: game.Localization},
-	"database key":     {Value: ValueTypeReference}, "key": {Value: ValueTypeReference}, "array of database keys": {Value: ValueTypeReference},
-	"string path": {Value: ValueTypeReference, Database: game.File}, "path": {Value: ValueTypeReference, Database: game.File},
-	"texture": {Value: ValueTypeReference, Database: game.File}, "file": {Value: ValueTypeReference, Database: game.File},
-	"color":   {Value: ValueTypeColor},
-	"trigger": {Value: ValueTypeBlock, Shape: game.ShapeTriggers}, "triggers": {Value: ValueTypeBlock, Shape: game.ShapeTriggers},
-	"effect": {Value: ValueTypeBlock, Shape: game.ShapeEffects}, "effects": {Value: ValueTypeBlock, Shape: game.ShapeEffects},
-	"dynamic description": {Value: ValueTypeUnknown, Shape: game.ShapeDescription},
-	"modifier":            {Value: ValueTypeBlock, Shape: game.ShapeModifiers}, "modifiers": {Value: ValueTypeBlock, Shape: game.ShapeModifiers},
-	"modifier(s)": {Value: ValueTypeBlock, Shape: game.ShapeModifiers}, "block": {Value: ValueTypeBlock}, "mtth": {Value: ValueTypeBlock},
-	"scripted cost": {Value: ValueTypeBlock}, "cost": {Value: ValueTypeBlock}, "vector 2": {Value: ValueTypeBlock}, "vector2": {Value: ValueTypeBlock},
+	"bool":    {Value: lang.ValueTypeBool},
+	"boolean": {Value: lang.ValueTypeBool},
+	"yes/no":  {Value: lang.ValueTypeBool},
+
+	"int":         {Value: lang.ValueTypeNumber},
+	"integer":     {Value: lang.ValueTypeNumber},
+	"int32":       {Value: lang.ValueTypeNumber},
+	"number":      {Value: lang.ValueTypeNumber},
+	"float":       {Value: lang.ValueTypeNumber},
+	"decimal":     {Value: lang.ValueTypeNumber},
+	"fixed point": {Value: lang.ValueTypeNumber},
+
+	// CK3 common/script_values/_script_values.info, "Inlining": "inline
+	// wherever scripted values work"
+	"value":                {Value: lang.ValueTypeNumber, Values: true, Shape: lang.ShapeValue},
+	"script value":         {Value: lang.ValueTypeNumber, Values: true, Shape: lang.ShapeValue},
+	"scripted value":       {Value: lang.ValueTypeNumber, Values: true, Shape: lang.ShapeValue},
+	"scripted value int32": {Value: lang.ValueTypeNumber},
+
+	"date": {Value: lang.ValueTypeDate},
+
+	"string":     {Value: lang.ValueTypeText},
+	"text":       {Value: lang.ValueTypeText},
+	"name":       {Value: lang.ValueTypeText},
+	"identifier": {Value: lang.ValueTypeText},
+
+	"localization key": {Value: lang.ValueTypeReference, Database: lang.Localization},
+	"loc key":          {Value: lang.ValueTypeReference, Database: lang.Localization},
+	"localisation key": {Value: lang.ValueTypeReference, Database: lang.Localization},
+
+	"database key":           {Value: lang.ValueTypeReference},
+	"key":                    {Value: lang.ValueTypeReference},
+	"array of database keys": {Value: lang.ValueTypeReference},
+
+	"string path": {Value: lang.ValueTypeReference, Database: lang.File},
+	"path":        {Value: lang.ValueTypeReference, Database: lang.File},
+	"texture":     {Value: lang.ValueTypeReference, Database: lang.File},
+	"file":        {Value: lang.ValueTypeReference, Database: lang.File},
+
+	"color": {Value: lang.ValueTypeColor},
+
+	"trigger":  {Value: lang.ValueTypeBlock, Shape: lang.ShapeTriggers},
+	"triggers": {Value: lang.ValueTypeBlock, Shape: lang.ShapeTriggers},
+	"effect":   {Value: lang.ValueTypeBlock, Shape: lang.ShapeEffects},
+	"effects":  {Value: lang.ValueTypeBlock, Shape: lang.ShapeEffects},
+
+	"dynamic description": {Value: lang.ValueTypeUnknown, Shape: lang.ShapeDescription},
+
+	"modifier":    {Value: lang.ValueTypeBlock, Shape: lang.ShapeModifiers},
+	"modifiers":   {Value: lang.ValueTypeBlock, Shape: lang.ShapeModifiers},
+	"modifier(s)": {Value: lang.ValueTypeBlock, Shape: lang.ShapeModifiers},
+
+	"block":         {Value: lang.ValueTypeBlock},
+	"mtth":          {Value: lang.ValueTypeBlock},
+	"scripted cost": {Value: lang.ValueTypeBlock},
+	"cost":          {Value: lang.ValueTypeBlock},
+	"vector 2":      {Value: lang.ValueTypeBlock},
+	"vector2":       {Value: lang.ValueTypeBlock},
 
 	// EU5 in_game/common/estate_privileges/readme.txt:17 and 22 more lines of
 	// its readmes
-	"scaled and triggered modifier": {Value: ValueTypeBlock, Shape: game.ShapeModifiers},
+	"scaled and triggered modifier": {Value: lang.ValueTypeBlock, Shape: lang.ShapeModifiers},
+
 	// CK3 court_positions/types/_court_positions.info:13 and
-	// tasks/_court_position_tasks.info:12 write "Path to animation played in
-	// GUI"; the game's files write an animation's name there, as
-	// 00_court_positions.txt's reading
-	"path to animation": {Value: ValueTypeReference, Database: "gfx/portraits/portrait_animations"},
+	// tasks/_court_position_tasks.info:12 say "Path to animation played in
+	// GUI"; the files write an animation's name
+	"path to animation": {Value: lang.ValueTypeReference, Database: "gfx/portraits/portrait_animations"},
+
 	// CK3 story_cycles/_story_cycles.info:129 "Effect group will fire only if
-	// trigger is satisfied" opens the comment on a block of triggers, which
-	// names no type
-	"effect group": {Value: ValueTypeBlock},
+	// trigger is satisfied" comments a block of triggers
+	"effect group": {Value: lang.ValueTypeBlock},
 }
 
-// requiredLevel is a term that says whether a field is required.
+// requiredLevel is a word of a doc that says whether a field must be
+// written.
 var requiredLevel = regexp.MustCompile(`(?i)\b(optional|required|mandatory)\b`)
 
-// buildDocs reads the docs in the given database folders into the databases
-// they describe, a later doc filling only what an earlier one left out. A
-// doc that describes part of its database gives it no blurb. It returns an
-// error if a doc cannot be read.
-func (s *Schema) buildDocs(installPath string, listing []files.File, folders []string) error {
+// buildDocs reads each doc file of the listing into the database it
+// describes. The given folders are the folders of the databases. What an
+// earlier doc says is kept over a later one. A doc in a folder below its
+// database's describes only part of it, so its opening sentences are not
+// taken as the database's hover text. It returns an error if a doc cannot
+// be read.
+func (b *builder) buildDocs(installPath string, listing []files.File, folders []string) error {
 	for _, file := range listing {
-		label, partial, ok := findDocDatabase(file.Rel, folders)
-		database := s.Databases[label]
+		label, isPartial, ok := findDocDatabase(file.Rel, folders)
+		database := b.Databases[label]
 		if !ok || database == nil {
 			continue
 		}
@@ -151,14 +191,14 @@ func (s *Schema) buildDocs(installPath string, listing []files.File, folders []s
 			return err
 		}
 
-		if reader, ok := s.parseDoc(text.Text, file.Rel, database.Declaration); ok {
-			if partial {
+		if reader, ok := b.parseDoc(text.Text, file.Rel, database.Declaration); ok {
+			if isPartial {
 				reader.blurb = nil
 			}
 
 			readme, _ := files.ToRel(installPath, file.Path)
 			reader.build(database, readme)
-			if !partial && database.Readme == "" {
+			if !isPartial && database.Readme == "" {
 				database.Readme = readme
 			}
 		}
@@ -167,19 +207,24 @@ func (s *Schema) buildDocs(installPath string, listing []files.File, folders []s
 	return nil
 }
 
-// docMarkers are the terms in a .txt file's name that mark it as a doc.
+// docMarkers are the words that make a .txt file a doc when its name holds
+// one of them.
 var docMarkers = []string{"readme", "info", "example", "examples", "template", "help", "documentation"}
 
-// findDocDatabase returns the database that a doc file describes, by its
-// folder or else its name, and whether the doc describes only part of it. It
-// returns false if the file is no doc or describes no database.
-func findDocDatabase(rel string, folders []string) (string, bool, bool) {
+// findDocDatabase returns the database a doc file describes. A doc is an
+// .info or .md file, a file whose name starts with readme, or a .txt file
+// with one of docMarkers in its name. Its database is that of the folder it
+// is in, else of a folder above, else of the folder named as the file is
+// without its leading underscores. isPartial is true for a doc in a folder
+// below its database's, which describes only part of the database. It
+// returns false if the file is no doc or no database's folder fits.
+func findDocDatabase(rel string, folders []string) (database string, isPartial, ok bool) {
 	base := strings.ToLower(path.Base(rel))
 	stem := strings.TrimSuffix(base, path.Ext(base))
 	terms := strings.FieldsFunc(stem, func(r rune) bool { return !unicode.IsLetter(r) })
-	marked := slices.ContainsFunc(terms, func(term string) bool { return slices.Contains(docMarkers, term) })
+	isMarked := slices.ContainsFunc(terms, func(term string) bool { return slices.Contains(docMarkers, term) })
 	if path.Ext(base) != ".info" && path.Ext(base) != ".md" && !strings.HasPrefix(base, "readme") &&
-		(path.Ext(base) != ".txt" || !marked) {
+		(path.Ext(base) != ".txt" || !isMarked) {
 		return "", false, false
 	}
 
@@ -188,8 +233,8 @@ func findDocDatabase(rel string, folders []string) (string, bool, bool) {
 		candidates = append(candidates, dir)
 	}
 
-	// the doc's own folder comes first and the folder its file name gives
-	// last; any other is a folder above its own
+	// the doc's own folder first, then each folder above it, and last the
+	// folder named as the file is
 	for position, candidate := range append(candidates, path.Dir(rel)+"/"+strings.TrimLeft(stem, "_")) {
 		matches := slices.DeleteFunc(slices.Clone(folders), func(folder string) bool {
 			return candidate != folder && !strings.HasSuffix(candidate, "/"+folder)
@@ -197,85 +242,89 @@ func findDocDatabase(rel string, folders []string) (string, bool, bool) {
 		if len(matches) > 0 {
 			longest := slices.MaxFunc(matches, func(first, second string) int { return len(first) - len(second) })
 
-			return game.ToDatabase(longest), position > 0 && position < len(candidates), true
+			return lang.ToDatabase(longest), position > 0 && position < len(candidates), true
 		}
 	}
 
 	return "", false, false
 }
 
-// parseDoc reads one doc file into a reader, given the declaration of the
-// database it describes. It returns false for a file that is data: one with
-// no prose and no comment, or a .txt file with more script lines than prose
-// lines.
-func (s *Schema) parseDoc(text, rel string, row game.Declaration) (*docReader, bool) {
-	reader := &docReader{schema: s, root: &Field{}}
+// parseDoc reads one doc file. It returns false for a file that is data and
+// no doc: one with no sentence and no comment, or a .txt file with more
+// lines of script than of sentences.
+func (b *builder) parseDoc(text, rel string, declaration lang.Declaration) (*docReader, bool) {
+	reader := &docReader{schema: b.Schema, root: &lang.Field{}}
 
-	// where each file is one definition, the doc is read as already inside it
-	if row.DefinedBy == game.DefinedByFile {
-		reader.blocks = []*Field{reader.root}
+	// where each file is one definition, the doc is read as already inside
+	// that definition
+	if declaration.DefinedBy == lang.DefinedByFile {
+		reader.blocks = []*lang.Field{reader.root}
 	}
 
-	md := strings.EqualFold(path.Ext(rel), ".md")
+	isMarkdown := strings.EqualFold(path.Ext(rel), ".md")
 	for raw := range strings.Lines(text) {
-		reader.readLine(raw, md && strings.HasPrefix(raw, "#"))
+		reader.readLine(raw, isMarkdown && strings.HasPrefix(raw, "#"))
 	}
 
 	reader.closeHeader()
-	if reader.prose == 0 && !strings.Contains(text, "#") || strings.EqualFold(path.Ext(rel), ".txt") && reader.prose < reader.script {
+	isScript := strings.EqualFold(path.Ext(rel), ".txt") && reader.prose < reader.script
+	if reader.prose == 0 && !strings.Contains(text, "#") || isScript {
 		return nil, false
 	}
 
 	return reader, true
 }
 
-// build gives a database what one doc file states: its blurb, the fields its
-// example writes with their claims, and the given path of the doc from the
-// install. It never replaces a claim already stated. A database of triggers,
-// effects or a value takes no fields from a doc.
-func (d *docReader) build(database *Database, readme string) {
+// build gives a database what one doc says: its hover text, which is the
+// doc's opening sentences, with the doc's path, and its fields. What the
+// database already says is kept. A database whose definitions are triggers,
+// effects or a script value takes no fields.
+func (d *docReader) build(database *lang.Database, readme string) {
 	definition := database.Field
 	if blurb := strings.Join(d.blurb, " "); blurb != "" && !definition.Blurb.IsStated() {
-		definition.Blurb.resolve(blurb, game.SourceDocs)
+		definition.Blurb.Resolve(blurb, lang.SourceDocs)
 		database.Readme = readme
 	}
 
 	switch database.Declaration.Shape {
-	case game.ShapeTriggers, game.ShapeEffects, game.ShapeValue:
+	case lang.ShapeTriggers, lang.ShapeEffects, lang.ShapeValue:
 		return
 	}
 
-	shape := cmp.Or(database.Declaration.Shape, game.ShapeFields)
-	buildDocFields(game.LookupGame(d.schema.Game), definition, d.root, "", shape)
+	shape := cmp.Or(database.Declaration.Shape, lang.ShapeFields)
+	buildDocFields(lang.LookupDialect(d.schema.Game), definition, d.root, "", shape)
 }
 
-// buildDocFields copies the fields that a doc writes onto a field, with
-// their claims and the fields below them. It stops at a block that the given
-// game's keywords say holds script. The doc's field sits under the given
-// key, "" for the definition itself, in a block of the given shape.
-func buildDocFields(row *game.Game, field, doc *Field, holder string, shape game.Shape) {
+// buildDocFields gives a field the keys a doc wrote under it, and each key
+// the keys under it in turn. It stops at a key whose block holds script.
+func buildDocFields(dialect *lang.Dialect, field, doc *lang.Field, holder string, shape lang.Shape) {
 	for key, child := range doc.Children {
-		target := field.buildChild(key, game.SourceDocs)
-		target.take(child.Claims)
-		if !holdsScript(row, shape, holder, key, child) {
+		target := field.BuildChild(key, lang.SourceDocs)
+		target.Take(child.Claims)
+		if !holdsScript(dialect, shape, holder, key, child) {
 			// what a block below a definition's own holds is not known
-			buildDocFields(row, target, child, key, game.ShapeUnknown)
+			buildDocFields(dialect, target, child, key, lang.ShapeUnknown)
 		}
 	}
 }
 
-// holdsScript reports whether a field's block holds script rather than
-// fields. It does if the field states a shape or a number to work out, or if
-// its key is a keyword of the given game that gives its block a shape, in a
-// block of the given shape under the key above.
-func holdsScript(row *game.Game, shape game.Shape, holder, key string, field *Field) bool {
-	block := len(field.Children) > 0 || field.Value.Value.Type == ValueTypeBlock
-	keyword, ok := row.LookupKeyword(shape, holder, key, block)
+// holdsScript reports whether the block of a doc's key holds script and not
+// fields of its own. It does if the doc says what the block holds or that
+// the key takes a number, or if the key is a keyword whose block holds
+// script.
+func holdsScript(dialect *lang.Dialect, shape lang.Shape, holder, key string, field *lang.Field) bool {
+	isBlock := len(field.Children) > 0 || field.Value.Value.Type == lang.ValueTypeBlock
+	keyword, ok := dialect.LookupKeyword(shape, holder, key, isBlock)
 
-	return field.Shape.IsStated() || field.Value.Value.Type == ValueTypeNumber || ok && keyword.Shape != ""
+	return field.Shape.IsStated() || field.Value.Value.Type == lang.ValueTypeNumber || ok && keyword.Shape != ""
 }
 
-// The patterns a line of a doc is matched against.
+// The kinds of line a doc is made of. hashRun is the #s that open a line.
+// headingLine is a title or a rule, as "== Fields ==" and "-----" are.
+// briefLine is a header that names a field, as "### Brief: key (type)".
+// statementLine is script, as key = value. braceLine holds only braces.
+// labelLine is "Title: text", fieldLine is "key: text", and bulletLine is
+// an item of a list.
 var (
 	hashRun       = regexp.MustCompile(`^(?:#+\s*)+`)
 	headingLine   = regexp.MustCompile(`^(=+ *[^=]* *=+|[-=#*_|]{3,}|[A-Z][A-Z0-9 _/:-]{2,}|-[a-z_]+(=<[^>]*>)?)$`)
@@ -287,15 +336,16 @@ var (
 	bulletLine    = regexp.MustCompile(`^[-*]\s+(.*)$`)
 )
 
-// readLine reads one line of a doc by the pattern it matches. A bullet that
-// writes a statement counts as that statement. The flag says whether
-// markdown makes the line a heading.
-func (d *docReader) readLine(raw string, heading bool) {
+// readLine reads one line of a doc as the kind of line it is. An item of a
+// list that writes a statement is read as the statement. isHeading is true
+// for a markdown heading.
+func (d *docReader) readLine(raw string, isHeading bool) {
 	line := strings.TrimSpace(raw)
 	text := strings.TrimSpace(hashRun.ReplaceAllString(line, ""))
 	code, comment := splitComment(text)
 
-	// prose is not valid script, so a statement is matched by pattern
+	// a doc's sentences are not script a parser could read, so a statement
+	// is told by its pattern
 	statement := statementLine.FindStringSubmatch(code)
 	if bullet := bulletLine.FindStringSubmatch(code); statement == nil && bullet != nil {
 		statement = statementLine.FindStringSubmatch(bullet[1])
@@ -304,16 +354,21 @@ func (d *docReader) readLine(raw string, heading bool) {
 	isStatement := statement != nil && !isFact(statement[1]) && !isNote(statement[1], statement[2])
 	opens := strings.Count(code, "{") - strings.Count(code, "}")
 	d.countLine(line, isStatement || braceLine.MatchString(code))
+
 	switch {
 	case line == "":
 		d.comments, d.list = nil, labelListNone
-		d.ended = d.ended || len(d.blurb) > 0
+		d.isBlurbOver = d.isBlurbOver || len(d.blurb) > 0
 
 	case text == "": // only hashes
 
 	case strings.HasPrefix(line, "#") && briefLine.MatchString(text):
+		// ### Brief: key (type)
 		brief := briefLine.FindStringSubmatch(text)
-		d.readHeader(brief[1], brief[2])
+		d.closeHeader()
+		field := &lang.Field{}
+		resolveType(field, brief[2])
+		d.current, d.isHeader, d.header, d.comments, d.list = field, true, brief[1], nil, labelListNone
 
 	case isStatement:
 		value, rest := splitValue(strings.TrimSpace(statement[2]))
@@ -322,7 +377,7 @@ func (d *docReader) readLine(raw string, heading bool) {
 	case braceLine.MatchString(code):
 		d.readStatement("", "", "", opens)
 
-	case heading || headingLine.MatchString(text):
+	case isHeading || headingLine.MatchString(text):
 		d.comments, d.list = nil, labelListNone
 
 	case strings.HasPrefix(text, "scope:"):
@@ -345,16 +400,17 @@ func (d *docReader) readLine(raw string, heading bool) {
 	}
 }
 
-// splitComment splits a line into its code and the comment after a # that
-// is not inside quotes.
+// splitComment splits a line at its first # that is not inside quotes, into
+// the script before it and the comment after it. The comment is "" if the
+// line has none.
 func splitComment(line string) (code, comment string) {
-	quoted := false
+	isQuoted := false
 	for i := 0; i < len(line); i++ {
 		switch line[i] {
 		case '"':
-			quoted = !quoted
+			isQuoted = !isQuoted
 		case '#':
-			if !quoted {
+			if !isQuoted {
 				return strings.TrimSpace(line[:i]), strings.TrimSpace(line[i+1:])
 			}
 		}
@@ -363,27 +419,26 @@ func splitComment(line string) (code, comment string) {
 	return line, ""
 }
 
-// isFact reports whether the given key is the root or a default, which name
-// no field.
+// isFact reports whether a key = value line says something about the whole
+// definition and writes no field, as root = character and default = no do.
 func isFact(key string) bool {
 	lower := strings.ToLower(key)
 
-	return lower == game.ScopeLinks.Root || lower == "default"
+	return lower == lang.LinkRoot || lower == "default"
 }
 
-// isNote reports whether a statement is a note in prose rather than script,
-// as scope:actor = the actor and days/weeks/months/years = X are: a key with
-// a prefix, alternatives or a parameter, whose value is no block. Such a key
-// that opens a block is script.
+// isNote reports whether a line written as a statement is a sentence about
+// one, as scope:actor = the actor and days/weeks/months/years = X are. Its
+// key has a colon, a slash or a $, and it opens no block.
 func isNote(key, value string) bool {
 	return strings.ContainsAny(key, ":/$") && !strings.HasPrefix(value, "{")
 }
 
-// countLine counts a line as script or prose, to tell a data file from a
-// doc. The flag says whether the line writes a statement or a brace.
+// countLine counts a line as script or as a sentence. A line that starts
+// with # is a sentence, and a blank line is neither.
 func (d *docReader) countLine(line string, isCode bool) {
 	switch {
-	case line == "": // blank lines count toward neither
+	case line == "":
 	case isCode && !strings.HasPrefix(line, "#"):
 		d.script++
 	default:
@@ -391,37 +446,28 @@ func (d *docReader) countLine(line string, isCode bool) {
 	}
 }
 
-// readHeader reads a ### Brief: header, which gives the key it opens and its
-// type in parentheses.
-func (d *docReader) readHeader(key, text string) {
-	d.closeHeader()
-	field := &Field{}
-	resolveType(field, text)
-	d.current, d.headed, d.header, d.comments, d.list = field, true, key, nil, labelListNone
-}
-
-// closeHeader gives the last header's facts to its key at the top of the
-// definition, if no statement of that key followed it.
+// closeHeader gives what the last header said to the field of its key, if
+// no statement of that key followed it.
 func (d *docReader) closeHeader() {
 	if d.header != "" {
-		d.buildField(d.header).take(d.current.Claims)
+		d.buildField(d.header).Take(d.current.Claims)
 		d.header = ""
 	}
 }
 
-// buildField returns the field of the given key at the top of the
-// definition, adding it if there is none. It marks the doc as begun.
-func (d *docReader) buildField(key string) *Field {
-	d.started = true
+// buildField returns the field of the given key at the top of the doc,
+// adding it if the doc has not written it yet. It also records that the
+// doc's fields have begun.
+func (d *docReader) buildField(key string) *lang.Field {
+	d.hasFields = true
 
-	return d.root.buildChild(key, game.SourceDocs)
+	return d.root.BuildChild(key, lang.SourceDocs)
 }
 
-// splitValue splits what a doc writes after a key into the value and the
-// text that describes it. A block, a quoted text or a single term is all
-// value. Otherwise the value is a placeholder in angle brackets or the first
-// term, and the rest describes it.
-func splitValue(value string) (string, string) {
+// splitValue splits the text after a key into the value and the words after
+// it. A block or a quoted text is all value. Otherwise the value is a
+// <placeholder>, or the first of the words.
+func splitValue(value string) (first, rest string) {
 	if strings.HasPrefix(value, "{") || strings.HasPrefix(value, `"`) {
 		return value, ""
 	}
@@ -432,30 +478,31 @@ func splitValue(value string) (string, string) {
 		}
 	}
 
-	first, rest, _ := strings.Cut(value, " ")
+	first, rest, _ = strings.Cut(value, " ")
 
 	return first, strings.TrimSpace(rest)
 }
 
-// docDateKey is the key the games' own docs write for a date, as
-// date = { … } stands for each dated block of a history file.
+// docDateKey is the key the docs write for a block under a date, as
+// date = { … } in a history file.
 const docDateKey = "date"
 
-// readStatement reads a line of script as a field of the block that holds
-// it. The given count is the net blocks the line opens. The entry block of
-// the example and a key that stands for names make no field. The comments
-// above the line and after it are the field's text, its value gives its
-// type, and a header just before it gives its claims.
+// readStatement reads a line of script as a field of the block it is in,
+// with the sentences read before it as its hover text. opens is how many
+// more blocks the line opens than it closes. The block a doc opens at its
+// top is the definition itself and makes no field, and neither does a key
+// that stands for names. Every number or date written as a key is one
+// field.
 func (d *docReader) readStatement(key, value, text string, opens int) {
-	d.started = true
+	d.hasFields = true
 	holder := d.root
 	if len(d.blocks) > 0 {
 		holder = d.blocks[len(d.blocks)-1]
 	}
 
-	entry := len(d.blocks) == 0 && (opens > 0 || strings.HasPrefix(value, "{"))
+	isEntry := len(d.blocks) == 0 && (opens > 0 || strings.HasPrefix(value, "{"))
 	field := holder
-	if key != "" && !entry && !isStandIn(key) {
+	if key != "" && !isEntry && !isStandIn(key) {
 		step := key
 		if jomini.Classify(step).IsNumberKey() || step == docDateKey {
 			step = jomini.NumberKey
@@ -465,9 +512,9 @@ func (d *docReader) readStatement(key, value, text string, opens int) {
 			d.closeHeader()
 		}
 
-		field = holder.buildChild(step, game.SourceDocs)
+		field = holder.BuildChild(step, lang.SourceDocs)
 		if d.header == key {
-			field.take(d.current.Claims)
+			field.Take(d.current.Claims)
 			d.header = ""
 		}
 
@@ -481,23 +528,24 @@ func (d *docReader) readStatement(key, value, text string, opens int) {
 	}
 
 	d.blocks = d.blocks[:max(len(d.blocks)+min(opens, 0), 0)]
-	d.comments, d.headed = nil, false
+	d.comments, d.isHeader = nil, false
 }
 
-// isStandIn reports whether a key stands for names rather than naming a
-// field, as <key>, scope:actor, trigger/effect and $target$ do.
+// isStandIn reports whether a key stands for names, as <key>, scope:actor,
+// trigger/effect and $target$ do.
 func isStandIn(key string) bool {
 	return strings.HasPrefix(key, "<") || strings.ContainsAny(key, ":/$")
 }
 
-// readProse reads a line of prose as the database's blurb, the text of the
-// header's field or a comment on the next statement.
+// readProse reads a sentence. Before the first field it is one of the doc's
+// opening sentences. After a header it describes the header's field.
+// Otherwise it describes the next statement.
 func (d *docReader) readProse(text string) {
-	if !d.started && !d.ended {
+	if !d.hasFields && !d.isBlurbOver {
 		d.blurb = append(d.blurb, text)
 	}
 
-	if d.headed && d.current != nil {
+	if d.isHeader && d.current != nil {
 		d.resolveText(d.current, text)
 
 		return
@@ -506,15 +554,16 @@ func (d *docReader) readProse(text string) {
 	d.comments = append(d.comments, text)
 }
 
-// choiceLabel is a label that opens a list of choices, as "Possible values"
-// does, and scopeLabel one that opens a list of scopes.
+// choiceLabel is a label that opens a list of the values a field takes, as
+// "Possible values" does. scopeLabel is one that opens a list of scopes.
 var (
 	choiceLabel = regexp.MustCompile(`(?i)^(?:possible|valid|available|allowed|supported) \w+$`)
 	scopeLabel  = regexp.MustCompile(`(?i)^(?:supported |available )?scopes?$`)
 )
 
-// readLabel reads a "Label: text" line: a default, the opening of a list of
-// values or scopes, or prose.
+// readLabel reads a "Title: text" line about the current field. "Default:"
+// gives its default. A label of scopes or of values opens the list the next
+// items belong to. Any other label is read as a sentence.
 func (d *docReader) readLabel(title, text string) {
 	label := strings.ToLower(title)
 	switch {
@@ -529,39 +578,40 @@ func (d *docReader) readLabel(title, text string) {
 
 	case choiceLabel.MatchString(label):
 		d.list = labelListChoices
-		resolveChoices(d.current, strings.Split(text, ","), game.SourceDocs)
+		resolveChoices(d.current, strings.Split(text, ","), lang.SourceDocs)
 
 	default:
 		d.readProse(title + ": " + text)
 	}
 }
 
-// readField reads a "key: text" line or a keyed bullet as a field at the top
-// of the definition.
+// readField reads a "key: text" line as a field at the top of the doc, with
+// the text as its hover text.
 func (d *docReader) readField(key, text string) {
 	field := d.buildField(key)
 	d.resolveText(field, text)
-	d.current, d.headed = field, false
+	d.current, d.isHeader = field, false
 }
 
-// bulletKey is a bullet that opens with a key, with the text after it.
+// bulletKey is an item of a list that starts with a key, with or without
+// text after a colon or a dash.
 var bulletKey = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_.]*)\s*(?:[:-]\s+(.*))?$`)
 
-// readBullet reads a bullet. It is a choice of the field above if a label
-// opened a list of choices, a scope of it that states nothing if a label
-// opened a list of scopes, a field if it has a snake-case key, and prose
-// otherwise.
+// readBullet reads one item of a list. Under a label of values it is one of
+// the values. Under a label of scopes it says nothing. Otherwise an item
+// with a key in lower case and text after it is a field, and any other is a
+// sentence.
 func (d *docReader) readBullet(bullet string) {
 	key, text := "", bullet
-	if keyed := bulletKey.FindStringSubmatch(bullet); keyed != nil {
-		key, text = keyed[1], keyed[2]
+	if match := bulletKey.FindStringSubmatch(bullet); match != nil {
+		key, text = match[1], match[2]
 	}
 
 	switch {
 	case d.list == labelListChoices && d.current != nil:
-		resolveChoices(d.current, []string{cmp.Or(key, text)}, game.SourceDocs)
+		resolveChoices(d.current, []string{cmp.Or(key, text)}, lang.SourceDocs)
 	case d.list == labelListScopes && d.current != nil:
-		// a scope in the list is no field and no blurb of the next one
+		// a scope is no field
 	case key != "" && text != "" && strings.ToLower(key) == key && !strings.Contains(key, "."):
 		d.readField(key, text)
 	default:
@@ -569,24 +619,24 @@ func (d *docReader) readBullet(bullet string) {
 	}
 }
 
-// typeParens is a type in parentheses, with the terms after a comma, and
-// typeBrackets a type in square brackets.
+// typeParens is a type written in parentheses, as "(bool, optional)".
+// typeBrackets is one written in brackets, as "[int]".
 var (
 	typeParens   = regexp.MustCompile(`\(\s*([a-z][a-z0-9 _]*?)\s*(?:,\s*([a-z ,]+?)\s*)?\)`)
 	typeBrackets = regexp.MustCompile(`(?i)\[(string|boolean|bool|integer|int|float|number|trigger|effect|date)\]`)
 )
 
-// defaultPhrase is a default the text states, as "defaults to 0" does.
+// defaultPhrase is a default written in a sentence, as "defaults to 0".
 var defaultPhrase = regexp.MustCompile(`(?i)(?:^|[\s(\[,])default(?:s\s+to|\s+is|\s+value(?:\s+is)?|\s*[:=]|\s+)\s*["']?([A-Za-z0-9_.+-]+)`)
 
-// defaultStops are the terms after "default" that give no default.
+// defaultStops are the words that follow "default" in a sentence and are no
+// default, as in "the default behavior".
 var defaultStops = []string{"value", "values", "is", "to", "the", "a", "an", "by", "behavior", "option", "one"}
 
-// resolveText reads the lines of text written about a field. A placeholder
-// at the start is the field's value. The rest is the blurb, and any type,
-// requirement and default it states. A type in parentheses or brackets
-// counts if the docs know the term.
-func (d *docReader) resolveText(field *Field, lines ...string) {
+// resolveText reads the sentences about a field. A placeholder at their
+// start is its value. The rest is its hover text, and from it come its
+// type, whether it must be written, and its default.
+func (d *docReader) resolveText(field *lang.Field, lines ...string) {
 	text := strings.TrimSpace(strings.Join(lines, " "))
 	if value, rest := splitValue(text); strings.HasPrefix(value, "<") {
 		d.resolveValue(field, value)
@@ -597,9 +647,9 @@ func (d *docReader) resolveText(field *Field, lines ...string) {
 		return
 	}
 
-	field.Blurb = Claim[string]{Value: strings.TrimSpace(field.Blurb.Value + " " + text), Source: game.SourceDocs}
+	field.Blurb = lang.Claim[string]{Value: strings.TrimSpace(field.Blurb.Value + " " + text), Source: lang.SourceDocs}
 	if opening, ok := findDocType(text); ok {
-		resolveDocType(field, opening, game.SourceDocs)
+		resolveDocType(field, opening, lang.SourceDocs)
 	}
 
 	if parens := typeParens.FindStringSubmatch(text); parens != nil {
@@ -607,7 +657,7 @@ func (d *docReader) resolveText(field *Field, lines ...string) {
 	}
 
 	if brackets := typeBrackets.FindStringSubmatch(text); brackets != nil {
-		resolveDocType(field, brackets[1], game.SourceDocs)
+		resolveDocType(field, brackets[1], lang.SourceDocs)
 	}
 
 	resolveRequired(field, text)
@@ -617,9 +667,10 @@ func (d *docReader) resolveText(field *Field, lines ...string) {
 	}
 }
 
-// findDocType returns the longest type term that opens the text, after an
-// article such as "the". It returns false if no term opens the text, or if
-// the term names no shape, no bool type and no database.
+// findDocType returns the type a sentence starts with, after "a", "an" or
+// "the". Of the types that fit, it returns the one of the most words. It
+// returns false if the sentence starts with none, and for a type that says
+// neither what a block holds, nor yes or no, nor a database.
 func findDocType(text string) (string, bool) {
 	words := strings.Fields(text)
 	for position, word := range words {
@@ -632,136 +683,135 @@ func findDocType(text string) (string, bool) {
 
 	for length := len(words); length > 0; length-- {
 		phrase := strings.Join(words[:length], " ")
-		if row, ok := docTypes[ToPhrase(phrase)]; ok {
-			return phrase, row.Shape != "" || row.Value == ValueTypeBool || row.Database != ""
+		if row, ok := docTypes[lang.ToPhrase(phrase)]; ok {
+			return phrase, row.Shape != "" || row.Value == lang.ValueTypeBool || row.Database != ""
 		}
 	}
 
 	return "", false
 }
 
-// resolveType reads a type written in parentheses. The terms optional,
-// required and mandatory, inside it or after a comma, say whether the field
-// is required. The rest is the type.
-func resolveType(field *Field, text string) {
+// resolveType reads a type written in parentheses, as "(int, optional)".
+// The words optional, required and mandatory, beside the type or after a
+// comma, say whether the field must be written.
+func resolveType(field *lang.Field, text string) {
 	parts := strings.Split(text, ",")
-	var typed []string
+	var terms []string
 	for term := range strings.FieldsSeq(parts[0]) {
 		if requiredLevel.MatchString(term) {
 			resolveRequired(field, term)
 		} else {
-			typed = append(typed, term)
+			terms = append(terms, term)
 		}
 	}
 
-	resolveDocType(field, strings.Join(typed, " "), game.SourceDocs)
+	resolveDocType(field, strings.Join(terms, " "), lang.SourceDocs)
 	for _, extra := range parts[1:] {
 		resolveRequired(field, extra)
 	}
 }
 
-// resolveDocType gives a field the claims that a type term means: the shape
-// of its block, and its value type with the database a reference names. The
-// given source states them. An unknown term makes no claim.
-func resolveDocType(field *Field, term string, source game.Source) {
-	row := docTypes[ToPhrase(term)]
+// resolveDocType gives a field what a type of the docs means, and records
+// the given source as the one that said it. A type docTypes does not hold
+// says nothing.
+func resolveDocType(field *lang.Field, term string, source lang.Source) {
+	row := docTypes[lang.ToPhrase(term)]
 	if row.Shape != "" {
-		field.Shape.resolve(row.Shape, source)
+		field.Shape.Resolve(row.Shape, source)
 	}
 
 	if row.Value != "" {
-		field.Value.resolve(Expected{Type: row.Value, Database: row.Database, Values: row.Values}, source)
+		field.Value.Resolve(lang.Expected{Type: row.Value, Database: row.Database, Values: row.Values}, source)
 	}
 }
 
-// conditionPhrase is a phrase that makes a field required only under a
-// condition, as "only used when" does.
+// conditionPhrase is how a sentence says a field is needed only in some
+// cases, as "only used when" and "required if" do.
 var conditionPhrase = regexp.MustCompile(`(?i)\b(?:only (?:used|needed|valid|applies|relevant) (?:when|if|for)|required (?:if|when)|ignored (?:if|when|unless)|needed (?:if|when))\b`)
 
-// resolveRequired reads from the text whether a field is required. A
-// condition makes it conditional, and the terms optional, required and
-// mandatory make it optional or always required. The first one stated is
-// kept.
-func resolveRequired(field *Field, text string) {
+// resolveRequired reads from a sentence whether a field must be written,
+// may be left out, or is needed only in some cases. What was said first
+// about the field is kept.
+func resolveRequired(field *lang.Field, text string) {
 	term := strings.ToLower(requiredLevel.FindString(text))
 	switch {
 	case conditionPhrase.MatchString(text):
-		field.Required.resolve(RequirementConditional, game.SourceDocs)
+		field.Required.Resolve(lang.RequirementConditional, lang.SourceDocs)
 	case term == "optional":
-		field.Required.resolve(RequirementOptional, game.SourceDocs)
+		field.Required.Resolve(lang.RequirementOptional, lang.SourceDocs)
 	case term != "":
-		field.Required.resolve(RequirementAlways, game.SourceDocs)
+		field.Required.Resolve(lang.RequirementAlways, lang.SourceDocs)
 	}
 }
 
-// resolveDefault gives a field the default the docs write. It does nothing
-// for an empty default or one already given.
-func resolveDefault(field *Field, value string) {
+// resolveDefault gives a field its default. A default of "" says nothing.
+func resolveDefault(field *lang.Field, value string) {
 	if value != "" {
-		field.Default.resolve(value, game.SourceDocs)
+		field.Default.Resolve(value, lang.SourceDocs)
 	}
 }
 
-// alternatives is a value of several terms joined by slashes or bars, as
-// yes/no is.
+// alternatives is a value written as several joined by / or |, as yes/no
+// is.
 var alternatives = regexp.MustCompile(`^([A-Za-z0-9_.+-]+(?:[/|][A-Za-z0-9_.+-]+)+)$`)
 
-// resolveValue reads a field's type from the value its example writes: a
-// placeholder, alternatives, a type term, a sample key such as
-// innovation_key that names a database, or a sample value. A placeholder's
-// text in parentheses describes its term and is no part of it.
-func (d *docReader) resolveValue(field *Field, value string) {
-	inner, placeholder := strings.CutPrefix(value, "<")
+// resolveValue reads a field's type from the value a doc writes for it: a
+// block, several values joined by slashes, a placeholder or a type, a name
+// ending in _key that names a database, as innovation_key does, or a sample
+// number, yes or no, date or quoted text. What a placeholder writes in
+// parentheses is ignored.
+func (d *docReader) resolveValue(field *lang.Field, value string) {
+	inner, isPlaceholder := strings.CutPrefix(value, "<")
 	inner = strings.ToLower(strings.TrimSuffix(inner, ">"))
-	if placeholder {
+	if isPlaceholder {
 		inner, _, _ = strings.Cut(inner, "(")
 		inner = strings.TrimSpace(inner)
 	}
 
-	_, known := docTypes[ToPhrase(inner)]
-	_, date := jomini.ParseDate(value)
-	words, keyed := strings.CutSuffix(inner, "_key")
-	database, named := d.schema.ResolveTypeDatabase(words)
+	_, isType := docTypes[lang.ToPhrase(inner)]
+	_, isDate := jomini.ParseDate(value)
+	stem, isKey := strings.CutSuffix(inner, "_key")
+	database, hasDatabase := d.schema.ResolveTypeDatabase(stem)
 	switch {
 	case value == "": // nothing is written
 
 	case strings.HasPrefix(value, "{"):
-		resolveDocType(field, "block", game.SourceDocs)
+		resolveDocType(field, "block", lang.SourceDocs)
 
 	case alternatives.MatchString(inner):
-		// alternatives of types, such as number/scripted, state no choices
+		// types joined by a slash, as number/scripted, are no list of values
 		parts := strings.FieldsFunc(inner, func(r rune) bool { return r == '/' || r == '|' })
-		if !slices.ContainsFunc(parts, func(part string) bool { _, ok := docTypes[ToPhrase(part)]; return ok }) {
-			resolveChoices(field, parts, game.SourceDocs)
+		if !slices.ContainsFunc(parts, func(part string) bool { _, ok := docTypes[lang.ToPhrase(part)]; return ok }) {
+			resolveChoices(field, parts, lang.SourceDocs)
 		}
 
-	case keyed && named && !known:
-		field.Value.resolve(Expected{Type: ValueTypeReference, Database: database}, game.SourceDocs)
+	case isKey && hasDatabase && !isType:
+		field.Value.Resolve(lang.Expected{Type: lang.ValueTypeReference, Database: database}, lang.SourceDocs)
 
-	case placeholder || known:
-		resolveDocType(field, inner, game.SourceDocs)
+	case isPlaceholder || isType:
+		resolveDocType(field, inner, lang.SourceDocs)
 
 	case jomini.Classify(value) == jomini.ClassNumber:
-		resolveDocType(field, "number", game.SourceDocs)
+		resolveDocType(field, "number", lang.SourceDocs)
 
-	case slices.Contains(game.Bools, value):
-		resolveDocType(field, "bool", game.SourceDocs)
+	case slices.Contains(lang.Bools, value):
+		resolveDocType(field, "bool", lang.SourceDocs)
 
-	case date:
-		resolveDocType(field, "date", game.SourceDocs)
+	case isDate:
+		resolveDocType(field, "date", lang.SourceDocs)
 
 	case strings.HasPrefix(value, `"`):
-		resolveDocType(field, "string", game.SourceDocs)
+		resolveDocType(field, "string", lang.SourceDocs)
 	}
 }
 
-// resolveChoices adds the given values to the choices of a field, as the
-// given source states them. They replace any value the field had before.
-// The one marked "(default" is the default. If the choices are only the two
-// bool terms, the field is a bool.
-func resolveChoices(field *Field, values []string, source game.Source) {
+// resolveChoices adds values to the list a field takes one of, and records
+// the given source as the one that said it. Whatever else the field was
+// said to take is replaced. A value marked "(default" is also the field's
+// default. A list of only yes and no makes the field a yes or no.
+func resolveChoices(field *lang.Field, values []string, source lang.Source) {
 	var choices []string
-	if field.Value.Value.Type == ValueTypeChoice {
+	if field.Value.Value.Type == lang.ValueTypeChoice {
 		choices = field.Value.Value.Choices
 	}
 
@@ -784,16 +834,16 @@ func resolveChoices(field *Field, values []string, source game.Source) {
 		return
 	}
 
-	expected := Expected{Type: ValueTypeChoice, Choices: choices}
-	if slices.Equal(slices.Sorted(slices.Values(choices)), slices.Sorted(slices.Values(game.Bools))) {
-		expected = Expected{Type: ValueTypeBool}
+	expected := lang.Expected{Type: lang.ValueTypeChoice, Choices: choices}
+	if slices.Equal(slices.Sorted(slices.Values(choices)), slices.Sorted(slices.Values(lang.Bools))) {
+		expected = lang.Expected{Type: lang.ValueTypeBool}
 	}
 
-	field.Value = Claim[Expected]{Value: expected, Source: source}
+	field.Value = lang.Claim[lang.Expected]{Value: expected, Source: source}
 }
 
-// findTerm returns the first term of the text without quotes and
-// punctuation. It returns "" if the text has none.
+// findTerm returns the first of the words in a text, without quotes,
+// parentheses, commas or semicolons. It returns "" if the text has none.
 func findTerm(text string) string {
 	terms := strings.FieldsFunc(text, func(r rune) bool { return unicode.IsSpace(r) || strings.ContainsRune(`"'(),;`, r) })
 	if len(terms) == 0 {
@@ -803,19 +853,19 @@ func findTerm(text string) string {
 	return terms[0]
 }
 
-// buildDocBlurbs gives each field without a blurb the blurb the docs write
-// for the same key elsewhere in its database.
-func (s *Schema) buildDocBlurbs() {
-	for _, database := range s.Databases {
+// buildDocBlurbs gives each field with no hover text the one the docs write
+// for a field of the same key elsewhere in its database.
+func (b *builder) buildDocBlurbs() {
+	for _, database := range b.Databases {
 		blurbs := map[string]string{}
-		walkField(database.Field, func(key string, field *Field) {
-			if field.Blurb.Source == game.SourceDocs && blurbs[key] == "" {
+		lang.WalkField(database.Field, func(key string, field *lang.Field) {
+			if field.Blurb.Source == lang.SourceDocs && blurbs[key] == "" {
 				blurbs[key] = field.Blurb.Value
 			}
 		})
-		walkField(database.Field, func(key string, field *Field) {
+		lang.WalkField(database.Field, func(key string, field *lang.Field) {
 			if blurb := blurbs[key]; blurb != "" && !field.Blurb.IsStated() {
-				field.Blurb.resolve(blurb, game.SourceDocs)
+				field.Blurb.Resolve(blurb, lang.SourceDocs)
 			}
 		})
 	}

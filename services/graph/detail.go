@@ -10,11 +10,10 @@ import (
 
 	"github.com/samber/lo"
 
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -70,7 +69,15 @@ const callKind = "text"
 
 // textKeys are the keys at the top of a definition whose value is always a
 // localization key.
-var textKeys = []string{game.TitleKey, game.DescriptionKey}
+var textKeys = []string{lang.TitleKey, lang.DescriptionKey}
+
+// optionKey is the key of one of an event's options, and optionTitleKey the
+// key that writes an option's title: a localization key, or a block that
+// picks one.
+const (
+	optionKey      = "option"
+	optionTitleKey = "name"
+)
 
 // BuildDetail returns the detail of the node with the given id. It returns an
 // error if no workspace is open, the game keeps no definition of the node or
@@ -104,7 +111,7 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 	sections := lo.Map(slices.Collect(tree.Children(statement)), func(child int32, _ int) Section {
 		return makeSection(ws, mods, tree, child)
 	})
-	sections, options := lo.FilterReject(sections, func(section Section, _ int) bool { return section.Key != game.OptionKey })
+	sections, options := lo.FilterReject(sections, func(section Section, _ int) bool { return section.Key != optionKey })
 	detail := Detail{
 		Node:     node,
 		Language: resolveLanguage(ws),
@@ -152,7 +159,7 @@ func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, s
 	for child := range tree.Children(statement) {
 		key := strings.ToLower(tree.Text(tree.Statements[child].Key))
 		switch {
-		case key == triggeredText || key == game.DescriptionKey || key == game.OptionTitleKey:
+		case key == triggeredText || key == lang.DescriptionKey || key == optionTitleKey:
 			if version, ok := makeVersion(ws, mods, tree, child); ok {
 				version.When = findCondition(ws, mods, tree, child)
 				versions = append(versions, version)
@@ -171,9 +178,9 @@ func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 	if tree.Statements[statement].IsBlock() {
 		// FindChild leaves 0 when there is no desc, and statement 0 is the file,
 		// which has no value.
-		label, _ = tree.FindChild(statement, game.DescriptionKey)
+		label, _ = tree.FindChild(statement, lang.DescriptionKey)
 		if label == 0 {
-			label, _ = tree.FindChild(statement, game.LabelKey)
+			label, _ = tree.FindChild(statement, lang.LabelKey)
 		}
 	}
 	value := tree.Statements[label].Value
@@ -201,8 +208,8 @@ func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.
 			continue
 		}
 		step := call.Steps[len(call.Steps)-1]
-		step.Text = strings.TrimSuffix(step.Text, game.GUI.NoTooltip)
-		segments[position].Text = cmp.Or(describeCustom(ws, mods, step), schema.DescribeStep(step, true))
+		step.Text = strings.TrimSuffix(step.Text, lang.GUINoTooltip)
+		segments[position].Text = cmp.Or(describeCustom(ws, mods, step), lang.DescribeStep(step, true))
 		segments[position].Kind = callKind
 	}
 	return segments
@@ -223,11 +230,11 @@ var customTexts = struct {
 // show, joined by slashes, such as "daughter/son". It returns "" for a call
 // that names none, or one the workspace does not define.
 func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) string {
-	position := slices.Index(game.GUI.CallTargets[step.Text], game.CustomLocalization)
+	position := slices.Index(lang.GUICallTargets[step.Text], lang.CustomLocalization)
 	if position < 0 || position >= len(step.Arguments) || !step.Arguments[position].Quoted {
 		return ""
 	}
-	reference := schema.Reference{Database: game.CustomLocalization, Name: step.Arguments[position].Text}
+	reference := lang.Reference{Database: lang.CustomLocalization, Name: step.Arguments[position].Text}
 	winner, ok := mods.FindKept(ws.Schema, reference)
 	if !ok {
 		return ""
@@ -266,7 +273,7 @@ func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
 // resolveLanguage returns the workspace's language, or the game's base language
 // if it has none.
 func resolveLanguage(ws *workspace.Session) string {
-	return cmp.Or(ws.Language, game.BaseLanguage)
+	return cmp.Or(ws.Language, loc.BaseLanguage)
 }
 
 // toSourceLine returns the line of a span in a tree, counted from one.
@@ -278,7 +285,7 @@ func toSourceLine(tree *jomini.Tree, span jomini.Span) int {
 func listRules(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Rule {
 	rules := []Rule{}
 	for child := statement + 1; child < tree.Statements[statement].Last; child++ {
-		if tree.Text(tree.Statements[child].Key) != game.GameRules.Trigger {
+		if tree.Text(tree.Statements[child].Key) != lang.GameRuleTrigger {
 			continue
 		}
 		rule, ok := findRule(ws, mods, tree.Unquoted(tree.Statements[child].Value))
@@ -293,7 +300,7 @@ func listRules(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, stat
 // setting's definition is written in. It returns false if nothing defines
 // the setting.
 func findRule(ws *workspace.Session, mods *index.Index, setting string) (Rule, bool) {
-	winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: game.GameRules.Settings, Name: setting})
+	winner, ok := mods.FindKept(ws.Schema, lang.Reference{Database: lang.GameRuleSettings, Name: setting})
 	if !ok {
 		return Rule{}, false
 	}
@@ -308,18 +315,35 @@ func findRule(ws *workspace.Session, mods *index.Index, setting string) (Rule, b
 	return makeRule(ws, mods, tree, statement), true
 }
 
+// How a game rule is written, alike in the three games (CK3
+// _game_rules.info:1-20, Vic3 game_rules.md:1-12, EU5
+// main_menu/common/game_rules/_game_rules.info:1-19).
+const (
+	// ruleDefaultKey names a rule's default setting. With none, the first is.
+	ruleDefaultKey = "default"
+
+	// ruleCategoriesKey is the key of the one block in a rule that is no
+	// setting.
+	ruleCategoriesKey = "categories"
+
+	// ruleSettingText and ruleSettingDescription are the localization keys
+	// of a setting's name and description, with the setting at %s.
+	ruleSettingText        = "setting_%s"
+	ruleSettingDescription = "setting_%s_desc"
+)
+
 // makeRule returns the game rule a statement defines. Its default is the
 // setting it names as one, else its first.
 func makeRule(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Rule {
-	preset, hasDefault := tree.FindChildValue(statement, game.GameRules.DefaultKey)
+	preset, hasDefault := tree.FindChildValue(statement, ruleDefaultKey)
 	options := []RuleOption{}
 	for child := range tree.Children(statement) {
 		key := tree.Text(tree.Statements[child].Key)
-		if !tree.Statements[child].IsBlock() || key == game.GameRules.CategoriesKey {
+		if !tree.Statements[child].IsBlock() || key == ruleCategoriesKey {
 			continue
 		}
-		text, _, _ := ws.LookupText(mods, fmt.Sprintf(game.GameRules.Setting, key))
-		description, _, _ := ws.LookupText(mods, fmt.Sprintf(game.GameRules.Description, key))
+		text, _, _ := ws.LookupText(mods, fmt.Sprintf(ruleSettingText, key))
+		description, _, _ := ws.LookupText(mods, fmt.Sprintf(ruleSettingDescription, key))
 		options = append(options, RuleOption{Key: key, Text: text, Description: description, Default: key == preset})
 	}
 	if !hasDefault && len(options) > 0 {

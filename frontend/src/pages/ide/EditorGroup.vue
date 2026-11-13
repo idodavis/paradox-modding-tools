@@ -84,18 +84,17 @@ const markdownBar = useTemplateRef<HTMLElement>("markdownBar");
 const isTopRight = computed(() => THIS_WINDOW === "main" && editor.layout().rows[0]?.columns.at(-1)?.id === group.id);
 const rows = computed(() => group.tabs.map(describe));
 
-// The hover card at the caret, and the fix that overrides the entry it is in.
+// The keys around the caret, and the fix that overrides the entry it is in.
 const { mutate: locateCaret, data: located } = useMutation({
   mutation: async (fileModel: Model) => {
-    const [card, override] = await Promise.all([
-      lsp.Hover(fileModel.place.path, fileModel.caret.line, fileModel.caret.column),
+    const [within, override] = await Promise.all([
+      lsp.ListAncestors(fileModel.place.path, fileModel.caret.line, fileModel.caret.column),
       findOverride(fileModel.place, fileModel.caret.line, fileModel.caret.column),
     ]);
-    return { card, override };
+    return { within: within ?? [], override };
   },
 });
-const card = computed(() => located.value?.card);
-const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
+const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(located.value?.within ?? [])]);
 const folderCount = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
 // The menu of the breadcrumb pressed, filled as it opens.
 const crumbMenu = shallowRef<DropdownMenuItem[]>([]);
@@ -178,7 +177,7 @@ function overrideHere(fileModel: Model): void {
     fileModel.place,
     fileModel.caret.line,
     fileModel.caret.column,
-    card.value?.within?.[0] ?? "",
+    located.value?.within[0] ?? "",
     modId,
   ).then(() => locateCaret(fileModel));
 }

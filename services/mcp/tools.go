@@ -15,9 +15,9 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
@@ -305,7 +305,7 @@ func (s *Service) buildReport(filter findingFilter) (health.Report, error) {
 	}
 
 	if filter.Level != "" && !slices.Contains(levels, filter.Level) {
-		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", game.JoinList(levels, "or"), filter.Level))
+		errs = append(errs, fmt.Errorf("a finding's level is %s, not %q", lang.JoinList(levels, "or"), filter.Level))
 	}
 
 	if err := errors.Join(errs...); err != nil {
@@ -429,7 +429,7 @@ func (s *Service) describePages() string {
 
 		values := ""
 		if len(row.Values) > 0 {
-			values = game.JoinList(row.Values, "or") + ": "
+			values = lang.JoinList(row.Values, "or") + ": "
 		}
 
 		keysByPage[row.Page] = append(keysByPage[row.Page], fmt.Sprintf("%s (%s%s)", row.Key, values, row.Help))
@@ -485,7 +485,7 @@ func (s *Service) describeWorkspace() (string, error) {
 	var guide strings.Builder
 	fmt.Fprintf(&guide, "Game: %s %s, installed at %s. Its files are read only.\n", state.Game.Name,
 		state.Install.Version, state.Install.Path)
-	fmt.Fprintf(&guide, "Language: %s, beside the base language, %s.\n", ws.Language, game.BaseLanguage)
+	fmt.Fprintf(&guide, "Language: %s, beside the base language, %s.\n", ws.Language, loc.BaseLanguage)
 
 	if guided, _ := s.Workspace.Config.LookupSetting("", settingGuidance); guided == "true" {
 		guide.WriteString("The user has Guidance for new modders on: explain the game's terms when you use them.\n")
@@ -503,7 +503,7 @@ func (s *Service) describeWorkspace() (string, error) {
 
 	guide.WriteString("\nThe game's folders and what each holds:\n")
 	for _, database := range listFolderDatabases(ws) {
-		fmt.Fprintf(&guide, "- %s: %s\n", database.Declaration.Folder, game.DescribeDefinition(database.Name, true))
+		fmt.Fprintf(&guide, "- %s: %s\n", database.Declaration.Folder, lang.DescribeDefinition(database.Name, true))
 	}
 
 	return guide.String(), nil
@@ -511,15 +511,15 @@ func (s *Service) describeWorkspace() (string, error) {
 
 // listFolderDatabases returns the game's databases that have a folder, sorted
 // by folder.
-func listFolderDatabases(ws *workspace.Session) []*schema.Database {
-	var databases []*schema.Database
+func listFolderDatabases(ws *workspace.Session) []*lang.Database {
+	var databases []*lang.Database
 	for _, database := range ws.Schema.Databases {
 		if database.Declaration.Folder != "" {
 			databases = append(databases, database)
 		}
 	}
 
-	slices.SortFunc(databases, func(first, second *schema.Database) int {
+	slices.SortFunc(databases, func(first, second *lang.Database) int {
 		return strings.Compare(first.Declaration.Folder, second.Declaration.Folder)
 	})
 

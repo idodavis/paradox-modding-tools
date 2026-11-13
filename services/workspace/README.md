@@ -7,11 +7,12 @@ one loads the install's schema and index, or builds them, scans the mods on top 
 service asks it for the open session at each call, so the workspace's state exists once.
 
 It also keeps the records of installs, workspaces and mods, reads and writes the mods' files, and serves files to the
-page. What a key means is the [schema](../../internal/schema/README.md)'s; where a name is defined is the
+page. What a key means is [lang](../../internal/lang/README.md)'s; where a name is defined is the
 [index](../../internal/index/README.md)'s.
 
 **Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),
-[jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md), [schema](../../internal/schema/README.md),
+[jomini](../../internal/jomini/README.md), [lang](../../internal/lang/README.md), [loc](../../internal/loc/README.md),
+[schema](../../internal/schema/README.md),
 [index](../../internal/index/README.md), [texture](../../internal/texture/README.md) · **Used by** every other service
 but app.
 

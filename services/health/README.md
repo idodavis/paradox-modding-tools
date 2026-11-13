@@ -12,7 +12,7 @@ how far each language covers a mod. The [Health page](../../frontend/src/README.
 
 **Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),
 [jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
-[schema](../../internal/schema/README.md), [index](../../internal/index/README.md), [lsp](../lsp/README.md),
+[lang](../../internal/lang/README.md), [index](../../internal/index/README.md), [lsp](../lsp/README.md),
 [workspace](../workspace/README.md) · **Used by** [mcp](../mcp/README.md).
 
 ## Building a report

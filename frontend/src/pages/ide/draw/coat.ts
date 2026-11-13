@@ -2,9 +2,8 @@
 import Color from "colorjs.io";
 import { Range } from "monaco-editor/editor/editor.api";
 
-import type { Coat, Instance, Layer, Recolor, Shading } from "@services/draw/models";
+import type { Coat, CoatStrength, Instance, Layer, Recolor, Shading } from "@services/draw/models";
 import type { Mod } from "@services/workspace/models";
-import type { CoatStrength } from "@internal/game/models";
 
 import { fileUrl } from "../../../queries";
 

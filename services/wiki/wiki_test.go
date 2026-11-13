@@ -17,7 +17,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
@@ -265,7 +265,7 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	declared := len(ws.Schema.ListKeys(game.DumpEffects))
+	declared := len(ws.Schema.ListKeys(lang.DumpEffects))
 	mods, scripted := ws.Mods.Load(), map[string]bool{}
 	for _, site := range mods.ListDefinitions(ws.Schema.Effects) {
 		scripted[mods.ToReference(site).Name] = true
@@ -283,9 +283,9 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 			}
 			continue
 		}
-		command := ws.Schema.LookupDefinition(game.DumpEffects, row.Name)
+		command := ws.Schema.LookupDefinition(lang.DumpEffects, row.Name)
 		if row.Class != "effect" || row.Usage != command.Usage || row.Blurb != command.Blurb ||
-			len(row.Examples) > len(mods.ListUses(game.DumpEffects, row.Name)) {
+			len(row.Examples) > len(mods.ListUses(lang.DumpEffects, row.Name)) {
 			t.Errorf("row %+v does not match command %+v", row, command)
 		}
 		examples += len(row.Examples)
@@ -294,8 +294,8 @@ func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
 		t.Error("no effect has an example")
 	}
 	checkFunctions(t, wik, ws)
-	if scopes, err := wik.BuildLexicon("scope"); err != nil || len(scopes) != len(ws.Schema.ListKeys(game.DumpTypes)) {
-		t.Errorf("%d scope rows for %d scopes, %v", len(scopes), len(ws.Schema.ListKeys(game.DumpTypes)), err)
+	if scopes, err := wik.BuildLexicon("scope"); err != nil || len(scopes) != len(ws.Schema.ListKeys(lang.DumpTypes)) {
+		t.Errorf("%d scope rows for %d scopes, %v", len(scopes), len(ws.Schema.ListKeys(lang.DumpTypes)), err)
 	}
 	if _, err := wik.BuildLexicon("modifier"); err == nil {
 		t.Error("BuildLexicon accepted a class the lexicon does not have")
@@ -320,7 +320,7 @@ func checkFunctions(t *testing.T, wik *Service, ws *workspace.Session) {
 	for _, row := range rows {
 		typeName, functionName, ok := strings.Cut(row.Name, ".")
 		function := ws.Schema.DataTypes[typeName].Functions[functionName]
-		if !ok || row.Class != "function" || row.Target != schema.ReturnType(function) || row.Blurb != function.Blurb ||
+		if !ok || row.Class != "function" || row.Target != lang.ReturnType(function) || row.Blurb != function.Blurb ||
 			len(row.Examples) != len(function.Examples) {
 			t.Fatalf("row %+v does not match function %+v of %s", row, function, typeName)
 		}

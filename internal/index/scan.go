@@ -20,16 +20,15 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
 )
 
 // collector turns the definition and the references of each statement of a
 // walked file into occurrences.
 type collector struct {
-	schema *schema.Schema
+	schema *lang.Schema
 
 	// index holds the tables the file is built against.
 	index *Index
@@ -49,7 +48,7 @@ type collector struct {
 // contextPool holds lists of contexts for the files being scanned, so that a
 // scan makes one list for each file it reads at once and not one for each
 // file.
-var contextPool = sync.Pool{New: func() any { return new([]schema.Context) }}
+var contextPool = sync.Pool{New: func() any { return new([]lang.Context) }}
 
 // Scan builds the index of an install's files, in parallel. The mounts are
 // the game's roots, then each DLC's, in load order, with their files as
@@ -60,13 +59,13 @@ var contextPool = sync.Pool{New: func() any { return new([]schema.Context) }}
 // A localization file is scanned only in the base language: 2.5 of CK3's 2.8
 // million messages are in the other eight, and a workspace reads one of
 // them at most, which ScanTranslation adds.
-func Scan(schema *schema.Schema, mounts *files.Mounts, progress func(stage string, percent int)) *Index {
+func Scan(schema *lang.Schema, mounts *files.Mounts, progress func(stage string, percent int)) *Index {
 	index := newIndex(schema, nil, mounts)
 	index.Stamp = time.Now().UnixNano()
 
 	var positions []int32
 	for position, file := range index.Files {
-		if file.Format != files.FormatLocalization || slices.Contains([]string{"", game.BaseLanguage}, findLanguage(file)) {
+		if file.Format != files.FormatLocalization || slices.Contains([]string{"", loc.BaseLanguage}, findLanguage(file)) {
 			positions = append(positions, int32(position))
 		}
 	}
@@ -93,7 +92,7 @@ func findLanguage(file files.File) string {
 // folders its mod's replace_path names. The progress function is called with
 // the percent of the files scanned. It returns an error if a root cannot be
 // walked.
-func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, progress func(percent int)) (*Index, error) {
+func ScanMods(schema *lang.Schema, install *Index, roots []files.Root, progress func(percent int)) (*Index, error) {
 	mounts, err := install.Mount(roots)
 	if err != nil {
 		return nil, err
@@ -122,7 +121,7 @@ func ScanMods(schema *schema.Schema, install *Index, roots []files.Root, progres
 // listed or dropped, so that it knows which files the game reads, and
 // before any is scanned. It returns an error, and changes nothing, if any of
 // the files is the install's.
-func (i *Index) ScanFiles(schema *schema.Schema, changed []files.File) error {
+func (i *Index) ScanFiles(schema *lang.Schema, changed []files.File) error {
 	installFiles := i.countInstallFiles()
 	for _, file := range changed {
 		if position, ok := i.FindFile(file.Path); ok && position < installFiles {
@@ -214,7 +213,7 @@ func LoadIndex(path string) (*Index, bool) {
 		return nil, false
 	}
 
-	index.row = game.LookupGame(index.Game)
+	index.dialect = lang.LookupDialect(index.Game)
 	index.Mounts = files.NewMounts(index.Roots, index.Files)
 	index.buildTables()
 	index.buildPostings()
@@ -237,9 +236,9 @@ func ParseFile(path string) (*jomini.Tree, error) {
 // an install's index, the mounts start with the install's roots and files,
 // and the index starts with its occurrences, its texts and copies of its
 // tables, so a position and an ordinal mean the same in both.
-func newIndex(schema *schema.Schema, install *Index, mounts *files.Mounts) *Index {
+func newIndex(schema *lang.Schema, install *Index, mounts *files.Mounts) *Index {
 	index := &Index{
-		Mounts: mounts, Game: schema.Game, install: install, row: game.LookupGame(schema.Game),
+		Mounts: mounts, Game: schema.Game, install: install, dialect: lang.LookupDialect(schema.Game),
 		Occurrences: make([][]Occurrence, len(mounts.Files)), Texts: make([][]string, len(mounts.Files)),
 		Unmarked: map[int32]bool{},
 	}
@@ -295,7 +294,7 @@ func (i *Index) listTables() []*Table {
 // scanFiles builds the occurrences of the files at the given positions, in
 // parallel on files.Workers goroutines. The progress function is called with
 // each whole percent of the files that is done.
-func (i *Index) scanFiles(schema *schema.Schema, positions []int32, progress func(percent int)) {
+func (i *Index) scanFiles(schema *lang.Schema, positions []int32, progress func(percent int)) {
 	var group errgroup.Group
 	var lock sync.RWMutex
 	var done atomic.Int64
@@ -320,10 +319,10 @@ func (i *Index) scanFiles(schema *schema.Schema, positions []int32, progress fun
 // buildFile builds the occurrences of one file, and the texts of a
 // localization file's messages. A format that has no occurrences, and a file
 // that cannot be read, get none.
-func (i *Index) buildFile(lock *sync.RWMutex, schema *schema.Schema, position int32) {
+func (i *Index) buildFile(lock *sync.RWMutex, schema *lang.Schema, position int32) {
 	// The file is built against tables of its own so that building takes no
 	// lock; its ordinals move to the index's tables afterwards.
-	tables := &Index{Mounts: i.Mounts, Caseless: i.Caseless, row: i.row}
+	tables := &Index{Mounts: i.Mounts, Caseless: i.Caseless, dialect: i.dialect}
 	tables.buildTables()
 	var occurrences []Occurrence
 	var texts []string
@@ -363,7 +362,7 @@ func (i *Index) readSource(position int32) string {
 
 // buildMessages builds the occurrences of a localization file: each message,
 // followed by what its text refers to. The texts run beside the occurrences.
-func (i *Index) buildMessages(schema *schema.Schema, position int32, source string) ([]Occurrence, []string) {
+func (i *Index) buildMessages(schema *lang.Schema, position int32, source string) ([]Occurrence, []string) {
 	file := loc.Parse(source, i.Files[position].Path)
 	language := uint8(i.Languages.Intern(file.Language))
 	var occurrences []Occurrence
@@ -371,7 +370,7 @@ func (i *Index) buildMessages(schema *schema.Schema, position int32, source stri
 
 	for position, context := range schema.WalkMessages(file) {
 		message, parent := file.Messages[position], int32(len(occurrences))
-		occurrence := i.makeOccurrence(RoleLocalizes, game.Localization, message.Key, message.KeySpan)
+		occurrence := i.makeOccurrence(RoleLocalizes, lang.Localization, message.Key, message.KeySpan)
 		occurrence.Language = language
 		occurrence.Line = int32(file.Lines.ToPosition(message.Span.Start).Line)
 		occurrences = append(occurrences, occurrence)
@@ -392,9 +391,9 @@ func (i *Index) buildMessages(schema *schema.Schema, position int32, source stri
 // buildRows builds the occurrences of a table file: a definition for each
 // row, named by the row's first column. A table whose database's definitions
 // are not its rows has none.
-func (i *Index) buildRows(schema *schema.Schema, position int32, source string) []Occurrence {
+func (i *Index) buildRows(schema *lang.Schema, position int32, source string) []Occurrence {
 	database, ok := schema.FindDatabase(i.Files[position])
-	if !ok || database.Declaration.DefinedBy != game.DefinedByColumn {
+	if !ok || database.Declaration.DefinedBy != lang.DefinedByColumn {
 		return nil
 	}
 
@@ -414,7 +413,7 @@ func (i *Index) buildRows(schema *schema.Schema, position int32, source string) 
 // definition, then its references, in the tree's order. The file's own
 // context gives one only where the file is one definition.
 func (c *collector) collect(tree *jomini.Tree, file files.File) []Occurrence {
-	list := contextPool.Get().(*[]schema.Context)
+	list := contextPool.Get().(*[]lang.Context)
 	defer contextPool.Put(list)
 
 	contexts, _ := c.schema.Walk(tree, file, *list)
@@ -429,7 +428,7 @@ func (c *collector) collect(tree *jomini.Tree, file files.File) []Occurrence {
 }
 
 // collectStatement records the statement's definition and references.
-func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context *schema.Context) {
+func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context *lang.Context) {
 	// the file's own statement is inside no definition
 	holder := int32(-1)
 	if statement > 0 {
@@ -450,8 +449,8 @@ func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context
 		parent, nested = holder, true
 		c.occurrences = append(c.occurrences, occurrence)
 
-		title, _ := schema.FindTextKey(tree, statement, game.TitleKey)
-		description, _ := schema.FindTextKey(tree, statement, game.DescriptionKey)
+		title, _ := lang.FindTextKey(tree, statement, lang.TitleKey)
+		description, _ := lang.FindTextKey(tree, statement, lang.DescriptionKey)
 		if title+description > 0 {
 			c.texts[holder] = [2]int32{title, description}
 		}
@@ -465,7 +464,7 @@ func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context
 		occurrence.Line = int32(tree.Lines.ToPosition(reference.Span.Start).Line)
 		occurrence.Parent, occurrence.Nested, occurrence.Firing = parent, nested, c.isFiring(context, reference)
 		occurrence.Statement = statement
-		if localizes := nested && reference.Database == game.Localization; localizes {
+		if localizes := nested && reference.Database == lang.Localization; localizes {
 			occurrence.Titles, occurrence.Describes = statement == texts[0], statement == texts[1]
 		}
 

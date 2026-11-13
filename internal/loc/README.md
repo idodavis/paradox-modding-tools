@@ -10,7 +10,7 @@ It knows no game and no index: what a key names, and which message the game keep
 [index](../index/README.md)'s. It shares [jomini](../jomini/README.md)'s spans, line index and problems, so a
 localization file and a script file are read with the same offsets.
 
-**Uses** [jomini](../jomini/README.md) · **Used by** [schema](../schema/README.md), [index](../index/README.md) and the
+**Uses** [jomini](../jomini/README.md) · **Used by** [lang](../lang/README.md), [schema](../schema/README.md), [index](../index/README.md) and the
 services that read localization.
 
 ```mermaid

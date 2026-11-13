@@ -52,6 +52,7 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/internal/texture"
@@ -91,8 +92,8 @@ type State struct {
 	InstallFound bool `json:"installFound"`
 
 	// UpdatedFrom is the recorded version, when opening found another.
-	UpdatedFrom string             `json:"updatedFrom"`
-	Dumps       schema.SourceState `json:"dumps"`
+	UpdatedFrom string           `json:"updatedFrom"`
+	Dumps       lang.SourceState `json:"dumps"`
 
 	// Effects, Triggers and Scopes count what the schema declares.
 	Effects  int `json:"effects"`
@@ -159,8 +160,21 @@ func (s *Service) ServiceShutdown() error {
 	return nil
 }
 
-// ListGames returns the supported games.
-func (s *Service) ListGames() []game.Game { return game.ListGames() }
+// ListGames returns the supported games, each example's Modes filled from
+// its database's precedence row.
+func (s *Service) ListGames() []game.Game {
+	rows := game.ListGames()
+	for position := range rows {
+		row := &rows[position]
+		dialect := lang.LookupDialect(row.ID)
+		_, folder := files.SplitStage(row.Example.Folder, row.Stages)
+		declaration, _ := dialect.FindDeclaration(folder)
+		declaration.Folder = folder
+		row.Example.Modes = dialect.LookupPrecedence(declaration, row.Example.Database).Modes != ""
+	}
+
+	return rows
+}
 
 // ListInstalls returns every recorded install of a game.
 func (s *Service) ListInstalls(gameID string) []app.Install {
@@ -183,7 +197,7 @@ func (s *Service) ListReadyInstalls() []string {
 			continue
 		}
 
-		folder, err := resolveCaches(s.Config.Dirs.Cache, row, install, s.Build)
+		folder, err := resolveCaches(s.Config.Dirs.Cache, row, install.Path, resolveVersion(row, install), s.Build)
 		if err != nil {
 			continue
 		}
@@ -272,7 +286,7 @@ func (s *Service) ListLanguages(installID string) ([]loc.Language, error) {
 	for _, entry := range entries {
 		if entry.IsDir() && loc.IsLanguage(entry.Name()) {
 			languages = append(languages, loc.Language{
-				Folder: entry.Name(), Label: loc.DescribeLanguage(entry.Name()), Base: entry.Name() == game.BaseLanguage,
+				Folder: entry.Name(), Label: loc.DescribeLanguage(entry.Name()), Base: entry.Name() == loc.BaseLanguage,
 			})
 		}
 	}
@@ -302,7 +316,7 @@ func (s *Service) RescanInstall(id string) error {
 		return err
 	}
 
-	folder, err := resolveCaches(s.Config.Dirs.Cache, row, install, s.Build)
+	folder, err := resolveCaches(s.Config.Dirs.Cache, row, install.Path, resolveVersion(row, install), s.Build)
 	if err != nil {
 		return err
 	}
@@ -493,7 +507,7 @@ func (s *Service) Open(workspaceID string) {
 // updateInstall records the version and the scan time of a session's install,
 // and sends install:scanned when the scan time changes.
 func (s *Service) updateInstall(ws *Session) error {
-	_, install, row, err := findRecords(s.Config.Config(), ws.ID)
+	_, install, _, err := findRecords(s.Config.Config(), ws.ID)
 	if err != nil {
 		return err
 	}
@@ -503,7 +517,8 @@ func (s *Service) updateInstall(ws *Session) error {
 		return err
 	}
 
-	version, scannedAt := resolveVersion(row, install), stat.ModTime()
+	// the schema keeps the version the open read
+	version, scannedAt := ws.Schema.Version, stat.ModTime()
 	if install.Version != version {
 		ws.updatedFrom = install.Version
 	}
@@ -578,7 +593,7 @@ func (s *Service) State() State {
 	return State{
 		Open: true, ID: ws.ID, Game: ws.Game, Install: install, InstallFound: files.IsFolder(install.Path),
 		UpdatedFrom: ws.updatedFrom, Dumps: ws.Schema.Dumps,
-		Effects: count(game.DumpEffects), Triggers: count(game.DumpTriggers), Scopes: count(game.DumpTypes),
+		Effects: count(lang.DumpEffects), Triggers: count(lang.DumpTriggers), Scopes: count(lang.DumpTypes),
 	}
 }
 

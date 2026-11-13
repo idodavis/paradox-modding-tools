@@ -8,13 +8,14 @@ its layers, and it makes the text edits the view's panels ask for. It also saves
 Go resolves and the browser lays out. A `Window` is a flat list of widgets, each with its properties as the game reads
 them, its texts and its pictures. The page builds the window as DOM from them (`pages/ide/draw/picture.ts`) and draws a
 coat on a canvas (`coat.ts`), as [the frontend](../../frontend/src/README.md) describes; no coordinate is computed here.
-The game's inheritance rules are this package's, read from `game`'s GUI and coat rows. What a file defines, and which
-definition the game keeps, come from the [index](../../internal/index/README.md). What a data call reads and returns
-comes from the [schema](../../internal/schema/README.md). Every range is the [lsp](../lsp/README.md) service's.
+The game's inheritance rules are this package's, with the rows for GUI files and coats of arms beside the functions
+that read them. What a file defines, and which definition the game keeps, come from the
+[index](../../internal/index/README.md). What a data call reads and returns comes from
+[lang](../../internal/lang/README.md). Every range is the [lsp](../lsp/README.md) service's.
 
 **Uses** [files](../../internal/files/README.md), [game](../../internal/game/README.md),
 [index](../../internal/index/README.md), [jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
-[schema](../../internal/schema/README.md), [texture](../../internal/texture/README.md), [lsp](../lsp/README.md),
+[lang](../../internal/lang/README.md), [texture](../../internal/texture/README.md), [lsp](../lsp/README.md),
 [workspace](../workspace/README.md) · **Used by** [mcp](../mcp/README.md).
 
 ## Which index a file is drawn from
@@ -38,7 +39,7 @@ flowchart TD
 
 `ListDrawables` lists what a GUI or coat file defines that the view can draw: a window, a type, a template or a coat,
 nested ones included. The entry the view opens on comes first: the one named as the file, else the first window
-(`game.GUI.ShownFirst`), else the first type or template that draws something. The rest follow in document order.
+(`shownFirst`), else the first type or template that draws something. The rest follow in document order.
 
 `ResolveWindow` resolves one window. A widget's properties come from its type's chain, its templates and its own block,
 and the last written of each key wins, keys matching without regard to case. A labeled block is read as written, or as
@@ -56,7 +57,7 @@ the game reads.
 
 **Opening animations.** A widget opens as it looks once the animation it opens with has run. The states it opens in, and
 those its holders' opening runs on it by name, each give their end values and the calls they run as they start, then
-lead to the state their `next` names and to those their calls run by name (`game.GUI.Animation`). A state that fades the
+lead to the state their `next` names and to those their calls run by name (the `animation` constants). A state that fades the
 widget out and runs calls as it ends takes it off the screen, so it is left out with all that would follow it. Each
 state runs once.
 
@@ -80,12 +81,12 @@ becomes its message's text in the session's language, each `$key$` inside it rep
 
 A data call in a text shows sample text of its kind, in place of data the running game would give. The kind comes from
 the type the call's last function returns, after the call's macros are expanded and its data contexts followed.
-`game.GUI.CallKinds` maps a type to `number` or `text`.
+`callOutputs` maps a type to `number` or `text`.
 
-- A number is digits shaped by the call's format codes: a digit is how many decimals, `game.GUI.PercentCode` makes it a
-  percent and `game.GUI.SignCode` shows its plus sign.
-- A call that `game.GUI.DateCalls` knows shows a date in the game's own form (`game.GUI.DateForm`), its month in the
-  session's language.
+- A number is digits shaped by the call's format codes: a digit is how many decimals, `percentCode` makes it a percent
+  and `signCode` shows its plus sign.
+- A call that `dateCallReturns` and `dateCallEndings` know shows a date in the game's own form (`dateKey`), its month in
+  the session's language.
 - A text is lorem words: two or three where the widget is not multiline, a sentence or two where it is multiline and
   resizes to fit, and a paragraph where it is fixed. A call of any other kind shows two words.
 
@@ -105,10 +106,10 @@ icon name or a texture binding.
 
 A definition's picture is, in order, the field the binding reads, the file the defines for its kind and field give (a
 folder, a prefix and a suffix), its picture keys or its name as an icon, and the one image it writes. A binding of a
-kind of level (`game.GUI.Levels`) draws the first file of the folder that the kind's define names whose name starts
+kind of level (`levelEnding`) draws the first file of the folder that the kind's define names whose name starts
 with the level prefix.
 
-A mask, a coat of arms' or the widget's own (`game.GUI.MaskKeys`), is found as a picture is. It is no texture of the
+A mask, a coat of arms' or the widget's own (`maskKeys`), is found as a picture is. It is no texture of the
 widget's.
 
 Where a binding names no definition of its kind, the widget draws the first definition that shows a picture, and its
@@ -116,13 +117,13 @@ Where a binding names no definition of its kind, the widget draws the first defi
 
 **Placeholders.** A picture that leads to no file draws a shape by what it is of. `describePicture` writes a phrase from
 the picture's key, the object its binding reads and the step without its getter, or from the path's folders and name.
-`game.Game.FindPlaceholder` picks the first placeholder one of whose kinds the phrase holds as whole words, else the
+`findPlaceholder` picks the first placeholder one of whose kinds the phrase holds as whole words, else the
 plain icon. A placeholder that only the running game can fill, such as a portrait or a coat of arms, looks for no file
 at all, and a background, which only dresses its holder, gets none. The widget's `Placeholder` is the shape's name.
 
 ## Colors and rows from definitions
 
-A binding whose last function returns a color (`game.GUI.ColorType`) gets the color of a definition. It is the color
+A binding whose last function returns a color (`colorType`) gets the color of a definition. It is the color
 that the field the binding reads writes in the definition the binding names, else in the first definition of its
 database that writes one. The field is a color block, or the name of a definition that is one. The widget's `Colors`
 hold the CSS color by property key.
@@ -153,18 +154,18 @@ starts from it, and resolves the window again only where its index, file, name o
 carries what the picks change: each group's value, the hidden widgets, what each group decides and the `Choice`s.
 
 **How a window opens.** Every group is at `none`, except what holds as a window opens (`holdsOnOpening`), which is at
-every value: an object exists or a list has items (`game.GUI.OpeningFacts`), and the facts of the sample the window is
-drawn for (`game.GUI.SampleFacts`). Then come the values its opening states' calls set, and the first widget of each
+every value: an object exists or a list has items (`openingFacts`), and the facts of the sample the window is
+drawn for (`sampleFacts`). Then come the values its opening states' calls set, and the first widget of each
 strip of tabs pressed. A press runs the widget's clicks: a call such as `SelectTab('x')` selects `x` of the group on the
 same object, and a call to the GUI's variable system sets, clears or toggles a variable.
 
 A data model's size as the window opens is the "Rows per list" count, so `GetDataModelSize` is that number and
 `IsDataModelEmpty` is false (`computeFact`). Such a fact is no group.
 
-A property written as a choice between two values, a function named with `game.GUI.SelectPrefix` such as
+A property written as a choice between two values, a function named with `selectPrefix` such as
 `Select_float(cond, a, b)`, takes the value its condition gives, as a `Choice`.
 
-**Tiers.** Where the game draws a title's tier from a sheet of cells (`game.Game.GUI.Tiers`), each call of that function
+**Tiers.** Where the game draws a title's tier from a sheet of cells (`titleTiers`), each call of that function
 is a group whose options are the game's tiers, with the widgets that write it as its readers. A tier picked gives each
 reader's property its cell, counted from one.
 
@@ -185,7 +186,7 @@ flowchart TD
   rank --> result["Coat, with its field size and shading"]
 ```
 
-`ResolveCoat` resolves a coat into its layers on its field, from the `game.Coat` rows. A parent coat's statements come
+`ResolveCoat` resolves a coat into its layers on its field, from the `game.Coat` row and the coat tables in `coat.go`. A parent coat's statements come
 before the coat's own, without the parent's instances, and without its emblems where the coat writes emblems of its own.
 
 - A `Layer` carries its texture's file, its colors as CSS with their names, how the game recolors its texture

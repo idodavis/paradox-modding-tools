@@ -45,11 +45,14 @@ const (
 	requestsPerSecond = 2
 )
 
+// apiAddress is the address of a game's wiki API, with %s for the game's id.
+const apiAddress = "https://%s.paradoxwikis.com/api.php"
+
 // NewClient returns a client for a game's wiki.
 func NewClient(cacheDir string, row *game.Game) *Client {
 	return &Client{
 		game:    row,
-		api:     fmt.Sprintf(game.WikiAPI, row.ID),
+		api:     fmt.Sprintf(apiAddress, row.ID),
 		limiter: rate.NewLimiter(requestsPerSecond, 1),
 		dir:     filepath.Join(cacheDir, "wiki", row.ID),
 	}

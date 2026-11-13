@@ -11,7 +11,8 @@ import (
 
 	"golang.org/x/net/html"
 
-	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/files"
+	"paradox-modding-tools/internal/lang"
 )
 
 // Note is one patch's notes page.
@@ -30,6 +31,29 @@ type Note struct {
 
 var errNoListing = errors.New("the wiki's listing has not been fetched yet")
 
+// pageTopics are the terms the games' wikis title their pages with, beside a
+// file format's own name, for the files of a format or under a folder. A row
+// with no format holds for any, and so does one with no folder.
+var pageTopics = []struct {
+	Format files.Format
+	Folder string
+	Terms  []string
+}{
+	// CK3's Interface, Vic3's Interface modding and EU5's Interface modding
+	// guide, which also write of gfx/interface
+	{Format: files.FormatGUI, Terms: []string{"interface"}},
+	{Folder: "gfx/interface", Terms: []string{"interface"}},
+	// CK3's 3D models and Vic3's Model modding, which write of .asset files,
+	// meshes and gfx/models
+	{Format: files.FormatAsset, Terms: []string{"model"}},
+	{Folder: "gfx/models", Terms: []string{"model"}},
+	// CK3's Graphical assets and Vic3's Graphical asset modding, which write
+	// of .dds textures
+	{Format: files.FormatImage, Terms: []string{"graphical asset"}},
+	// the three games' Map modding, which write of gfx/map
+	{Folder: "gfx/map", Terms: []string{"map modding"}},
+}
+
 // FindPages returns the wiki pages that belong to a file, best match first. It
 // returns an error if no workspace is open or the listing has not been fetched.
 func (s *Service) FindPages(path string) ([]Summary, error) {
@@ -44,10 +68,10 @@ func (s *Service) FindPages(path string) ([]Summary, error) {
 	}
 
 	place := ws.Locate(ws.Mods.Load(), path)
-	singular := strings.ToLower(game.DescribeDefinition(place.Database, false))
-	plural := strings.ToLower(game.DescribeDefinition(place.Database, true))
+	singular := strings.ToLower(lang.DescribeDefinition(place.Database, false))
+	plural := strings.ToLower(lang.DescribeDefinition(place.Database, true))
 	topics := []string{strings.ToLower(string(place.Format))}
-	for _, topic := range game.WikiTopics {
+	for _, topic := range pageTopics {
 		inFolder := topic.Folder == "" || strings.HasPrefix(strings.ToLower(place.Rel), topic.Folder+"/")
 		if (topic.Format == "" || topic.Format == place.Format) && inFolder {
 			topics = append(topics, topic.Terms...)

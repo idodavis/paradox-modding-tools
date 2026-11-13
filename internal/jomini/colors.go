@@ -1,5 +1,4 @@
-// colors.go reads the color blocks script writes, and writes a color back the
-// way its block wrote it.
+// colors.go reads color blocks and writes a color back as its block wrote it.
 
 package jomini
 
@@ -13,33 +12,28 @@ import (
 	"strings"
 )
 
-// Color is one way script writes a color, such as an rgb block or a hex
-// number.
+// Color is one way script writes a color, such as rgb or hex.
 type Color struct {
 	// Tag is the word before the block, as rgb in rgb { 255 0 0 }. It is ""
-	// for a block with no tag.
+	// for none.
 	Tag string
 
-	// HSV is set for a hue, a saturation and a value, and unset for red,
-	// green and blue.
+	// HSV is set for hue, saturation and value, not red, green and blue.
 	HSV bool
 
-	// Hex is set for one part that holds the bytes of red, green and blue,
-	// and of the alpha where it has eight digits.
+	// Hex is set for one part of six or eight hex digits.
 	Hex bool
 
-	// Hue is what the hue is out of, and Parts what the other parts are out
-	// of. Each is 1 where it is 0.
+	// Hue and Parts are what the hue and the other parts are out of. Each is
+	// 1 where it is 0.
 	Hue   float64
 	Parts float64
 }
 
-// TagHSV360 is the tag of a color written as a hue out of 360, then a
-// saturation and a value out of 100.
+// TagHSV360 is the tag of a hue out of 360, saturation and value out of 100.
 const TagHSV360 = "hsv360"
 
-// Colors lists the ways script writes a color, one row per tag. The package
-// doc says what each one's parts are out of.
+// Colors lists the color tags, one row each.
 var Colors = []Color{
 	{Tag: "rgb"},
 	{Tag: ""},
@@ -48,7 +42,7 @@ var Colors = []Color{
 	{Tag: "hex", Hex: true},
 }
 
-// RGBA is a color as red, green, blue and alpha channels, each from 0 to 1.
+// RGBA is a color as red, green, blue and alpha, each from 0 to 1.
 type RGBA struct {
 	R float64 `json:"r"`
 	G float64 `json:"g"`
@@ -56,19 +50,17 @@ type RGBA struct {
 	A float64 `json:"a"`
 }
 
-// ColorForm is the way to write a color where there is no block to copy.
+// ColorForm is how to write a color with no block to copy.
 type ColorForm struct {
-	// Tag is the word before the block.
 	Tag string
 
-	// Example is the parts of an example block, as written. They give the
-	// scale, and whether an alpha is written.
+	// Example is an example block's parts, giving the scale and whether it
+	// has an alpha.
 	Example []string
 }
 
-// ParseColor returns the color that a block with the given tag and parts
-// writes, each part as written. It returns false for a tag no row of Colors
-// has, for a part that is no number, and for too few numbers.
+// ParseColor returns the color a block writes. It returns false for an unknown
+// tag, a part that is no number and too few numbers.
 func ParseColor(tag string, parts []string) (RGBA, bool) {
 	row, known := lookupColorRow(tag)
 	numbers, ok := toNumbers(row, parts)
@@ -90,9 +82,7 @@ func ParseColor(tag string, parts []string) (RGBA, bool) {
 	return RGBA{R: clamp(red), G: clamp(green), B: clamp(blue), A: clamp(alpha)}, true
 }
 
-// ToColor returns the color a statement writes as a color block. It returns
-// false if the statement is no color block, or its tag and parts make no
-// color.
+// ToColor returns the color a statement writes, or false if it writes none.
 func ToColor(tree *Tree, statement int32) (RGBA, bool) {
 	tag, parts, ok := ColorParts(tree, statement)
 	if !ok {
@@ -102,10 +92,9 @@ func ToColor(tree *Tree, statement int32) (RGBA, bool) {
 	return ParseColor(tag, parts)
 }
 
-// ColorParts returns the tag and the parts of a block statement such as
-// rgb { 1 2 3 }, each part as written. It returns false if the statement is
-// not a block of plain numbers, or of one hex number after a hex tag, or has
-// no tag and not three or four numbers.
+// ColorParts returns the tag and the parts of a block such as rgb { 1 2 3 }. It
+// returns false if the block is not made of numbers, or an untagged one has
+// other than three or four.
 func ColorParts(tree *Tree, statement int32) (tag string, parts []string, ok bool) {
 	if !tree.Statements[statement].IsBlock() {
 		return "", nil, false
@@ -128,10 +117,9 @@ func ColorParts(tree *Tree, statement int32) (tag string, parts []string, ok boo
 	return tag, parts, true
 }
 
-// EncodeColor returns the parts that write a color the way an existing block
-// wrote its own, given that block's tag and parts. A hex part keeps its count
-// of digits, and its 0x where it has one. It returns false for a tag no row
-// of Colors has, and for parts that write no color.
+// EncodeColor returns the parts that write a color as the block of the given
+// tag and parts wrote its own. It returns false for an unknown tag and for
+// parts that are no color.
 func EncodeColor(tag string, parts []string, color RGBA) ([]string, bool) {
 	row, known := lookupColorRow(tag)
 	written, ok := toNumbers(row, parts)
@@ -163,8 +151,7 @@ func EncodeColor(tag string, parts []string, color RGBA) ([]string, bool) {
 		return []string{encoded}, true
 	}
 
-	// A part out of 1 is rounded to two decimals, and any other part to a
-	// whole number.
+	// Parts out of 1 keep two decimals, the others are whole.
 	precision := 1.0
 	if scale == 1 {
 		precision = 100
@@ -178,15 +165,13 @@ func EncodeColor(tag string, parts []string, color RGBA) ([]string, bool) {
 	return texts, true
 }
 
-// ToCSS returns the color as rgba(red, green, blue, alpha), the first three
-// out of 255 and the alpha out of 1.
+// ToCSS returns the color as rgba(red, green, blue, alpha), the first three as
+// bytes.
 func (r RGBA) ToCSS() string {
 	return fmt.Sprintf("rgba(%d, %d, %d, %s)", toByte(r.R), toByte(r.G), toByte(r.B),
 		strconv.FormatFloat(r.A, 'f', -1, 64))
 }
 
-// lookupColorRow returns the row of Colors for a tag. It returns false if
-// there is none.
 func lookupColorRow(tag string) (Color, bool) {
 	i := slices.IndexFunc(Colors, func(row Color) bool { return row.Tag == tag })
 	if i < 0 {
@@ -196,11 +181,9 @@ func lookupColorRow(tag string) (Color, bool) {
 	return Colors[i], true
 }
 
-// toNumbers returns the numbers that the parts of a color block of the given
-// row write. A hex block's one part gives its bytes, with or without 0x before
-// them: red, green and blue, and the alpha where it has eight digits. It
-// returns false for a part that is no number, and for a hex block that is not
-// one part of six or eight digits.
+// toNumbers returns the numbers a block's parts write, a hex block's one part
+// giving its bytes. It returns false for a part that is no number and for a
+// hex part that is not six or eight digits.
 func toNumbers(row Color, parts []string) ([]float64, bool) {
 	if row.Hex {
 		if len(parts) != 1 {
@@ -233,9 +216,8 @@ func toNumbers(row Color, parts []string) ([]float64, bool) {
 	return numbers, true
 }
 
-// findScale returns what a block's numbers are out of: an hsv row's own
-// scale, else 255, or 1 when red, green and blue are each at most 1. A hex
-// row's bytes are always out of 255.
+// findScale returns what a block's numbers are out of: an hsv row's scale, else
+// 1 if red, green and blue are at most 1, else 255.
 func findScale(row Color, numbers []float64) float64 {
 	switch {
 	case row.HSV:
@@ -247,8 +229,7 @@ func findScale(row Color, numbers []float64) float64 {
 	return 255
 }
 
-// hsvToRGB converts a hue, a saturation and a value to red, green and blue,
-// each from 0 to 1.
+// hsvToRGB converts hue, saturation and value to RGB.
 func hsvToRGB(hue, saturation, value float64) (red, green, blue float64) {
 	sector, fraction := int(hue*6)%6, hue*6-float64(int(hue*6))
 	bottom, falling, rising := value*(1-saturation), value*(1-fraction*saturation), value*(1-(1-fraction)*saturation)
@@ -269,8 +250,7 @@ func hsvToRGB(hue, saturation, value float64) (red, green, blue float64) {
 	return value, bottom, falling
 }
 
-// rgbToHSV converts red, green and blue to a hue, a saturation and a value,
-// each from 0 to 1.
+// rgbToHSV converts RGB to hue, saturation and value.
 func rgbToHSV(red, green, blue float64) (hue, saturation, value float64) {
 	value = max(red, green, blue)
 	chroma := value - min(red, green, blue)
@@ -292,8 +272,6 @@ func rgbToHSV(red, green, blue float64) (hue, saturation, value float64) {
 	return hue, saturation, value
 }
 
-// clamp limits a part to the range 0 to 1.
 func clamp(part float64) float64 { return min(max(part, 0), 1) }
 
-// toByte returns a part from 0 to 1 as a byte, rounded.
 func toByte(part float64) int { return int(part*255 + 0.5) }

@@ -85,31 +85,27 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// Message is one message of a localization file: a key, its version and the
-// text the game shows for it, split into its markup.
+// Message is one message of a localization file.
 type Message struct {
 	Key  string `json:"key"`
 	Text string `json:"text"`
 
-	// Version is the number written after the key's colon, and 0 where none
-	// is.
+	// Version is the number after the key's colon, or 0.
 	Version int `json:"version"`
 
-	// Span runs from the key to the closing quote, or to the end of the line
-	// where there is none. KeySpan is the key, and TextSpan the text without
-	// its quotes.
+	// Span runs from the key to the closing quote, or the line's end if none.
+	// TextSpan excludes the quotes.
 	Span     jomini.Span `json:"span"`
 	KeySpan  jomini.Span `json:"keySpan"`
 	TextSpan jomini.Span `json:"textSpan"`
 
-	// Segments is the text split into its markup, with spans in the file.
 	Segments []Segment `json:"segments"`
 }
 
 // File is one parsed localization file.
 type File struct {
-	// Language is the language the file is for, in lower case, as english.
-	// It is "" where neither the header nor the path names one.
+	// Language is in lower case, as english. It is "" if neither the header
+	// nor the path names one.
 	Language string `json:"language"`
 
 	Messages []Message        `json:"messages"`
@@ -117,8 +113,7 @@ type File struct {
 	Lines    jomini.Lines     `json:"-"`
 }
 
-// Language is one localization language: the folder the game keeps it in,
-// and its name in English.
+// Language is one localization language.
 type Language struct {
 	Folder string `json:"folder"`
 	Label  string `json:"label"`
@@ -127,23 +122,23 @@ type Language struct {
 	Base bool `json:"base"`
 }
 
-// languageSuffix matches a file name that ends in _l_<language>.yml, in any
-// case. It captures the name up to and including the _l_, the language and
-// the .yml.
+// BaseLanguage is the language that every other language's coverage is
+// measured against.
+const BaseLanguage = "english"
+
+// languageSuffix matches a name ending in _l_<language>.yml, in any case.
 var languageSuffix = regexp.MustCompile(`(?i)^(.*_l_)([a-z_]+)(\.yml)$`)
 
-// languageLabels holds each language's name in English, by the folder the
-// game keeps it in.
+// languageLabels holds each language's English name, by folder.
 var languageLabels = map[string]string{
 	"english": "English", "french": "French", "german": "German", "spanish": "Spanish", "russian": "Russian",
 	"korean": "Korean", "simp_chinese": "Simplified Chinese", "polish": "Polish", "turkish": "Turkish",
 	"braz_por": "Brazilian Portuguese", "japanese": "Japanese",
 }
 
-// Parse parses the text of the localization file at the given path. A text
-// that breaks the format gives the messages Parse could read, and its
-// problems go into the file's Problems. The language is the header's, else
-// the file name's, else the folder's, and "" where none of them names one.
+// Parse parses a localization file's text. It keeps the messages it can read
+// and reports the rest as Problems. The language is the header's, else the
+// file name's, else the folder's.
 func Parse(text, path string) *File {
 	file := &File{Lines: jomini.NewLines(text)}
 	header := ""
@@ -191,8 +186,8 @@ func Parse(text, path string) *File {
 	return file
 }
 
-// parseHeader returns the language that a header line names, in lower case,
-// as english for l_english:. It returns false if the line is no header.
+// parseHeader returns the language a header line names, as english for
+// l_english:, or false if the line is no header.
 func parseHeader(line string) (string, bool) {
 	start := skip(line, 0, isBlank)
 	end := skip(line, start, isLanguageRune)
@@ -202,7 +197,7 @@ func parseHeader(line string) (string, bool) {
 		return "", false
 	}
 
-	// Blanks and a comment may follow the colon, and nothing else.
+	// Only blanks and a comment may follow the colon.
 	rest := line[skip(line, end+1, isBlank):]
 	if rest != "" && rest[0] != '#' {
 		return "", false
@@ -211,23 +206,19 @@ func parseHeader(line string) (string, bool) {
 	return language, true
 }
 
-// skip returns the offset of the first rune of a line, from the given offset
-// on, that accept rejects. It returns the line's length if accept takes every
-// rune to the end.
+// skip returns the offset of the first rune from an offset on that the test
+// rejects, or the line's length.
 func skip(line string, offset int, accept func(rune) bool) int {
 	return len(line) - len(strings.TrimLeftFunc(line[offset:], accept))
 }
 
 func isBlank(r rune) bool { return r == ' ' || r == '\t' }
 
-// isLanguageRune reports whether a rune may be part of a header's language: a
-// letter a to z in either case, or an underscore.
 func isLanguageRune(r rune) bool { return r == '_' || 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' }
 
-// ParseMessage parses one message line, its text's markup included. The given
-// offset is where the line starts in its file, so the spans are the file's. A
-// message with no closing quote runs to the end of the line. It returns false
-// if the line is no message.
+// ParseMessage parses one message line with its markup. Spans are offset by
+// base, where the line starts in its file. It returns false if the line is no
+// message.
 func ParseMessage(line string, base int) (Message, bool) {
 	start := skip(line, 0, isBlank)
 	colon := skip(line, start, isKeyRune)
@@ -241,8 +232,8 @@ func ParseMessage(line string, base int) (Message, bool) {
 		return Message{}, false
 	}
 
-	// The text runs to the last quote on the line, or to the line's end where
-	// the opening quote is the last.
+	// The text runs to the last quote, or to the line's end if that is the
+	// opening one.
 	closing := strings.LastIndexByte(line, '"')
 	if closing == opening {
 		closing = len(line)
@@ -262,23 +253,18 @@ func ParseMessage(line string, base int) (Message, bool) {
 	}, true
 }
 
-// isKeyRune reports whether a rune may be part of a message's key: a letter
-// or a number of any script, or one of _ . ' -.
 func isKeyRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsNumber(r) || strings.ContainsRune("_.'-", r)
 }
 
 func isDigit(r rune) bool { return '0' <= r && r <= '9' }
 
-// problem returns the problem of the given code over a span of the file, with
-// the message that says what is wrong.
 func problem(code, message string, span jomini.Span) jomini.Problem {
 	return jomini.Problem{Code: code, Message: message, Span: span}
 }
 
-// FindSuffixLanguage returns the language in the _l_<language>.yml ending of
-// a file's name, in lower case, as english for events_l_english.yml. It
-// returns "" if the name has no such ending.
+// FindSuffixLanguage returns the language in a file name's _l_<language>.yml
+// ending, as english for events_l_english.yml, or "" for none.
 func FindSuffixLanguage(filePath string) string {
 	match := languageSuffix.FindStringSubmatch(filepath.Base(filePath))
 	if match == nil {
@@ -288,9 +274,8 @@ func FindSuffixLanguage(filePath string) string {
 	return strings.ToLower(match[2])
 }
 
-// FindFolderLanguage returns the language folder in a file's path, in lower
-// case. A path that ends in a slash names a folder, so its last part counts
-// too. It returns "" if the path has none.
+// FindFolderLanguage returns the language folder in a path, or "". A path
+// ending in a slash counts its last part.
 func FindFolderLanguage(filePath string) string {
 	folders := strings.Split(filepath.ToSlash(filePath), "/")
 	folders = folders[:len(folders)-1]
@@ -302,10 +287,8 @@ func FindFolderLanguage(filePath string) string {
 	return ""
 }
 
-// findLanguageFolder returns the position of the language folder among the
-// folders of a path: the first after the last localization folder that is
-// not replace. Both are matched in any case. It returns false if there is
-// none.
+// findLanguageFolder returns the position of the first folder after the last
+// localization folder that is not replace, in any case, or false.
 func findLanguageFolder(folders []string) (int, bool) {
 	root := -1
 
@@ -324,14 +307,13 @@ func findLanguageFolder(folders []string) (int, bool) {
 	return 0, false
 }
 
-// MisspelledFolders maps a folder name the games never read to the one they
-// read in its place: localisation, spelled the British way, to localization.
+// MisspelledFolders maps a folder name the games never read, localisation, to
+// the one they do.
 var MisspelledFolders = map[string]string{"localisation": "localization"}
 
-// ToLanguageRel returns the path, relative to a mod's root, of the file that
-// holds the same messages as a localization file, in the given language. It
-// sets the language in the language folder and in the _l_<language>.yml
-// ending, where the path has them.
+// ToLanguageRel returns the path of the file with the same messages in a
+// language, setting it in the language folder and the _l_<language>.yml
+// ending where the path has them.
 func ToLanguageRel(rel, language string) string {
 	folders := strings.Split(rel, "/")
 	last := len(folders) - 1
@@ -347,22 +329,19 @@ func ToLanguageRel(rel, language string) string {
 	return strings.Join(folders, "/")
 }
 
-// ToLanguageFile returns the file name of a localization file in the given
-// language: the given stem, _l_, the language and .yml, as
-// events_l_english.yml for the stem events in english.
+// ToLanguageFile returns a file name for a stem and language, as
+// events_l_english.yml.
 func ToLanguageFile(stem, language string) string {
 	return stem + "_" + ToLanguageKey(language) + ".yml"
 }
 
-// Encode returns the text of a localization file for one language: the
-// header line, then a line for each message.
+// Encode returns a localization file's text for one language.
 func Encode(language string, messages []Message) string {
 	return ToLanguageKey(language) + ":\n" + EncodeMessages(messages, "\n")
 }
 
-// EncodeMessages returns a line for each message, ended by the given line
-// ending: its key, its version and its quoted text, in the layout the game
-// reads, as in  my_key:0 "My text".
+// EncodeMessages returns a line for each message, as ` my_key:0 "My text"`,
+// each ended by the given ending.
 func EncodeMessages(messages []Message, ending string) string {
 	var text strings.Builder
 
@@ -373,9 +352,9 @@ func EncodeMessages(messages []Message, ending string) string {
 	return text.String()
 }
 
-// EncodeAddition returns the text that adds the messages at the end of a
-// localization text, in the text's own line ending. It starts with a line
-// ending unless the text is empty or ends in \n.
+// EncodeAddition returns the text that adds messages to the end of a
+// localization text, in its own line ending. It starts with one unless the
+// text is empty or ends in \n.
 func EncodeAddition(text string, messages []Message) string {
 	ending := jomini.LineEnding(text)
 	if text == "" || strings.HasSuffix(text, "\n") {
@@ -385,15 +364,13 @@ func EncodeAddition(text string, messages []Message) string {
 	return ending + EncodeMessages(messages, ending)
 }
 
-// ToLanguageKey returns the key the game writes a language as, l_english for
-// english.
+// ToLanguageKey returns l_english for english.
 func ToLanguageKey(language string) string {
 	return "l_" + language
 }
 
-// DescribeLanguage returns a language's name in English from the folder the
-// game keeps it in, as Simplified Chinese for simp_chinese. It returns the
-// folder itself for a language it does not know.
+// DescribeLanguage returns a language's English name, as Simplified Chinese
+// for simp_chinese, or the folder if it is unknown.
 func DescribeLanguage(folder string) string {
 	if label, ok := languageLabels[folder]; ok {
 		return label
@@ -402,9 +379,8 @@ func DescribeLanguage(folder string) string {
 	return folder
 }
 
-// IsLanguage reports whether a folder of the game's localization holds a
-// language, and is not one such as jomini that the games keep beside the
-// languages.
+// IsLanguage reports whether a folder holds a language, not something such as
+// jomini that the games keep beside them.
 func IsLanguage(folder string) bool {
 	_, ok := languageLabels[folder]
 

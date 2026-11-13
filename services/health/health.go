@@ -19,11 +19,10 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -291,8 +290,8 @@ func (hlt *Service) makeReport(ws *workspace.Session, order []string) (Report, e
 	record, _ := lo.Find(hlt.Workspace.Config.Config().Workspaces, func(record app.Workspace) bool { return record.ID == ws.ID })
 	checked := listChecked(ids, record)
 	compatible := mods.Narrow(checked)
-	kept, defined := map[schema.Reference]index.Winner{}, []schema.Reference{}
-	references := lo.Map(listDefinitions(ws, compatible), func(site index.Site, _ int) schema.Reference {
+	kept, defined := map[lang.Reference]index.Winner{}, []lang.Reference{}
+	references := lo.Map(listDefinitions(ws, compatible), func(site index.Site, _ int) lang.Reference {
 		return compatible.ToReference(site)
 	})
 	for _, reference := range lo.Uniq(references) {
@@ -304,7 +303,7 @@ func (hlt *Service) makeReport(ws *workspace.Session, order []string) (Report, e
 	paths, declared := listShippedPaths(compatible), listDeclared(ws)
 	lists := []func() []Finding{
 		func() []Finding {
-			return lo.FlatMap(defined, func(reference schema.Reference, _ int) []Finding {
+			return lo.FlatMap(defined, func(reference lang.Reference, _ int) []Finding {
 				return listDefinitionFindings(ws, compatible, reference, kept[reference])
 			})
 		},
@@ -435,7 +434,7 @@ func splitBrief(finding Finding) []lsp.Part {
 		}
 		parts = append(parts, piece...)
 	}
-	if finding.Database != "" && finding.Database != game.File {
+	if finding.Database != "" && finding.Database != lang.File {
 		add(lsp.Part{Text: finding.Database})
 	}
 	hasUses := len(finding.Uses) > 0
@@ -561,7 +560,7 @@ func (hlt *Service) ListOverview() ([]Overview, error) {
 			}
 			overview.Files++
 			for database, count := range mods.CountDefinitions(position) {
-				overview.Counts[game.DescribeDefinition(database, true)] += count
+				overview.Counts[lang.DescribeDefinition(database, true)] += count
 			}
 			for _, occurrence := range mods.Occurrences[position] {
 				if occurrence.Role == index.RoleLocalizes {
@@ -629,7 +628,7 @@ func (hlt *Service) ListReaders(key string) ([]lsp.Site, error) {
 		return nil, err
 	}
 	mods := ws.Mods.Load()
-	return lo.Map(mods.ListUses(game.Localization, key), func(site index.Site, _ int) lsp.Site {
+	return lo.Map(mods.ListUses(lang.Localization, key), func(site index.Site, _ int) lsp.Site {
 		return lsp.MakeSite(ws, mods, site)
 	}), nil
 }
@@ -725,9 +724,9 @@ func listModSites(mods *index.Index, keep func(site index.Site) bool) []index.Si
 // hasWinner reports whether one copy of a name wins: its database does not keep
 // every copy, and a source says which copy the game keeps. It is false for a
 // database the schema lacks.
-func hasWinner(ws *workspace.Session, reference schema.Reference, winner index.Winner) bool {
+func hasWinner(ws *workspace.Session, reference lang.Reference, winner index.Winner) bool {
 	database := ws.Schema.Databases[reference.Database]
-	return database != nil && !database.Precedence.KeepsEvery() && winner.Reason != game.ReasonUnsettled
+	return database != nil && !database.Precedence.KeepsEvery() && winner.Reason != lang.ReasonUnsettled
 }
 
 // listLoaded returns the sites that lie in files the game reads, in the order
@@ -823,7 +822,7 @@ func makeFileSites(ws *workspace.Session, mods *index.Index, path string) []lsp.
 		return makeFileSite(ws, mods, position)
 	})
 	if ok && len(sites) > 1 {
-		sites[len(sites)-1].Reason, sites[len(sites)-1].Label = game.ReasonPath, game.Reasons[game.ReasonPath].Label
+		sites[len(sites)-1].Reason, sites[len(sites)-1].Label = lang.ReasonPath, lang.Reasons[lang.ReasonPath].Label
 	}
 	return sites
 }
@@ -859,7 +858,7 @@ func listUnused(ws *workspace.Session, mods *index.Index, sites []index.Site, wi
 		if lo.SomeBy(byMod[mod], func(site index.Site) bool { return mods.ResolveSite(winner, site).Kept }) {
 			continue
 		}
-		facts := schema.DescribeReference(reference)
+		facts := lang.DescribeReference(reference)
 		facts["winner"], facts["beaten"] = ws.DescribeMod(mods.File(winner.Site).Origin), ws.DescribeMod(mod)
 		own := lo.Filter(sites, func(site index.Site, _ int) bool { return !isMod(mods, site) || mods.File(site).Origin == mod })
 		findings = append(findings, makeFinding(mods, "unused-copy", facts, lsp.MakeSites(ws, mods, own, &winner)))
@@ -883,7 +882,7 @@ func describeRemoved(ws *workspace.Session, mods *index.Index, finding *Finding,
 	finding.Facts["total"] = strconv.Itoa(len(lo.Uniq(original.Defines)))
 	finding.Facts["definitions"] = "entries"
 	if len(databases) == 1 {
-		finding.Facts["definitions"] = game.DescribeDefinition(databases[0], true)
+		finding.Facts["definitions"] = lang.DescribeDefinition(databases[0], true)
 	}
 	finding.Facts["removed"] = strconv.Itoa(len(listRemoved([]lsp.Site{kept, original})))
 	finding.Facts["count"] = strconv.Itoa(len(uses))
@@ -902,7 +901,7 @@ func listRemovedUses(ws *workspace.Session, mods *index.Index, path string) ([]U
 	}
 	var uses []Use
 	var users []string
-	seen := map[schema.Reference]bool{}
+	seen := map[lang.Reference]bool{}
 	for number, occurrence := range mods.Occurrences[position] {
 		reference := mods.ToReference(index.Site{File: position, Occurrence: int32(number)})
 		if !occurrence.Own || occurrence.Local || seen[reference] || len(listLoaded(mods, mods.Resolve(reference))) > 0 {
@@ -947,7 +946,7 @@ func listDescriptors(ws *workspace.Session, mods *index.Index) []Finding {
 		sites := []lsp.Site{{Place: ws.Locate(mods, descriptor.Path), Line: 1, Range: jomini.ToLineRange(1)}}
 		for _, dependency := range descriptor.Dependencies {
 			if _, ok := workspace.FindMod(order, dependency); !ok {
-				facts := schema.DescribeReference(schema.Reference{Name: cmp.Or(dependency.Title, dependency.ID)})
+				facts := lang.DescribeReference(lang.Reference{Name: cmp.Or(dependency.Title, dependency.ID)})
 				facts["mod"] = ws.DescribeMod(mod.ID)
 				findings = append(findings, makeFinding(mods, "missing-dependency", facts, sites))
 			}
@@ -995,15 +994,15 @@ func listCoverage(ws *workspace.Session, mods *index.Index, messages []index.Sit
 	byMod := lo.GroupBy(messages, func(site index.Site) string { return mods.File(site).Origin })
 	for _, mod := range *ws.Order.Load() {
 		byLanguage := lo.GroupBy(byMod[mod.ID], mods.Language)
-		base := listKeys(mods, byLanguage[game.BaseLanguage])
+		base := listKeys(mods, byLanguage[loc.BaseLanguage])
 		if len(base) == 0 {
 			continue
 		}
 		for _, language := range slices.Sorted(maps.Keys(byLanguage)) {
-			if language == game.BaseLanguage {
+			if language == loc.BaseLanguage {
 				continue
 			}
-			facts := schema.DescribeReference(schema.Reference{Database: game.Localization, Name: language})
+			facts := lang.DescribeReference(lang.Reference{Database: lang.Localization, Name: language})
 			facts["mod"] = ws.DescribeMod(mod.ID)
 			facts["have"] = strconv.Itoa(len(base) - len(listUntranslated(mods, byLanguage, language)))
 			facts["of"] = strconv.Itoa(len(base))
@@ -1020,7 +1019,7 @@ func listCoverage(ws *workspace.Session, mods *index.Index, messages []index.Sit
 // language.
 func listUntranslated(mods *index.Index, byLanguage map[string][]index.Site, language string) []index.Site {
 	translated := lo.Keyify(listKeys(mods, byLanguage[language]))
-	untranslated := lo.Reject(byLanguage[game.BaseLanguage], func(site index.Site, _ int) bool {
+	untranslated := lo.Reject(byLanguage[loc.BaseLanguage], func(site index.Site, _ int) bool {
 		_, ok := translated[mods.ToReference(site).Name]
 		return ok
 	})

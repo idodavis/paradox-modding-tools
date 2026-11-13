@@ -65,12 +65,13 @@ const { mutate: loadCaret, data: caretFacts } = useMutation({
   mutation: async () => {
     const caret = view.value?.getPosition() ?? { lineNumber: 1, column: 1 };
     const covering = model.problems.filter((problem) => Range.containsPosition(problem.range, caret));
-    const [card, fixes, override] = await Promise.all([
+    const [card, fixes, override, within] = await Promise.all([
       lsp.Hover(model.place.path, caret.lineNumber, caret.column),
       covering.length ? lsp.ListFixes(model.place.path, covering) : null,
       findOverride(model.place, caret.lineNumber, caret.column),
+      lsp.ListAncestors(model.place.path, caret.lineNumber, caret.column),
     ]);
-    return { card, fixes: fixes ?? [], override };
+    return { card, fixes: fixes ?? [], override, within: within ?? [] };
   },
 });
 const card = computed(() => caretFacts.value?.card);
@@ -214,8 +215,8 @@ function replaceSelections(text: string): void {
   );
 }
 
-// The name of the entry the caret is in, or "" if the card names none.
-const entry = computed(() => card.value?.within?.[0] ?? "");
+// The name of the entry the caret is in, or "" if it is in none.
+const entry = computed(() => caretFacts.value?.within[0] ?? "");
 
 const groups = computed<ContextMenuItem[][]>(() => [
   [

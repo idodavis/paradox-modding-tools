@@ -14,11 +14,10 @@ import (
 
 	"github.com/samber/lo"
 
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
 )
 
 // A Group is one choice the page lets the user switch: a data call a window's conditions read, or a template list a
@@ -67,7 +66,7 @@ type context struct {
 // An evaluator works out whether the conditions of a window's widgets hold under the values of the groups, or which
 // values would make them hold.
 type evaluator struct {
-	schema   *schema.Schema
+	schema   *lang.Schema
 	window   Window
 	contexts []context
 	groups   []Group
@@ -109,6 +108,59 @@ var pickCaptions = map[string]string{pickEvery: "All", pickNone: "None"}
 // step to the object, and the check on the object.
 const directSteps = 3
 
+// clickKeys are the keys whose calls run as a widget is clicked.
+var clickKeys = []string{"onclick"}
+
+// downKey is the key whose condition holds while a button is drawn down.
+// Side-by-side buttons of one type that write it are tabs.
+const downKey = "down"
+
+// The variable type and functions reach the GUI's own variables. Each of the
+// functions takes the variable's name first.
+//
+// EU5's data_types_uncategorized.txt declares
+// NotExistOrHasValue( Arg0, Arg1 )
+const (
+	// variableType is the data type the variables are reached through.
+	variableType = "VariableSystem"
+
+	// variableExists, variableHasValue and variableUnsetOrValue are the
+	// functions that hold while a variable is set, is set to the given value,
+	// or is unset or set to the given value.
+	variableExists       = "Exists"
+	variableHasValue     = "HasValue"
+	variableUnsetOrValue = "NotExistOrHasValue"
+
+	// variableSet is the function that sets a variable, to the given value or
+	// to none, variableClear the one that unsets it, and variableToggle the
+	// one that sets a variable that is unset and unsets one that is set.
+	variableSet    = "Set"
+	variableClear  = "Clear"
+	variableToggle = "Toggle"
+)
+
+// booleans are the data functions a binding combines conditions with, by name
+// without the argument count.
+var booleans = map[string]string{"And": "and", "Or": "or", "Nor": "nor", "Not": "not"}
+
+// literals are a condition's plain values, in lower case, each with whether it
+// holds.
+var literals = map[string]bool{
+	// no GUI file of the three installs writes a property as true or false
+	"yes": true, "no": false,
+}
+
+// modelSize is the data function that gives how many items a data model has,
+// and modelEmpty and modelHas the ones that ask whether it has none and
+// whether it has some.
+const (
+	modelSize  = "GetDataModelSize"
+	modelEmpty = "IsDataModelEmpty"
+
+	// CK3 gui/window_activity.gui, EU5 and Vic3 the same
+	modelHas = "DataModelHasItems"
+)
+
 // EvaluateStates works out which widgets of one window in a GUI file are hidden. Each group is at the value the window
 // opens with, unless the given picks, by the ID of a group, pick another. It returns an error if no workspace is open
 // or the file does not define the window.
@@ -143,7 +195,7 @@ func (drw *Service) EvaluateStates(path, name string, picks map[string]string) (
 		}
 	}
 	pickColors(opened, picks, choices)
-	evaluator.pickTiers(library.ws.Game.GUI.Tiers, opened.tiers, picks, choices)
+	evaluator.pickTiers(titleTiers[library.ws.Game.ID], opened.tiers, picks, choices)
 	return States{Values: values, Hidden: hidden, Applies: applies, Choices: choices}, nil
 }
 
@@ -187,7 +239,7 @@ func (drw *Service) Reveal(path, name string, picks map[string]string, widget in
 
 // openEvaluator returns the evaluator of a resolved window at the values it opens with. The given contexts are what its
 // widgets read their bindings in, and each data model's list draws the given number of rows.
-func openEvaluator(schema *schema.Schema, window Window, contexts []context, count int) *evaluator {
+func openEvaluator(schema *lang.Schema, window Window, contexts []context, count int) *evaluator {
 	groups := listGroups(schema, window, contexts, count)
 	objects := lo.GroupBy(groups, func(group Group) string {
 		call, ok := jomini.ParseCall(group.ID, 0)
@@ -226,7 +278,7 @@ func (evaluator *evaluator) open() {
 	}
 	required := map[string]string{}
 	for _, widget := range evaluator.window.Widgets {
-		for _, call := range listCalls(&evaluator.window, widget, game.GUI.OpeningCalls) {
+		for _, call := range listCalls(&evaluator.window, widget, openingCalls) {
 			evaluator.click(required, evaluator.contexts[widget.ID], call)
 		}
 	}
@@ -245,7 +297,7 @@ func (evaluator *evaluator) open() {
 func (evaluator *evaluator) press(required map[string]string, widget int32) {
 	context, window := evaluator.contexts[widget], &evaluator.window
 	condition, hasCondition := findPressCondition(window, window.Widgets[widget])
-	for _, call := range listCalls(window, window.Widgets[widget], game.GUI.ClickKeys...) {
+	for _, call := range listCalls(window, window.Widgets[widget], clickKeys...) {
 		if hasCondition {
 			evaluator.setVariable(required, context.expand(evaluator.schema, call))
 		} else {
@@ -299,7 +351,6 @@ func (evaluator *evaluator) findSelected(call jomini.Call) (group, value string,
 // setVariable adds to the given required values what a call to the GUI's variable system sets. Any other call sets
 // nothing.
 func (evaluator *evaluator) setVariable(required map[string]string, call jomini.Call) {
-	variables := game.GUI.Variables
 	last := len(call.Steps) - 1
 	if last < 1 || !isVariables(evaluator.schema, call.Steps[:last]) {
 		return
@@ -308,15 +359,15 @@ func (evaluator *evaluator) setVariable(required map[string]string, call jomini.
 	if len(quoted) == 0 {
 		return
 	}
-	exists, _ := splitFact(evaluator.schema, replaceLastStep(call, variables.Exists, quoted[:1]))
-	hasValue, _ := splitFact(evaluator.schema, replaceLastStep(call, variables.HasValue, []string{quoted[0], ""}))
+	exists, _ := splitFact(evaluator.schema, replaceLastStep(call, variableExists, quoted[:1]))
+	hasValue, _ := splitFact(evaluator.schema, replaceLastStep(call, variableHasValue, []string{quoted[0], ""}))
 	switch call.Steps[last].Text {
-	case variables.Set:
+	case variableSet:
 		required[exists] = pickEvery
 		required[hasValue] = lo.NthOr(quoted, 1, pickNone)
-	case variables.Clear:
+	case variableClear:
 		required[exists], required[hasValue] = pickNone, pickNone
-	case variables.Toggle:
+	case variableToggle:
 		required[exists] = lo.Ternary(evaluator.values[exists] == pickEvery, pickNone, pickEvery)
 	}
 }
@@ -343,14 +394,14 @@ func (evaluator *evaluator) listStrips() map[int32][]int32 {
 // selects a value of one.
 func (evaluator *evaluator) isTab(widget Widget) bool {
 	context := evaluator.contexts[widget.ID]
-	down := findProperty(evaluator.window.listProperties(widget), game.GUI.DownKey).Value
+	down := findProperty(evaluator.window.listProperties(widget), downKey).Value
 	if call, ok := jomini.ParseBracketed(down, 0); ok {
 		return slices.ContainsFunc(listFacts(evaluator.schema, call, context, evaluator.rows), func(fact jomini.Call) bool {
 			group, _ := splitFact(evaluator.schema, context.reach(fact))
 			return slices.ContainsFunc(evaluator.groups, func(known Group) bool { return known.ID == group })
 		})
 	}
-	return slices.ContainsFunc(listCalls(&evaluator.window, widget, game.GUI.ClickKeys...), func(call jomini.Call) bool {
+	return slices.ContainsFunc(listCalls(&evaluator.window, widget, clickKeys...), func(call jomini.Call) bool {
 		_, _, ok := evaluator.findSelected(context.expand(evaluator.schema, call))
 		return ok
 	})
@@ -364,7 +415,7 @@ func classifyGroups(evaluator *evaluator) {
 	hidden := make([]bool, len(widgets))
 	for _, widget := range widgets {
 		hidden[widget.ID] = slices.ContainsFunc(evaluator.window.Conditions[widget.ID], func(condition string) bool {
-			holds, ok := game.GUI.Literals[strings.ToLower(condition)]
+			holds, ok := literals[strings.ToLower(condition)]
 			return ok && !holds
 		})
 	}
@@ -441,7 +492,7 @@ func toCaption(widget Widget) string {
 // isDrawing reports whether one of a window's widgets draws something of its own: a picture, portrait, coat of arms or
 // text.
 func isDrawing(window *Window, widget Widget) bool {
-	keys := append(slices.Clone(game.GUI.PictureKeys), game.GUI.PortraitKey, game.GUI.CoatKey)
+	keys := append(slices.Clone(pictureKeys), portraitKey, coatKey)
 	return len(widget.Texts) > 0 || slices.ContainsFunc(keys, func(key string) bool {
 		return findProperty(window.listProperties(widget), key).Value != ""
 	})
@@ -522,7 +573,7 @@ func (evaluator *evaluator) isFalse(widget int32) bool {
 }
 
 // expand returns a call as the context reads it: its macros expanded, then written from the window down.
-func (context context) expand(schema *schema.Schema, call jomini.Call) jomini.Call {
+func (context context) expand(schema *lang.Schema, call jomini.Call) jomini.Call {
 	return context.reach(schema.ResolveMacro(call, context.latest))
 }
 
@@ -541,7 +592,7 @@ func (context context) reach(call jomini.Call) jomini.Call {
 
 // listContexts returns what each widget of a window reads its bindings in: what its holder reads, then each data
 // context it writes.
-func listContexts(schema *schema.Schema, window Window) []context {
+func listContexts(schema *lang.Schema, window Window) []context {
 	contexts := make([]context, len(window.Widgets))
 	for _, widget := range window.Widgets {
 		current := context{paths: map[string]jomini.Call{}}
@@ -549,7 +600,7 @@ func listContexts(schema *schema.Schema, window Window) []context {
 			holder := contexts[widget.Parent]
 			current = context{paths: maps.Clone(holder.paths), latest: holder.latest}
 		}
-		for _, call := range listCalls(&window, widget, game.GUI.ContextKey) {
+		for _, call := range listCalls(&window, widget, lang.GUIContextKey) {
 			path := current.expand(schema, call)
 			dataType := cmp.Or(schema.ResolveDatacontext(path, ""), schema.ResolveDatacontext(call, current.latest))
 			if dataType != "" {
@@ -573,10 +624,13 @@ func listCalls(window *Window, widget Widget, keys ...string) []jomini.Call {
 	return calls
 }
 
+// checkedKey is the key whose condition holds while a box is drawn checked.
+const checkedKey = "checked"
+
 // findPressCondition returns the condition that draws a widget down, else the one that draws it checked. The last
 // result is false if it writes neither as a data call.
 func findPressCondition(window *Window, widget Widget) (string, bool) {
-	for _, key := range []string{game.GUI.DownKey, game.GUI.CheckedKey} {
+	for _, key := range []string{downKey, checkedKey} {
 		value := findProperty(window.listProperties(widget), key).Value
 		if strings.HasPrefix(strings.TrimSpace(value), "[") {
 			return value, true
@@ -588,7 +642,7 @@ func findPressCondition(window *Window, widget Widget) (string, bool) {
 // listGroups returns the groups the widgets of a window read, each with its readers. A widget reads a group in its
 // conditions and in the conditions of the choices its properties write. The window's own widget is always drawn, so its
 // conditions are not read. Each data model's list draws the given number of rows.
-func listGroups(schema *schema.Schema, window Window, contexts []context, count int) []Group {
+func listGroups(schema *lang.Schema, window Window, contexts []context, count int) []Group {
 	var groups table[string, Group]
 	for _, widget := range window.Widgets[1:] {
 		calls := lo.FilterMap(window.Conditions[widget.ID], func(condition string, _ int) (jomini.Call, bool) {
@@ -623,6 +677,9 @@ func listGroups(schema *schema.Schema, window Window, contexts []context, count 
 	return groups.values
 }
 
+// validFunction is the data function that asks whether an object exists.
+const validFunction = "IsValid"
+
 // makeGroup returns the group of a call. The call's first steps reach the object the group asks about, giving its
 // Subject and Key, and the Label is the rest of the call in words. A call of one step asks about the game.
 func makeGroup(id string) Group {
@@ -635,24 +692,24 @@ func makeGroup(id string) Group {
 		given := lo.FilterMap(call.Steps[0].Arguments, func(argument jomini.Argument, _ int) (string, bool) {
 			return toCallText(lo.FromPtr(argument.Call)), argument.Call != nil
 		})
-		parts := append([]string{schema.DescribeStep(call.Steps[0], false)}, given...)
+		parts := append([]string{lang.DescribeStep(call.Steps[0], false)}, given...)
 		return Group{ID: id, Subject: "Game", Label: strings.Join(parts, " ")}
 	}
 	end := min(last, directSteps-1)
-	path := lo.Map(call.Steps[end:last], func(step jomini.Step, _ int) string { return schema.DescribeStep(step, true) })
+	path := lo.Map(call.Steps[end:last], func(step jomini.Step, _ int) string { return lang.DescribeStep(step, true) })
 	check := call.Steps[last]
-	exists := len(path) > 0 && check.Text == game.GUI.ValidFunction && len(check.Arguments) == 0
+	exists := len(path) > 0 && check.Text == validFunction && len(check.Arguments) == 0
 	if !exists {
-		path = append(path, schema.DescribeStep(check, false))
+		path = append(path, lang.DescribeStep(check, false))
 	}
 	keys := lo.Compact(lo.FlatMap(call.Steps[:end], func(step jomini.Step, _ int) []string { return listQuoted(step) }))
-	subject := toSentence(schema.DescribeStep(jomini.Step{Text: call.Steps[end-1].Text}, true))
+	subject := toSentence(lang.DescribeStep(jomini.Step{Text: call.Steps[end-1].Text}, true))
 	return Group{ID: id, Subject: subject, Key: strings.Join(keys, " "), Label: strings.Join(path, " › "), Exists: exists}
 }
 
 // listFacts returns the calls a condition reads, looking through boolean functions to their operands. A fact the data
 // models decide is no group. Each data model's list draws the given number of rows.
-func listFacts(schema *schema.Schema, call jomini.Call, context context, count int) []jomini.Call {
+func listFacts(schema *lang.Schema, call jomini.Call, context context, count int) []jomini.Call {
 	call = expandVariableQuery(schema.ResolveMacro(call, context.latest))
 	if len(call.Steps) == 0 {
 		return nil
@@ -668,22 +725,31 @@ func listFacts(schema *schema.Schema, call jomini.Call, context context, count i
 	return []jomini.Call{call}
 }
 
+// comparisons are the data functions that compare two numbers, by name before
+// the underscore, each with the cmp.Compare results it holds for.
+var comparisons = map[string][]int{
+	// CK3 gui/shared/lists.gui:2671, LessThanOrEqualTo_int32(
+	// GetDataModelSize(TraitArrays.GetPersonalityTraits), …)
+	"LessThan": {-1}, "LessThanOrEqualTo": {-1, 0}, "GreaterThan": {1}, "GreaterThanOrEqualTo": {0, 1},
+	"EqualTo": {0}, "NotEqualTo": {-1, 1},
+}
+
 // computeFact decides a fact about the window's data models as the window opens, each model drawing the given number of
 // rows: whether a model is empty or has items, or a comparison of two numbers. The last result is false for any other
 // fact, and for a comparison the numbers do not decide.
-func computeFact(schema *schema.Schema, context context, call jomini.Call, count int) (holds, computed bool) {
+func computeFact(schema *lang.Schema, context context, call jomini.Call, count int) (holds, computed bool) {
 	if len(call.Steps) != 1 {
 		return false, false
 	}
 	step := call.Steps[0]
 	switch step.Text {
-	case game.GUI.ModelEmpty:
+	case modelEmpty:
 		return count == 0, true
-	case game.GUI.ModelHas:
+	case modelHas:
 		return count > 0, true
 	}
 	name, _, _ := strings.Cut(step.Text, "_")
-	results, ok := game.GUI.Comparisons[name]
+	results, ok := comparisons[name]
 	if !ok || len(step.Arguments) != 2 {
 		return false, false
 	}
@@ -699,15 +765,15 @@ func computeFact(schema *schema.Schema, context context, call jomini.Call, count
 // toNumbers returns the numbers an argument of a comparison may be. A data model's size is the given number of rows. A
 // number a data object holds is shown as a sample of at least one (sampleNumber), so it may be one or any number above.
 // It returns none for any other argument.
-func toNumbers(schema *schema.Schema, context context, argument jomini.Argument, count int) []float64 {
+func toNumbers(schema *lang.Schema, context context, argument jomini.Argument, count int) []float64 {
 	if argument.Call != nil {
 		steps := argument.Call.Steps
 		path := context.expand(schema, *argument.Call)
 		function, _ := schema.FindFunction(path, "", len(path.Steps)-1)
 		switch {
-		case len(steps) == 1 && steps[0].Text == game.GUI.ModelSize:
+		case len(steps) == 1 && steps[0].Text == modelSize:
 			return []float64{float64(count)}
-		case len(steps) > 1 && game.GUI.CallOutputs[function.Returns] == kindNumber:
+		case len(steps) > 1 && callOutputs[function.Returns] == kindNumber:
 			return []float64{minSample, math.Inf(1)}
 		}
 		return nil
@@ -723,14 +789,14 @@ func toNumbers(schema *schema.Schema, context context, argument jomini.Argument,
 // expandVariableQuery rewrites a call that asks whether a GUI variable is unset or set to a value, such as
 // NotExistOrHasValue('x', 'v'), as Or(Not(Exists('x')), HasValue('x', 'v')) on the same variable.
 func expandVariableQuery(call jomini.Call) jomini.Call {
-	variables, last := game.GUI.Variables, len(call.Steps)-1
-	if last < 1 || call.Steps[last].Text != variables.UnsetOrValue || len(listQuoted(call.Steps[last])) != 2 {
+	last := len(call.Steps) - 1
+	if last < 1 || call.Steps[last].Text != variableUnsetOrValue || len(listQuoted(call.Steps[last])) != 2 {
 		return call
 	}
 	quoted := listQuoted(call.Steps[last])
-	exists, hasValue := replaceLastStep(call, variables.Exists, quoted[:1]), replaceLastStep(call, variables.HasValue, quoted)
-	or, _ := lo.FindKey(game.GUI.Booleans, "or")
-	not, _ := lo.FindKey(game.GUI.Booleans, "not")
+	exists, hasValue := replaceLastStep(call, variableExists, quoted[:1]), replaceLastStep(call, variableHasValue, quoted)
+	or, _ := lo.FindKey(booleans, "or")
+	not, _ := lo.FindKey(booleans, "not")
 	unset := jomini.Call{Steps: []jomini.Step{{Text: not, Arguments: []jomini.Argument{{Call: &exists}}}}}
 	return jomini.Call{Steps: []jomini.Step{{Text: or, Arguments: []jomini.Argument{{Call: &unset}, {Call: &hasValue}}}}}
 }
@@ -742,7 +808,7 @@ func splitBoolean(call jomini.Call) (conjunction, negated bool, operands []jomin
 		return false, false, nil, false
 	}
 	step := call.Steps[0]
-	switch game.GUI.Booleans[strings.TrimRight(step.Text, "0123456789")] {
+	switch booleans[strings.TrimRight(step.Text, "0123456789")] {
 	case "and":
 		conjunction = true
 	case "not":
@@ -761,7 +827,7 @@ func splitBoolean(call jomini.Call) (conjunction, negated bool, operands []jomin
 
 // splitFact splits a call into the group it reads and the value it asks of the group, the last quoted argument of the
 // call's last step. A call with no such argument is its own group with no value.
-func splitFact(schema *schema.Schema, call jomini.Call) (group, value string) {
+func splitFact(schema *lang.Schema, call jomini.Call) (group, value string) {
 	last := len(call.Steps) - 1
 	if last < 0 {
 		return "", ""
@@ -783,14 +849,43 @@ func splitFact(schema *schema.Schema, call jomini.Call) (group, value string) {
 }
 
 // isVariables reports whether the given steps reach the GUI's variable system.
-func isVariables(schema *schema.Schema, steps []jomini.Step) bool {
+func isVariables(schema *lang.Schema, steps []jomini.Step) bool {
 	types := schema.ResolveCallTypes(jomini.Call{Steps: steps}, "")
-	return len(types) == len(steps) && types[len(types)-1] == game.GUI.Variables.Type
+	return len(types) == len(steps) && types[len(types)-1] == variableType
 }
 
-// holdsOnOpening reports whether a group asks what holds as the window opens: an object exists or a list has items
-// (game.GUI.OpeningFacts), or a fact of the sample the window is drawn for (game.GUI.SampleFacts). It is false if the
-// call reaches an object the sample lacks (game.GUI.SampleAbsent).
+// openingFacts are the data functions with no arguments that hold whenever a
+// window opens, as an object existing or a list having items.
+var openingFacts = []string{
+	// CK3 gui/window_council.gui:465 and :484 (IsValid),
+	// gui/window_character_finder.gui:51 (HasItems)
+	"IsValid", "HasItems",
+}
+
+// sampleFacts are the data functions with no arguments that hold of the Visual
+// view's sample: a living, landed player ruler with legitimacy and a council.
+var sampleFacts = []string{
+	// CK3's character window shows a living, landed ruler with legitimacy
+	// (window_character.gui:5440, :5722, :5633), EU5's event portraits are
+	// living (cards.gui:1038, :1054), and CK3's council window shows each
+	// seat's replace button and main skill (window_council.gui:609, :662,
+	// :671)
+	"IsAlive", "HasLandedTitles", "ShouldShowLegitimacy", "CanPotentiallySelectCouncillor", "HasMainSkill",
+	"HasCouncillor", "IsVisible", "CanSelect",
+}
+
+// sampleAbsent are the data functions that reach an object the sample lacks,
+// so that a test of its existence, or of anything past it, fails.
+var sampleAbsent = []string{
+	// CK3's council window shows no forced next councilor, which
+	// window_council.gui:925 marks with a debug square
+	"GetNextForcedCouncillor",
+}
+
+// holdsOnOpening reports whether a group asks what holds as the window opens:
+// an object exists or a list has items (openingFacts), or a fact of the sample
+// the window is drawn for (sampleFacts). It is false if the call reaches an
+// object the sample lacks (sampleAbsent).
 func holdsOnOpening(id string) bool {
 	call, ok := jomini.ParseCall(id, 0)
 	if !ok || len(call.Steps) == 0 {
@@ -798,9 +893,9 @@ func holdsOnOpening(id string) bool {
 	}
 	last := call.Steps[len(call.Steps)-1]
 	isAbsent := slices.ContainsFunc(call.Steps, func(step jomini.Step) bool {
-		return slices.Contains(game.GUI.SampleAbsent, step.Text)
+		return slices.Contains(sampleAbsent, step.Text)
 	})
-	isFact := slices.Contains(game.GUI.OpeningFacts, last.Text) || slices.Contains(game.GUI.SampleFacts, last.Text)
+	isFact := slices.Contains(openingFacts, last.Text) || slices.Contains(sampleFacts, last.Text)
 	return isFact && !isAbsent && len(last.Arguments) == 0
 }
 
@@ -841,7 +936,7 @@ func toCallText(call jomini.Call) string {
 // evaluateCondition works out whether a condition, read in the given context, holds under the values of the groups. The
 // second result is false for a condition that is no data call.
 func (evaluator *evaluator) evaluateCondition(context context, condition string) (value, known bool) {
-	if literal, ok := game.GUI.Literals[strings.ToLower(condition)]; ok {
+	if literal, ok := literals[strings.ToLower(condition)]; ok {
 		return literal, true
 	}
 	call, ok := evaluator.parse(condition)
@@ -904,7 +999,7 @@ func (evaluator *evaluator) evaluateCall(context context, call jomini.Call) (val
 // fail as wanted. It returns false if a group is already required to be at another value, so the conditions
 // contradict. A condition that is no data call asks for nothing.
 func (evaluator *evaluator) revealCondition(required map[string]string, context context, condition string, holds bool) bool {
-	if literal, ok := game.GUI.Literals[strings.ToLower(condition)]; ok {
+	if literal, ok := literals[strings.ToLower(condition)]; ok {
 		return literal == holds
 	}
 	call, ok := evaluator.parse(condition)

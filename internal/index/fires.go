@@ -9,7 +9,7 @@ import (
 
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 )
 
 // Fire is one firing: one definition fires another, through the reference
@@ -31,7 +31,7 @@ type Fire struct {
 // open, so that effects that call each other end the walk.
 type fireWalk struct {
 	index  *Index
-	schema *schema.Schema
+	schema *lang.Schema
 
 	// start is the definition the walk starts from, and follow whether it
 	// goes through scripted effects.
@@ -46,7 +46,7 @@ type fireWalk struct {
 
 // ListFires returns the events, on_actions and decisions a definition fires,
 // through its scripted effects if asked. It returns nil if it fires nothing.
-func (i *Index) ListFires(schema *schema.Schema, site Site, follow bool) []Fire {
+func (i *Index) ListFires(schema *lang.Schema, site Site, follow bool) []Fire {
 	walk := &fireWalk{index: i, schema: schema, start: site, follow: follow, open: map[Site]bool{}}
 	walk.forward(site, nil)
 
@@ -55,7 +55,7 @@ func (i *Index) ListFires(schema *schema.Schema, site Site, follow bool) []Fire 
 
 // ListFiredBy returns the definitions that fire a definition, through
 // scripted effects if asked. It returns nil if nothing fires it.
-func (i *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) []Fire {
+func (i *Index) ListFiredBy(schema *lang.Schema, site Site, follow bool) []Fire {
 	if !slices.Contains(schema.FireDatabases, i.ToReference(site).Database) {
 		return nil
 	}
@@ -132,7 +132,7 @@ func (f *fireWalk) backward(current Site, effects []Site, use Site) {
 			}
 
 			source := winner.Site
-			if winner.Reason == game.ReasonUnsettled {
+			if winner.Reason == lang.ReasonUnsettled {
 				source = parent
 			}
 
@@ -168,7 +168,7 @@ func (i *Index) listReferences(definition Site) []Site {
 
 // ListActing returns the copies of a name that a reference in a file reaches.
 // It returns none if the game keeps none.
-func (i *Index) ListActing(schema *schema.Schema, reference schema.Reference, file int32) []Site {
+func (i *Index) ListActing(schema *lang.Schema, reference lang.Reference, file int32) []Site {
 	winner, ok := i.FindKeptLocal(schema, reference, file)
 	if !ok {
 		return nil
@@ -183,13 +183,13 @@ func (i *Index) ListActing(schema *schema.Schema, reference schema.Reference, fi
 func (i *Index) isActing(winner Winner, site Site) bool {
 	outcome := i.ResolveSite(winner, site)
 
-	return outcome.Kept || outcome.Reason == game.ReasonUnsettled
+	return outcome.Kept || outcome.Reason == lang.ReasonUnsettled
 }
 
 // firingFields holds, by database, the key paths in its definitions where a
 // name fires the event, on_action or decision it names, as it would in
 // effect script. A row holds for the games its Games lists.
-var firingFields = map[string][]game.Reference{
+var firingFields = map[string][]lang.KeyReference{
 	// CK3 common/council_tasks/00_chancellor_tasks.txt:150
 	"council_tasks": {{Games: []string{game.CK3}, KeyPath: "monthly_on_action"}},
 	// CK3 common/schemes/scheme_types/coerce_contribution_scheme.txt:143
@@ -218,12 +218,12 @@ var firingFields = map[string][]game.Reference{
 
 // isFiring reports whether a reference fires the event, on_action or decision
 // it names.
-func (c *collector) isFiring(context *schema.Context, reference schema.Reference) bool {
-	if context.Conditional || context.Preview || context.Category == schema.CategoryLink {
+func (c *collector) isFiring(context *lang.Context, reference lang.Reference) bool {
+	if context.Conditional || context.Preview || context.Category == lang.CategoryLink {
 		return false
 	}
 
-	row := c.index.row
+	dialect := c.index.dialect
 	effect := context
 	if !isEffect(effect, c.schema.Effects) {
 		effect = context.Parent
@@ -232,11 +232,11 @@ func (c *collector) isFiring(context *schema.Context, reference schema.Reference
 	if effect != nil && isEffect(effect, c.schema.Effects) {
 		target := c.schema.Databases[reference.Database]
 
-		return target == nil || target.Declaration.Contents != game.ContentsDecisions ||
-			slices.Contains(row.DecisionEffects, effect.Label)
+		return target == nil || target.Declaration.Contents != lang.ContentsDecisions ||
+			slices.Contains(dialect.DecisionEffects, effect.Label)
 	}
 
-	if holder := c.schema.Databases[context.Database]; holder != nil && holder.Declaration.Contents == game.ContentsOnActions {
+	if holder := c.schema.Databases[context.Database]; holder != nil && holder.Declaration.Contents == lang.ContentsOnActions {
 		return true
 	}
 
@@ -245,16 +245,16 @@ func (c *collector) isFiring(context *schema.Context, reference schema.Reference
 		keys = slices.Concat(keys, []string{context.Label})
 	}
 
-	return slices.ContainsFunc(firingFields[context.Database], func(field game.Reference) bool {
-		return row.Matches(field.Games) && jomini.MatchKeyPath(field.KeyPath, keys)
+	return slices.ContainsFunc(firingFields[context.Database], func(field lang.KeyReference) bool {
+		return dialect.Matches(field.Games) && jomini.MatchKeyPath(field.KeyPath, keys)
 	})
 }
 
 // isEffect reports whether a statement is an effect or a call of a scripted
 // effect.
-func isEffect(context *schema.Context, effects string) bool {
-	return context.Command != nil && context.Command.Database == game.DumpEffects ||
-		slices.ContainsFunc(context.References, func(reference schema.Reference) bool {
-			return reference.Database == effects || reference.Database == game.AnyCall
+func isEffect(context *lang.Context, effects string) bool {
+	return context.Command != nil && context.Command.Database == lang.DumpEffects ||
+		slices.ContainsFunc(context.References, func(reference lang.Reference) bool {
+			return reference.Database == effects || reference.Database == lang.AnyCall
 		})
 }

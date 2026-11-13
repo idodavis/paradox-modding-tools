@@ -18,7 +18,7 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/texture"
 	"paradox-modding-tools/services/workspace"
 )
@@ -35,6 +35,95 @@ type library struct {
 	kinds   map[string]string        // the icon define of each kind looked up; "" for one no define names
 	objects map[PictureList][]string // the folder objects of each list walked
 }
+
+// placeholderShape is a shape PMT draws where a picture has no file, for the
+// things the picture can be of.
+type placeholderShape struct {
+	// Games are the games the row holds for, every game if none.
+	Games []string
+
+	Shape string
+
+	// Terms are what the picture can be of, as keys, data types and data
+	// functions write it, in lower case with spaces.
+	Terms []string
+
+	// Runtime is whether only the running game draws these pictures, from
+	// what it holds, so that no file is looked for.
+	Runtime bool
+}
+
+// illustrationFolder is where the pictures are that a definition names by a
+// path below a folder.
+type illustrationFolder struct {
+	// FolderKey is the key that names the folder, and Folder the folder where
+	// the definition names none.
+	FolderKey string
+	Folder    string
+}
+
+// pictureKeys are the keys a definition names its picture by, tried in this
+// order.
+var pictureKeys = []string{"icon", "texture"}
+
+// portraitKey is the key whose binding draws a character's portrait, and
+// coatKey the key whose binding draws a coat of arms.
+const (
+	portraitKey = "portrait_texture"
+
+	// CK3 gui/shared/coat_of_arms.gui
+	coatKey = "coat_of_arms"
+)
+
+// maskKeys are the keys whose image cuts a widget's picture to its shape: a
+// coat of arms' mask, and a widget's own.
+var maskKeys = []string{
+	// CK3 gui/shared/coat_of_arms.gui:128 [GovernmentType.GetRealmMask]; Vic3
+	// gui/company_panel.gui's portrait
+	"coat_of_arms_mask", "mask",
+}
+
+// defineGroups are the define groups whose defines say where each game's icons
+// and pictures are, by the game's id.
+var defineGroups = map[string]string{
+	// common/defines/graphic/00_graphics.txt:782 writes TRAIT_ICON_PATH
+	// in NGameIcons, and :812 the realm mask's path
+	game.CK3: "NGameIcons",
+	// loading_screen/common/defines/graphic/00_graphics.txt writes its
+	// icon paths in NGameIcons, such as :851 UNIT_STATUS_ICON_PATH
+	game.EU5: "NGameIcons",
+}
+
+// iconPathSuffix is the ending of the defines that name a folder of icons.
+const iconPathSuffix = "_ICON_PATH"
+
+// folderDefineSuffix, prefixDefineSuffix and nameDefineSuffix are the
+// endings, after a database and a field, of the defines that say where a data
+// function finds its pictures, how each picture file's name starts and how it
+// ends.
+//
+// CK3 common/defines/graphic/00_graphics.txt:814-817,
+// GOVERNMENT_TYPE_REALM_FRAME_PATH and _SUFFIX; EU5
+// loading_screen/common/defines/graphic/00_graphics.txt:836,
+// GOODS_ICON_PREFIX
+const (
+	folderDefineSuffix = "_PATH"
+	prefixDefineSuffix = "_PREFIX"
+	nameDefineSuffix   = "_SUFFIX"
+)
+
+// The level ending and prefix say how a level, such as prestige_level, finds
+// its pictures. levelEnding marks a name as a level, and levelPrefix starts
+// the names of its files.
+//
+// CK3 common/defines/graphic/00_graphics.txt:846-851, PRESTIGE_LEVEL_PATH
+// and the piety, influence and merit ones, name
+// gfx/interface/icons/modifiers, where the files are icon_prestige_00 to
+// _05 and icon_piety_christian_00
+const (
+	levelEnding = "level"
+	levelPrefix = "icon_"
+)
 
 // makeLibrary returns a library of what the files of the given index define and
 // show.
@@ -56,7 +145,7 @@ func (drw *Service) ExportPNG(target string, data []byte) error {
 
 // lookupDefineDatabase returns the database the GetDefine call reads.
 func lookupDefineDatabase() string {
-	targets := game.GUI.CallTargets[game.GUI.DefineCall]
+	targets := lang.GUICallTargets[lang.GUIDefineCall]
 	return targets[len(targets)-1]
 }
 
@@ -79,7 +168,7 @@ func (library *library) resolveTexture(value string) string {
 
 // makePictureList returns the list of pictures a picture binding may draw, and
 // the definitions it names.
-func (library *library) makePictureList(key string, call jomini.Call) (PictureList, []schema.Reference) {
+func (library *library) makePictureList(key string, call jomini.Call) (PictureList, []lang.Reference) {
 	last := call.Steps[len(call.Steps)-1]
 	references := library.ws.Schema.ListCallReferences(call, "")
 	object := findObjectType(library.ws.Schema, call)
@@ -87,12 +176,12 @@ func (library *library) makePictureList(key string, call jomini.Call) (PictureLi
 	if len(last.Arguments) > 0 && last.Arguments[0].Quoted {
 		argument = last.Arguments[0].Text
 	}
-	rest := schema.DropGetter(last.Text)
-	parts := strings.Fields(schema.ToPhrase(rest))
+	rest := lang.DropGetter(last.Text)
+	parts := strings.Fields(lang.ToPhrase(rest))
 	if list, ok := library.findKind(parts, object, argument); ok {
 		list.Key = key
 		if argument != "" && list.Folder == "" {
-			references = append([]schema.Reference{{Database: list.Database, Name: argument}}, references...)
+			references = append([]lang.Reference{{Database: list.Database, Name: argument}}, references...)
 		}
 		return list, references
 	}
@@ -120,7 +209,7 @@ func (library *library) findKind(parts []string, object, argument string) (Pictu
 		if !ok {
 			continue
 		}
-		_, isDefined := findKeptClause(library.ws, library.mods, schema.Reference{Database: database, Name: argument})
+		_, isDefined := findKeptClause(library.ws, library.mods, lang.Reference{Database: database, Name: argument})
 		if argument == "" || isDefined {
 			return PictureList{Type: kind, Database: database, Field: field}, true
 		}
@@ -134,7 +223,7 @@ func (library *library) resolveKind(parts []string, object string) (kind, databa
 	phrase := strings.Join(parts, " ")
 	kinds := []string{phrase}
 	if object != "" {
-		kinds = []string{schema.ToPhrase(object) + " " + phrase, phrase}
+		kinds = []string{lang.ToPhrase(object) + " " + phrase, phrase}
 	}
 	for _, kind := range kinds {
 		if database, ok := library.ws.Schema.ResolveTypeDatabase(kind); ok {
@@ -142,8 +231,8 @@ func (library *library) resolveKind(parts []string, object string) (kind, databa
 		}
 	}
 	function := strings.Join(lo.Map(parts, func(part string, _ int) string { return lo.Capitalize(part) }), "")
-	if targets := game.GUI.CallTargets[function]; len(targets) > 0 {
-		return game.DescribeDefinition(targets[0], false), targets[0], true
+	if targets := lang.GUICallTargets[function]; len(targets) > 0 {
+		return lang.DescribeDefinition(targets[0], false), targets[0], true
 	}
 	return "", "", false
 }
@@ -151,12 +240,12 @@ func (library *library) resolveKind(parts []string, object string) (kind, databa
 // findLevelFolder returns the folder the defines name for a level's pictures,
 // or "" if there is none.
 func (library *library) findLevelFolder(kind string) string {
-	words := strings.Fields(schema.ToPhrase(kind))
-	if len(words) < 2 || words[len(words)-1] != game.GUI.Levels.Ending {
+	words := strings.Fields(lang.ToPhrase(kind))
+	if len(words) < 2 || words[len(words)-1] != levelEnding {
 		return ""
 	}
-	key := toDefineWords(kind) + game.GUI.FolderDefineSuffix
-	return strings.TrimSuffix(library.lookupDefine(library.ws.Game.GUI.DefineGroup, key), "/")
+	key := toDefineWords(kind) + folderDefineSuffix
+	return strings.TrimSuffix(library.lookupDefine(defineGroups[library.ws.Game.ID], key), "/")
 }
 
 // findLevelPicture returns the first picture of a level, such as
@@ -166,8 +255,8 @@ func (library *library) findLevelPicture(list PictureList) string {
 	if folder == "" {
 		return ""
 	}
-	words := strings.Fields(schema.ToPhrase(list.Type))
-	prefix := game.GUI.Levels.Prefix + strings.Join(words[:len(words)-1], "_") + "_"
+	words := strings.Fields(lang.ToPhrase(list.Type))
+	prefix := levelPrefix + strings.Join(words[:len(words)-1], "_") + "_"
 	picture, ok := lo.Find(listImages(library.ws, library.mods, folder), func(image Image) bool {
 		return strings.HasPrefix(strings.ToLower(image.Label), prefix)
 	})
@@ -196,7 +285,7 @@ func (library *library) listFolderObjects(list PictureList) []string {
 
 // findShown returns the image file a list's binding shows of one definition or
 // folder, or "" if there is none.
-func (library *library) findShown(list PictureList, reference schema.Reference) string {
+func (library *library) findShown(list PictureList, reference lang.Reference) string {
 	if list.Folder != "" {
 		file, _ := library.mods.ResolveTexture(list.Folder + "/" + reference.Name + "/" + list.Argument)
 		return file
@@ -224,6 +313,13 @@ func (library *library) findShown(list PictureList, reference schema.Reference) 
 	return ""
 }
 
+// defaultPicture is the name, in the folder of a definition's pictures, of the
+// picture drawn for a definition with none of its own.
+//
+// CK3 gfx/interface/icons/realm_frames/_default_62_frame.dds, drawn for
+// frameless feudal_government
+const defaultPicture = "_default"
+
 // findDefinedPicture returns the picture of a definition the defines name, or
 // "" if there is none, and whether they name its folder.
 func (library *library) findDefinedPicture(list PictureList, name string) (string, bool) {
@@ -237,12 +333,22 @@ func (library *library) findDefinedPicture(list PictureList, name string) (strin
 		}
 		return library.findIcon(toFile(name), ""), false
 	}
-	for _, owner := range []string{name, game.GUI.DefaultPicture} {
+	for _, owner := range []string{name, defaultPicture} {
 		if file, ok := library.mods.ResolveTexture(strings.TrimSuffix(folder, "/") + "/" + toFile(owner)); ok {
 			return file, true
 		}
 	}
 	return "", true
+}
+
+// suffixStems are the stems of the defines for a picture field, each with the
+// stem its suffix define is written under, where the two differ, by the game's
+// id.
+var suffixStems = map[string]map[string]string{
+	// common/defines/graphic/00_graphics.txt:812-813:
+	// GOVERNMENT_TYPE_REALM_MASK_PATH with
+	// GOVERNMENT_TYPE_REALM_FRAME_MASK_SUFFIX
+	game.CK3: {"GOVERNMENT_TYPE_REALM_MASK": "GOVERNMENT_TYPE_REALM_FRAME_MASK"},
 }
 
 // listPictureDefines returns the folder, prefix and suffix the defines give a
@@ -252,17 +358,17 @@ func (library *library) listPictureDefines(list PictureList) (folder, prefix, su
 		return "", "", ""
 	}
 	stem := toDefineWords(list.Type) + "_" + strings.ToUpper(list.Field)
-	suffixStem := cmp.Or(library.ws.Game.GUI.SuffixStems[stem], stem)
-	group := library.ws.Game.GUI.DefineGroup
-	return library.lookupDefine(group, stem+game.GUI.FolderDefineSuffix),
-		library.lookupDefine(group, stem+game.GUI.PrefixDefineSuffix),
-		library.lookupDefine(group, suffixStem+game.GUI.NameDefineSuffix)
+	suffixStem := cmp.Or(suffixStems[library.ws.Game.ID][stem], stem)
+	group := defineGroups[library.ws.Game.ID]
+	return library.lookupDefine(group, stem+folderDefineSuffix),
+		library.lookupDefine(group, stem+prefixDefineSuffix),
+		library.lookupDefine(group, suffixStem+nameDefineSuffix)
 }
 
 // findPicture returns the image file of a definition, from its picture keys or
 // an icon name, or "" if there is none.
 func (library *library) findPicture(definition clause, icon, preferred string) string {
-	for _, key := range game.GUI.PictureKeys {
+	for _, key := range pictureKeys {
 		if picture, ok := definition.tree.FindChildValue(definition.statement, key); ok && picture != "" {
 			return library.findFile(picture, preferred)
 		}
@@ -278,7 +384,7 @@ func (library *library) findFirstShown(list PictureList) (name, file string) {
 		if name == "" {
 			return "", ""
 		}
-		return name, library.findShown(list, schema.Reference{Database: list.Database, Name: name})
+		return name, library.findShown(list, lang.Reference{Database: list.Database, Name: name})
 	}
 	for _, reference := range library.listObjects(list) {
 		if file = library.findShown(list, reference); file != "" {
@@ -291,15 +397,15 @@ func (library *library) findFirstShown(list PictureList) (name, file string) {
 }
 
 // listObjects returns the folders or definitions a list picks among, in order.
-func (library *library) listObjects(list PictureList) []schema.Reference {
+func (library *library) listObjects(list PictureList) []lang.Reference {
 	if list.Folder != "" {
-		return lo.Map(library.listFolderObjects(list), func(name string, _ int) schema.Reference { return schema.Reference{Name: name} })
+		return lo.Map(library.listFolderObjects(list), func(name string, _ int) lang.Reference { return lang.Reference{Name: name} })
 	}
 	sites := library.mods.ListDefinitions(list.Database)
 	if !library.canShowMany(list) {
 		sites = sites[:min(1, len(sites))]
 	}
-	return lo.Map(sites, func(site index.Site, _ int) schema.Reference { return library.mods.ToReference(site) })
+	return lo.Map(sites, func(site index.Site, _ int) lang.Reference { return library.mods.ToReference(site) })
 }
 
 // pickPicture returns the choice that picking a value of a list gives its
@@ -308,7 +414,7 @@ func (library *library) listObjects(list PictureList) []schema.Reference {
 func (library *library) pickPicture(list PictureList, picked string) Choice {
 	texture := picked
 	if list.Name == "" {
-		texture = library.findShown(list, schema.Reference{Database: list.Database, Name: picked})
+		texture = library.findShown(list, lang.Reference{Database: list.Database, Name: picked})
 	}
 	return Choice{Key: list.Key, Value: picked, Texture: texture}
 }
@@ -333,7 +439,7 @@ func (library *library) lookupDefine(group, key string) string {
 	define := library.ws.Schema.JoinNested(lookupDefineDatabase(), group, key)
 	value, known := library.defines[define]
 	if !known {
-		reference := schema.Reference{Database: lookupDefineDatabase(), Name: define}
+		reference := lang.Reference{Database: lookupDefineDatabase(), Name: define}
 		if clause, ok := findKeptClause(library.ws, library.mods, reference); ok {
 			value = clause.tree.Unquoted(clause.tree.Statements[clause.statement].ResolveValueSpan())
 		}
@@ -383,10 +489,10 @@ func (library *library) findIconDefine(kind string) string {
 		return define
 	}
 	folders := library.listIconFolders()
-	phrase := schema.ToPhrase(kind)
+	phrase := lang.ToPhrase(kind)
 	for _, key := range slices.Sorted(maps.Keys(folders)) {
-		stem := strings.ToLower(strings.TrimSuffix(key, game.GUI.IconPathSuffix))
-		if game.DescribeDefinition(stem, false) == phrase {
+		stem := strings.ToLower(strings.TrimSuffix(key, iconPathSuffix))
+		if lang.DescribeDefinition(stem, false) == phrase {
 			define = key
 			break
 		}
@@ -402,12 +508,12 @@ func (library *library) listIconFolders() map[string]string {
 		return library.folders
 	}
 	library.folders = map[string]string{}
-	database, group := lookupDefineDatabase(), library.ws.Game.GUI.DefineGroup
+	database, group := lookupDefineDatabase(), defineGroups[library.ws.Game.ID]
 	for _, site := range library.mods.ListDefinitions(database) {
 		define := library.mods.ToReference(site).Name
 		key := library.ws.Schema.SplitNested(database, define)
 		_, listed := library.folders[key]
-		if listed || library.ws.Schema.JoinNested(database, group, key) != define || !strings.HasSuffix(key, game.GUI.IconPathSuffix) {
+		if listed || library.ws.Schema.JoinNested(database, group, key) != define || !strings.HasSuffix(key, iconPathSuffix) {
 			continue
 		}
 		if folder := library.lookupDefine(group, key); folder != "" {
@@ -417,10 +523,14 @@ func (library *library) listIconFolders() map[string]string {
 	return library.folders
 }
 
+// iconPathFile is the file in an icon folder that names the paths its icons
+// are read from.
+const iconPathFile = "path_overrides.txt"
+
 // findOverride returns the image file an icon folder's overrides file gives an
 // icon stem, or "" if it gives none.
 func (library *library) findOverride(folder, stem string) string {
-	loaded, _, ok := library.mods.FindLoaded(folder + "/" + game.GUI.IconPathFile)
+	loaded, _, ok := library.mods.FindLoaded(folder + "/" + iconPathFile)
 	if !ok {
 		return ""
 	}
@@ -440,7 +550,7 @@ func (library *library) findOverride(folder, stem string) string {
 // findObjectType returns the data type of the object whose picture a texture
 // binding draws, or "" for a binding of one step or one the schema cannot
 // follow.
-func findObjectType(schema *schema.Schema, call jomini.Call) string {
+func findObjectType(schema *lang.Schema, call jomini.Call) string {
 	types := schema.ResolveCallTypes(call, "")
 	if len(call.Steps) < 2 || len(types) < len(call.Steps)-1 {
 		return ""
@@ -451,8 +561,13 @@ func findObjectType(schema *schema.Schema, call jomini.Call) string {
 // toDefineWords returns a kind of object as the defines write it:
 // GovernmentType and government type are GOVERNMENT_TYPE.
 func toDefineWords(kind string) string {
-	return strings.ToUpper(strings.ReplaceAll(schema.ToPhrase(kind), " ", "_"))
+	return strings.ToUpper(strings.ReplaceAll(lang.ToPhrase(kind), " ", "_"))
 }
+
+// colorType is the data type that a binding of a color returns.
+//
+// the dumps' Return type of GetColor in the three installs
+const colorType = "CVector4f"
 
 // resolveBindings gives a widget the pictures, masks, colors and sample texts
 // its data bindings lead to.
@@ -463,15 +578,15 @@ func (resolver *resolver) resolveBindings(window *Window, widget *Widget, contex
 		if isCall {
 			call = context.expand(schema, call)
 		}
-		isPicture := property.Key == game.GUI.PortraitKey || property.Key == game.GUI.CoatKey ||
-			slices.Contains(game.GUI.PictureKeys, property.Key)
+		isPicture := property.Key == portraitKey || property.Key == coatKey ||
+			slices.Contains(pictureKeys, property.Key)
 		function, _ := schema.FindFunction(call, "", len(call.Steps)-1)
 		switch {
 		case isPicture && property.Value != "" && widget.Textures[property.Key] == "":
 			resolver.resolvePicture(widget, property, call)
-		case slices.Contains(game.GUI.MaskKeys, property.Key) && len(call.Steps) > 0 && widget.Textures[property.Key] == "":
+		case slices.Contains(maskKeys, property.Key) && len(call.Steps) > 0 && widget.Textures[property.Key] == "":
 			resolver.resolveListedPicture(widget, property.Key, call)
-		case function.Returns == game.GUI.ColorType:
+		case function.Returns == colorType:
 			if color, list := resolver.library.findColor(call); color != "" {
 				list.Key, widget.Colors[property.Key] = property.Key, color
 				resolver.colorLists[widget.ID] = append(resolver.colorLists[widget.ID], list)
@@ -486,11 +601,11 @@ func (resolver *resolver) resolveBindings(window *Window, widget *Widget, contex
 // resolvePicture gives a widget the file one of its pictures leads to, else a
 // placeholder shape.
 func (resolver *resolver) resolvePicture(widget *Widget, property Property, call jomini.Call) {
-	placeholder := resolver.ws.Game.FindPlaceholder(resolver.describePicture(property, call))
+	placeholder := findPlaceholder(lang.LookupDialect(resolver.ws.Game.ID), resolver.describePicture(property, call))
 	if len(call.Steps) > 0 && !placeholder.Runtime {
 		resolver.resolveListedPicture(widget, property.Key, call)
 	}
-	if widget.Textures[property.Key] == "" && !game.GUI.Slots[widget.Slot].Dresses && widget.Placeholder == "" {
+	if widget.Textures[property.Key] == "" && !widgetSlots[widget.Slot].Dresses && widget.Placeholder == "" {
 		widget.Placeholder = placeholder.Shape
 	}
 }
@@ -499,10 +614,51 @@ func (resolver *resolver) resolvePicture(widget *Widget, property Property, call
 // its placeholder.
 func (resolver *resolver) describePicture(property Property, call jomini.Call) string {
 	if len(call.Steps) == 0 {
-		return schema.ToPhrase(property.Key + " " + strings.NewReplacer("/", " ", ".", " ").Replace(property.Value))
+		return lang.ToPhrase(property.Key + " " + strings.NewReplacer("/", " ", ".", " ").Replace(property.Value))
 	}
-	object, last := findObjectType(resolver.ws.Schema, call), schema.DropGetter(call.Steps[len(call.Steps)-1].Text)
-	return schema.ToPhrase(property.Key + " " + object + " " + last)
+	object, last := findObjectType(resolver.ws.Schema, call), lang.DropGetter(call.Steps[len(call.Steps)-1].Text)
+	return lang.ToPhrase(property.Key + " " + object + " " + last)
+}
+
+// placeholders are the shapes drawn where a picture has no file, a game's own
+// first. The last is the plain icon, for a picture no term fits.
+var placeholders = []placeholderShape{
+	{Games: []string{game.CK3}, Shape: "crowned-ruler", Terms: []string{"portrait texture"}, Runtime: true},
+	{Games: []string{game.CK3}, Shape: "shield", Terms: []string{"coat of arms"}, Runtime: true},
+	{Games: []string{game.Vic3}, Shape: "top-hat", Terms: []string{"portrait texture"}, Runtime: true},
+	{Games: []string{game.EU5}, Shape: "plumed-hat", Terms: []string{"portrait texture"}, Runtime: true},
+	{Games: []string{game.Vic3, game.EU5}, Shape: "flag", Terms: []string{"coat of arms"}, Runtime: true},
+	{Shape: "illustration", Terms: []string{"illustration", "image", "picture"}},
+	{Shape: "flag", Terms: []string{"flag"}},
+	{Shape: "faith", Terms: []string{"faith", "religion", "religious", "rite", "tenet", "doctrine"}},
+	{Shape: "goods", Terms: []string{"goods", "resource"}},
+	{Shape: "action", Terms: []string{"action", "actions", "interaction", "task"}},
+	{Shape: "military", Terms: []string{"unit", "formation", "battle", "war", "military"}},
+	{Shape: "building", Terms: []string{"building", "holding", "domicile", "construction", "great project"}},
+	{Shape: "trait", Terms: []string{"trait", "perk", "role", "tradition", "pillar"}},
+	{Shape: "modifier", Terms: []string{"modifier"}},
+	{Shape: "concept", Terms: []string{"concept", "encyclopedia", "article"}},
+	{Shape: "rank", Terms: []string{"rank", "level", "status"}},
+	{Shape: "map", Terms: []string{"map", "terrain", "strait", "location"}},
+	{Shape: "message", Terms: []string{"message", "alert", "notification"}},
+	{Shape: "icon"},
+}
+
+// findPlaceholder returns the first placeholder of the given game with a term
+// that a phrase holds whole, such as "coat of arms". The phrase says what the
+// picture is of. It returns the plain icon if no term fits.
+func findPlaceholder(dialect *lang.Dialect, phrase string) placeholderShape {
+	padded := " " + phrase + " "
+	for _, placeholder := range placeholders {
+		isNamed := dialect.Matches(placeholder.Games) && slices.ContainsFunc(placeholder.Terms, func(term string) bool {
+			return strings.Contains(padded, " "+term+" ")
+		})
+		if isNamed {
+			return placeholder
+		}
+	}
+
+	return placeholders[len(placeholders)-1]
 }
 
 // resolveListedPicture gives a widget the picture a binding draws, and the list
@@ -516,7 +672,7 @@ func (resolver *resolver) resolveListedPicture(widget *Widget, key string, call 
 			return
 		}
 	}
-	namesDefinition := slices.ContainsFunc(references, func(reference schema.Reference) bool { return reference.Database == list.Database })
+	namesDefinition := slices.ContainsFunc(references, func(reference lang.Reference) bool { return reference.Database == list.Database })
 	if widget.Pictures != nil || (namesDefinition && list.Database != "") {
 		return
 	}
@@ -543,20 +699,28 @@ func (resolver *resolver) resolveListedPicture(widget *Widget, key string, call 
 	}
 }
 
+// illustrations are where the pictures are that a definition names by a path
+// below a folder, by the game's id.
+var illustrations = map[string]illustrationFolder{
+	// gfx/interface/illustrations/scripted_illustrations
+	// /_scripted_illustrations.info
+	game.CK3: {FolderKey: "folder", Folder: "gfx/interface/illustrations"},
+}
+
 // listDefinitionImages returns the image files a definition names, the ones it
 // shows on a condition last.
 func listDefinitionImages(ws *workspace.Session, mods *index.Index, definition clause) []string {
 	if definition.tree == nil {
 		return nil
 	}
-	rules := ws.Game.GUI.Illustrations
+	rules := illustrations[ws.Game.ID]
 	folder, ok := definition.tree.FindChildValue(definition.statement, rules.FolderKey)
 	if !ok {
 		folder = rules.Folder
 	}
 	var images, conditional []string
 	for _, part := range listChildren(definition) {
-		_, isConditional := part.tree.FindChild(part.statement, game.TriggerKey)
+		_, isConditional := part.tree.FindChild(part.statement, lang.TriggerKey)
 		last := part.tree.Statements[part.statement].Last
 		for _, inner := range part.tree.Statements[part.statement:max(last, part.statement+1)] {
 			value := part.tree.Unquoted(inner.Value)
@@ -591,7 +755,7 @@ func (library *library) findColor(call jomini.Call) (string, PictureList) {
 			return color, list
 		}
 	}
-	if slices.ContainsFunc(references, func(reference schema.Reference) bool { return reference.Database == list.Database }) {
+	if slices.ContainsFunc(references, func(reference lang.Reference) bool { return reference.Database == list.Database }) {
 		return "", list
 	}
 	return library.findFirstColor(list), list
@@ -615,7 +779,7 @@ func (library *library) findFirstColor(list PictureList) string {
 
 // findFieldColor returns the CSS color one definition writes in a list's field,
 // or "" if it writes none.
-func (library *library) findFieldColor(list PictureList, reference schema.Reference) string {
+func (library *library) findFieldColor(list PictureList, reference lang.Reference) string {
 	definition, ok := findKeptClause(library.ws, library.mods, reference)
 	if !ok {
 		return ""
@@ -627,7 +791,7 @@ func (library *library) findFieldColor(list PictureList, reference schema.Refere
 	if color := makeColor(clause{tree: definition.tree, statement: field}); color != "" {
 		return color
 	}
-	reference = schema.Reference{Name: definition.tree.Unquoted(definition.tree.Statements[field].Value)}
+	reference = lang.Reference{Name: definition.tree.Unquoted(definition.tree.Statements[field].Value)}
 	definition, ok = findKeptClause(library.ws, library.mods, reference)
 	if !ok {
 		return ""

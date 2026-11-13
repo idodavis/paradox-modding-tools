@@ -8,10 +8,9 @@ import (
 
 	"github.com/samber/lo"
 
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
@@ -57,7 +56,7 @@ func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	firing := findFiring(document, ws.Schema.Effects, use)
 	edge.Effect = tree.Text(tree.Statements[firing].Key)
 	edge.Delay = findDelay(tree, firing)
-	edge.Title = findTitle(ws, mods, tree, firing, game.TitleKey)
+	edge.Title = findTitle(ws, mods, tree, firing, lang.TitleKey)
 	site, _ := mods.FindDefinition(fire.Use)
 	definition := mods.Occurrence(site).Statement
 	edge.Steps = listSteps(ws, mods, document, firing, definition)
@@ -82,7 +81,7 @@ func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []E
 // its reference sits in. That is the block around it where the reference is a
 // list value, a numbered branch or a field of an effect, such as
 // trigger_event's id.
-func findFiring(document schema.Document, effects string, statement int32) int32 {
+func findFiring(document lang.Document, effects string, statement int32) int32 {
 	for {
 		current := document.Tree.Statements[statement]
 		isField := isEffect(&document.Contexts[current.Parent], effects) && !isEffect(&document.Contexts[statement], effects)
@@ -99,10 +98,17 @@ func findFiring(document schema.Document, effects string, statement int32) int32
 // one the dumps declare, or a call of a scripted effect, whose database is
 // given. So a firing written as a scripted effect's argument, as in
 // my_effect = { EVENT = x.1 }, is the call and not the argument.
-func isEffect(context *schema.Context, effects string) bool {
-	return context.Command != nil && context.Command.Database == game.DumpEffects ||
+func isEffect(context *lang.Context, effects string) bool {
+	return context.Command != nil && context.Command.Database == lang.DumpEffects ||
 		context.Callee != nil && context.Callee.Database == effects
 }
+
+// delayKey is the key of a block that holds the delay of every firing written
+// after it, and delayUnits the keys that write how long a firing waits, in the
+// order they are looked for (Vic3 effects.log:38529).
+const delayKey = "delay"
+
+var delayUnits = []string{"days", "weeks", "months", "years"}
 
 // findDelay returns the delay written for a firing, in words, or "" if none is
 // written. It is the delay of the nearest block around the firing that writes
@@ -110,11 +116,11 @@ func isEffect(context *schema.Context, effects string) bool {
 func findDelay(tree *jomini.Tree, statement int32) string {
 	for ; statement > 0; statement = tree.Statements[statement].Parent {
 		holders := []int32{statement}
-		if block, ok := tree.FindChild(statement, game.EventDelay.Block); ok {
+		if block, ok := tree.FindChild(statement, delayKey); ok {
 			holders = append(holders, block)
 		}
 		for _, holder := range holders {
-			for _, unit := range game.EventDelay.Units {
+			for _, unit := range delayUnits {
 				if child, ok := tree.FindChild(holder, unit); ok {
 					return describeDelay(tree, child, unit)
 				}
@@ -140,7 +146,7 @@ func describeDelay(tree *jomini.Tree, statement int32, unit string) string {
 // title or an option's name. It returns "" if the statement writes no such
 // field or no message has its key.
 func findTitle(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32, field string) string {
-	position, ok := schema.FindTextKey(tree, statement, field)
+	position, ok := lang.FindTextKey(tree, statement, field)
 	if !ok {
 		return ""
 	}
@@ -150,7 +156,7 @@ func findTitle(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, stat
 
 // listSteps returns the blocks a firing's statement sits in, from the top of
 // the definition down, leaving out the definition and the firing itself.
-func listSteps(ws *workspace.Session, mods *index.Index, document schema.Document, firing, definition int32) []Step {
+func listSteps(ws *workspace.Session, mods *index.Index, document lang.Document, firing, definition int32) []Step {
 	var steps []Step
 	statements := document.Tree.Statements
 	for statement := statements[firing].Parent; statement > definition; statement = statements[statement].Parent {
@@ -171,11 +177,11 @@ var weightModifiers = []string{"modifier", "opinion_modifier", "compare_modifier
 // makeStep returns the step of one block a firing sits in, in the given
 // definition. Whether the block is a branch, a weighted branch or a list is
 // what the walk decided its key is.
-func makeStep(ws *workspace.Session, mods *index.Index, document schema.Document, statement, definition int32) Step {
+func makeStep(ws *workspace.Session, mods *index.Index, document lang.Document, statement, definition int32) Step {
 	tree, context := document.Tree, &document.Contexts[statement]
 	current := tree.Statements[statement]
 	key, holder := tree.Text(current.Key), tree.Text(tree.Statements[current.Parent].Key)
-	keyword := game.Keyword{}
+	keyword := lang.Keyword{}
 	if context.Keyword != nil {
 		keyword = *context.Keyword
 	}
@@ -183,7 +189,7 @@ func makeStep(ws *workspace.Session, mods *index.Index, document schema.Document
 		Key: key, Kind: kindBlock, When: findCondition(ws, mods, tree, statement), Line: toSourceLine(tree, current.Key),
 	}
 	switch {
-	case keyword.Class == game.KeywordClassConditional:
+	case keyword.Class == lang.KeywordClassConditional:
 		step.Kind = kindBranch
 	case keyword.Weighted || context.Field != nil && context.Field.Weighted:
 		step.Key, step.Kind, step.Weight = holder, kindWeight, key
@@ -192,10 +198,10 @@ func makeStep(ws *workspace.Session, mods *index.Index, document schema.Document
 		})
 	case context.Iterates:
 		step.Kind = kindList
-	case context.Category == schema.CategoryLink:
+	case context.Category == lang.CategoryLink:
 		step.Kind = kindScope
-	case key == game.OptionKey && current.Parent == definition:
-		step.Kind, step.Title = kindOption, findTitle(ws, mods, tree, statement, game.OptionTitleKey)
+	case key == optionKey && current.Parent == definition:
+		step.Kind, step.Title = kindOption, findTitle(ws, mods, tree, statement, optionTitleKey)
 	}
 	return step
 }

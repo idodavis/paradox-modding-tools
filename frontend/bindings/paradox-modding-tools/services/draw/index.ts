@@ -11,6 +11,7 @@ export type {
     Box,
     Choice,
     Coat,
+    CoatStrength,
     DDS,
     Font,
     Group,

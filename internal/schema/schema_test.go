@@ -13,6 +13,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 )
 
 // visit is one statement of a walked file, with the context the walk gave
@@ -20,7 +21,7 @@ import (
 type visit struct {
 	key     string
 	value   string
-	context Context
+	context lang.Context
 }
 
 // recorder holds every statement of a walked file.
@@ -76,7 +77,7 @@ func listInstall(t *testing.T, row *game.Game, install string) []files.File {
 }
 
 // buildFixture builds the schema of the CK3 fixture install.
-func buildFixture(t *testing.T) (*Schema, string) {
+func buildFixture(t *testing.T) (*lang.Schema, string) {
 	t.Helper()
 
 	install, err := filepath.Abs(filepath.Join("..", "testdata", "ck3"))
@@ -85,7 +86,7 @@ func buildFixture(t *testing.T) (*Schema, string) {
 	}
 
 	row := game.LookupGame("ck3")
-	built, err := Build(row, install, listInstall(t, row, install), parseFile)
+	built, err := Build(lang.LookupDialect(row.ID), row.FindDumpDirs(install), install, listInstall(t, row, install), parseFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +110,7 @@ func openFixture(t *testing.T, install, rel string) (*jomini.Tree, files.File) {
 // walkFixture walks one file of the CK3 fixture install and returns its
 // statements with their contexts. The file's own comes first only where the
 // file is one definition.
-func walkFixture(t *testing.T, built *Schema, install, rel string) *recorder {
+func walkFixture(t *testing.T, built *lang.Schema, install, rel string) *recorder {
 	t.Helper()
 
 	tree, file := openFixture(t, install, rel)
@@ -172,55 +173,55 @@ const (
 // TestParseDoc checks that each way the games write doc files gives its
 // facts as claims.
 func TestParseDoc(t *testing.T) {
-	docs := &Schema{}
+	docs := &builder{Schema: &lang.Schema{}}
 	cases := []struct {
 		name, rel, text, key string
-		check                func(*Field) bool
+		check                func(*lang.Field) bool
 	}{
 		{"brief header", briefDoc, "# ### Brief: cooldown ( duration, optional )\n# How long until it can be taken again.\n# Default: 0\ncooldown = { days = 10 }\n",
-			"cooldown", func(field *Field) bool {
+			"cooldown", func(field *lang.Field) bool {
 				return field.Required.Value == "optional" && field.Default.Value == "0" && strings.Contains(field.Blurb.Value, "How long")
 			}},
 		{"commented-out template", readmeDoc, "#<advance ID> = {\n#\tage = <age>\t\t# Determines in which age this advance is available\n#}\n",
-			"age", func(field *Field) bool { return strings.HasPrefix(field.Blurb.Value, "Determines") }},
+			"age", func(field *lang.Field) bool { return strings.HasPrefix(field.Blurb.Value, "Determines") }},
 		{"markdown with alternatives", "x/x.md", "# Reference\nA building of a state.\n\nexample = {\n\tbuildable = yes/no # can this building be built? default yes\n}\n",
-			"buildable", func(field *Field) bool {
-				return field.Value.Value.Type == ValueTypeBool && field.Default.Value == "yes"
+			"buildable", func(field *lang.Field) bool {
+				return field.Value.Value.Type == lang.ValueTypeBool && field.Default.Value == "yes"
 			}},
 		{"value list", briefDoc, "key = {\n\tcategory = common # the category\n}\n# Possible values:\n# - common (default)\n# - skilled\n",
-			"category", func(field *Field) bool {
+			"category", func(field *lang.Field) bool {
 				return slices.Equal(field.Value.Value.Choices, []string{"common", "skilled"}) && field.Default.Value == "common"
 			}},
 		{"key and text", readmeDoc, "# fire_only_once: yes/no - whether the disaster can occur again\n",
-			"fire_only_once", func(field *Field) bool { return strings.Contains(field.Blurb.Value, "occur again") }},
+			"fire_only_once", func(field *lang.Field) bool { return strings.Contains(field.Blurb.Value, "occur again") }},
 		{"comment run above", briefDoc, "key = {\n\t# full path to the icon. Required, an error is logged if missing\n\ticon = \"gfx/x.dds\"\n}\n",
-			"icon", func(field *Field) bool {
-				return field.Required.Value == "always" && field.Value.Value.Type == ValueTypeText
+			"icon", func(field *lang.Field) bool {
+				return field.Required.Value == "always" && field.Value.Value.Type == lang.ValueTypeText
 			}},
 		{"bullet writing a statement", readmeDoc, "# - always_add_demands = <yes/no> when set to yes the building needs full demand\n",
-			"always_add_demands", func(field *Field) bool {
-				return field.Value.Value.Type == ValueTypeBool && strings.HasPrefix(field.Blurb.Value, "when set to yes")
+			"always_add_demands", func(field *lang.Field) bool {
+				return field.Value.Value.Type == lang.ValueTypeBool && strings.HasPrefix(field.Blurb.Value, "when set to yes")
 			}},
 		{"number key", briefDoc, "key = {\n\tranks = {\n\t\t1 = {\n\t\t\tmen_at_arms = x # the men at arms\n\t\t}\n\t}\n}\n",
-			"ranks/<number>/men_at_arms", func(field *Field) bool { return field.Blurb.Value == "the men at arms" }},
+			"ranks/<number>/men_at_arms", func(field *lang.Field) bool { return field.Blurb.Value == "the men at arms" }},
 		{"header type with a required term", briefDoc, "# ### Brief: can_only_start_via_script ( optional bool )\ncan_only_start_via_script = yes\n",
-			"can_only_start_via_script", func(field *Field) bool {
-				return field.Value.Value.Type == ValueTypeBool && field.Required.Value == "optional"
+			"can_only_start_via_script", func(field *lang.Field) bool {
+				return field.Value.Value.Type == lang.ValueTypeBool && field.Required.Value == "optional"
 			}},
 		{"type term with underscores", readmeDoc, "#\ttraded_quantity = fixed_point # how many units are moved\n",
-			"traded_quantity", func(field *Field) bool { return field.Value.Value.Type == ValueTypeNumber }},
+			"traded_quantity", func(field *lang.Field) bool { return field.Value.Value.Type == lang.ValueTypeNumber }},
 		{"placeholder opening a bullet", readmeDoc, "# - allow: <trigger> can the building be built (root = location)\n",
-			"allow", func(field *Field) bool { return field.Shape.Value == game.ShapeTriggers }},
+			"allow", func(field *lang.Field) bool { return field.Shape.Value == lang.ShapeTriggers }},
 		{"shape opening the text above", briefDoc, "key = {\n\t# Effect is executed when the owner dies\n\t# root - active story cycle\n\ton_owner_death = {}\n}\n",
-			"on_owner_death", func(field *Field) bool { return field.Shape.Value == game.ShapeEffects }},
+			"on_owner_death", func(field *lang.Field) bool { return field.Shape.Value == lang.ShapeEffects }},
 		{"nested at its path", briefDoc, "key = {\n\tranks = {\n\t\tliege_modifier = { } # what the liege gets\n\t}\n}\n",
-			"ranks/liege_modifier", func(field *Field) bool { return field.Blurb.Value == "what the liege gets" }},
+			"ranks/liege_modifier", func(field *lang.Field) bool { return field.Blurb.Value == "what the liege gets" }},
 		{"header heads a nested statement", briefDoc, "key = {\n\toption = {\n\t\t# ### Brief: weight ( int )\n\t\tweight = 1\n\t}\n}\n",
-			"option/weight", func(field *Field) bool { return field.Value.Value.Type == ValueTypeNumber }},
+			"option/weight", func(field *lang.Field) bool { return field.Value.Value.Type == lang.ValueTypeNumber }},
 	}
 
 	for _, each := range cases {
-		reader, ok := docs.parseDoc(each.text, each.rel, game.Declaration{})
+		reader, ok := docs.parseDoc(each.text, each.rel, lang.Declaration{})
 		if !ok {
 			t.Errorf("%s: not read as a doc", each.name)
 
@@ -235,9 +236,13 @@ func TestParseDoc(t *testing.T) {
 
 // findField returns the field written at a key path below the given field,
 // its keys joined by slashes, or nil.
-func findField(field *Field, path string) *Field {
+func findField(field *lang.Field, path string) *lang.Field {
 	for key := range strings.SplitSeq(path, "/") {
-		field = field.findChild(key)
+		if field == nil {
+			return nil
+		}
+
+		field = field.Children[key]
 	}
 
 	return field
@@ -246,14 +251,14 @@ func findField(field *Field, path string) *Field {
 // TestParseDocDatabase checks a doc file's blurb, and that a data file named
 // like a doc is not read as one.
 func TestParseDocDatabase(t *testing.T) {
-	docs := &Schema{}
+	docs := &builder{Schema: &lang.Schema{}}
 	text := "# Reference\nA building of a state.\n\nexample = {\n\tgroup = x\n}\n"
-	reader, ok := docs.parseDoc(text, "x/x.md", game.Declaration{})
+	reader, ok := docs.parseDoc(text, "x/x.md", lang.Declaration{})
 	if !ok || strings.Join(reader.blurb, " ") != "A building of a state." {
 		t.Fatalf("database blurb: %v", reader)
 	}
 
-	if _, ok := docs.parseDoc("a = 1\nb = 2\nc = { d = 3 }\n", "x/00_example_templates.txt", game.Declaration{}); ok {
+	if _, ok := docs.parseDoc("a = 1\nb = 2\nc = { d = 3 }\n", "x/00_example_templates.txt", lang.Declaration{}); ok {
 		t.Error("a data file named like a doc is read as one")
 	}
 }
@@ -268,8 +273,8 @@ func TestBuildFixtureLearns(t *testing.T) {
 
 	documented := false
 	if traits := built.Databases["traits"]; traits != nil {
-		for key := range traits.Field.Children {
-			documented = documented || traits.declares(key)
+		for _, child := range traits.Field.Children {
+			documented = documented || child.Source != lang.SourceNone && child.Source <= lang.SourceDocs
 		}
 	}
 
@@ -289,53 +294,30 @@ func TestWalkEventsFixture(t *testing.T) {
 	}
 
 	trigger := seen.find(t, "trigger_event", "v.2")
-	if !slices.ContainsFunc(trigger.context.References, func(reference Reference) bool {
+	if !slices.ContainsFunc(trigger.context.References, func(reference lang.Reference) bool {
 		return reference.Database == "events" && reference.Name == "v.2"
 	}) {
 		t.Errorf("trigger_event = v.2: %+v", trigger.context.References)
 	}
 
-	if county := seen.find(t, "capital_county", ""); county.context.Category != CategoryLink {
+	if county := seen.find(t, "capital_county", ""); county.context.Category != lang.CategoryLink {
 		t.Errorf("capital_county: %q", county.context.Category)
 	}
 
-	if saved := seen.find(t, "save_scope_as", "target"); !saved.context.Defines || saved.context.Definition.Database != game.SavedScopes {
+	if saved := seen.find(t, "save_scope_as", "target"); !saved.context.Defines || saved.context.Definition.Database != lang.SavedScopes {
 		t.Errorf("save_scope_as = target: %+v", saved.context)
 	}
 
-	if branch := seen.find(t, "90", ""); branch.context.Category != CategoryKeyword {
+	if branch := seen.find(t, "90", ""); branch.context.Category != lang.CategoryKeyword {
 		t.Errorf("random_list's 90: %q", branch.context.Category)
 	}
 
-	if shape := resolveShapeClaim(Vanilla{shapes: map[game.Shape]int{game.ShapeValue: 2, game.ShapeTriggers: 1}}); shape != game.ShapeValue {
+	if shape := resolveShapeClaim(tally{shapes: map[lang.Shape]int{lang.ShapeValue: 2, lang.ShapeTriggers: 1}}); shape != lang.ShapeValue {
 		t.Errorf("a block of value keys and triggers: %q", shape)
 	}
 
-	if shape := resolveShapeClaim(Vanilla{shapes: map[game.Shape]int{game.ShapeFields: 2, game.ShapeTriggers: 1}}); shape != game.ShapeUnknown {
+	if shape := resolveShapeClaim(tally{shapes: map[lang.Shape]int{lang.ShapeFields: 2, lang.ShapeTriggers: 1}}); shape != lang.ShapeUnknown {
 		t.Errorf("a block of fields and triggers: %q", shape)
-	}
-}
-
-// TestResolveMacroReplacesParameters checks that a call to a macro expands
-// with its parameters replaced.
-func TestResolveMacroReplacesParameters(t *testing.T) {
-	macros := &Schema{DataTypes: map[string]DataType{globalType: {Functions: map[string]DataFunction{
-		"IsZero": {Name: "IsZero", Arguments: []string{"Value"}, Expansion: "EqualTo_int32(Value, '(int32)0')"},
-	}}}}
-
-	call, ok := jomini.ParseCall("IsZero(GetPlayer.GetGold)", 0)
-	if !ok {
-		t.Fatal("call not parsed")
-	}
-
-	expanded := macros.ResolveMacro(call, "")
-	if len(expanded.Steps) != 1 || expanded.Steps[0].Text != "EqualTo_int32" {
-		t.Fatalf("steps: %+v", expanded.Steps)
-	}
-
-	argument := expanded.Steps[0].Arguments[0]
-	if argument.Call == nil || argument.Call.Steps[0].Text != "GetPlayer" || argument.Span.IsEmpty() {
-		t.Errorf("first argument: %+v", argument)
 	}
 }
 
@@ -354,27 +336,27 @@ func TestBuildInstalls(t *testing.T) {
 			row := game.LookupGame(gameID)
 			paths := listInstall(t, row, install)
 			start := time.Now()
-			built, err := Build(row, install, paths, parseFile)
+			built, err := Build(lang.LookupDialect(gameID), row.FindDumpDirs(install), install, paths, parseFile)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			elapsed := time.Since(start)
-			commands := len(built.Databases[game.DumpEffects].Keys) + len(built.Databases[game.DumpTriggers].Keys) +
-				len(built.Databases[game.DumpLinks].Keys)
+			commands := len(built.Databases[lang.DumpEffects].Keys) + len(built.Databases[lang.DumpTriggers].Keys) +
+				len(built.Databases[lang.DumpLinks].Keys)
 			if commands == 0 {
 				t.Fatal("no commands")
 			}
 
-			sources, facts := map[game.Source]int{}, map[string]int{}
-			built.walkFields(func(field *Field, _ bool) {
+			sources, facts := map[lang.Source]int{}, map[string]int{}
+			(&builder{Schema: built}).walkFields(func(field *lang.Field, _ bool) {
 				sources[field.Source]++
 
-				for name, claim := range map[string]game.Source{
+				for name, claim := range map[string]lang.Source{
 					"blurb": field.Blurb.Source, "value": field.Value.Source, "default": field.Default.Source,
 					"required": field.Required.Source,
 				} {
-					if claim == game.SourceDocs {
+					if claim == lang.SourceDocs {
 						facts[name]++
 					}
 				}
@@ -384,7 +366,7 @@ func TestBuildInstalls(t *testing.T) {
 				len(paths), elapsed.Round(time.Millisecond), len(built.Databases), commands,
 				len(built.ScriptedCopies))
 			t.Logf("fields by source: %d none, %d dumps, %d docs, %d vanilla; docs facts: %v",
-				sources[game.SourceNone], sources[game.SourceDumps], sources[game.SourceDocs], sources[game.SourceVanilla], facts)
+				sources[lang.SourceNone], sources[lang.SourceDumps], sources[lang.SourceDocs], sources[lang.SourceVanilla], facts)
 
 			var cached bytes.Buffer
 			if err := gob.NewEncoder(&cached).Encode(built); err != nil {

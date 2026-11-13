@@ -1,5 +1,4 @@
-// paths.go turns paths into keys and relative paths and back, turns a user's
-// text into a file name, and ranks how well a path matches a search.
+// paths.go compares and joins paths and ranks search matches.
 
 package files
 
@@ -15,44 +14,38 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// ToKey returns the key a path is compared by: cleaned, lower-cased, with
-// forward slashes.
+// ToKey returns the key a path is compared by: lower case, with slashes.
 func ToKey(path string) string {
 	return strings.ToLower(toSlash(path))
 }
 
-// ToRel returns the path relative to the given root, with forward slashes. It
-// returns false if the path is not under the root.
+// ToRel returns a path below a root, or false if not under it.
 func ToRel(root, path string) (string, bool) {
 	key := ToKey(root)
 	if !strings.HasPrefix(ToKey(path), key+"/") {
 		return "", false
 	}
 
-	// The root is cut off by segment count, because lower-casing can change a
-	// text's length.
+	// Cut by segment count, because lower-casing can change a text's length.
 	segments := strings.Count(key, "/") + 1
 
 	return strings.SplitN(toSlash(path), "/", segments+1)[segments], true
 }
 
-// Join joins a root and a relative path written with forward slashes into a
-// path for this platform.
+// Join joins a root and a relative path for this platform.
 func Join(root, rel string) string {
 	return filepath.Join(root, filepath.FromSlash(rel))
 }
 
-// IsUnder reports whether the path is under the given root, comparing their
-// keys.
+// IsUnder reports whether a path is under a root.
 func IsUnder(root, path string) bool {
 	_, ok := ToRel(root, path)
 
 	return ok
 }
 
-// ToSlug turns a user's text into a file or folder name: lower case, ASCII
-// only, words joined by `_`. It returns "" if the text has no letter or
-// digit.
+// ToSlug turns a text into lower-case ASCII words joined by `_`. It returns
+// "" if the text has no letter or digit.
 func ToSlug(text string) string {
 	text, _, _ = transform.String(transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn))), text)
 
@@ -70,7 +63,7 @@ func ToSlug(text string) string {
 			slug.WriteRune(unicode.ToLower(r))
 
 		case unicode.IsLetter(r):
-			// A letter with no plain form is dropped without breaking its word.
+			// A letter with no plain form is dropped, not a break.
 
 		default:
 			separate = true
@@ -80,11 +73,9 @@ func ToSlug(text string) string {
 	return slug.String()
 }
 
-// ClassifyMatch returns how well a path, or a name with no folders, matches a
-// search's query, as the class its results sort by, best first. Both are
-// lower case. It is 0 when the path's last element is the query, 1 when that
-// element starts with it, 2 when the path holds it, and 3 when the path holds
-// its letters in order. It is -1 when the path does not match.
+// ClassifyMatch ranks a lower-case path against a lower-case query: 0 if the
+// last element is the query, 1 if it starts with it, 2 if the path holds it,
+// 3 if it holds its letters in order, -1 for none.
 func ClassifyMatch(path, query string) int {
 	last := path[strings.LastIndexByte(path, '/')+1:]
 
@@ -111,20 +102,18 @@ func ClassifyMatch(path, query string) int {
 	return -1
 }
 
-// toSlash returns a path cleaned and with forward slashes, from either
-// platform's spelling.
 func toSlash(path string) string {
 	return filepath.ToSlash(filepath.Clean(strings.ReplaceAll(path, `\`, "/")))
 }
 
-// IsFolder reports whether a path is a folder that exists.
+// IsFolder reports whether a path is a folder.
 func IsFolder(path string) bool {
 	stat, err := os.Stat(path)
 
 	return err == nil && stat.IsDir()
 }
 
-// IsFile reports whether a path is an existing file. A folder is not one.
+// IsFile reports whether a path is a file.
 func IsFile(path string) bool {
 	stat, err := os.Stat(path)
 

@@ -18,6 +18,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/app"
 )
@@ -524,7 +525,7 @@ func createModFolder(row *game.Game, dir, launcherDir, name, version string) (st
 // FindLocalizationFile returns the path of a mod's localization file in a
 // language, the base one if empty. It returns false for a game with none.
 func FindLocalizationFile(row *game.Game, folder, name, language string) (string, bool) {
-	language = cmp.Or(language, game.BaseLanguage)
+	language = cmp.Or(language, loc.BaseLanguage)
 	rel, ok := findLocalizationFolder(row)
 	if !ok {
 		return "", false
@@ -546,7 +547,7 @@ func (s *Service) CreateLocalization(path string) error {
 func createLocalization(file string) error {
 	language := loc.FindSuffixLanguage(file)
 	if language == "" {
-		return fmt.Errorf("%s does not end in a language, such as _l_%s.yml", filepath.Base(file), game.BaseLanguage)
+		return fmt.Errorf("%s does not end in a language, such as _l_%s.yml", filepath.Base(file), loc.BaseLanguage)
 	}
 
 	return files.WriteText(file, files.Text{Text: loc.Encode(language, nil), Encoding: files.EncodingUTF8BOM})
@@ -555,7 +556,7 @@ func createLocalization(file string) error {
 // findLocalizationFolder returns the folder a game keeps localization in.
 func findLocalizationFolder(row *game.Game) (string, bool) {
 	for _, rel := range row.ModFolders {
-		if path.Base(rel) == game.Localization {
+		if path.Base(rel) == lang.Localization {
 			return rel, true
 		}
 	}

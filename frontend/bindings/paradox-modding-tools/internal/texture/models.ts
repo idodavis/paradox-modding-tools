@@ -13,21 +13,16 @@ export interface Header {
     "height": number;
 
     /**
-     * Mipmaps is how many mip levels the image has, the first the whole
-     * image and each after it half the one before. It is 1 for all but a DDS.
+     * Mipmaps is how many mip levels the image has. It is 1 for all but a DDS.
      */
     "mipmaps": number;
 
     /**
      * PixelFormat is a DDS's DXGI format as dds-go names it, such as
-     * BC7_UNORM, and DXGI is its number. They are "" and 0 for any other
-     * image, and for a DDS whose pixels only bit masks describe.
+     * BC7_UNORM, and DXGI its number. Both are empty for other images and for
+     * a DDS described only by bit masks.
      */
     "pixelFormat": string;
     "dxgi": number;
-
-    /**
-     * Bytes is the size of the file.
-     */
     "bytes": number;
 }

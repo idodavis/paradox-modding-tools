@@ -1,6 +1,5 @@
-// markup.go splits the text of a localization message into plain text, keys,
-// data calls, formats, icons and line breaks, each with its spans in the file
-// and each data call parsed, and gives the text a player reads.
+// markup.go splits a message's text into its markup and gives the text a
+// player reads.
 
 package loc
 
@@ -13,11 +12,10 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// Markup is the class of a segment of a localization text.
+// Markup is the class of a segment.
 type Markup uint8
 
-// The markups a segment can have, in order: plain text, $key$, [call],
-// #format and its end #!, @icon! and \n.
+// The markups of a segment.
 const (
 	MarkupText Markup = iota
 	MarkupKey
@@ -27,32 +25,30 @@ const (
 	MarkupBreak
 )
 
-// Segment is one piece of a localization text, with its spans in the file.
+// Segment is one piece of a localization text.
 type Segment struct {
 	Markup Markup `json:"markup"`
 
-	// Text is the piece without its markers: the key, the call, the format's
-	// name or the icon. It is "" for a break and for the end of a format.
+	// Text is the piece without its markers. It is "" for a break and for the
+	// end of a format.
 	Text string `json:"text"`
 
-	// Span is the piece with its markers, and TextSpan is where Text sits
-	// inside them. TextSpan is empty where the piece has no text.
+	// Span includes the markers and TextSpan does not. TextSpan is empty if
+	// the piece has no text.
 	Span     jomini.Span `json:"span"`
 	TextSpan jomini.Span `json:"textSpan"`
 
-	// Kind is the kind of value a data call shows, number or text, where Text
-	// holds a sample of that value in place of the call. It is "" for a call
-	// as written and for any other piece.
+	// Kind is number or text for a data call whose Text is a sample of its
+	// value. It is "" for any other piece.
 	Kind string `json:"kind"`
 
-	// Call is the data call of a call piece, parsed. It is nil for any other
-	// piece, and for a call piece whose text is no call, such as ['x'].
+	// Call is the parsed data call of a call piece. It is nil if the text is
+	// no call, such as ['x'].
 	Call *jomini.Call `json:"-"`
 }
 
-// Segments splits a message's text into its pieces, in order. The given
-// offset is where the text starts in its file, so the spans are the file's.
-// A format's segment is followed by those of the markup inside its name.
+// Segments splits a message's text into pieces, in order, with spans offset by
+// base. A format's segment is followed by those of the markup in its name.
 func Segments(text string, base int) []Segment {
 	var segments []Segment
 	plain := 0
@@ -81,10 +77,8 @@ func Segments(text string, base int) []Segment {
 	return segments
 }
 
-// parseMarkup parses the markup that starts at the given offset of a text,
-// which starts at the given base in its file. It returns the markup's
-// segment, followed by those of any markup inside a format's name, or nil if
-// no markup starts there.
+// parseMarkup parses the markup at a text offset, with that inside a format's
+// name, or returns nil if none starts there.
 func parseMarkup(text string, start, base int) []Segment {
 	var markup Markup
 	var inner string
@@ -147,9 +141,8 @@ func parseMarkup(text string, start, base int) []Segment {
 	}}
 }
 
-// findMark returns the offset of the next mark character after the given
-// offset of a text. It returns false if there is none, or if the text
-// between them is empty or holds a blank.
+// findMark returns the offset of the next mark, or false if there is none or
+// the text before it is empty or holds a blank.
 func findMark(text string, start int, mark byte) (int, bool) {
 	closing := strings.IndexByte(text[start+1:], mark)
 	if closing <= 0 || strings.IndexFunc(text[start+1:start+1+closing], unicode.IsSpace) >= 0 {
@@ -159,9 +152,8 @@ func findMark(text string, start int, mark byte) (int, bool) {
 	return start + 1 + closing, true
 }
 
-// findCall returns the offset just past the ] that closes the [ at the given
-// offset of a text. It returns false if the bracket is not closed on its
-// line, or if only blanks are inside.
+// findCall returns the offset past the ] closing the [ at a text offset, or
+// false if it is not closed on its line or holds only blanks.
 func findCall(text string, start int) (int, bool) {
 	end := start + jomini.CountBrackets(text, start)
 	if end-start < 2 || text[end-1] != ']' || strings.TrimSpace(text[start+1:end-1]) == "" {
@@ -171,10 +163,8 @@ func findCall(text string, start int) (int, bool) {
 	return end, true
 }
 
-// parseFormat parses the format that starts at the # at the given offset of
-// a text, or the end of a format where #! is there. It returns the format's
-// segment, followed by those of the calls and keys inside its name. It
-// returns nil if no format follows the #, as when a . or a , does.
+// parseFormat parses the format at a #, or its end #!, with the segments of
+// the calls and keys in its name. It returns nil if a . or , follows the #.
 func parseFormat(text string, start, base int) []Segment {
 	if strings.HasPrefix(text[start:], "#!") {
 		end := jomini.Span{Start: base + start + 2, End: base + start + 2}
@@ -202,9 +192,8 @@ func parseFormat(text string, start, base int) []Segment {
 	return append([]Segment{format}, nested...)
 }
 
-// findFormat returns the offset where the format that begins at the given
-// offset of a text ends: at its first blank outside a call or a key, or at
-// the end of the text.
+// findFormat returns where a format ends: at its first blank outside a call or
+// key, or at the text's end.
 func findFormat(text string, start int) int {
 	for i := start; i < len(text); {
 		r, size := utf8.DecodeRuneInString(text[i:])
@@ -231,20 +220,16 @@ func findFormat(text string, start int) int {
 	return len(text)
 }
 
-// makeText returns the plain segment that covers a range of a text, which
-// starts at the given base in its file.
 func makeText(text string, start, end, base int) Segment {
 	span := jomini.Span{Start: base + start, End: base + end}
 
 	return Segment{Markup: MarkupText, Text: text[start:end], Span: span, TextSpan: span}
 }
 
-// ListNames returns the names that one segment of a text writes, each as a
-// segment with its markup, its text and its TextSpan. A key and an icon write
-// their own name. A format writes each of its parts that is an identifier, so
-// #bold;italic writes bold and italic. A data call writes the keys inside
-// its text. A format's part has no markers, so its Span is its TextSpan. Any
-// other segment writes no name, and ListNames returns nil for it.
+// ListNames returns the names a segment writes, each as a segment with its
+// TextSpan. A key and an icon write their own name. A format writes each part
+// that is an identifier, so #bold;italic writes bold and italic. A data call
+// writes the keys in its text. Any other segment gives nil.
 func ListNames(segment Segment) []Segment {
 	switch segment.Markup {
 	case MarkupKey, MarkupIcon:
@@ -274,9 +259,8 @@ func ListNames(segment Segment) []Segment {
 	return nil
 }
 
-// ListMarkupFaults returns a loc-markup problem for each markup mistake in
-// the plain text of the segments: a [ that starts a call but has no closing ],
-// and a format ended with #. or #, where the game ends one with #!.
+// ListMarkupFaults returns a loc-markup problem for each unclosed call and
+// each format ended with #. or #, instead of #!.
 func ListMarkupFaults(segments []Segment) []jomini.Problem {
 	var faults []jomini.Problem
 
@@ -302,16 +286,16 @@ func ListMarkupFaults(segments []Segment) []jomini.Problem {
 	return faults
 }
 
-// isCallStart reports whether a text starts as a data call does: with a
-// letter, an underscore, the ( of a cast or another [.
+// isCallStart reports whether a text starts like a data call: a letter, _, (
+// or [.
 func isCallStart(text string) bool {
 	first, _ := utf8.DecodeRuneInString(text)
 
 	return text != "" && (unicode.IsLetter(first) || strings.ContainsRune("_([", first))
 }
 
-// ToPlain returns the text a player reads: the plain pieces joined together,
-// the markup dropped, and each break written as a newline.
+// ToPlain returns the text a player reads: the plain pieces, with each break
+// as a newline.
 func ToPlain(segments []Segment) string {
 	var plain strings.Builder
 

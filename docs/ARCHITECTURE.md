@@ -56,8 +56,9 @@ There are four layers, and each calls only the ones below it.
 A few rules hold the layers together:
 
 - **The engine is game-agnostic.** The parser and the language model are shared by every game. Anything one game does
-  differently is a row of a table: in the package that reads it, or in `game` where several packages read it.
-  `jomini` never imports `game`.
+  differently is a row of a table, in the lowest package whose topic it is: a rule of the script language in `lang`,
+  a game's identity and installs in `game`, and a fact one feature reads beside the function that reads it. `jomini`
+  never imports `game`.
 - **One open workspace.** The workspace service holds the one open workspace. The other services ask it for the
   session at every call, so none keeps a copy that could go stale.
 - **Go computes, the page shows.** A payload carries what a page displays, such as a file's relative path and its
@@ -68,12 +69,12 @@ A few rules hold the layers together:
 
 ```mermaid
 flowchart TD
-  index --> schema
+  index --> lang
   index --> texture
-  schema --> game
-  schema --> loc
+  schema --> lang
+  lang --> game
+  lang --> loc
   game --> files
-  game --> jomini
   loc --> jomini
   terminal --> files
 ```
@@ -86,8 +87,9 @@ Arrows point to what a package imports. An import that follows from others is le
 | [loc](../internal/loc/README.md) | Reads and writes localization files: messages, languages and markup. |
 | [files](../internal/files/README.md) | Lists the files of an install, a mod or a dump folder, tells each one's format, and decides which of them the game reads. |
 | [texture](../internal/texture/README.md) | Reads DDS, TGA and PNG images and their headers through dds-go and pdx-asset-go, and writes DDS in a given DXGI format. |
-| [game](../internal/game/README.md) | The facts about the supported games that several packages read, as tables: installs, folders, file layout, language rules. |
-| [schema](../internal/schema/README.md) | The language of one game version, and the one walk over a file that every reader of script uses. |
+| [game](../internal/game/README.md) | The supported games: each one's identity, how its mods are laid out and how it is started. It also finds a game's installs on this machine. |
+| [lang](../internal/lang/README.md) | The script language of one game version: its fixed rules as tables, the model of what is learned about it, and the one walk over a file that every reader of script uses. |
+| [schema](../internal/schema/README.md) | Builds the model of one game version's language from the game's dumps, its docs and its own files. |
 | [index](../internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy of a definition the game keeps. |
 | [terminal](../internal/terminal/README.md) | Runs shells under Windows' pseudo console or a Linux pty. |
 
@@ -146,7 +148,7 @@ flowchart LR
   dumps["The game's dumps"] --> schema
   shipped["Shipped backups"] -.->|a dump is missing| schema
   sources["The game's docs<br/>and own files"] --> schema
-  tables["game's tables"] --> schema
+  tables["lang's tables"] --> schema
   schema["Schema"] --> installIndex["Install index"]
   install["Install files"] --> installIndex
   installIndex --> modsIndex["Mods' index"]
@@ -158,7 +160,7 @@ flowchart LR
 
 - **The schema** models the language of one game version: which databases exist, what each key takes and which
   commands run in which scope. It is built from the dumps, the game's docs and what the game's own files write. The
-  rules no source states are `game`'s rows.
+  rules no source states are `lang`'s rows.
 - **The install's index** records every definition, reference and localization message in the game's files.
 - Both are cached in a folder named for the install's version, the time of its dumps and PMT's version, so a game
   patch, fresh dumps or a new build of PMT each scan again.
@@ -185,7 +187,7 @@ sequenceDiagram
   participant Card as editor/hover.ts
   participant LSP as lsp service
   participant Session as workspace session
-  participant Engine as schema and index
+  participant Engine as lang and index
   Editor->>Card: the pointer rests on a word
   Card->>LSP: Hover(path, line, column), through the bindings
   LSP->>Session: the file's tree
@@ -225,16 +227,16 @@ read that section refresh. Each package README lists the events its service send
 | Feature | Frontend | Services | Engine |
 |---|---|---|---|
 | Library, New workspace, New mod | `pages/library`, `pages/wizard`, `pages/newmod` | workspace, app | game, files |
-| The editor | `pages/ide`, `pages/ide/editor` | lsp, workspace | jomini, loc, schema, index |
+| The editor | `pages/ide`, `pages/ide/editor` | lsp, workspace | jomini, loc, lang, schema, index |
 | The explorer | `pages/ide/ExplorerTree.vue` | workspace | files, index |
 | Search, command palette | `pages/ide/SearchView.vue`, `app/CommandPalette.vue` | search, lsp | index |
-| Visual view, images, Save as DDS | `pages/ide/draw`, `ImageView.vue`, `SaveDdsModal.vue` | draw, workspace | texture, schema, index |
+| Visual view, images, Save as DDS | `pages/ide/draw`, `ImageView.vue`, `SaveDdsModal.vue` | draw, workspace | texture, lang, index |
 | Source control | `SourceControlView.vue`, `stores/git.ts` | git | |
 | Wiki pane | `pages/ide/WikiPane.vue` | wiki | |
 | Terminal | `pages/ide/terminal`, `stores/terminal.ts` | terminal | terminal |
 | Assistant | `app/AgentPane.vue`, `ui/AgentSession.vue`, `stores/agent.ts` | agent, mcp | |
-| Event Graph | `pages/graph` | graph | index, schema |
-| Health | `pages/health` | health | index, schema, loc |
+| Event Graph | `pages/graph` | graph | index, lang |
+| Health | `pages/health` | health | index, lang, loc |
 | Patch Notes | `pages/notes` | wiki | |
 | Publish | `pages/publish`, `stores/uploads.ts` | steam | files, game |
 | Settings | `app/settings` | app, workspace | |

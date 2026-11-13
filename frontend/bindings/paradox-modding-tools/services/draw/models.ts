@@ -3,10 +3,10 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as game$0 from "../../internal/game/models.js";
+import * as jomini$0 from "../../internal/jomini/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as jomini$0 from "../../internal/jomini/models.js";
+import * as lang$0 from "../../internal/lang/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as loc$0 from "../../internal/loc/models.js";
@@ -91,6 +91,21 @@ export interface Coat {
      * the keys that write the color slots, slot 1 first
      */
     "slots": string[] | null;
+}
+
+/**
+ * CoatStrength is a texture channel taken at a strength.
+ */
+export interface CoatStrength {
+    /**
+     * Channel is the channel: r, g or b.
+     */
+    "channel": string;
+
+    /**
+     * Strength is how much of the channel is taken. 0 takes none.
+     */
+    "strength": number;
 }
 
 /**
@@ -464,7 +479,7 @@ export interface Recolor {
     /**
      * the channel overlaid on the result
      */
-    "overlay": game$0.CoatStrength;
+    "overlay": CoatStrength;
 
     /**
      * the channel that is its alpha; "" means the blends' own
@@ -506,12 +521,12 @@ export interface Shading {
     /**
      * the channel overlaid on each coat and sub
      */
-    "overlay": game$0.CoatStrength;
+    "overlay": CoatStrength;
 
     /**
      * the channel times a factor over each emblem's alpha
      */
-    "grain": game$0.CoatStrength;
+    "grain": CoatStrength;
 }
 
 /**
@@ -556,7 +571,7 @@ export interface Widget {
     /**
      * the game's row for its type
      */
-    "row": game$0.WidgetType;
+    "row": lang$0.WidgetType;
 
     /**
      * the engine's type its type comes down to, such as widget, hbox or icon

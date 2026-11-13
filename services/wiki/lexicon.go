@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -90,7 +90,7 @@ func buildLexicon(ws *workspace.Session, mods *index.Index, id string) ([]Lexico
 		rows = append(rows, listScripted(ws, mods, class)...)
 
 	case id == "scope":
-		for _, key := range ws.Schema.ListKeys(game.DumpTypes) {
+		for _, key := range ws.Schema.ListKeys(lang.DumpTypes) {
 			rows = append(rows, LexiconRow{Class: id, Name: key, Examples: []lsp.Site{}})
 		}
 
@@ -99,7 +99,7 @@ func buildLexicon(ws *workspace.Session, mods *index.Index, id string) ([]Lexico
 			for _, function := range dataType.Functions {
 				rows = append(rows, LexiconRow{
 					Class: id, Name: dataType.Name + "." + function.Name, Blurb: function.Blurb,
-					Target: schema.ReturnType(function), Examples: toExamples(ws, mods, function.Examples),
+					Target: lang.ReturnType(function), Examples: toExamples(ws, mods, function.Examples),
 				})
 			}
 		}
@@ -132,7 +132,7 @@ func listExamples(ws *workspace.Session, mods *index.Index, database, name strin
 // command of a class.
 func listScripted(ws *workspace.Session, mods *index.Index, class lsp.Class) []LexiconRow {
 	var rows []LexiconRow
-	for _, database := range game.Called {
+	for _, database := range lang.Called {
 		owner := ws.Schema.Databases[database]
 		if owner == nil || owner.Declaration.Command() != class.Database {
 			continue
@@ -148,11 +148,11 @@ func listScripted(ws *workspace.Session, mods *index.Index, class lsp.Class) []L
 
 // makeScripted returns the row of a scripted definition. Its usage is "" when
 // the definition reads no parameter.
-func makeScripted(ws *workspace.Session, mods *index.Index, class string, reference schema.Reference, kept index.Site) LexiconRow {
+func makeScripted(ws *workspace.Session, mods *index.Index, class string, reference lang.Reference, kept index.Site) LexiconRow {
 	usage := ""
 	if tree, statement, err := ws.FindStatement(mods, kept); err == nil {
 		var parameters []string
-		for _, key := range slices.Sorted(maps.Keys(schema.ListParameters(tree, statement).Children)) {
+		for _, key := range slices.Sorted(maps.Keys(lang.ListParameters(tree, statement).Children)) {
 			if !strings.HasPrefix(key, "<") {
 				parameters = append(parameters, key+" = …")
 			}
@@ -172,7 +172,7 @@ func makeScripted(ws *workspace.Session, mods *index.Index, class string, refere
 }
 
 // toExamples turns the schema's examples into sites, counting lines from one.
-func toExamples(ws *workspace.Session, mods *index.Index, examples []schema.Example) []lsp.Site {
+func toExamples(ws *workspace.Session, mods *index.Index, examples []lang.Example) []lsp.Site {
 	sites := make([]lsp.Site, len(examples))
 	for position, example := range examples {
 		sites[position] = lsp.Site{Place: ws.Locate(mods, example.Path), Line: example.Line + 1}

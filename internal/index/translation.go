@@ -7,8 +7,7 @@ import (
 	"slices"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 )
 
 // Translation is the game's localization files in one language other than
@@ -36,7 +35,7 @@ type Translation struct {
 // ScanTranslation scans the game's localization files in the given language
 // into an install's index, and returns what it added. It is for a language
 // other than the base one, which Scan reads.
-func (i *Index) ScanTranslation(schema *schema.Schema, language string) Translation {
+func (i *Index) ScanTranslation(schema *lang.Schema, language string) Translation {
 	translation := Translation{Language: language, Stamp: i.Stamp}
 	for position, file := range i.Files {
 		if file.Format == files.FormatLocalization && findLanguage(file) == language {
@@ -107,7 +106,7 @@ func (i *Index) FindText(key string, languages []string) (Winner, bool) {
 // choice open, and the first is given as unsettled. It returns false if no
 // file the game reads has the key in that language.
 func (i *Index) FindMessage(key, language string) (Winner, bool) {
-	unreplaced := len(i.row.LocReplaceFolders)
+	unreplaced := len(i.dialect.LocReplaceFolders)
 	var winner Winner
 	best, tied := unreplaced+1, 0
 
@@ -116,7 +115,7 @@ func (i *Index) FindMessage(key, language string) (Winner, bool) {
 			continue
 		}
 
-		rank, replaces := i.row.FindLocReplacement(i.Files[site.File].Rel, language)
+		rank, replaces := i.dialect.FindLocReplacement(i.Files[site.File].StageRel(), language)
 		if !replaces {
 			rank = unreplaced
 		}
@@ -133,9 +132,9 @@ func (i *Index) FindMessage(key, language string) (Winner, bool) {
 	case tied == 0:
 		return Winner{}, false
 	case tied > 1:
-		winner.Reason = game.ReasonUnsettled
+		winner.Reason = lang.ReasonUnsettled
 	case best < unreplaced:
-		winner.Reason = game.ReasonReplaceFolder
+		winner.Reason = lang.ReasonReplaceFolder
 	}
 
 	return winner, true

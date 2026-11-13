@@ -14,8 +14,8 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
 )
 
 // picturesSubject is what the group of a list of pictures asks about.
@@ -58,6 +58,25 @@ type Picture struct {
 	Value string `json:"value"`
 }
 
+// tierFrames is how a game draws the tier of a title from a sheet of cells, a
+// cell for each tier.
+type tierFrames struct {
+	// Function is the data function that gives a title's cell, counting from
+	// one, and Tiers the tiers in the order of the cells.
+	Function string
+	Tiers    []string
+}
+
+// titleTiers is how each game draws a title's tier from a sheet of cells, by
+// the game's id. A game with no row draws none.
+var titleTiers = map[string]tierFrames{
+	// seven tiers: cell 3 for a count, 4 for a duke, from 5 for a king
+	// or an emperor
+	game.CK3: {
+		Function: "GetTierFrame", Tiers: []string{"unlanded", "baron", "count", "duke", "king", "emperor", "hegemon"},
+	},
+}
+
 // ListPictures lists the pictures a picture binding of a widget in the given file may draw, as the given list says. It
 // returns an error if no workspace is open.
 func (drw *Service) ListPictures(path string, list PictureList) ([]Picture, error) {
@@ -76,7 +95,7 @@ func (drw *Service) ListPictures(path string, list PictureList) ([]Picture, erro
 		}
 		return lo.UniqBy(pictures, func(picture Picture) string { return picture.Label }), nil
 	}
-	definition, _ := findKeptClause(ws, mods, schema.Reference{Database: list.Database, Name: list.Name})
+	definition, _ := findKeptClause(ws, mods, lang.Reference{Database: list.Database, Name: list.Name})
 	return lo.Map(listDefinitionImages(ws, mods, definition), func(file string, _ int) Picture {
 		name := filepath.Base(file)
 		return Picture{Label: strings.TrimSuffix(name, filepath.Ext(name)), Path: file, Value: file}
@@ -94,7 +113,7 @@ func listPictureGroups(window Window) []Group {
 		list := *widget.Pictures
 		id := strings.TrimSuffix(cmp.Or(list.Database, list.Folder)+":"+list.Name, ":")
 		position := groups.add(id, func() Group {
-			label := cmp.Or(schema.ToPhrase(list.Name), game.DescribeDefinition(list.Database, false), list.Type)
+			label := cmp.Or(lang.ToPhrase(list.Name), lang.DescribeDefinition(list.Database, false), list.Type)
 			return Group{ID: id, Subject: picturesSubject, Label: label, Pictures: &list}
 		})
 		group := &groups.values[position]
@@ -105,8 +124,8 @@ func listPictureGroups(window Window) []Group {
 }
 
 // listTierGroups returns a group for each data call of the window that gives the cell of a title's tier in a sheet of
-// cells (Game.GUI.Tiers), with the widgets that write it as its readers. Its options are the game's tiers.
-func (evaluator *evaluator) listTierGroups(tiers game.TierFrames) []Group {
+// cells (titleTiers), with the widgets that write it as its readers. Its options are the game's tiers.
+func (evaluator *evaluator) listTierGroups(tiers tierFrames) []Group {
 	var groups table[string, Group]
 	for _, widget := range evaluator.window.Widgets {
 		context := evaluator.contexts[widget.ID]
@@ -130,7 +149,7 @@ func (evaluator *evaluator) listTierGroups(tiers game.TierFrames) []Group {
 
 // pickTiers adds to the given choices the cells the picked tiers give the readers of the given tier groups, counted
 // from one. A group no pick sets draws its cell as written.
-func (evaluator *evaluator) pickTiers(tiers game.TierFrames, groups []Group, picks map[string]string, choices map[int32][]Choice) {
+func (evaluator *evaluator) pickTiers(tiers tierFrames, groups []Group, picks map[string]string, choices map[int32][]Choice) {
 	for _, group := range groups {
 		cell := slices.Index(tiers.Tiers, picks[group.ID])
 		if cell < 0 {
@@ -148,7 +167,7 @@ func (evaluator *evaluator) pickTiers(tiers game.TierFrames, groups []Group, pic
 
 // findTierCall returns the data call a property writes where its last step is the function that gives a title's tier
 // its cell. The last result is false for any other property.
-func findTierCall(tiers game.TierFrames, property Property) (jomini.Call, bool) {
+func findTierCall(tiers tierFrames, property Property) (jomini.Call, bool) {
 	if tiers.Function == "" || !strings.Contains(property.Value, tiers.Function) {
 		return jomini.Call{}, false
 	}
@@ -248,7 +267,7 @@ func (library *library) pickDefinitions(widgets []Widget, lists map[int32][]Pict
 // picture. It returns false for a color the definition does not write.
 func (library *library) pickDefinition(widget Widget, list PictureList, definition string) (Choice, bool) {
 	if _, isColor := widget.Colors[list.Key]; isColor {
-		color := library.findFieldColor(list, schema.Reference{Database: list.Database, Name: definition})
+		color := library.findFieldColor(list, lang.Reference{Database: list.Database, Name: definition})
 		return Choice{Key: list.Key, Value: definition, Color: color}, color != ""
 	}
 	return library.pickPicture(list, definition), true
@@ -323,10 +342,17 @@ func listSelectConditions(call jomini.Call) []jomini.Call {
 	return conditions
 }
 
+// selectPrefix is the start of the data functions that give their second
+// argument if their first holds, else their third, as Select_float.
+//
+// the dumps' global functions Select_float( Arg0, Arg1, Arg2 ) and the
+// rest
+const selectPrefix = "Select_"
+
 // splitSelect returns the three arguments of a call that chooses between two values: its condition and the values. The
 // last result is false if the call is no such choice.
 func splitSelect(call jomini.Call) ([]jomini.Argument, bool) {
-	if len(call.Steps) != 1 || len(call.Steps[0].Arguments) != 3 || !strings.HasPrefix(call.Steps[0].Text, game.GUI.SelectPrefix) {
+	if len(call.Steps) != 1 || len(call.Steps[0].Arguments) != 3 || !strings.HasPrefix(call.Steps[0].Text, selectPrefix) {
 		return nil, false
 	}
 	return call.Steps[0].Arguments, true

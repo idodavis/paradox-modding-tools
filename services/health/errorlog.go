@@ -20,7 +20,7 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
@@ -81,16 +81,19 @@ func (hlt *Service) ListErrorLog() (GameLog, error) {
 	return gameLog, nil
 }
 
+// mountLine is the debug log's line in which the game names a folder it reads.
+var mountLine = regexp.MustCompile(`Mounted Data: (.+?)\s*$`)
+
 // readMountLog returns the folders that the run which wrote the error log read,
 // from the game's debug log. It returns false if there is no debug log.
 func readMountLog(ws *workspace.Session) ([]string, bool) {
-	text, err := files.ReadText(files.Join(ws.Game.FindUserDataDir(ws.InstallPath), game.MountLog.Rel))
+	text, err := files.ReadText(files.Join(ws.Game.FindUserDataDir(ws.InstallPath), game.DebugLogRel))
 	if err != nil {
 		return nil, false
 	}
 	var folders []string
 	for line := range strings.Lines(text.Text) {
-		if match := game.MountLog.Line.FindStringSubmatch(line); match != nil {
+		if match := mountLine.FindStringSubmatch(line); match != nil {
 			folders = append(folders, match[1])
 		}
 	}
@@ -135,10 +138,51 @@ func readCopyName(ws *workspace.Session, folder string) string {
 	return ""
 }
 
+// errorLogRel is the log the game writes its errors in, from the user-data
+// folder.
+const errorLogRel = "logs/error.log"
+
 // resolveErrorLog returns the path of the game's error log.
 func resolveErrorLog(ws *workspace.Session) string {
 	dir := ws.Game.FindUserDataDir(ws.InstallPath)
-	return files.Join(dir, game.ErrorLog.Rel)
+	return files.Join(dir, errorLogRel)
+}
+
+// errorLine is how each line of the error log starts: the time, then the
+// source file and line that wrote it.
+var errorLine = regexp.MustCompile(`^\[(\d\d):(\d\d):(\d\d)\](?:\[([A-Z])\])?\[([A-Za-z0-9_]+\.(?:cpp|h|hpp|inl)):(\d+)\]: ?(.*)$`)
+
+// The forms in which an error log names a line of a script file, with the
+// groups path and line. None matches a bare path and line: every log line's
+// header holds its source as [file.cpp:N], so a path must follow a space.
+var (
+	// fileLine is CK3's "file: P line: N", after "Script location:", "at",
+	// "location '" or "from database".
+	fileLine = regexp.MustCompile(`file: *(?P<path>\S+) line: *(?P<line>\d+)`)
+
+	// quotedLine is the statement's line that a quoted message names, as all
+	// three games write in "Unknown effect: x, near line: 3501" in file: "P"
+	// near line: 3502, where the last line is where the reader stopped.
+	quotedLine = regexp.MustCompile(`near line: (?P<line>\d+)" in file: "(?P<path>[^"]+)"`)
+
+	// nearLine is the reader's "in file: "P" near line: N", written by all
+	// three games.
+	nearLine = regexp.MustCompile(`in file: "(?P<path>[^"]+)" near line: (?P<line>\d+)`)
+
+	// pathLine is "P:N" after other text, as in "Script location: P:N" and
+	// "]: P:N - Missing file".
+	pathLine = regexp.MustCompile(`(?:^|\s)(?P<path>[^\s\[\]:'"]+\.\w+):(?P<line>\d+)\b`)
+
+	// lineColumn is EU5's "line N and column C in P".
+	lineColumn = regexp.MustCompile(`line (?P<line>\d+) and column \d+ in (?P<path>\S+)`)
+)
+
+// errorLocations holds the forms each game's error log names a line in, in
+// the order they are tried.
+var errorLocations = map[string][]*regexp.Regexp{
+	game.CK3:  {fileLine, quotedLine, nearLine, pathLine},
+	game.Vic3: {quotedLine, nearLine, pathLine},
+	game.EU5:  {quotedLine, nearLine, pathLine, lineColumn},
 }
 
 // parseRows returns a finding for each message in the error log's text, in
@@ -147,7 +191,7 @@ func parseRows(ws *workspace.Session, mods *index.Index, text string) []Finding 
 	var findings []Finding
 	for line := range strings.Lines(text) {
 		line = strings.TrimRight(line, "\r\n")
-		if match := game.ErrorLog.Line.FindStringSubmatch(line); match != nil {
+		if match := errorLine.FindStringSubmatch(line); match != nil {
 			findings = append(findings, makeFinding(mods, "game-error", map[string]string{
 				"time": match[1] + ":" + match[2] + ":" + match[3], "source": match[5] + ":" + match[6], "message": match[7],
 			}, nil))
@@ -156,7 +200,7 @@ func parseRows(ws *workspace.Session, mods *index.Index, text string) []Finding 
 		}
 		// the location may be on a line after the message
 		if last := len(findings) - 1; last >= 0 && len(findings[last].Sites) == 0 {
-			if site, ok := findLogSite(ws, mods, ws.Game.ErrorLocations, line); ok {
+			if site, ok := findLogSite(ws, mods, errorLocations[ws.Game.ID], line); ok {
 				findings[last].Sites = []lsp.Site{site}
 			}
 		}
@@ -206,7 +250,7 @@ func findLogOwner(mods *index.Index, message string) (identifier, origin string,
 			continue
 		}
 		for _, database := range mods.ListDatabases(candidate) {
-			sites := listLoaded(mods, mods.Resolve(schema.Reference{Database: database, Name: candidate}))
+			sites := listLoaded(mods, mods.Resolve(lang.Reference{Database: database, Name: candidate}))
 			origins := lo.Uniq(lo.Map(sites, func(site index.Site, _ int) string { return mods.File(site).Origin }))
 			if len(origins) == 1 && origins[0] != files.OriginVanilla {
 				return candidate, origins[0], true

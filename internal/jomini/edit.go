@@ -1,5 +1,4 @@
-// edit.go applies edits to a text, finds the edits that give a tree's text an
-// even layout and builds the edit that adds lines to a block.
+// edit.go applies edits, formats a tree's text and builds line insertions.
 
 package jomini
 
@@ -10,8 +9,8 @@ import (
 	"unicode"
 )
 
-// Edit is one change to a text. It replaces a span with a text, so an empty
-// span inserts and an empty text deletes.
+// Edit is one change to a text: a span replaced by a text. An empty span
+// inserts and an empty text deletes.
 type Edit struct {
 	Span Span   `json:"span"`
 	Text string `json:"text"`
@@ -52,13 +51,9 @@ func LineEnding(text string) string {
 	return "\n"
 }
 
-// Format returns the edits that give the tree's text an even layout. Each
-// line starts with the given unit of indentation once for each block it is
-// inside, the tokens on a line are one space apart, and an operator is
-// spaced as most of the tree's operators are. The line breaks stay where
-// they are, each written with the tree's line ending. A comment loses the
-// white space at its end. An edit only ever replaces white space: any other
-// text between tokens, such as a comma, stays as it is.
+// Format returns the edits that lay the tree's text out evenly: the given
+// indentation per open block, one space between tokens, operators spaced as
+// most are. An edit only replaces white space, so a comma stays.
 func (t *Tree) Format(unit string) []Edit {
 	gap, ending := t.operatorGap(), LineEnding(t.Src)
 
@@ -66,7 +61,6 @@ func (t *Tree) Format(unit string) []Edit {
 	var before token
 	end, depth := 0, 0
 
-	// space makes the white space from an offset to another the given text
 	space := func(start, stop int, text string) {
 		if t.Src[start:stop] != text {
 			edits = append(edits, Edit{Span: Span{Start: start, End: stop}, Text: text})
@@ -74,7 +68,7 @@ func (t *Tree) Format(unit string) []Edit {
 	}
 
 	for position, current := range t.listTokens() {
-		// a closing brace is outside the block it closes
+		// A closing brace is outside the block it closes.
 		if current.class == tokenClassClose {
 			depth--
 		}
@@ -109,9 +103,8 @@ func (t *Tree) Format(unit string) []Edit {
 	return edits
 }
 
-// operatorGap returns what an operator is spaced from its key and its value
-// with: nothing where most of the tree's operators are written right after
-// their key, else a space.
+// operatorGap returns the space around operators: none if most follow their
+// key directly, else one space.
 func (t *Tree) operatorGap() string {
 	tight, operators := 0, 0
 
@@ -133,9 +126,8 @@ func (t *Tree) operatorGap() string {
 	return " "
 }
 
-// listTokens returns the tokens of the tree's statements and of its comments,
-// in the order they are written. A block gives its two braces. Text that no
-// statement holds, such as an operator the parse dropped, gives none.
+// listTokens returns the tokens of the statements and comments in text order.
+// A block gives its two braces. Text no statement holds gives none.
 func (t *Tree) listTokens() []token {
 	var tokens []token
 
@@ -161,8 +153,8 @@ func (t *Tree) listTokens() []token {
 	return tokens
 }
 
-// Indentation returns the string one level of nesting is indented with in the
-// tree's text. It returns "" if no statement is indented.
+// Indentation returns what one level of nesting is indented with. It returns
+// "" if no statement is indented.
 func (t *Tree) Indentation() string {
 	for statement := int32(1); int(statement) < len(t.Statements); statement++ {
 		start := t.Statements[statement].Span.Start
@@ -181,9 +173,8 @@ func (t *Tree) Indentation() string {
 	return ""
 }
 
-// IndentLines joins the lines with the tree's line ending, each starting with
-// the given indent and one more level for each brace open above it. A level
-// is the tree's own indentation, or a tab if it has none.
+// IndentLines joins the lines, each indented by the given indent and one level
+// per open brace above it. A level is the tree's indentation or a tab.
 func (t *Tree) IndentLines(lines []string, indent string) string {
 	unit, depth := cmp.Or(t.Indentation(), "\t"), 0
 	indented := make([]string, len(lines))
@@ -201,9 +192,8 @@ func (t *Tree) IndentLines(lines []string, indent string) string {
 	return strings.Join(indented, LineEnding(t.Src))
 }
 
-// BuildInsertion returns the edit that adds the lines as the last statements
-// of a block statement. If other text comes before the closing brace on its
-// line, the lines go on that line instead of their own.
+// BuildInsertion returns the edit that adds the lines as a block's last
+// statements, on the closing brace's line if other text precedes it there.
 func (t *Tree) BuildInsertion(block int32, lines []string) Edit {
 	closing := t.Statements[block].Block.End - 1
 	row := t.Lines.LineSpan(t.Lines.ToPosition(closing).Line)

@@ -7,12 +7,12 @@ and localization message, with lookups by name. It decides which definition the 
 lists what fires what. The rules it applies to the scan, to which copy the game keeps and to what fires what, and what
 it does with input that breaks them, are its package doc, in [index.go](index.go).
 
-What a database is and how it matches names is the [schema](../schema/README.md)'s. Which file the game reads at a path
+What a database is and how it matches names is [lang](../lang/README.md)'s. Which file the game reads at a path
 is decided by the mounts of [files](../files/README.md), which an index embeds, so their `Files`, `FindLoaded` and
 `IsLoaded` are the index's own.
 
 **Uses** [files](../files/README.md), [game](../game/README.md), [jomini](../jomini/README.md),
-[loc](../loc/README.md), [schema](../schema/README.md), [texture](../texture/README.md) · **Used by** the
+[lang](../lang/README.md), [loc](../loc/README.md), [texture](../texture/README.md) · **Used by** the
 [workspace](../../services/workspace/README.md) service, which builds and holds it, and the services that read it:
 [lsp](../../services/lsp/README.md), [draw](../../services/draw/README.md), [graph](../../services/graph/README.md),
 [health](../../services/health/README.md), [wiki](../../services/wiki/README.md),
@@ -65,7 +65,7 @@ copy `FindKept` returns.
 | `index.go` | The package doc, and the index and its parts: occurrences, tables, sites and postings, and what a site points at. |
 | `scan.go` | Scanning an install, scanning the mods on top of it, rescanning changed files, and loading the cache. |
 | `lookup.go` | Lookups by name: what a reference resolves to, what uses a name, what a database defines. |
-| `combine.go` | What the game keeps: the winning definition of a name, found by [game](../game/README.md)'s rule over the copies in files the game reads, and kept for each name with several copies until the next scan. |
+| `combine.go` | What the game keeps: the winning definition of a name, found by [lang](../lang/README.md)'s rule over the copies in files the game reads, and kept for each name with several copies until the next scan. |
 | `translation.go` | The game's localization in a second language, scanned once on an install's index and cached by language, and the message the game shows for a key. |
 | `problems.go` | The problems of a walked file that need every file: a name nothing defines, a text written twice or missing, a required key no copy writes, an entry mode with nothing to act on, a priority tie and an unknown data call. `ListProblems` returns them with the ones the walk recorded. |
 | `fires.go` | What fires what, and the rule that marks a reference as firing, with the fields it lists. |
@@ -79,6 +79,6 @@ copy `FindKept` returns.
 - **Table**: the interned texts of one kind, each given one ordinal.
 - **Posting**: one group of occurrences: those of one role in one database.
 - **Winner**: the definition the game keeps when several share a name, and why. The reason and the cause are
-  [game](../game/README.md)'s.
+  [lang](../lang/README.md)'s.
 - **Unsettled**: the reason of a winner where no source says which copy the game keeps.
 - **Fire**: one firing: a source, a target, the reference that names the target, and the scripted effects between.

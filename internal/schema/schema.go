@@ -1,678 +1,165 @@
-// Package schema models the language of one game version: which databases
-// exist, what each key takes and which commands run in which scope. Build
-// makes it from the game's dumps, the docs the install ships and the game's
-// own files. The package also owns the one walk over a file, and every reader
-// of script is a visitor on it.
-//
-// # Sources
-//
-//   - Every fact comes with a game.Source, and a lower source outranks a
-//     higher one: the rows, the dumps, the docs, the wiki, the game's own
-//     files, and inferred last. A claim keeps the fact of its best source.
-//   - Only the dumps, the docs, the wiki and what a definition in the files
-//     says its name or a parameter takes can accuse a mod.
-//   - A fact learned from the game's own files completes a hover card, marked
-//     as inferred. It never fails a verdict, and a reference that only such a
-//     fact makes is inferred.
-//
-// # Databases
-//
-//   - A database is built for each folder a script file belongs to, each
-//     folder or file a row names, each nesting, each start setup and each GUI
-//     declaration. A nested database is named by its parent's name, a dot and
-//     its own.
-//   - A nesting that writes a separator names its definitions by their
-//     holder's name, the separator and their own key: define X of the NAI
-//     group is NAI|X.
-//   - The files under the DLC folder are left out, since the game's own root
-//     lists each DLC's files too.
+// Package schema builds the model of one game version's script language, a
+// lang.Schema. It reads three things: the files the game writes when asked
+// to dump its language, the doc files the install ships, and the game's own
+// script files.
 //
 // # The dumps
 //
-//   - A section the install's dumps lack comes from the shipped backup, one
-//     section at a time. The effects, the triggers and the links are three
-//     sections, and the links bring the targets saved from code.
-//   - A dump correction fixes a dump line that contradicts its own text. It
-//     wins over the dump.
-//   - The effects, the triggers, the links and the types of scope are four
-//     databases, and each dump entry is a definition in its dump's database.
-//     A name that two dumps list is a definition in each, with that dump's
-//     scopes, target and keys. A definition's target is the one scope its
-//     entry says it leads to, and none where the entry names several.
-//   - A command's arguments are the keys of the usage blocks written under
-//     its name, and of the lines of its prose that open with key = value. A
-//     statement in [ ] or < > is optional, [a|b] gives choices, and a
-//     placeholder such as <triggers> gives the block that shape. A trigger's
-//     Traits line says what its value takes, and outranks a value the dump
-//     writes after the command's name, as add_trait = <trait_key> does.
-//   - A name declared as both an effect and a trigger keeps each one's keys,
-//     and a union of the two for a block that takes either. The union keeps
-//     a shape only where both state it, or where the shape takes effects and
-//     triggers alike. Six words whose two entries differ only in what their
-//     block holds, such as switch and debug_log, share one field instead.
-//   - The commands of one list family, such as any_x, every_x, random_x and
-//     ordered_x, share the keys of their arguments.
-//   - A keyword row written under a command, such as random_list's numbered
-//     branches, gives the command's block that key in the row's shape.
-//   - A command with no target whose blurb opens with "Iterate through"
-//     walks a list, and the scope inside its block is not known.
-//   - A link that requires data is a prefix, written with a name after a
-//     colon, as scope:target is.
-//   - A data function written for several arities keeps the first. Self and
-//     AccessSelf return the type they are called on.
+//   - The dumps come in parts: the effects, the triggers, the links, the
+//     scope types, the modifiers, the on_actions, the data types and the
+//     customizable localizations. A part the install's dumps lack is taken
+//     whole from the backup the app ships.
+//   - A dump correction replaces the scopes of a command whose dump entry
+//     contradicts its own sentence about the command.
+//   - The effects, the triggers, the links and the scope types are four
+//     databases, and each dump entry is a definition in the database of its
+//     file. A name that two files list is a definition in each. A
+//     definition leads to the one scope its entry names, and to none where
+//     the entry names several.
+//   - The keys of a command's block are the keys of the example written
+//     under its name, and the lines of its description written as
+//     key = value. A statement in [ ] or < > may be left out, [a|b] lists
+//     the values a key takes, and a placeholder such as <triggers> says
+//     what a block holds. A trigger's Traits line says what its value is.
+//     It comes before the value the dump writes after the command's name,
+//     as add_trait = <trait_key> does.
+//   - A name that is both an effect and a trigger keeps the keys of each,
+//     and gets the keys of both together for a block that may hold either.
+//     There a key keeps what its block holds only where the two agree, or
+//     where the block may hold effects and triggers alike. Six names whose
+//     two entries differ only in what their block holds, such as switch and
+//     debug_log, share one set of keys.
+//   - The commands that go through one list, such as any_vassal,
+//     every_vassal, random_vassal and ordered_vassal, share their keys.
+//   - A keyword written inside a command's block, such as the numbered
+//     branches of random_list, is a key of that command.
+//   - A command that leads to no scope and whose description starts with
+//     "Iterate through" runs its block on each item of a list. The scope
+//     inside its block is not known.
+//   - A link whose entry says "Requires Data: yes" is written with a name
+//     after a colon, as scope:target is.
+//   - A data function listed more than once keeps its first entry. Self and
+//     AccessSelf return the data type they are called on.
 //
 // # The docs
 //
-//   - A doc is an .info, .md or readme file, or a text file named as one, in
-//     a database's folder or below one. Prose is no valid script, so a doc is
-//     read line by line, by pattern.
-//   - A doc describes the database of its own folder, else of a folder above
-//     it, else the one its file's name gives. A doc in a folder below its
-//     database's describes part of it, and gives it no blurb. A doc of a
-//     database whose definitions are named by their file is read as inside
-//     that one definition.
-//   - A doc's example gives fields, and the comments beside it state a blurb,
-//     a type, a requirement, a default and choices. It states no scope. A
-//     later doc fills only what an earlier one left out.
-//   - A requirement is conditional where the text states a condition, else
-//     optional or always as the terms optional, required and mandatory say.
-//     The first one stated is kept.
-//   - Choices that are only yes and no make a bool, and the choice marked
-//     (default) is the default.
-//   - A database of triggers, effects or a value takes no fields from a doc,
-//     and a field whose block holds script takes none below it.
-//   - A field with no blurb takes the one the docs give the same key
-//     elsewhere in its database.
+//   - A doc is an .info or .md file, a file whose name starts with readme,
+//     or a .txt file named as a doc. Its sentences are not script a parser
+//     could read, so a doc is read line by line, by the pattern of each
+//     line.
+//   - A doc describes the database of the folder it is in, else of a folder
+//     above it, else of the folder named as the file is. A doc in a folder
+//     below its database's describes only part of the database, and gives
+//     it no hover text. Where each file of a database is one definition, a
+//     doc is read as already inside that definition.
+//   - The script a doc writes gives the fields. The sentences beside it
+//     give each field its hover text, its type, whether it must be written,
+//     its default and the values it takes. A doc gives no scope. What an
+//     earlier doc says is kept over a later one.
+//   - A field is needed only in some cases where a sentence says so, as
+//     "only used when" does. Otherwise the words optional, required and
+//     mandatory say whether it must be written. What is said first is kept.
+//   - A list of only yes and no makes a field a yes or no, and the value
+//     marked (default) is the default.
+//   - A database whose definitions are triggers, effects or a script value
+//     takes no fields from a doc, and a field whose block holds script
+//     takes none below it.
+//   - A field with no hover text takes the one the docs give a field of the
+//     same key elsewhere in its database.
 //
 // # The count of the game's own files
 //
-//   - The files that declare callables are read first, so that a key under a
-//     call counts as a call.
-//   - The count states what no other source does, field by field. A field's
-//     shape is the one the keys in its blocks tell, value over triggers, and
-//     unknown where they disagree.
-//   - Where vanilla writes a reference, the field names the database that
-//     defines every value written there. A field written only as scalars
-//     takes the first type all its values fit; one always written as a block
-//     is a color or a block. A target that names a database is firm only
-//     where the database defines every name the game's files write there.
-//   - The game concepts name the values only where no other database
-//     defines them, and the localization only where neither does. A field
-//     that another source states is a block or a text never takes a game
-//     concept's names, and no field takes a GUI database's, since their
-//     names are common words such as value.
-//   - Where every key that only vanilla writes in a block is a definition of
-//     one database, the block's keys name that database, as a culture's
-//     opinions name cultures. Keys never name the game concepts, the
-//     localization, a GUI database or a database with nested ones. A
-//     command's own block keeps its keys apart, except where a command key
-//     row says they name a database.
-//   - A number takes a script value too where the game's files write one
-//     there.
-//   - A prefix's database is the one that defines every name the game's
-//     files write after it. A prefix that leads to a scope from any scope
-//     tries that scope's database first.
-//   - A database gives a command pattern where each of its plain
-//     definitions, two at least, fills the pattern's star in a command the
-//     dumps declare, one command each.
-//
-// # Scripted definitions
-//
-//   - Each parameter is a field the definition declares, so a key in a call
-//     reads as its argument, never as a link or a command of that name. A
-//     parameter is one written in a key, a tag or a value of the body, never
-//     in a comment, and one whose every use writes a default takes the first
-//     as its default.
-//   - A parameter written whole after a link prefix takes the prefix's
-//     database. One written whole as the value of a key takes what that key's
-//     field claims, inferred unless it names a database. One passed on whole
-//     to a call of another scripted definition takes what that one's argument
-//     takes. A parameter keeps the first database it gets, else the first
-//     claim.
-//   - A modifier type's name takes yes or no where its definition writes
-//     boolean = yes, else a number or a script value.
-//   - A call finds the game's definition first, then a mod's, and a mod's
-//     never takes the place of a command the dumps declare. A name in
-//     another case finds a definition only where its database ignores case.
-//     A later definition of a name replaces an earlier one.
-//
-// # The walk
-//
-//   - A statement either defines a name, or its key is a keyword of the
-//     language where it is written, or it is the first thing its block's
-//     shape takes that has the key. A key with a parameter is not known
-//     until the call is made, and neither are its block's shape and scope.
-//   - A command fits only where the block's shape takes its database, so an
-//     effect never fits in a trigger block. Each use of an effect, a trigger
-//     or a link is a reference to it, and each link of a chain is its own.
-//     A key written with an
-//     argument in parentheses, as aptitude(court_jester_court_position), is
-//     read as the command, and its argument as the command's ArgumentKey. A
-//     math keyword's value written so, as opinion(scope:ruler) is, makes the
-//     references of its argument.
-//   - A link or a command that leads to a scope moves the scope there. An
-//     argument of a command is read in a scope the command makes, which is
-//     not known, but a conditional keyword such as limit is read in the
-//     scope the command is written in. Where a database gives its blocks a
-//     run order, they are read in that order first, so each block starts
-//     with the scopes the earlier ones saved. A walk to an offset still
-//     reads the statements before it, to learn what they saved.
-//   - An event's name opens with a namespace its file declares above it.
-//   - A value shaped like an event id names an event where its field claims
-//     events, or claims nothing and an events file declares its namespace. A
-//     value with a space is text, since a message key has none.
-//   - A GUI block's datacontext key sets the data context of the calls in
-//     it, unknown where the dumps do not resolve the call.
+//   - The files that declare scripted definitions are read first, so that a
+//     key that calls one is counted as a call.
+//   - The count says only what no other source says, field by field. What a
+//     field's block holds is what the keys counted in it show. A block with
+//     math keys computes a number, even with effects or triggers among
+//     them. What it holds is unknown where the keys disagree.
+//   - Where the game's files write names as a field's value, the field
+//     takes the database that defines every one of those names. A field
+//     never written as a block takes the first type every one of its values
+//     fits. A field always written as a block is a color or a block. A link
+//     to a scope also names a database only where that database defines
+//     every name the game's files write there.
+//   - The game concepts are taken only where no other database defines the
+//     values, and the localization only where the game concepts do not
+//     either. A field another source says is a block or a text never takes
+//     the game concepts. No field takes a GUI database, since the names in
+//     those are common words such as value.
+//   - Where every key that only the game's files write in a block is a
+//     definition of one database, the keys of that block name the database,
+//     as the keys of a culture's opinions block name cultures. Keys never
+//     name the game concepts, the localization, a GUI database or a
+//     database that has others nested in it. The block of a command is left
+//     alone, except where a commandKeys row says its keys name a database.
+//   - A number may be written as a script value too where the game's files
+//     write one there.
+//   - A link that takes a name after a colon takes the database that
+//     defines every name the game's files write after it. A link that may
+//     be written in any scope and leads to a scope tries the database of
+//     that scope's type first.
+//   - A database makes a star key, as has_relation_*, where the dumps list
+//     a command for each of its definitions, two at least, whose name
+//     differs only by the definition's own name.
 //
 // # Robustness
 //
-// Build returns an error if a dump file's time or a doc cannot be read, or if
-// no file of the listing can be parsed. A dump file that cannot be read as
-// text, such as one over files.TextLimit or in UTF-16, counts as missing. A
-// file that cannot be parsed is left out of the count. A doc with no prose and
-// no comment, or a .txt doc with more script lines than prose, is data and is
-// skipped. LoadShipped returns false for a game with no backup and for one
-// that does not decode. The walk never fails: a key no rule explains has no
-// field. SetScripted reads a file that cannot be parsed, or is gone, as
-// declaring nothing.
+// Build returns an error if a dump file's time or a doc cannot be read, or
+// if no script file of the listing can be parsed. A dump file that cannot
+// be read as text, such as one larger than files.TextLimit or one in
+// UTF-16, is treated as missing. A script file that cannot be parsed is
+// left out of the count. A file with no sentence and no comment, or a .txt
+// file with more lines of script than of sentences, is data and no doc, and
+// is skipped. LoadShipped returns false for a game with no backup, and for
+// a backup that cannot be decoded.
 package schema
 
 import (
-	"cmp"
 	"maps"
 	"path"
 	"slices"
 	"strings"
-	"sync/atomic"
-	"time"
-	"unicode"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 )
 
-// Claim is one fact about a field, as its best source states it.
-type Claim[T any] struct {
-	Value T
-
-	// Source is the source that states the value. It is game.SourceNone when
-	// no source states it.
-	Source game.Source
+// builder is the schema of one game version while it is being built.
+type builder struct {
+	*lang.Schema
 }
 
-// ValueType is the type of value a field takes.
-type ValueType string
-
-// The types a field's value can have.
-const (
-	ValueTypeUnknown ValueType = "unknown"
-	ValueTypeBool    ValueType = "bool"
-	ValueTypeNumber  ValueType = "number"
-	ValueTypeDate    ValueType = "date"
-	ValueTypeText    ValueType = "text"
-
-	// ValueTypeReference is a name of Expected.Database.
-	ValueTypeReference ValueType = "reference"
-
-	// ValueTypeTarget is a link to Expected.Scope, or a name of
-	// Expected.Database where it is set.
-	ValueTypeTarget ValueType = "target"
-
-	// ValueTypeChoice is one of Expected.Choices.
-	ValueTypeChoice ValueType = "choice"
-
-	ValueTypeColor ValueType = "color"
-	ValueTypeBlock ValueType = "block"
-
-	// ValueTypeCall is a data call.
-	ValueTypeCall ValueType = "call"
-)
-
-// Expected is what a field's value must be.
-type Expected struct {
-	Type ValueType `json:"type"`
-
-	// Database is the database a reference or a target names.
-	Database string `json:"database,omitempty"`
-
-	// Scope is the scope a target's link leads to.
-	Scope string `json:"scope,omitempty"`
-
-	Choices []string `json:"choices,omitempty"`
-
-	// Values is whether a number may be a script value too.
-	Values bool `json:"values,omitempty"`
-
-	// Nested is whether a name of a database nested in Database fits too.
-	Nested bool `json:"nested,omitempty"`
-
-	// Stem is the name a reference's value stands for, with %s for the value,
-	// as CK3's activity log names the key <value>_title. It is "" for the
-	// value itself.
-	Stem string `json:"stem,omitempty"`
-}
-
-// Vanilla is what the game's own files write at a field, counted. Its
-// unexported tallies are the count's own: it decides the field's claims
-// from them, no cache stores them and no other package reads them.
-type Vanilla struct {
-	// Count is how many times the field is written, and Blocks how many of
-	// those writes are a block.
-	Count  int
-	Blocks int
-
-	// Values holds the count of each value written.
-	Values map[string]int
-
-	// colors is how many of the blocks written are a color, and definitions
-	// how many plain definitions of its database write the field.
-	colors      int
-	definitions int
-
-	// shapes holds the count of each shape that a key written directly in its
-	// blocks tells.
-	shapes map[game.Shape]int
-
-	// proofs holds the count of each set of shapes that a call in its blocks
-	// allows, the shapes joined by spaces.
-	proofs map[string]int
-}
-
-// Requirement is whether a field must be written.
-type Requirement string
-
-// The requirements a field can have.
-const (
-	// RequirementOptional is a field that may be left out.
-	RequirementOptional Requirement = "optional"
-
-	// RequirementAlways is a field that a definition must write.
-	RequirementAlways Requirement = "always"
-
-	// RequirementConditional is a field that a definition must write only
-	// under a condition the docs state.
-	RequirementConditional Requirement = "conditional"
-)
-
-// Claims holds every fact the sources state about one field.
-type Claims struct {
-	Value Claim[Expected]
-	Shape Claim[game.Shape]
-
-	// Required is whether the field must be written.
-	Required Claim[Requirement]
-
-	Default Claim[string]
-	Blurb   Claim[string]
-
-	// Keys is the database that the keys of the field's block name.
-	Keys Claim[string]
-}
-
-// Field is one key that may be written in a definition, with what it takes and
-// the fields that may be written inside it. A database's root field is the
-// whole definition block.
-type Field struct {
-	// Children are the fields inside it, by written key, or by a pattern such
-	// as <number> or <any>.
-	Children map[string]*Field
-
-	Claims
-
-	// Source is the highest-ranked declared source that writes the field. It
-	// is game.SourceNone if none does.
-	Source game.Source
-
-	// Weighted is whether the field's key is a number whose share of its
-	// siblings' is its chance, as an on_action's random_events entry is.
-	Weighted bool
-
-	Vanilla Vanilla
-}
-
-// Definition is one key a database declares outside the index: an effect, a
-// trigger, a link, a scope type, a modifier or an on_action of the dumps, or
-// a scripted definition, a modifier type or an event namespace of the files.
-type Definition struct {
-	// Database is the database that declares it. It is "" for a widget type
-	// the game draws with no file defining it, whose block takes no type's
-	// keys.
-	Database string
-
-	Key   string
-	Blurb string
-
-	// Usage is the dump's usage lines. It is "" for none.
-	Usage string
-
-	// Field is what its block and its value take: a command's keys, or the
-	// name written after a link's colon. It is nil where no source says.
-	Field *Field
-
-	// Union is the keys of an effect and a trigger of one name together, for
-	// a block that takes either. It is nil unless the dumps declare the name
-	// as both and each entry keeps its own keys.
-	Union *Field
-
-	// Scopes are the scope types it is written in, none for any. Target is
-	// the scope type it leads to, which for an on_action is the scope it
-	// runs in. It is "" for none.
-	Scopes []string
-	Target string
-
-	// Hardcoded is whether the game runs an on_action from its own code, as
-	// the dumps' "From Code: Yes" says.
-	Hardcoded bool
-
-	// Saves holds, by parameter of a scripted definition, the link its body
-	// saves the argument's name under, such as scope. Any other definition
-	// has none.
-	Saves map[string]string
-
-	// Path and Line are the dump file that declares it and its line there,
-	// from 1. They are "" and 0 for one from the shipped backup or a row.
-	Path string
-	Line int
-
-	// Star is the databases whose names fill the * of a key that is a
-	// pattern, as scripted relations fill has_relation_*. Patterns are the
-	// patterns that make a plain key. Each is none for any other key.
-	Star     []string
-	Patterns []*Definition
-
-	// ArgumentKey is the key that an argument in parentheses after its name
-	// stands for, as in aptitude(court_jester_court_position). It is "" for
-	// none.
-	ArgumentKey string
-
-	// Prefixed is whether a link is written with a name after a colon and not
-	// alone; its key ends in the colon. Wild is whether the dumps call it a
-	// wild card, which no written name matches.
-	Prefixed, Wild bool
-
-	// Iterates is whether it runs its block on each item of a list whose
-	// scope the dumps do not name.
-	Iterates bool
-
-	// Runs is whether script runs in a scope type.
-	Runs bool
-}
-
-// Example is one place where the game's own files call a data function. Its
-// line counts from zero.
-type Example struct {
-	Path string
-	Line int
-}
-
-// Database is one database of the game: the field tree of its definitions and
-// the game's rows that govern it.
-type Database struct {
-	Name string
-
-	// Definitions are the keys it declares outside the index, by key: what
-	// the dumps list, and what the game's own files declare for every later
-	// walk to know. Those are the copy the game keeps of each name script
-	// calls, in lower case where the database ignores case, each modifier
-	// type, each event namespace, and each widget type the game draws
-	// itself. Any other database of files has none.
-	Definitions map[string]*Definition
-
-	// Keys are the keys of Definitions, sorted, and Patterns its pattern
-	// definitions, sorted by key.
-	Keys     []string
-	Patterns []*Definition
-
-	// Nested are the databases whose definitions are keys inside its own.
-	Nested []string
-
-	// Field is what a definition's block takes.
-	Field *Field
-
-	// Declaration is what the game's sources state about it, with only the
-	// references and the fields that hold for the game. It is the zero one
-	// for a database no row names.
-	Declaration game.Declaration
-
-	// Precedence is how several definitions of one name combine.
-	Precedence game.Precedence
-
-	// Readme is the game doc its blurb was read from, else the first that
-	// describes it all. It is "" if none.
-	Readme string
-}
-
-// ScopeType is one type of scope the game runs script in, and what script can
-// do there.
-type ScopeType struct {
-	Triggers bool
-	Effects  bool
-}
-
-// DataFunction is one function of a data type, as the data types dump
-// declares it.
-type DataFunction struct {
-	Name      string
-	Returns   string
-	Arguments []string
-	Blurb     string
-
-	// Expansion is the text of a data binding macro. It is "" for a function
-	// the game has itself.
-	Expansion string
-
-	// Promote is whether the dumps define it as a promote, which leads to an
-	// object of its type rather than a value.
-	Promote bool
-
-	// Examples are the first places the game's own files call it, by path
-	// and then line.
-	Examples []Example
-}
-
-// DataType is one type of the data binding language, with its functions.
-type DataType struct {
-	Name      string
-	Functions map[string]DataFunction
-}
-
-// OnAction is one on_action as the dumps declare it, with the scope it runs
-// in.
-type OnAction struct {
-	Scope string
-
-	// Hardcoded is whether the game calls it from its own code, as the dumps'
-	// "From Code: Yes" says.
-	Hardcoded bool
-}
-
-// relay is one parameter that a scripted definition's body passes on as an
-// argument of a call to another one.
-type relay struct {
-	// Callee is the called definition's name as written, Argument the
-	// argument's key in the call, and Parameter the parameter of the body that
-	// the argument writes.
-	Callee    string
-	Argument  string
-	Parameter string
-}
-
-// typing is one place where a scripted definition's body writes a parameter
-// whole where a database's name may go: after a link prefix, or as the value
-// of a key that has a field.
-type typing struct {
-	Parameter string
-
-	// Prefix is the link prefix written before it. It is "" for a key's
-	// value.
-	Prefix string
-
-	// Field is the field of the key it is the value of. It is nil after a
-	// prefix.
-	Field *Field
-}
-
-// ScriptedCopy is one copy of a scripted definition as a file declares it,
-// with where its file comes in the load order.
-type ScriptedCopy struct {
-	Copy Copy
-
-	// File is the key of its file and Rel the file's path from its stage.
-	// Sequence is the file's place among the files that declare, the game's
-	// before the mods'.
-	File     string
-	Rel      string
-	Sequence int
-
-	// Definition is what a call of it takes: its field holds its parameters,
-	// nil where its database's definitions take none.
-	Definition *Definition
-
-	// relays are the parameters its body passes on to calls of other scripted
-	// definitions, and typings the places its body writes a parameter where a
-	// database's name goes, in order. The pass that declares it reads them,
-	// and no cache keeps them.
-	relays  []relay
-	typings []typing
-}
-
-// modScripted is what the files of the workspace's mods declare, by file and
-// all together.
-type modScripted struct {
-	// byFile holds the declarers by a file's key, and sequence counts the
-	// files given a place so far. unread holds the keys of the files the
-	// game does not read, as they were when the winners were last picked.
-	byFile   map[string]*declarer
-	sequence int
-	unread   map[string]bool
-
-	// callees holds, by database and name, the scripted definition a call
-	// finds where the workspace changes what the game's files give: the
-	// winner among the mods' copies and the game's, or nil where no copy is
-	// left. They are picked again only when a file that declares one
-	// changes.
-	callees map[string]*Definition
-
-	// winners holds the callees, and with them each modifier type and each
-	// event namespace the mods' files declare. A name it lacks is the
-	// game's own.
-	winners map[string]*Definition
-}
-
-// The origins of a source's data: the install, the shipped backup, or none.
-const (
-	originNone    = "none"
-	originInstall = "install"
-	originShipped = "shipped"
-)
-
-// SourceState says where one source's data came from and how fresh it is.
-type SourceState struct {
-	// Origin is install, shipped or none.
-	Origin string `json:"origin"`
-
-	WrittenAt time.Time `json:"writtenAt"`
-
-	// Stale is whether a dump file read is older than the install.
-	Stale bool `json:"stale"`
-
-	// Folders are the install's folders its files were read from. They are
-	// none for the shipped backup.
-	Folders []string `json:"folders"`
-}
-
-// Schema is the language of one game version, as built from the dumps, the
-// docs and the game's own files.
-type Schema struct {
-	Game string
-
-	// Version is the install's version. Build leaves it "".
-	Version string
-
-	Dumps     SourceState
-	Databases map[string]*Database
-
-	// Setups are the folders that the game's bookmarks name for their start
-	// setups, without the stage folder. They are none for a game with a
-	// single start.
-	Setups []string
-
-	// Callees holds, by caller, the databases a call through it resolves in.
-	Callees map[string][]string
-
-	// Customs holds the customizable localizations the dumps name, though the
-	// game's files may define none.
-	Customs map[string]bool
-
-	DataTypes map[string]DataType
-
-	// TypeDatabases holds, by the phrase of a data type, the database of its
-	// names. It holds "" where several databases have the phrase.
-	TypeDatabases map[string]string
-
-	// InlineDatabases holds, by a key that declares a definition inline in an
-	// events file, the definition's database.
-	InlineDatabases map[string]string
-
-	// ScriptedCopies holds every copy of a scripted definition the game's
-	// files declare, by database and name. The copy of each that the game
-	// keeps among them is a definition of its database.
-	ScriptedCopies map[string][]ScriptedCopy
-
-	// UnlistedCalls holds the data call steps, as Type.step, that no dump
-	// declares for the type before them, though the game's own localization
-	// and GUI text write them.
-	UnlistedCalls map[string]bool
-
-	// Lists, Events, OnActions, Messages, Concepts, ModifierTypes, Effects
-	// and Values are the databases of scripted lists, of events, of
-	// on_actions, of the messages an effect sends the player, of game
-	// concepts, of modifier types, of scripted effects and of script values.
-	// Each is "" if none.
-	Lists         string
-	Events        string
-	OnActions     string
-	Messages      string
-	Concepts      string
-	ModifierTypes string
-	Effects       string
-	Values        string
-
-	// FireDatabases are the databases that are fired: those whose row's
-	// contents are one of fireContents.
-	FireDatabases []string
-
-	// mods holds the mods' scripted definitions, which a call finds after the
-	// game's. A rescan puts a new table in place.
-	mods atomic.Pointer[modScripted]
-}
-
-// Build returns the schema of a game version, from an install's dumps, docs
-// and own files. It returns an error if a dump or a doc cannot be read, or no
-// file can be parsed.
-func Build(row *game.Game, installPath string, listing []files.File, parse func(path string) (*jomini.Tree, error)) (*Schema, error) {
+// Build returns the schema of one game version. dialect holds the game's
+// language facts, dumpDirs are the folders its dump files are in, and
+// listing is the game's own files, which parse reads. The files of DLCs are
+// left out, since the game's own folders list them too. It returns an error
+// if a dump file's time or a doc cannot be read, or if no script file can
+// be parsed.
+func Build(
+	dialect *lang.Dialect, dumpDirs []string, installPath string, listing []files.File,
+	parse func(path string) (*jomini.Tree, error),
+) (*lang.Schema, error) {
 	listing = slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool {
 		return strings.HasPrefix(file.Rel, game.DLCFolder+"/")
 	})
 
-	schema := &Schema{
-		Game:            row.ID,
-		Databases:       map[string]*Database{},
+	schema := &builder{Schema: &lang.Schema{
+		Game:            dialect.ID,
+		Databases:       map[string]*lang.Database{},
 		Callees:         map[string][]string{},
 		TypeDatabases:   map[string]string{},
 		InlineDatabases: map[string]string{},
 		UnlistedCalls:   map[string]bool{},
-	}
+	}}
 
-	schema.Setups = listSetups(row, listing, parse)
-	folders := listFolders(row, listing)
+	schema.Setups = listSetups(dialect, listing, parse)
+	folders := listFolders(dialect, listing)
 
-	// the count reads the unions as every later walk does, so they are built
-	// before it and again after
-	schema.buildDatabases(row, folders)
+	schema.buildDatabases(dialect, folders)
 	schema.buildFields()
-	if err := schema.buildDumps(row, installPath); err != nil {
+	if err := schema.buildDumps(dialect, dumpDirs, installPath); err != nil {
 		return nil, err
 	}
 
@@ -680,24 +167,27 @@ func Build(row *game.Game, installPath string, listing []files.File, parse func(
 		return nil, err
 	}
 
+	// the count reads the keys an effect and a trigger of one name have
+	// together, and then adds to both, so they are put together before the
+	// count and again after it
 	schema.buildUnions()
-	if err := schema.CountVanilla(listing, parse); err != nil {
+	if err := schema.countVanilla(listing, parse); err != nil {
 		return nil, err
 	}
 
 	schema.buildUnions()
 	schema.buildDocBlurbs()
 
-	return schema, nil
+	return schema.Schema, nil
 }
 
-// listSetups returns the folders that the game's bookmarks name as the folders
-// of their start setups, sorted and each once. It returns none for a game with
-// no bookmark folder. A bookmark file that cannot be parsed names none.
-func listSetups(row *game.Game, listing []files.File, parse func(path string) (*jomini.Tree, error)) []string {
+// listSetups returns the folders that the game's bookmarks name for their
+// start setups, sorted, each once. It returns none for a game with no
+// bookmark folder.
+func listSetups(dialect *lang.Dialect, listing []files.File, parse func(path string) (*jomini.Tree, error)) []string {
 	var setups []string
 	for _, file := range listing {
-		if row.BookmarkFolder == "" || !strings.HasPrefix(file.StageRel(), row.BookmarkFolder+"/") {
+		if dialect.BookmarkFolder == "" || !strings.HasPrefix(file.StageRel(), dialect.BookmarkFolder+"/") {
 			continue
 		}
 
@@ -707,7 +197,7 @@ func listSetups(row *game.Game, listing []files.File, parse func(path string) (*
 		}
 
 		for bookmark := range tree.Children(0) {
-			if setup, ok := tree.FindChildValue(bookmark, row.SetupKey); ok && setup != "" {
+			if setup, ok := tree.FindChildValue(bookmark, dialect.SetupKey); ok && setup != "" {
 				setups = append(setups, setup)
 			}
 		}
@@ -718,10 +208,10 @@ func listSetups(row *game.Game, listing []files.File, parse func(path string) (*
 	return slices.Compact(setups)
 }
 
-// listFolders returns the folder of each database the game's files make: the
-// folder each script file belongs to, and every folder or file a row names
-// that the listing has.
-func listFolders(row *game.Game, listing []files.File) []string {
+// listFolders returns the folder of each database the game's files make,
+// sorted: the folder each script file belongs to, and each folder a
+// declaration names that the listing has.
+func listFolders(dialect *lang.Dialect, listing []files.File) []string {
 	folders := map[string]bool{}
 	present := map[string]bool{}
 	for _, file := range listing {
@@ -731,11 +221,11 @@ func listFolders(row *game.Game, listing []files.File) []string {
 		}
 
 		if files.Classify(rel) == files.FormatScript {
-			folders[findFolder(row, rel)] = true
+			folders[findFolder(dialect, rel)] = true
 		}
 	}
 
-	for _, declaration := range row.ListDeclarations() {
+	for _, declaration := range dialect.ListDeclarations() {
 		if present[declaration.Folder] {
 			folders[declaration.Folder] = true
 		}
@@ -746,16 +236,17 @@ func listFolders(row *game.Game, listing []files.File) []string {
 	return slices.Sorted(maps.Keys(folders))
 }
 
-// findFolder returns the folder of the database that a script file belongs
-// to: the file itself if a row names it, else the nearest folder above it
-// that a row names, else the file's own folder.
-func findFolder(row *game.Game, rel string) string {
-	if _, ok := row.FindDeclaration(rel); ok {
+// findFolder returns the folder of the database a script file belongs to.
+// It is the file itself where a declaration names the file, else the
+// nearest folder above it that a declaration names, else the folder the
+// file is in.
+func findFolder(dialect *lang.Dialect, rel string) string {
+	if _, ok := dialect.FindDeclaration(rel); ok {
 		return rel
 	}
 
 	for dir := path.Dir(rel); dir != "."; dir = path.Dir(dir) {
-		if _, ok := row.FindDeclaration(dir); ok {
+		if _, ok := dialect.FindDeclaration(dir); ok {
 			return dir
 		}
 	}
@@ -763,438 +254,176 @@ func findFolder(row *game.Game, rel string) string {
 	return path.Dir(rel)
 }
 
-// fireContents are the contents of the databases that fire and are fired. A
-// message is fired when an effect sends it.
-var fireContents = []game.Contents{
-	game.ContentsEvents, game.ContentsOnActions, game.ContentsDecisions, game.ContentsMessages,
+// fireContents are the kinds of database whose definitions fire one another:
+// events, on_actions, decisions and messages. A message is fired when an
+// effect sends it.
+var fireContents = []lang.Contents{
+	lang.ContentsEvents, lang.ContentsOnActions, lang.ContentsDecisions, lang.ContentsMessages,
 }
 
-// buildDatabases builds the game's databases, one for each folder and
-// nesting, and those the GUI files declare.
-func (s *Schema) buildDatabases(row *game.Game, folders []string) {
+// buildDatabases makes a database for each folder, for each database nested
+// in one, for the widgets, types, text formats and text icons that GUI
+// files declare, and for the events' namespaces. It then records which
+// database holds the events, the messages, the lists, the game concepts,
+// the modifier types and the on_actions, each only where exactly one does,
+// and which hold the scripted effects and the script values.
+func (b *builder) buildDatabases(dialect *lang.Dialect, folders []string) {
 	for _, folder := range folders {
-		declaration, _ := row.FindDeclaration(folder)
-		if slices.Contains(s.Setups, folder) {
-			declaration, _ = row.FindDeclaration(game.SetupFolder)
+		declaration, _ := dialect.FindDeclaration(folder)
+		if slices.Contains(b.Setups, folder) {
+			declaration, _ = dialect.FindDeclaration(lang.SetupFolder)
 		}
 
 		declaration.Folder = folder
-		declaration.Nestings = row.ListNestings(declaration)
-		s.buildDatabase(row, game.ToDatabase(folder), declaration)
-		s.buildNested(row, declaration.Nestings)
+		declaration.Nestings = dialect.ListNestings(declaration)
+		b.buildDatabase(dialect, lang.ToDatabase(folder), declaration)
+		b.buildNested(dialect, declaration.Nestings)
 	}
 
 	names := []string{
-		game.GUI.WidgetDatabase, game.GUI.WidgetTypes, game.GUI.TextFormats, game.GUI.TextIcons, game.EventNamespaces,
+		lang.GUIWidgetDatabase, lang.GUIWidgetTypes, lang.GUITextFormats, lang.GUITextIcons, lang.EventNamespaces,
 	}
-	for _, declaring := range game.GUI.Declares {
-		names = append(names, game.GUI.DatabasePrefix+declaring)
+	for _, declaring := range lang.GUIDeclares {
+		names = append(names, lang.GUIDatabasePrefix+declaring)
 	}
 
 	for _, label := range names {
-		s.buildDatabase(row, label, row.LookupDeclaration(label))
+		b.buildDatabase(dialect, label, dialect.LookupDeclaration(label))
 	}
 
-	housed := map[game.Contents][]string{}
-	for label, database := range s.Databases {
+	housed := map[lang.Contents][]string{}
+	for label, database := range b.Databases {
 		housed[database.Declaration.Contents] = append(housed[database.Declaration.Contents], label)
 
-		// the effects and value callables are the first label in order whose
-		// called definitions have that shape
+		// of the databases whose definitions are called and hold effects,
+		// the first by name is taken, and the same for script values
 		called, shape := len(database.Declaration.Callers) > 0, database.Declaration.Shape
 		switch {
-		case called && shape == game.ShapeEffects && (s.Effects == "" || label < s.Effects):
-			s.Effects = label
-		case called && shape == game.ShapeValue && (s.Values == "" || label < s.Values):
-			s.Values = label
+		case called && shape == lang.ShapeEffects && (b.Effects == "" || label < b.Effects):
+			b.Effects = label
+		case called && shape == lang.ShapeValue && (b.Values == "" || label < b.Values):
+			b.Values = label
 		}
 	}
 
-	findOnly := func(contents game.Contents) string {
+	findOnly := func(contents lang.Contents) string {
 		if len(housed[contents]) == 1 {
 			return housed[contents][0]
 		}
 
 		return ""
 	}
-	s.Events, s.Messages, s.Lists = findOnly(game.ContentsEvents), findOnly(game.ContentsMessages),
-		findOnly(game.ContentsLists)
-	s.Concepts, s.ModifierTypes = findOnly(game.ContentsConcepts), findOnly(game.ContentsModifiers)
-	s.OnActions = findOnly(game.ContentsOnActions)
+	b.Events, b.Messages, b.Lists = findOnly(lang.ContentsEvents), findOnly(lang.ContentsMessages),
+		findOnly(lang.ContentsLists)
+	b.Concepts, b.ModifierTypes = findOnly(lang.ContentsConcepts), findOnly(lang.ContentsModifiers)
+	b.OnActions = findOnly(lang.ContentsOnActions)
 
 	for _, house := range fireContents {
-		s.FireDatabases = append(s.FireDatabases, housed[house]...)
+		b.FireDatabases = append(b.FireDatabases, housed[house]...)
 	}
 
-	slices.Sort(s.FireDatabases)
-	s.declareWidgets(slices.Concat(slices.Collect(maps.Keys(game.GUI.Types)), row.GUI.Undeclared))
-	s.listCallees()
+	slices.Sort(b.FireDatabases)
+	b.DeclareWidgets(slices.Concat(slices.Collect(maps.Keys(lang.BuiltinWidgets)), dialect.UndeclaredWidgets))
+	b.listCallees()
 }
 
-// buildDatabase adds one database built from its declaration, keeping only
-// the references and the fields that hold for the game. It does nothing if
-// the schema has it already. A database with a target, such as the history
-// of titles, names no data type, since its definitions are the target's.
-func (s *Schema) buildDatabase(row *game.Game, label string, declaration game.Declaration) {
-	if s.Databases[label] != nil {
+// buildDatabase adds a database of the given name from its declaration,
+// with only the rows of the declaration that hold for the game. It does
+// nothing if the database exists. It also records the database under the
+// words of its name, so that "government type" leads to governments. A
+// database whose definitions each stand for a scope, such as the history of
+// titles, is recorded under no words.
+func (b *builder) buildDatabase(dialect *lang.Dialect, label string, declaration lang.Declaration) {
+	if b.Databases[label] != nil {
 		return
 	}
 
-	declaration.References = slices.DeleteFunc(slices.Clone(declaration.References), func(reference game.Reference) bool {
-		return !row.Matches(reference.Games)
+	declaration.References = slices.DeleteFunc(slices.Clone(declaration.References), func(reference lang.KeyReference) bool {
+		return !dialect.Matches(reference.Games)
 	})
-	declaration.Fields = slices.DeleteFunc(slices.Clone(declaration.Fields), func(field game.DatabaseField) bool {
-		return !row.Matches(field.Games)
+	declaration.Fields = slices.DeleteFunc(slices.Clone(declaration.Fields), func(field lang.DatabaseField) bool {
+		return !dialect.Matches(field.Games)
 	})
-	s.Databases[label] = &Database{
-		Name: label, Field: &Field{}, Declaration: declaration, Precedence: row.LookupPrecedence(declaration, label),
+	b.Databases[label] = &lang.Database{
+		Name: label, Field: &lang.Field{}, Declaration: declaration, Precedence: dialect.LookupPrecedence(declaration, label),
 	}
+
 	for _, key := range declaration.DeclaringKeys {
-		s.InlineDatabases[key] = label
+		b.InlineDatabases[key] = label
 	}
 
 	if declaration.Target != "" {
 		return
 	}
 
-	// of two databases with the same phrase, the one named exactly by it keeps
-	// it, else neither
-	phrase := game.DescribeDefinition(label, false)
+	// where two databases have the same words, the one whose name is
+	// exactly those words keeps them, and neither does where neither is
+	phrase := lang.DescribeDefinition(label, false)
 	owner := label
-	if earlier, ok := s.TypeDatabases[phrase]; ok && !isNamedExactly(label, phrase) {
+	if earlier, ok := b.TypeDatabases[phrase]; ok && !isNamedExactly(label, phrase) {
 		owner = ""
 		if isNamedExactly(earlier, phrase) {
 			owner = earlier
 		}
 	}
 
-	s.TypeDatabases[phrase] = owner
+	b.TypeDatabases[phrase] = owner
 }
 
-// buildNested adds the database each nesting defines in, with the nesting's
-// own precedence where it states one, and lists it as nested in its parent.
-// A nesting that defines in its parent's own database adds none.
-func (s *Schema) buildNested(row *game.Game, nestings []game.Nesting) {
+func isNamedExactly(label, phrase string) bool {
+	return label == strings.ReplaceAll(phrase, " ", "_")
+}
+
+// buildNested adds the database of each nesting that has one of its own,
+// and lists it in its parent database. A nesting whose definitions belong
+// to its parent's database adds none.
+func (b *builder) buildNested(dialect *lang.Dialect, nestings []lang.Nesting) {
 	for _, nesting := range nestings {
 		if nesting.Database == "" {
 			continue
 		}
 
 		label := nesting.Label()
-		declaration := game.Declaration{Target: nesting.Target}
+		declaration := lang.Declaration{Target: nesting.Target}
 		if nesting.Precedence.Keeps != "" {
-			declaration.Precedences = []game.Precedence{nesting.Precedence}
+			declaration.Precedences = []lang.Precedence{nesting.Precedence}
 		}
 
-		s.buildDatabase(row, label, declaration)
-		if parent := s.Databases[game.ToDatabase(nesting.Parent)]; parent != nil && !slices.Contains(parent.Nested, label) {
+		b.buildDatabase(dialect, label, declaration)
+		if parent := b.Databases[lang.ToDatabase(nesting.Parent)]; parent != nil && !slices.Contains(parent.Nested, label) {
 			parent.Nested = append(parent.Nested, label)
 		}
 	}
 }
 
-// buildFields gives each field that a database's declaration names what the
-// row states: its shape, its weights and its hover text.
-func (s *Schema) buildFields() {
-	for _, database := range s.Databases {
+// listCallees records, for each kind of caller, such as a trigger block,
+// the databases whose definitions it may call.
+func (b *builder) listCallees() {
+	for _, label := range lang.Called {
+		if database := b.Databases[label]; database != nil {
+			for _, caller := range database.Declaration.Callers {
+				b.Callees[caller] = append(b.Callees[caller], label)
+			}
+		}
+	}
+}
+
+// buildFields gives each field that a database's declaration lists what its
+// row says: what its block holds, whether its key is a chance, and its
+// hover text.
+func (b *builder) buildFields() {
+	for _, database := range b.Databases {
 		for _, entry := range database.Declaration.Fields {
 			field := database.Field
 			for key := range strings.SplitSeq(entry.KeyPath, "/") {
-				field = field.buildChild(key, game.SourceRegistry)
+				field = field.BuildChild(key, lang.SourceRegistry)
 			}
 
 			field.Weighted = entry.Weighted
-			field.Blurb.resolve(entry.Blurb, game.SourceRegistry)
+			field.Blurb.Resolve(entry.Blurb, lang.SourceRegistry)
 			if entry.Shape != "" {
-				field.Shape.resolve(entry.Shape, game.SourceRegistry)
+				field.Shape.Resolve(entry.Shape, lang.SourceRegistry)
 			}
 		}
 	}
-}
-
-// isNamedExactly reports whether a database's name is the given phrase with
-// underscores. The database institution is named exactly by "institution",
-// and setup/1337.institution is not.
-func isNamedExactly(label, phrase string) bool {
-	return label == strings.ReplaceAll(phrase, " ", "_")
-}
-
-// listCallees fills Callees: for each caller, the databases whose definitions
-// it can call, in name order.
-func (s *Schema) listCallees() {
-	for _, label := range game.Called {
-		if database := s.Databases[label]; database != nil {
-			for _, caller := range database.Declaration.Callers {
-				s.Callees[caller] = append(s.Callees[caller], label)
-			}
-		}
-	}
-}
-
-// declares reports whether a row or the docs state a key as a field of the
-// database's definitions. Such a key is a field, never a nested definition.
-func (d *Database) declares(key string) bool {
-	child := d.Field.findChild(key)
-
-	return child != nil && child.Source != game.SourceNone && child.Source <= game.SourceDocs
-}
-
-// FindDatabase returns the database that a file belongs to, going by its path
-// from its stage folder and the game's folder rules. It returns false if no
-// database claims the file.
-func (s *Schema) FindDatabase(file files.File) (*Database, bool) {
-	for folder := file.StageRel(); folder != "."; folder = path.Dir(folder) {
-		if database, ok := s.Databases[game.ToDatabase(folder)]; ok && database.Declaration.Folder == folder {
-			return database, true
-		}
-	}
-
-	return nil, false
-}
-
-// classDatabases maps the dumps' class names that no naming rule resolves to
-// their database's path.
-var classDatabases = map[string]string{
-	"CCultureInnovationTypeDatabase":     "culture/innovations",
-	"CCultureTraditionDatabase":          "culture/traditions",
-	"CCourtPositionTypesDatabase":        "court_positions/types",
-	"CTravelPointOfInterestTypeDatabase": "travel/point_of_interest_types",
-}
-
-// FindDatabaseByClass returns the database that a class in the dumps refers
-// to, such as CTraitDatabase. It returns false if there is none.
-func (s *Schema) FindDatabaseByClass(class string) (*Database, bool) {
-	words := strings.TrimPrefix(class, "C")
-	if lower := strings.ToLower(words); strings.HasSuffix(lower, "database") {
-		words = words[:len(words)-len("database")]
-	}
-
-	label, ok := s.ResolveTypeDatabase(words)
-	if folder, listed := classDatabases[class]; listed {
-		label, ok = game.ToDatabase(folder), true
-	}
-
-	database := s.Databases[label]
-
-	return database, ok && database != nil
-}
-
-// ResolveTypeDatabase returns the database that holds a data type's names,
-// such as governments for GovernmentType. It returns false unless there is
-// exactly one.
-func (s *Schema) ResolveTypeDatabase(dataType string) (string, bool) {
-	phrase := ToPhrase(dataType)
-	label, ok := s.TypeDatabases[phrase]
-	if stem, isTyped := strings.CutSuffix(phrase, " type"); !ok && isTyped {
-		label = s.TypeDatabases[stem]
-	}
-
-	return label, label != ""
-}
-
-// ToPhrase returns a CamelCase or snake_case text as lower-case words
-// separated by spaces.
-func ToPhrase(text string) string {
-	var words strings.Builder
-	var previous rune
-	for _, r := range text {
-		if unicode.IsUpper(r) && (unicode.IsLower(previous) || unicode.IsDigit(previous)) {
-			words.WriteByte(' ')
-		}
-
-		if r == '_' {
-			r = ' '
-		}
-
-		words.WriteRune(unicode.ToLower(r))
-		previous = r
-	}
-
-	return words.String()
-}
-
-// JoinNested returns the name of a nested definition from its holder's name
-// and its key, such as NAI|X. It is the key if there is no separator or
-// holder.
-func (s *Schema) JoinNested(database, holder, key string) string {
-	separator := s.findSeparator(database)
-	if separator == "" || holder == "" {
-		return key
-	}
-
-	return holder + separator + key
-}
-
-// SplitNested returns the key of a definition's name in a nested database, X
-// for NAI|X. Any other name is its own key.
-func (s *Schema) SplitNested(database, nested string) string {
-	separator := s.findSeparator(database)
-	if _, key, ok := strings.Cut(nested, separator); ok && separator != "" {
-		return key
-	}
-
-	return nested
-}
-
-// findSeparator returns the separator that the holder of a nested database
-// writes, such as the | of NAI|X. It returns "" if there is none.
-func (s *Schema) findSeparator(database string) string {
-	parent, _, nested := strings.CutLast(database, ".")
-	if !nested {
-		return ""
-	}
-
-	if holder := s.Databases[parent]; holder != nil {
-		return holder.Declaration.Separator
-	}
-
-	return ""
-}
-
-// IsCaseless reports whether the database's names match without regard to
-// case.
-func (d *Database) IsCaseless() bool {
-	return d.Declaration.FoldsCase
-}
-
-// MatchValue reports whether a written value fits what a field takes. A
-// scalar never fits a color or a block. A choice fits in any case if its
-// database ignores case. A target fits a link, or a name if the field names a
-// database.
-func (s *Schema) MatchValue(expected Expected, text string) bool {
-	unquoted := strings.Trim(text, `"`)
-	switch expected.Type {
-	case ValueTypeBool:
-		return slices.Contains(game.Bools, text)
-
-	case ValueTypeNumber:
-		return jomini.Classify(text) == jomini.ClassNumber
-
-	case ValueTypeDate:
-		_, ok := jomini.ParseDate(text)
-		return ok
-
-	case ValueTypeChoice:
-		database := s.Databases[expected.Database]
-		folds := database != nil && database.IsCaseless()
-		return slices.ContainsFunc(expected.Choices, func(choice string) bool {
-			return choice == unquoted || folds && strings.EqualFold(choice, unquoted)
-		})
-
-	case ValueTypeReference:
-		return jomini.Classify(unquoted).IsIdentifier()
-
-	case ValueTypeTarget:
-		return s.IsLink(unquoted) || expected.Database != "" && jomini.Classify(unquoted).IsIdentifier()
-
-	case ValueTypeColor, ValueTypeBlock:
-		return false
-
-	case ValueTypeText:
-		return text != unquoted || jomini.Classify(text).IsIdentifier()
-
-	case ValueTypeCall:
-		_, ok := jomini.ParseBracketed(unquoted, 0)
-		return ok
-	}
-
-	return true
-}
-
-// namesDatabase reports whether a value is a name of a database: a reference,
-// or a target that a name can be.
-func (e Expected) namesDatabase() bool {
-	return e.Database != "" && (e.Type == ValueTypeReference || e.Type == ValueTypeTarget)
-}
-
-// IsStated reports whether any source states the claim.
-func (c Claim[T]) IsStated() bool { return c.Source != game.SourceNone }
-
-// resolve sets the claim to the given value and source if the claim states
-// nothing yet or the source outranks the one it states. A lower source number
-// is a higher rank.
-func (c *Claim[T]) resolve(value T, source game.Source) {
-	if !c.IsStated() || source < c.Source {
-		*c = Claim[T]{Value: value, Source: source}
-	}
-}
-
-// take states another claim's value where its source outranks this one's, or
-// where this one states nothing.
-func (c *Claim[T]) take(other Claim[T]) {
-	if other.IsStated() {
-		c.resolve(other.Value, other.Source)
-	}
-}
-
-// take gives a field each claim of the given claims that it does not state,
-// or that outranks its own. It leaves Keys alone, since only the game's own
-// files state it.
-func (f *Field) take(other Claims) {
-	f.Value.take(other.Value)
-	f.Shape.take(other.Shape)
-	f.Required.take(other.Required)
-	f.Default.take(other.Default)
-	f.Blurb.take(other.Blurb)
-}
-
-// walkField calls the given function on each field below a field with its
-// key, depth first in key order.
-func walkField(field *Field, visit func(key string, child *Field)) {
-	for _, key := range slices.Sorted(maps.Keys(field.Children)) {
-		child := field.Children[key]
-		visit(key, child)
-		walkField(child, visit)
-	}
-}
-
-// buildChild returns the field's child for a key, adding one if there is
-// none. A child with no source takes the given source.
-func (f *Field) buildChild(key string, source game.Source) *Field {
-	if f.Children == nil {
-		f.Children = map[string]*Field{}
-	}
-
-	if f.Children[key] == nil {
-		f.Children[key] = &Field{}
-	}
-
-	child := f.Children[key]
-	child.Source = cmp.Or(child.Source, source)
-
-	return child
-}
-
-// findChild returns the field's child for a key, or nil if there is none. A
-// nil field has none.
-func (f *Field) findChild(key string) *Field {
-	if f == nil {
-		return nil
-	}
-
-	return f.Children[key]
-}
-
-// claimsDatabase reports whether a field's value claim says the value is a
-// name in a database. A nil field claims none.
-func (f *Field) claimsDatabase() bool {
-	return f != nil && f.Value.Value.namesDatabase()
-}
-
-// findNumberChild returns the field's child for a key, else its <number>
-// child if the key's class is a number or a date. It returns nil if there is
-// none.
-func (f *Field) findNumberChild(key string, class jomini.Class) *Field {
-	if child := f.findChild(key); child != nil || !class.IsNumberKey() {
-		return child
-	}
-
-	return f.findChild(jomini.NumberKey)
-}
-
-// findPatternChild returns the field's child for a key, else its <number>
-// child if the key's class is a number or a date, else its <any> child. It
-// returns nil if there is none.
-func (f *Field) findPatternChild(key string, class jomini.Class) *Field {
-	return cmp.Or(f.findNumberChild(key, class), f.findChild(game.AnyKey))
 }

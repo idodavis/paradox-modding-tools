@@ -13,12 +13,13 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/schema"
 )
 
 // scanInstall builds the schema of an install, scans the install with it, and
 // returns both and the scan's time.
-func scanInstall(t *testing.T, gameID, install string) (*schema.Schema, *Index, time.Duration) {
+func scanInstall(t *testing.T, gameID, install string) (*lang.Schema, *Index, time.Duration) {
 	t.Helper()
 
 	row := game.LookupGame(gameID)
@@ -32,7 +33,7 @@ func scanInstall(t *testing.T, gameID, install string) (*schema.Schema, *Index, 
 		t.Fatal(err)
 	}
 
-	built, err := schema.Build(row, install, mounts.Files, ParseFile)
+	built, err := schema.Build(lang.LookupDialect(gameID), row.FindDumpDirs(install), install, mounts.Files, ParseFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +45,7 @@ func scanInstall(t *testing.T, gameID, install string) (*schema.Schema, *Index, 
 }
 
 // scanFixture scans the CK3 fixture install.
-func scanFixture(t *testing.T) (*schema.Schema, *Index) {
+func scanFixture(t *testing.T) (*lang.Schema, *Index) {
 	t.Helper()
 
 	install, err := filepath.Abs(filepath.Join("..", "testdata", "ck3"))
@@ -107,13 +108,13 @@ func TestResolveReferenceFindsDefinition(t *testing.T) {
 	_, scanned := scanFixture(t)
 
 	for _, database := range []string{"events", ""} {
-		sites := scanned.Resolve(schema.Reference{Database: database, Name: "v.2"})
+		sites := scanned.Resolve(lang.Reference{Database: database, Name: "v.2"})
 		if len(sites) != 1 || scanned.File(sites[0]).Rel != "events/v_events.txt" {
 			t.Errorf("v.2 in %q: %v", database, sites)
 		}
 	}
 
-	if sites := scanned.Resolve(schema.Reference{Database: "events", Name: "v.404"}); len(sites) != 0 {
+	if sites := scanned.Resolve(lang.Reference{Database: "events", Name: "v.404"}); len(sites) != 0 {
 		t.Errorf("v.404: %v", sites)
 	}
 }
@@ -228,7 +229,7 @@ func TestScanInstalls(t *testing.T) {
 // start with the given prefix: the schema as indented JSON, and the index as
 // one line per file. Two dumps of one install differ only where the schema or
 // the index does.
-func dumpInstall(t *testing.T, prefix string, built *schema.Schema, scanned *Index) {
+func dumpInstall(t *testing.T, prefix string, built *lang.Schema, scanned *Index) {
 	t.Helper()
 
 	text, err := json.MarshalIndent(built, "", " ")
@@ -294,7 +295,7 @@ func describeFile(scanned *Index, position int32) string {
 
 // scanFixtureMods scans the CK3 fixture mod over the fixture install, the mod
 // replacing the opinion modifiers folder.
-func scanFixtureMods(t *testing.T) (*schema.Schema, *Index, *Index) {
+func scanFixtureMods(t *testing.T) (*lang.Schema, *Index, *Index) {
 	t.Helper()
 
 	built, install := scanFixture(t)
@@ -317,7 +318,7 @@ func scanFixtureMods(t *testing.T) (*schema.Schema, *Index, *Index) {
 func findDefinition(t *testing.T, index *Index, database, name string) Site {
 	t.Helper()
 
-	sites := index.Resolve(schema.Reference{Database: database, Name: name})
+	sites := index.Resolve(lang.Reference{Database: database, Name: name})
 	if len(sites) == 0 {
 		t.Fatalf("no %s %s", database, name)
 	}
@@ -331,46 +332,46 @@ func findDefinition(t *testing.T, index *Index, database, name string) Site {
 func TestFindWinnerKeepsByPrecedence(t *testing.T) {
 	_, install, mods := scanFixtureMods(t)
 
-	sites := mods.Resolve(schema.Reference{Database: "traits", Name: "brave"})
+	sites := mods.Resolve(lang.Reference{Database: "traits", Name: "brave"})
 	if len(sites) != 2 || mods.File(sites[0]).Rel != "common/traits/v_traits.txt" ||
 		mods.File(sites[1]).Rel != "common/traits/m_traits.txt" {
 		t.Fatalf("brave is defined at %v", sites)
 	}
 
 	vanilla, modded := sites[0], sites[1]
-	last, ok := mods.FindWinner(sites, game.Precedence{Keeps: game.KeepLast})
-	if !ok || last.Site != vanilla || last.Reason != game.ReasonLast {
+	last, ok := mods.FindWinner(sites, lang.Precedence{Keeps: lang.KeepLast})
+	if !ok || last.Site != vanilla || last.Reason != lang.ReasonLast {
 		t.Errorf("last: %+v %v", last, ok)
 	}
 
-	first, ok := mods.FindWinner(sites, game.Precedence{Keeps: game.KeepFirst})
-	if !ok || first.Site != modded || first.Reason != game.ReasonFirst {
+	first, ok := mods.FindWinner(sites, lang.Precedence{Keeps: lang.KeepFirst})
+	if !ok || first.Site != modded || first.Reason != lang.ReasonFirst {
 		t.Errorf("first: %+v %v", first, ok)
 	}
 
 	mods.Occurrences[modded.File][modded.Occurrence].Priority = 5
-	highest, ok := mods.FindWinner(sites, game.Precedence{Keeps: game.KeepHighest})
-	if !ok || highest.Site != modded || highest.Reason != game.ReasonPriority {
+	highest, ok := mods.FindWinner(sites, lang.Precedence{Keeps: lang.KeepHighest})
+	if !ok || highest.Site != modded || highest.Reason != lang.ReasonPriority {
 		t.Errorf("highest: %+v %v", highest, ok)
 	}
 
 	install.Occurrences[vanilla.File][vanilla.Occurrence].Priority = 9
-	if highest, ok = mods.FindWinner(sites, game.Precedence{Keeps: game.KeepHighest}); !ok || highest.Site != vanilla {
+	if highest, ok = mods.FindWinner(sites, lang.Precedence{Keeps: lang.KeepHighest}); !ok || highest.Site != vanilla {
 		t.Errorf("a higher priority in the other: %+v %v", highest, ok)
 	}
 
 	mods.Occurrences[modded.File][modded.Occurrence].Mode = uint8(mods.Modes.Intern("INJECT"))
-	modes := game.Precedence{Keeps: game.KeepFirst, Modes: game.ModePlaceEntry}
+	modes := lang.Precedence{Keeps: lang.KeepFirst, Modes: lang.ModePlaceEntry}
 
 	// The mod's file loads before the install's, but its mode acts after the
 	// install's plain definition.
 	injected, ok := mods.FindWinner(sites, modes)
-	if !ok || injected.Site != vanilla || injected.Reason != game.ReasonFirst || len(injected.Merged) != 2 {
+	if !ok || injected.Site != vanilla || injected.Reason != lang.ReasonFirst || len(injected.Merged) != 2 {
 		t.Errorf("inject: %+v %v", injected, ok)
 	}
 
 	mods.Occurrences[modded.File][modded.Occurrence].Mode = uint8(mods.Modes.Intern("REPLACE"))
-	if replaced, ok := mods.FindWinner(sites, modes); !ok || replaced.Site != modded || replaced.Reason != game.ReasonMode {
+	if replaced, ok := mods.FindWinner(sites, modes); !ok || replaced.Site != modded || replaced.Reason != lang.ReasonMode {
 		t.Errorf("replace: %+v %v", replaced, ok)
 	}
 }

@@ -7,10 +7,10 @@ class: a word, a number, a date, a chain of links, a parameter, a constant, a da
 and data calls, and writes a tree's text again in an even layout. The rules it reads by, and what it does with a text
 that breaks them, are its package doc in [tree.go](tree.go).
 
-What a key means is the [schema](../schema/README.md)'s question, and what a game reads is [game](../game/README.md)'s.
+What a key means is [lang](../lang/README.md)'s question, and what a game reads is [files](../files/README.md)'s.
 This package never imports `game`.
 
-**Uses** nothing else of PMT · **Used by** the rest of the engine ([loc](../loc/README.md), [game](../game/README.md),
+**Uses** nothing else of PMT · **Used by** the rest of the engine ([loc](../loc/README.md), [lang](../lang/README.md),
 [schema](../schema/README.md), [index](../index/README.md)) and the services that read script.
 
 ```mermaid

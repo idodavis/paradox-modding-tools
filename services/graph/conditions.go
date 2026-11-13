@@ -8,10 +8,9 @@ import (
 
 	"github.com/samber/lo"
 
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -87,7 +86,7 @@ func findPhrase(key string) (phrase, string) {
 // findCondition returns the limit of a block in words, else its trigger. It
 // returns nil if it holds neither.
 func findCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Condition {
-	for _, key := range []string{game.LimitKey, game.TriggerKey} {
+	for _, key := range []string{lang.LimitKey, lang.TriggerKey} {
 		if child, ok := tree.FindChild(statement, key); ok && tree.Statements[child].IsBlock() {
 			return listConditions(ws, mods, tree, child)
 		}
@@ -137,8 +136,8 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	link := links[0]
 	prefix, label := condition.Value[link.Prefix.Start:link.Prefix.End], condition.Value[link.Name.Start:link.Name.End]
 	if database, _ := ws.Schema.LookupPrefix(prefix); len(links) == 1 && !link.Prefix.IsEmpty() && database != "" {
-		if winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: database, Name: label}); ok {
-			condition.Title = toTitle(ws, mods, ws.LookupDefinitionText(mods, winner.Site, game.TitleKey))
+		if winner, ok := mods.FindKept(ws.Schema, lang.Reference{Database: database, Name: label}); ok {
+			condition.Title = toTitle(ws, mods, ws.LookupDefinitionText(mods, winner.Site, lang.TitleKey))
 		}
 	}
 	if keyword.ValueFirst {
@@ -173,7 +172,7 @@ func foldCondition(condition Condition, keyword phrase) Condition {
 // key in words and that key.
 func describeCover(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (string, string) {
 	key := tree.Unquoted(tree.Statements[statement].Value)
-	if label, ok := tree.FindChildValue(statement, game.LabelKey); ok {
+	if label, ok := tree.FindChildValue(statement, lang.LabelKey); ok {
 		key = label
 	}
 	text, _, ok := ws.LookupText(mods, key)

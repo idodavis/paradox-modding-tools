@@ -9,16 +9,15 @@ import (
 	"unicode"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
 )
 
 // Problem is one thing wrong in a file: one the walk recorded, or one the
 // index decides.
 type Problem struct {
-	schema.Problem
+	lang.Problem
 
 	// Elsewhere is where the whole workspace defines a name that the file's
 	// mod and its dependencies do not. It is nil for none.
@@ -45,8 +44,8 @@ type judge struct {
 	// with every mod.
 	index, whole *Index
 
-	schema    *schema.Schema
-	document  schema.Document
+	schema    *lang.Schema
+	document  lang.Document
 	languages []string
 	parse     func(path string) (*jomini.Tree, error)
 
@@ -55,7 +54,7 @@ type judge struct {
 
 	// copies holds the document's definitions by database and name. The index
 	// may hold an older, saved copy of the file.
-	copies map[string][]*schema.Copy
+	copies map[string][]*lang.Copy
 
 	problems []Problem
 }
@@ -64,7 +63,7 @@ type judge struct {
 // are written: those its walk recorded and those that need every file. The
 // parser reads the other files of a merged definition.
 func (i *Index) ListProblems(
-	schema *schema.Schema, whole *Index, document schema.Document, languages []string,
+	schema *lang.Schema, whole *Index, document lang.Document, languages []string,
 	parse func(path string) (*jomini.Tree, error),
 ) []Problem {
 	judge := &judge{
@@ -113,7 +112,7 @@ func (i *Index) ListProblems(
 }
 
 func (j *judge) buildCopies() {
-	j.copies = map[string][]*schema.Copy{}
+	j.copies = map[string][]*lang.Copy{}
 	for position := range j.document.Contexts {
 		if context := &j.document.Contexts[position]; context.Defines {
 			id := toID(context.Definition)
@@ -122,8 +121,8 @@ func (j *judge) buildCopies() {
 	}
 }
 
-func toID(definition *schema.Copy) string {
-	return schema.Reference{Database: definition.Database, Name: definition.Name}.ToID()
+func toID(definition *lang.Copy) string {
+	return lang.Reference{Database: definition.Database, Name: definition.Name}.ToID()
 }
 
 func (j *judge) add(code string, span jomini.Span, facts map[string]string) {
@@ -132,8 +131,8 @@ func (j *judge) add(code string, span jomini.Span, facts map[string]string) {
 
 // findKept returns the winner the given index keeps for a reference: its
 // message for a localization key, else its definition.
-func (j *judge) findKept(index *Index, reference schema.Reference) (Winner, bool) {
-	if reference.Database == game.Localization {
+func (j *judge) findKept(index *Index, reference lang.Reference) (Winner, bool) {
+	if reference.Database == lang.Localization {
 		return index.FindText(reference.Name, j.languages)
 	}
 
@@ -143,7 +142,7 @@ func (j *judge) findKept(index *Index, reference schema.Reference) (Winner, bool
 // judgeRequired records each key a definition must write and does not. Only a
 // source firm enough to accuse makes a key required, and a key a merged copy
 // writes is not missing.
-func (j *judge) judgeRequired(statement int32, context *schema.Context) {
+func (j *judge) judgeRequired(statement int32, context *lang.Context) {
 	definition := context.Definition
 	if !context.Defines || definition.Mode != "" {
 		return
@@ -156,7 +155,7 @@ func (j *judge) judgeRequired(statement int32, context *schema.Context) {
 
 	var missing []string
 	for key, field := range context.Field.Children {
-		required := field.Required.Value == schema.RequirementAlways && field.Required.Source.CanAccuse()
+		required := field.Required.Value == lang.RequirementAlways && field.Required.Source.CanAccuse()
 		_, written := j.document.Tree.FindChild(statement, key)
 		if required && !written && !strings.HasPrefix(key, "<") {
 			missing = append(missing, key)
@@ -167,7 +166,7 @@ func (j *judge) judgeRequired(statement int32, context *schema.Context) {
 		return
 	}
 
-	reference := schema.Reference{Database: definition.Database, Name: definition.Name}
+	reference := lang.Reference{Database: definition.Database, Name: definition.Name}
 	winner, _ := j.findKept(j.index, reference)
 	slices.Sort(missing)
 	for _, key := range missing {
@@ -175,14 +174,14 @@ func (j *judge) judgeRequired(statement int32, context *schema.Context) {
 			continue
 		}
 
-		facts := schema.DescribeReference(reference)
+		facts := lang.DescribeReference(reference)
 		facts["key"] = key
 		j.add(ProblemRequired, definition.Span, facts)
 	}
 }
 
 // isWritten reports whether another copy the winner merges writes a key.
-func (j *judge) isWritten(winner Winner, definition *schema.Copy, key string) bool {
+func (j *judge) isWritten(winner Winner, definition *lang.Copy, key string) bool {
 	mergesOwn := false
 	for _, site := range winner.Merged {
 		if site.File == j.position {
@@ -202,7 +201,7 @@ func (j *judge) isWritten(winner Winner, definition *schema.Copy, key string) bo
 		}
 	}
 
-	return mergesOwn && slices.ContainsFunc(j.copies[toID(definition)], func(other *schema.Copy) bool {
+	return mergesOwn && slices.ContainsFunc(j.copies[toID(definition)], func(other *lang.Copy) bool {
 		_, written := j.document.Tree.FindChild(other.Statement, key)
 
 		return other != definition && written
@@ -211,8 +210,8 @@ func (j *judge) isWritten(winner Winner, definition *schema.Copy, key string) bo
 
 // judgeReferences records each name a statement refers to that nothing
 // defines, except a definition's title key.
-func (j *judge) judgeReferences(context *schema.Context) {
-	if context.Label == game.TitleKey && context.Parent != nil && context.Parent.Defines {
+func (j *judge) judgeReferences(context *lang.Context) {
+	if context.Label == lang.TitleKey && context.Parent != nil && context.Parent.Defines {
 		return
 	}
 
@@ -221,14 +220,14 @@ func (j *judge) judgeReferences(context *schema.Context) {
 
 // judgeMissing records each reference whose name nothing defines. References
 // at one span are alternatives, recorded only if none is known or inferred.
-func (j *judge) judgeMissing(references []schema.Reference) {
+func (j *judge) judgeMissing(references []lang.Reference) {
 	for position, reference := range references {
-		atSpan := func(other schema.Reference) bool { return other.Span == reference.Span }
+		atSpan := func(other lang.Reference) bool { return other.Span == reference.Span }
 		if slices.ContainsFunc(references[:position], atSpan) {
 			continue
 		}
 
-		var alternatives []schema.Reference
+		var alternatives []lang.Reference
 		var databases []string
 		settled := false
 		for _, other := range references {
@@ -238,7 +237,7 @@ func (j *judge) judgeMissing(references []schema.Reference) {
 
 			alternatives = append(alternatives, other)
 			settled = settled || other.Inferred || j.isKnown(other)
-			if phrase := game.DescribeDefinition(other.Database, false); !slices.Contains(databases, phrase) {
+			if phrase := lang.DescribeDefinition(other.Database, false); !slices.Contains(databases, phrase) {
 				databases = append(databases, phrase)
 			}
 		}
@@ -248,7 +247,7 @@ func (j *judge) judgeMissing(references []schema.Reference) {
 		}
 
 		code := classifyMissing(alternatives)
-		facts := map[string]string{"name": reference.Name, "database": game.JoinList(databases, "or")}
+		facts := map[string]string{"name": reference.Name, "database": lang.JoinList(databases, "or")}
 		if code == ProblemMarkup {
 			facts["why"] = "no file declares the " + facts["database"] + " " + reference.Name
 		}
@@ -264,14 +263,14 @@ func (j *judge) judgeMissing(references []schema.Reference) {
 
 // classifyMissing returns the code for a name nothing defines: the one kind
 // all its alternatives share, else an unresolved reference.
-func classifyMissing(alternatives []schema.Reference) string {
+func classifyMissing(alternatives []lang.Reference) string {
 	code := ""
 	for position, reference := range alternatives {
 		kind := ProblemUnresolved
 		switch reference.Database {
-		case game.Localization:
+		case lang.Localization:
 			kind = ProblemLocKey
-		case game.GUI.TextIcons, game.GUI.TextFormats:
+		case lang.GUITextIcons, lang.GUITextFormats:
 			kind = ProblemMarkup
 		}
 
@@ -289,12 +288,12 @@ func classifyMissing(alternatives []schema.Reference) string {
 // files use, a customizable localization the dumps name, or a definition in
 // the document's file, a file the game reads, or one only another mod's file
 // hides.
-func (j *judge) isKnown(reference schema.Reference) bool {
-	if reference.Database == game.CustomLocalization && j.schema.Customs[reference.Name] {
+func (j *judge) isKnown(reference lang.Reference) bool {
+	if reference.Database == lang.CustomLocalization && j.schema.Customs[reference.Name] {
 		return true
 	}
 
-	if reference.Database == game.File {
+	if reference.Database == lang.File {
 		if _, ok := j.index.ResolveTexture(reference.Name); ok {
 			return true
 		}
@@ -318,7 +317,7 @@ func (j *judge) isKnown(reference schema.Reference) bool {
 // findElsewhere returns where the whole workspace defines a name the
 // document's mod does not. It returns false if the document is judged with
 // every mod, or if no alternative is kept in a file the game reads.
-func (j *judge) findElsewhere(alternatives []schema.Reference) (Site, bool) {
+func (j *judge) findElsewhere(alternatives []lang.Reference) (Site, bool) {
 	if j.whole == j.index {
 		return Site{}, false
 	}
@@ -336,17 +335,17 @@ func (j *judge) findElsewhere(alternatives []schema.Reference) (Site, bool) {
 // judgeDefinition records an entry mode with nothing to act on, a tie for the
 // highest override priority, and a title key with no message. A misplaced
 // mode, which the walk recorded, is not judged again.
-func (j *judge) judgeDefinition(statement int32, definition *schema.Copy) {
+func (j *judge) judgeDefinition(statement int32, definition *lang.Copy) {
 	database := j.schema.Databases[definition.Database]
 	if database == nil || !definition.IsOwn() {
 		return
 	}
 
 	tree := j.document.Tree
-	reference := schema.Reference{Database: definition.Database, Name: definition.Name}
-	facts := schema.DescribeReference(reference)
-	misplaced := slices.ContainsFunc(j.document.Problems, func(problem schema.Problem) bool {
-		return problem.Code == schema.ProblemMode && problem.Span.End == definition.Span.Start
+	reference := lang.Reference{Database: definition.Database, Name: definition.Name}
+	facts := lang.DescribeReference(reference)
+	misplaced := slices.ContainsFunc(j.document.Problems, func(problem lang.Problem) bool {
+		return problem.Code == lang.ProblemMode && problem.Span.End == definition.Span.Start
 	})
 	switch {
 	case definition.Mode != "" && !misplaced && j.isOrphan(reference, definition.Mode):
@@ -358,7 +357,7 @@ func (j *judge) judgeDefinition(statement int32, definition *schema.Copy) {
 		j.add(ProblemPriority, definition.Span, facts)
 	}
 
-	title, ok := schema.FindTextKey(tree, statement, game.TitleKey)
+	title, ok := lang.FindTextKey(tree, statement, lang.TitleKey)
 	if !ok {
 		return
 	}
@@ -366,7 +365,7 @@ func (j *judge) judgeDefinition(statement int32, definition *schema.Copy) {
 	// a title's message counts only in a file the game reads
 	key := tree.Unquoted(tree.Statements[title].Value)
 	if _, shown := j.index.FindText(key, j.languages); !shown {
-		missing := schema.DescribeReference(reference)
+		missing := lang.DescribeReference(reference)
 		missing["key"] = key
 		j.add(ProblemTitle, definition.Span, missing)
 	}
@@ -374,8 +373,8 @@ func (j *judge) judgeDefinition(statement int32, definition *schema.Copy) {
 
 // isOrphan reports whether a definition written with the given entry mode has
 // nothing to change. An optional or creating mode never has.
-func (j *judge) isOrphan(reference schema.Reference, prefix string) bool {
-	mode, _ := game.LookupEntryMode(prefix)
+func (j *judge) isOrphan(reference lang.Reference, prefix string) bool {
+	mode, _ := lang.LookupEntryMode(prefix)
 	if mode.Optional || mode.Creates {
 		return false
 	}
@@ -388,14 +387,14 @@ func (j *judge) isOrphan(reference schema.Reference, prefix string) bool {
 // isPriorityTied reports whether a plain definition shares the highest
 // override priority with other copies. It is false for a file the game does
 // not read.
-func (j *judge) isPriorityTied(reference schema.Reference, priority int) bool {
+func (j *judge) isPriorityTied(reference lang.Reference, priority int) bool {
 	if j.position < 0 || !j.index.IsLoaded(j.position) {
 		return false
 	}
 
 	winner, ok := j.findKept(j.index, reference)
 
-	return ok && winner.Cause == game.CausePriority && int(j.index.Occurrence(winner.Site).Priority) == priority
+	return ok && winner.Cause == lang.CausePriority && int(j.index.Occurrence(winner.Site).Priority) == priority
 }
 
 // judgeMessages records the problems of a localization document: no byte
@@ -413,8 +412,8 @@ func (j *judge) judgeMessages() {
 	for position, message := range messages.Messages {
 		references := j.document.MessageContexts[position].References
 		if !held {
-			references = slices.DeleteFunc(slices.Clone(references), func(reference schema.Reference) bool {
-				return reference.Database == game.Localization
+			references = slices.DeleteFunc(slices.Clone(references), func(reference lang.Reference) bool {
+				return reference.Database == lang.Localization
 			})
 		}
 
@@ -422,8 +421,8 @@ func (j *judge) judgeMessages() {
 		j.judgeCalls(message.Segments, "")
 	}
 
-	row := j.index.row
-	if _, replaces := row.FindLocReplacement(file.Rel, messages.Language); replaces {
+	dialect := j.index.dialect
+	if _, replaces := dialect.FindLocReplacement(file.StageRel(), messages.Language); replaces {
 		return
 	}
 
@@ -436,8 +435,8 @@ func (j *judge) judgeMessages() {
 		count := counts[message.Key]
 		for _, site := range j.index.ListMessages(message.Key) {
 			other := j.index.File(site)
-			_, replaces := row.FindLocReplacement(other.Rel, messages.Language)
-			repeats := other.Origin == file.Origin || other.Origin == files.OriginVanilla && row.LogsRepeatedKey
+			_, replaces := dialect.FindLocReplacement(other.StageRel(), messages.Language)
+			repeats := other.Origin == file.Origin || other.Origin == files.OriginVanilla && dialect.LogsRepeatedKey
 			if site.File != j.position && repeats && !replaces && j.index.Language(site) == messages.Language &&
 				j.index.IsLoaded(site.File) {
 				count++
@@ -445,7 +444,7 @@ func (j *judge) judgeMessages() {
 		}
 
 		if count > 1 {
-			facts := schema.DescribeReference(schema.Reference{Database: game.Localization, Name: message.Key})
+			facts := lang.DescribeReference(lang.Reference{Database: lang.Localization, Name: message.Key})
 			facts["language"] = messages.Language
 			j.add(ProblemDuplicate, message.KeySpan, facts)
 		}
@@ -470,14 +469,14 @@ func (j *judge) judgeCalls(segments []loc.Segment, datacontext string) {
 
 		label := call.Steps[step].Text
 		isDefined := func(database string) bool {
-			return len(j.index.Resolve(schema.Reference{Database: database, Name: label})) > 0
+			return len(j.index.Resolve(lang.Reference{Database: database, Name: label})) > 0
 		}
-		saved := step == 0 && label != "" && (unicode.IsLower(rune(label[0])) || isDefined(game.SavedScopes))
-		if saved || j.schema.UnlistedCalls[before+"."+label] || slices.ContainsFunc(game.GUI.StepDatabases, isDefined) {
+		saved := step == 0 && label != "" && (unicode.IsLower(rune(label[0])) || isDefined(lang.SavedScopes))
+		if saved || j.schema.UnlistedCalls[before+"."+label] || slices.ContainsFunc(lang.GUIStepDatabases, isDefined) {
 			continue
 		}
 
-		facts := schema.DescribeReference(schema.Reference{Name: label})
+		facts := lang.DescribeReference(lang.Reference{Name: label})
 		facts["type"] = before
 		j.add(ProblemDataCall, call.Steps[step].Span, facts)
 	}

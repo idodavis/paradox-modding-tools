@@ -80,15 +80,14 @@ import (
 	"github.com/charlievieth/fastwalk"
 )
 
-// Workers is how many goroutines a parallel pass over files runs: every core
-// but two, and at least one.
+// Workers is how many goroutines a parallel pass runs: every core but two, at
+// least one.
 var Workers = max(runtime.NumCPU()-2, 1)
 
-// Format is the class of a file: script, image, localization and so on.
+// Format is the class of a file.
 type Format string
 
-// The formats a file can have. The table of extensions below says which
-// files take each, and Classify's folder rules decide the rest.
+// The formats of a file.
 const (
 	FormatScript Format = "script"
 	FormatGUI    Format = "gui"
@@ -101,35 +100,28 @@ const (
 
 	FormatImage Format = "image"
 
-	// FormatWebImage is a picture the games do not read, such as a Workshop
-	// preview: a .jpg, .jpeg, .gif or .webp.
+	// FormatWebImage is a picture the games do not read.
 	FormatWebImage Format = "web-image"
 
 	FormatTable Format = "table"
 
-	// FormatDescriptor is a mod's descriptor: a .mod file at its root, or
-	// metadata.json in its .metadata folder.
+	// FormatDescriptor is a mod's .mod file or metadata.json.
 	FormatDescriptor Format = "descriptor"
 
 	FormatShader Format = "shader"
 
-	// FormatReadme is a game's notes on its own folders, in prose: an .info
-	// file, or a .txt whose name starts with readme.
+	// FormatReadme is a game's prose notes: an .info or a readme .txt.
 	FormatReadme Format = "readme"
 
 	FormatMarkdown Format = "markdown"
 
-	// FormatText is any other text, such as .json, and script written
-	// directly at a root, which the games never read.
+	// FormatText is any other text, and script directly at a root.
 	FormatText Format = "text"
 
-	// FormatBinary is a file of an extension the games keep binary data in,
-	// such as .mesh or .dll.
 	FormatBinary Format = "binary"
 )
 
-// formats maps an extension to its format, where Classify's folder rules have
-// not decided.
+// formats maps an extension to its format.
 var formats = map[string]Format{
 	".txt": FormatScript, ".gui": FormatGUI, ".asset": FormatAsset, ".font": FormatFont, ".gfx": FormatGFX,
 	".dds": FormatImage, ".png": FormatImage, ".tga": FormatImage,
@@ -141,9 +133,7 @@ var formats = map[string]Format{
 	".pdx": FormatBinary, ".ttf": FormatBinary, ".otf": FormatBinary, ".zip": FormatBinary, ".pak": FormatBinary,
 }
 
-// Classify returns the format of a file from its path relative to its root.
-// It returns FormatText for an unknown extension and for a script file
-// directly in the root.
+// Classify returns the format of a file from its path below its root.
 func Classify(rel string) Format {
 	folder, base := path.Split(strings.ToLower(rel))
 	ext := path.Ext(base)
@@ -165,15 +155,13 @@ func Classify(rel string) Format {
 	return format
 }
 
-// IsScript reports whether files of the format are written in the script
-// language.
+// IsScript reports whether files of the format are written in script.
 func (f Format) IsScript() bool {
 	return slices.Contains([]Format{FormatScript, FormatGUI, FormatAsset, FormatFont, FormatGFX}, f)
 }
 
-// DefaultEncoding returns the encoding a file of the format is written in
-// when nothing on disk says. The games' script and localization take UTF-8
-// with a byte order mark; any other text takes UTF-8.
+// DefaultEncoding returns the encoding a new file of the format is written
+// in: UTF-8 with a byte order mark for script and localization, else UTF-8.
 func (f Format) DefaultEncoding() Encoding {
 	if f.IsScript() || f == FormatLocalization {
 		return EncodingUTF8BOM
@@ -182,57 +170,49 @@ func (f Format) DefaultEncoding() Encoding {
 	return EncodingUTF8
 }
 
-// IsText reports whether files of the format are text: all but images and
-// binaries.
+// IsText reports whether files of the format are not images or binaries.
 func (f Format) IsText() bool {
 	return !slices.Contains([]Format{FormatImage, FormatWebImage, FormatBinary}, f)
 }
 
-// Root is one folder laid out like the game's own: the game's folder, a DLC's
-// or a mod's.
+// Root is one folder laid out like the game's own.
 type Root struct {
 	Dir string `json:"dir"`
 
 	// Origin is OriginVanilla for the game's own folders, or the mod's id.
 	Origin string `json:"origin"`
 
-	// Stages are the stage folders the game mounts below the root, in the
-	// order it mounts them. They are none for a game without stages.
+	// Stages are the stage folders the game mounts, in order. They are none
+	// for a game without stages.
 	Stages []string `json:"stages"`
 
-	// ReplacePaths are the folders the mod's replace_path names, as paths
-	// from the root. They are none for the game's own folders.
+	// ReplacePaths are the folders the mod's replace_path names. They are
+	// none for the game's own folders.
 	ReplacePaths []string `json:"replacePaths"`
 }
 
-// OriginVanilla is the origin of the game's own files. A mod's files have the
-// mod's id as their origin.
+// OriginVanilla is the origin of the game's own files.
 const OriginVanilla = "vanilla"
 
-// File is one file below a root: where it is, the key it is compared by, and
-// what format it is.
+// File is one file below a root.
 type File struct {
 	Path string `json:"path"`
 
-	// Key is the one key two paths are compared by: the path cleaned,
-	// lower-cased and with forward slashes.
 	Key string `json:"key"`
 
-	// Rel is the path from the file's root, with forward slashes, and Origin
-	// is that root's.
+	// Rel is the path below the file's root, with slashes, and Origin is that
+	// root's.
 	Rel    string `json:"rel"`
 	Origin string `json:"origin"`
 
-	// Stage is the stage folder Rel opens with, as Rel writes it. It is ""
-	// for a file under no stage.
+	// Stage is the stage folder Rel opens with, or "" for none.
 	Stage string `json:"stage"`
 
 	Format Format `json:"format"`
 }
 
-// NewFile returns the file at a path below a root. It returns false if the
-// path is not below the root, as the root's own folder is not; the file then
-// has its path, key and origin, and no Rel.
+// NewFile returns the file at a path below a root. If the path is not below
+// the root, it returns false and the file has no Rel.
 func NewFile(root Root, path string) (File, bool) {
 	rel, ok := ToRel(root.Dir, path)
 	stage, _ := SplitStage(rel, root.Stages)
@@ -241,10 +221,8 @@ func NewFile(root Root, path string) (File, bool) {
 	return file, ok
 }
 
-// SplitStage splits a path from a root into the stage folder that opens it
-// and the rest, both as the path writes them. The stages are the root's, and
-// a stage is matched in any letter case. A path under no stage, or a root
-// with no stages, gives "" and the path as it is.
+// SplitStage splits a path below a root into its stage folder and the rest. A
+// stage matches in any letter case. A path under none gives "" and the path.
 func SplitStage(rel string, stages []string) (stage, rest string) {
 	head, tail, ok := strings.Cut(rel, "/")
 	if ok && slices.ContainsFunc(stages, func(folder string) bool { return strings.EqualFold(folder, head) }) {
@@ -254,9 +232,8 @@ func SplitStage(rel string, stages []string) (stage, rest string) {
 	return "", rel
 }
 
-// StageRel returns the file's path from its stage folder:
-// common/traits/00_traits.txt for in_game/common/traits/00_traits.txt. It is
-// Rel for a file under no stage.
+// StageRel returns the file's path below its stage, as common/traits/a.txt
+// for in_game/common/traits/a.txt. It is Rel for a file under no stage.
 func (f File) StageRel() string {
 	if f.Stage == "" {
 		return f.Rel
@@ -265,9 +242,8 @@ func (f File) StageRel() string {
 	return f.Rel[len(f.Stage)+1:]
 }
 
-// Walk lists every file under a root, sorted by relative path. It skips the
-// folders IsHiddenDir reports, and follows a link to a folder. A link that
-// leads nowhere lists nothing.
+// Walk lists every file under a root, sorted by Rel. It skips the folders
+// IsHiddenDir reports and follows links to folders.
 func Walk(root Root) ([]File, error) {
 	var mu sync.Mutex
 	var list []File
@@ -315,43 +291,36 @@ func Walk(root Root) ([]File, error) {
 	return list, nil
 }
 
-// IsHiddenDir reports whether a folder of the given name is one that Walk
-// skips and the watcher leaves out: a dot folder, such as .git, except
-// .metadata, where Victoria 3 and Europa Universalis 5 keep a mod's
-// descriptor.
+// IsHiddenDir reports whether a folder name is a dot folder, which Walk skips.
+// .metadata is not, as Vic3 and EU5 keep a mod's descriptor there.
 func IsHiddenDir(name string) bool {
 	return strings.HasPrefix(name, ".") && name != ".metadata"
 }
 
-// IsBinary reports whether the bytes are not text: they hold a NUL byte in
-// the first kilobyte.
+// IsBinary reports whether the bytes hold a NUL byte in the first kilobyte.
 func IsBinary(bytes []byte) bool {
 	return slices.Contains(bytes[:min(len(bytes), 1024)], 0)
 }
 
-// Ignore is a list of ignore rules with gitignore's meaning: anchoring,
-// negation and a trailing slash for folders. A nil Ignore has no rules.
+// Ignore is a list of ignore rules with gitignore's meaning. A nil Ignore has
+// no rules.
 type Ignore []pattern
 
-// pattern is one ignore rule.
 type pattern struct {
 	glob string
 
-	// negates is set for a rule written with a leading !, which takes back
-	// what an earlier rule covered.
+	// negates is set for a rule with a leading !.
 	negates bool
 
-	// dirOnly is set for a rule written with a trailing slash, which covers
-	// folders alone.
+	// dirOnly is set for a rule with a trailing slash.
 	dirOnly bool
 
-	// anchored is set for a rule matched against the whole relative path
-	// rather than its last part: one with a slash anywhere in it.
+	// anchored is set for a rule matched against the whole path.
 	anchored bool
 }
 
-// ParseIgnore parses the ignore rules in a text, one per line. It skips blank
-// lines and lines that start with `#`.
+// ParseIgnore parses ignore rules, one per line, skipping blank lines and `#`
+// comments.
 func ParseIgnore(text string) Ignore {
 	var ignore Ignore
 
@@ -366,8 +335,7 @@ func ParseIgnore(text string) Ignore {
 		rule.glob, rule.dirOnly = strings.CutSuffix(rule.glob, "/")
 		rule.glob, rule.anchored = strings.CutPrefix(rule.glob, "/")
 
-		// gitignore anchors a rule with a slash anywhere inside it, not only
-		// one that starts with a slash.
+		// gitignore anchors a rule with a slash anywhere in it.
 		rule.anchored = rule.anchored || strings.Contains(rule.glob, "/")
 
 		ignore = append(ignore, rule)
@@ -376,8 +344,8 @@ func ParseIgnore(text string) Ignore {
 	return ignore
 }
 
-// Match reports whether the rules cover the given path, relative to the root
-// with forward slashes. The flag says whether the path is a folder.
+// Match reports whether the rules cover a path below the root. A path under a
+// covered folder is covered. The flag says whether the path is a folder.
 func (i Ignore) Match(rel string, dir bool) bool {
 	for folder := path.Dir(rel); folder != "."; folder = path.Dir(folder) {
 		if i.matchRel(folder, true) {
@@ -388,8 +356,6 @@ func (i Ignore) Match(rel string, dir bool) bool {
 	return i.matchRel(rel, dir)
 }
 
-// matchRel reports whether the rules cover the given path alone, not the
-// folders above it.
 func (i Ignore) matchRel(rel string, dir bool) bool {
 	result := false
 
@@ -403,8 +369,7 @@ func (i Ignore) matchRel(rel string, dir bool) bool {
 			subject = path.Base(rel)
 		}
 
-		// The last rule that matches decides, as in gitignore, so a later rule
-		// takes back an earlier one.
+		// The last matching rule decides, as in gitignore.
 		if ok, _ := doublestar.Match(rule.glob, subject); ok {
 			result = !rule.negates
 		}

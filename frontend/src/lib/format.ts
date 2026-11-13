@@ -2,7 +2,7 @@
 import { formatTimeAgo, type UseTimeAgoMessages } from "@vueuse/core";
 import { groupBy, mapValues, sumBy } from "es-toolkit";
 
-import type { SourceState } from "@internal/schema/models";
+import type { SourceState } from "@internal/lang/models";
 import type { Header } from "@internal/texture/models";
 import type { Difference } from "@services/steam/models";
 import type { Mod, State } from "@services/workspace/models";

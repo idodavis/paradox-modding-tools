@@ -21,6 +21,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/app"
 )
 
@@ -287,7 +288,7 @@ func TestLookupDefinitionTextReadsTitleKey(t *testing.T) {
 		{"on_action", "on_birth", ""},      // no title key, and no message of its name
 	} {
 		site := findDefinition(t, mods, want.database, want.name)
-		if title := ws.LookupDefinitionText(mods, site, game.TitleKey); title != want.title {
+		if title := ws.LookupDefinitionText(mods, site, lang.TitleKey); title != want.title {
 			t.Errorf("title of %s %s: %q, want %q", want.database, want.name, title, want.title)
 		}
 	}

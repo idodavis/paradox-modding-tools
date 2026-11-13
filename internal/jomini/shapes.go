@@ -201,9 +201,28 @@ func (d Date) IsValid() bool {
 // Links splits a chain at its dots, as root.father into root and father. A dot
 // in brackets or quotes does not split. "" is one empty link.
 func Links(text string, base int) []Link {
-	var links []Link
-	depth, quoted, start := 0, false, 0
+	links := make([]Link, 0, strings.Count(text, ".")+1)
+	start := 0
+	for {
+		end := start + cutLink(text[start:])
+		links = append(links, parseLink(text[start:end], base+start))
+		if end == len(text) {
+			return links
+		}
 
+		start = end + 1
+	}
+}
+
+// FirstLink returns the first link of a chain, as root in root.father.
+func FirstLink(text string, base int) Link {
+	return parseLink(text[:cutLink(text)], base)
+}
+
+// cutLink returns where the first link of a text ends: at its first dot
+// outside brackets and quotes, else at the end of the text.
+func cutLink(text string) int {
+	depth, quoted := 0, false
 	for i := 0; i < len(text); i++ {
 		switch text[i] {
 		case '"':
@@ -214,13 +233,12 @@ func Links(text string, base int) []Link {
 			depth = max(depth-1, 0)
 		case '.':
 			if depth == 0 && !quoted {
-				links = append(links, parseLink(text[start:i], base+start))
-				start = i + 1
+				return i
 			}
 		}
 	}
 
-	return append(links, parseLink(text[start:], base+start))
+	return len(text)
 }
 
 func parseLink(text string, start int) Link {

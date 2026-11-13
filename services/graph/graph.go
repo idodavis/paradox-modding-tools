@@ -11,9 +11,8 @@ import (
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
@@ -127,7 +126,7 @@ func (gph *Service) BuildGraph(root string, filter Filter) (Graph, error) {
 // id, `database:name`. It returns an error if the game keeps none.
 func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Site, error) {
 	database, name, _ := strings.Cut(id, ":")
-	reference := schema.Reference{Database: database, Name: name}
+	reference := lang.Reference{Database: database, Name: name}
 	if winner, ok := mods.FindKept(ws.Schema, reference); ok {
 		return winner.Site, nil
 	}
@@ -142,6 +141,10 @@ func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Sit
 	return index.Site{}, fmt.Errorf("the game keeps no definition %q", id)
 }
 
+// hiddenKey is the key whose yes makes an event show no window (CK3
+// events/_events.info:38). The three games write it alike.
+const hiddenKey = "hidden"
+
 // makeNode returns the node of a definition, at the given step from the root,
 // without its picture.
 func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step int) Node {
@@ -150,8 +153,8 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 		ID:         toID(mods, site),
 		Database:   reference.Database,
 		Name:       reference.Name,
-		What:       game.DescribeDefinition(reference.Database, false),
-		Title:      toTitle(ws, mods, ws.LookupDefinitionText(mods, site, game.TitleKey)),
+		What:       lang.DescribeDefinition(reference.Database, false),
+		Title:      toTitle(ws, mods, ws.LookupDefinitionText(mods, site, lang.TitleKey)),
 		Definition: site,
 		Site:       lsp.MakeSite(ws, mods, site),
 		Step:       step,
@@ -171,8 +174,8 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 	case ws.Schema.Messages:
 		node.Display = displayMessage
 	case ws.Schema.Events:
-		hidden, _ := tree.FindChildValue(statement, game.HiddenKey)
-		node.Display = lo.Ternary(hidden == game.Bools[0], displayHidden, displayWindow)
+		hidden, _ := tree.FindChildValue(statement, hiddenKey)
+		node.Display = lo.Ternary(hidden == lang.Bools[0], displayHidden, displayWindow)
 	}
 	return node
 }
@@ -182,7 +185,7 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, step int) Node {
 	node := makeNode(ws, mods, site, step)
 	if node.Display == displayWindow || node.Display == displayHidden {
-		node.Background = findPicture(ws, mods, site, ws.Game.Events.Picture)
+		node.Background = findPicture(ws, mods, site, lang.LookupDialect(ws.Game.ID).Events.Picture)
 	}
 	if tree, statement, err := ws.FindStatement(mods, site); err == nil {
 		node.Trigger = findCondition(ws, mods, tree, statement)
@@ -284,7 +287,7 @@ func (reach *reach) fold(site index.Site, fires []index.Fire, forward bool, step
 	}))
 	node := Node{ID: id, Step: step, Parent: parent, Count: len(rest)}
 	if len(databases) == 1 {
-		node.What = game.DescribeDefinition(databases[0], len(rest) > 1)
+		node.What = lang.DescribeDefinition(databases[0], len(rest) > 1)
 	}
 	reach.nodes = append(reach.nodes, node)
 	reach.edges = append(reach.edges, lo.Ternary(forward, Edge{From: parent, To: id}, Edge{From: id, To: parent}))
@@ -386,7 +389,7 @@ func (reach *reach) isHidden(site index.Site) bool {
 
 // listKinds returns the databases whose nodes the filter picks among: the fired
 // databases and the scripted effects.
-func listKinds(schema *schema.Schema) []string {
+func listKinds(schema *lang.Schema) []string {
 	kinds := slices.Clone(schema.FireDatabases)
 	if schema.Effects != "" {
 		kinds = append(kinds, schema.Effects)
@@ -513,7 +516,7 @@ func (gph *Service) Defaults() Filter {
 		origins = append(origins, mod.ID)
 	}
 	labels := lo.SliceToMap(databases, func(database string) (string, string) {
-		return database, game.DescribeDefinition(database, true)
+		return database, lang.DescribeDefinition(database, true)
 	})
 	return Filter{Databases: databases, Origins: origins, Depth: 3, Limit: 200, Fanout: 6, Follow: true, Labels: labels}
 }

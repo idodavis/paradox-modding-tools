@@ -29,8 +29,9 @@ and where each feature lives, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md), whi
 ## Conventions
 
 - Parser and semantics logic is game-agnostic and shared. A game fact is a row of a table, never code. The table
-  sits beside its reader in the one package that reads it, and moves to [internal/game](internal/game/README.md)
-  once a second package reads it; no package imports another of its layer for a table.
+  lives in the lowest package whose topic it is: a rule of the script language in
+  [internal/lang](internal/lang/README.md), a game's identity and installs in
+  [internal/game](internal/game/README.md), and a fact one feature reads beside the function that reads it.
 - Display fields (relative paths, origin) are on Go payloads (`workspace.Place`). Pages render a payload's fields as
   they are: no path helper, no view-model re-derived from what Go computed. Where client-side path math is
   unavoidable, use the standard library (`filepath.Rel`, Node `node:path`).

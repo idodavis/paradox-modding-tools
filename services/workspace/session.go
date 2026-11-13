@@ -19,6 +19,7 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/app"
@@ -32,7 +33,7 @@ type Session struct {
 
 	// InstallPath is the install's folder, which holds the game's folders.
 	InstallPath string
-	Schema      *schema.Schema
+	Schema      *lang.Schema
 	Install     *index.Index
 
 	// Mods is the index of the mods on top of Install. A rescan replaces it
@@ -52,8 +53,8 @@ type Session struct {
 	mu sync.RWMutex
 
 	// buffers holds the editor's open files, by the path's key.
-	buffers   map[string]schema.Document
-	documents *lru.Cache[string, schema.Document]
+	buffers   map[string]lang.Document
+	documents *lru.Cache[string, lang.Document]
 	watcher   *Watcher
 	caches    string
 }
@@ -73,21 +74,22 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 		return nil, err
 	}
 
-	folder, err := resolveCaches(s.Config.Dirs.Cache, row, install, s.Build)
+	version := resolveVersion(row, install)
+	folder, err := resolveCaches(s.Config.Dirs.Cache, row, install.Path, version, s.Build)
 	if err != nil {
 		return nil, err
 	}
 
-	documents, err := lru.New[string, schema.Document](256)
+	documents, err := lru.New[string, lang.Document](256)
 	if err != nil {
 		return nil, err
 	}
 
 	ws := &Session{
 		ID: workspaceID, Game: row, InstallPath: install.Path, Language: record.Language,
-		buffers: map[string]schema.Document{}, documents: documents, caches: folder,
+		buffers: map[string]lang.Document{}, documents: documents, caches: folder,
 	}
-	if err := ws.loadInstall(install.Path, resolveVersion(row, install), progress); err != nil {
+	if err := ws.loadInstall(install.Path, version, progress); err != nil {
 		return nil, err
 	}
 
@@ -163,13 +165,13 @@ func findInstall(records app.Config, installID string) (app.Install, *game.Game,
 
 // resolveCaches returns the folder of an install's caches, new for each
 // install version, dumps and app build.
-func resolveCaches(cacheDir string, row *game.Game, install app.Install, build string) (string, error) {
-	dumpsAt, err := schema.FindDumpsAt(row.FindDumpDirs(install.Path))
+func resolveCaches(cacheDir string, row *game.Game, installPath, version, build string) (string, error) {
+	dumpsAt, err := schema.FindDumpsAt(row.FindDumpDirs(installPath))
 	if err != nil {
 		return "", err
 	}
 
-	folder := fmt.Sprintf("%s-%s-%d-%s", resolveVersion(row, install), game.LoadChecksum(install.Path), dumpsAt.Unix(), build)
+	folder := fmt.Sprintf("%s-%s-%d-%s", version, game.LoadChecksum(installPath), dumpsAt.Unix(), build)
 
 	return filepath.Join(cacheDir, row.ID, folder), nil
 }
@@ -184,7 +186,7 @@ func resolveVersion(row *game.Game, install app.Install) string {
 // saving what a cache lacks.
 func (s *Session) loadInstall(installPath, version string, progress func(stage string, percent int)) error {
 	schemaCache, indexCache := filepath.Join(s.caches, schemaFile), filepath.Join(s.caches, indexFile)
-	language, hasSchema := files.LoadGob[*schema.Schema](schemaCache)
+	language, hasSchema := files.LoadGob[*lang.Schema](schemaCache)
 	install, hasInstall := index.LoadIndex(indexCache)
 	if hasSchema && hasInstall {
 		s.Schema, s.Install = language, install
@@ -207,7 +209,8 @@ func (s *Session) loadInstall(installPath, version string, progress func(stage s
 	if !hasSchema {
 		progress("Reading the game's documentation", -1)
 
-		if language, err = schema.Build(s.Game, installPath, mounts.Files, index.ParseFile); err != nil {
+		dialect, dumpDirs := lang.LookupDialect(s.Game.ID), s.Game.FindDumpDirs(installPath)
+		if language, err = schema.Build(dialect, dumpDirs, installPath, mounts.Files, index.ParseFile); err != nil {
 			return err
 		}
 
@@ -218,7 +221,7 @@ func (s *Session) loadInstall(installPath, version string, progress func(stage s
 
 		// The built schema's names slice the game files' text, which would stay in
 		// memory. The cache's copy does not.
-		if language, hasSchema = files.LoadGob[*schema.Schema](schemaCache); !hasSchema {
+		if language, hasSchema = files.LoadGob[*lang.Schema](schemaCache); !hasSchema {
 			return fmt.Errorf("cannot read back the schema cache %s", schemaCache)
 		}
 	}
@@ -336,13 +339,13 @@ func (s *Session) Close() {
 }
 
 // WalkText parses a file's text and walks it.
-func (s *Session) WalkText(place Place, text string) schema.Document {
+func (s *Session) WalkText(place Place, text string) lang.Document {
 	return s.walk(parseDocument(place, text))
 }
 
 // walk gives a script or localization document its contexts, and a script
 // document the problems its walk found.
-func (s *Session) walk(document schema.Document) schema.Document {
+func (s *Session) walk(document lang.Document) lang.Document {
 	switch {
 	case document.Messages != nil:
 		document.MessageContexts = s.Schema.WalkMessages(document.Messages)
@@ -353,17 +356,17 @@ func (s *Session) walk(document schema.Document) schema.Document {
 	return document
 }
 
-func parseDocument(place Place, text string) schema.Document {
+func parseDocument(place Place, text string) lang.Document {
 	if place.Format == files.FormatLocalization {
-		return schema.Document{File: place.File, Tree: jomini.NewTree(text), Messages: loc.Parse(text, place.Path)}
+		return lang.Document{File: place.File, Tree: jomini.NewTree(text), Messages: loc.Parse(text, place.Path)}
 	}
 
-	return schema.Document{File: place.File, Tree: jomini.Parse(text)}
+	return lang.Document{File: place.File, Tree: jomini.Parse(text)}
 }
 
 // WalkDocument returns a file's document as LoadDocument finds it, walked. A
 // cached one is walked only here, since most readers want just the tree.
-func (s *Session) WalkDocument(path string) (schema.Document, error) {
+func (s *Session) WalkDocument(path string) (lang.Document, error) {
 	// The lock stays through the walk, so no rescan runs before it is cached.
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -381,7 +384,7 @@ func (s *Session) WalkDocument(path string) (schema.Document, error) {
 
 // LoadDocument returns a file's document: the editor's while the editor has the
 // file open, else the cached one, else the file read and parsed.
-func (s *Session) LoadDocument(path string) (schema.Document, error) {
+func (s *Session) LoadDocument(path string) (lang.Document, error) {
 	// The lock stays through the parse, so no rescan runs before it is cached.
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -389,7 +392,7 @@ func (s *Session) LoadDocument(path string) (schema.Document, error) {
 	return s.findDocument(path)
 }
 
-func (s *Session) findDocument(path string) (schema.Document, error) {
+func (s *Session) findDocument(path string) (lang.Document, error) {
 	key := files.ToKey(path)
 	if document, open := s.buffers[key]; open {
 		return document, nil
@@ -400,7 +403,7 @@ func (s *Session) findDocument(path string) (schema.Document, error) {
 
 	text, err := files.ReadText(path)
 	if err != nil {
-		return schema.Document{}, err
+		return lang.Document{}, err
 	}
 
 	document := parseDocument(s.Locate(s.Mods.Load(), path), text.Text)
@@ -468,11 +471,11 @@ func (s *Session) LoadSource(path string) (string, error) {
 // Languages returns the languages a text is looked up in: the workspace's own,
 // then the base language.
 func (s *Session) Languages() []string {
-	if s.Language == "" || s.Language == game.BaseLanguage {
-		return []string{game.BaseLanguage}
+	if s.Language == "" || s.Language == loc.BaseLanguage {
+		return []string{loc.BaseLanguage}
 	}
 
-	return []string{s.Language, game.BaseLanguage}
+	return []string{s.Language, loc.BaseLanguage}
 }
 
 // LookupText returns a localization key's text in the first language that has
@@ -486,7 +489,7 @@ func (s *Session) LookupText(mods *index.Index, key string) (text string, winner
 }
 
 // LookupDefinitionText returns a definition's title or description, as key
-// says: game.TitleKey or game.DescriptionKey. It is the text of the key the
+// says: lang.TitleKey or lang.DescriptionKey. It is the text of the key the
 // definition writes, else of the key the game builds from its name.
 func (s *Session) LookupDefinitionText(mods *index.Index, site index.Site, key string) string {
 	textKey, _ := mods.FindTextKey(site, key)
@@ -497,24 +500,24 @@ func (s *Session) LookupDefinitionText(mods *index.Index, site index.Site, key s
 // LookupStatementText does what LookupDefinitionText does for a statement of a
 // tree the index has not scanned. The reference names the definition.
 func (s *Session) LookupStatementText(
-	mods *index.Index, tree *jomini.Tree, statement int32, reference schema.Reference, key string,
+	mods *index.Index, tree *jomini.Tree, statement int32, reference lang.Reference, key string,
 ) string {
 	textKey := ""
-	if position, ok := schema.FindTextKey(tree, statement, key); ok {
+	if position, ok := lang.FindTextKey(tree, statement, key); ok {
 		textKey = tree.Unquoted(tree.Statements[position].Value)
 	}
 
 	return s.resolveText(mods, textKey, reference, key)
 }
 
-func (s *Session) resolveText(mods *index.Index, textKey string, reference schema.Reference, key string) string {
+func (s *Session) resolveText(mods *index.Index, textKey string, reference lang.Reference, key string) string {
 	if textKey != "" {
 		if text, _, ok := s.LookupText(mods, textKey); ok {
 			return text
 		}
 	}
 
-	pattern, ok := s.Game.LookupTextKey(reference.Database, key)
+	pattern, ok := lang.LookupDialect(s.Game.ID).LookupTextKey(reference.Database, key)
 	if !ok {
 		return ""
 	}

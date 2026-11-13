@@ -143,7 +143,8 @@ export function ListFolder(dir: string): $CancellablePromise<$models.Place[] | n
 }
 
 /**
- * ListGames returns the supported games.
+ * ListGames returns the supported games, each example's Modes filled from
+ * its database's precedence row.
  */
 export function ListGames(): $CancellablePromise<game$0.Game[] | null> {
     return $Call.ByID(3286235044);

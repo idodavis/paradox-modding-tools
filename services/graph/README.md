@@ -11,9 +11,8 @@ splice of hidden nodes, where each firing sits in its definition, an event's pic
 graph has no coordinates: the page lays it out with dagre and draws it with Vue Flow
 (`pages/graph`, see [the frontend](../../frontend/src/README.md)).
 
-**Uses** [game](../../internal/game/README.md), [index](../../internal/index/README.md),
-[jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
-[schema](../../internal/schema/README.md), [lsp](../lsp/README.md), [workspace](../workspace/README.md) · **Used by**
+**Uses** [index](../../internal/index/README.md), [jomini](../../internal/jomini/README.md),
+[lang](../../internal/lang/README.md), [loc](../../internal/loc/README.md), [lsp](../lsp/README.md), [workspace](../workspace/README.md) · **Used by**
 [mcp](../mcp/README.md).
 
 ## Building a graph
@@ -43,7 +42,7 @@ A node the filter hides is spliced out: the edges into and out of it become one 
 keeping the first firing's delay and blocks. A node whose parent is hidden takes the nearest drawn one, and a deep mark
 on a hidden node passes to the nearest drawn node before it. The root and the folds are never hidden.
 
-`Defaults` is the filter of a new graph: the databases that are fired (`schema.Schema.FireDatabases`) and the scripted
+`Defaults` is the filter of a new graph: the databases that are fired (`lang.Schema.FireDatabases`) and the scripted
 effects, from the game and every mod, with every fold closed. `FindRoots` finds the nodes whose name holds a query, the
 exact name first, then the names that start with it, then the rest. `ListOwnRoots` lists the events the workspace's mods
 define that the game keeps, for the page's start.

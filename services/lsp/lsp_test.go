@@ -20,7 +20,7 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
@@ -394,9 +394,9 @@ func TestDiagnoseJudgesOnlySyntaxOfGameFiles(t *testing.T) {
 func TestEncodeTokensWritesDeltas(t *testing.T) {
 	text := "ab cd\nef\n  gh😀i\n\"x\ny\" z\n"
 	tokens := []token{
-		{jomini.Span{Start: 11, End: 18}, schema.CategoryReference}, {jomini.Span{Start: 3, End: 5}, schema.CategoryCommand},
-		{jomini.Span{Start: 0, End: 2}, schema.CategoryKeyword}, {jomini.Span{Start: 6, End: 8}, schema.CategoryField},
-		{jomini.Span{Start: 19, End: 24}, schema.CategoryField}, {jomini.Span{Start: 9, End: 10}, schema.CategoryNone},
+		{jomini.Span{Start: 11, End: 18}, lang.CategoryReference}, {jomini.Span{Start: 3, End: 5}, lang.CategoryCommand},
+		{jomini.Span{Start: 0, End: 2}, lang.CategoryKeyword}, {jomini.Span{Start: 6, End: 8}, lang.CategoryField},
+		{jomini.Span{Start: 19, End: 24}, lang.CategoryField}, {jomini.Span{Start: 9, End: 10}, lang.CategoryNone},
 	}
 	want := []uint32{0, 0, 2, 0, 0, 0, 3, 2, 1, 0, 1, 0, 2, 3, 0, 1, 2, 5, 5, 0}
 	if got := encodeTokens(text, jomini.NewLines(text), tokens); !slices.Equal(got, want) {
@@ -504,9 +504,9 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 	}
 	list, err := ide.Complete(events, 4, 3)
 	keys := list.Candidates
-	if err != nil || len(keys) == 0 || keys[0].Category != schema.CategoryKeyword ||
+	if err != nil || len(keys) == 0 || keys[0].Category != lang.CategoryKeyword ||
 		!lo.ContainsBy(keys, func(candidate Completion) bool {
-			return candidate.Label == "add_gold" && candidate.Category == schema.CategoryCommand
+			return candidate.Label == "add_gold" && candidate.Category == lang.CategoryCommand
 		}) {
 		t.Errorf("keys: %d, %v", len(keys), err)
 	}

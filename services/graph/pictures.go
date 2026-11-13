@@ -8,16 +8,15 @@ import (
 
 	"github.com/samber/lo"
 
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/workspace"
 )
 
 // findPicture returns the path of the picture an event shows, or "" if there is
 // none.
-func findPicture(ws *workspace.Session, mods *index.Index, site index.Site, picture game.Picture) string {
+func findPicture(ws *workspace.Session, mods *index.Index, site index.Site, picture lang.Picture) string {
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
 		return ""
@@ -26,7 +25,7 @@ func findPicture(ws *workspace.Session, mods *index.Index, site index.Site, pict
 		return path
 	}
 	for _, chain := range picture.Chains {
-		values := listValues(tree, statement, lo.FirstOr(chain.Steps, game.PictureStep{}).Key)
+		values := listValues(tree, statement, lo.FirstOr(chain.Steps, lang.PictureStep{}).Key)
 		if path := resolveChain(ws, mods, chain, values); path != "" {
 			return path
 		}
@@ -37,7 +36,7 @@ func findPicture(ws *workspace.Session, mods *index.Index, site index.Site, pict
 // resolveChain returns the path of the picture a chain of definitions ends in,
 // from the given values for its first step, or "" if it reaches none. If the
 // last definition names no file, the chain's Fallback key names another to try.
-func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureChain, values []string) string {
+func resolveChain(ws *workspace.Session, mods *index.Index, chain lang.PictureChain, values []string) string {
 	var tree *jomini.Tree
 	var statement int32
 	for position, step := range chain.Steps {
@@ -56,7 +55,7 @@ func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureCh
 	if path, ok := mods.ResolveTexture(lo.FirstOr(listValues(tree, statement, chain.FileKey), "")); ok || chain.Fallback == "" {
 		return path
 	}
-	last := game.PictureStep{Database: lo.LastOr(chain.Steps, game.PictureStep{}).Database}
+	last := lang.PictureStep{Database: lo.LastOr(chain.Steps, lang.PictureStep{}).Database}
 	fallback, ok := findHop(ws, mods, last, listValues(tree, statement, chain.Fallback))
 	if !ok {
 		return ""
@@ -71,12 +70,12 @@ func resolveChain(ws *workspace.Session, mods *index.Index, chain game.PictureCh
 
 // findHop returns the definition a hop leads to from the given values, or false
 // if there is none.
-func findHop(ws *workspace.Session, mods *index.Index, step game.PictureStep, values []string) (index.Site, bool) {
+func findHop(ws *workspace.Session, mods *index.Index, step lang.PictureStep, values []string) (index.Site, bool) {
 	if len(values) == 0 {
 		return index.Site{}, false
 	}
 	if step.Match == "" {
-		winner, ok := mods.FindKept(ws.Schema, schema.Reference{Database: step.Database, Name: values[0]})
+		winner, ok := mods.FindKept(ws.Schema, lang.Reference{Database: step.Database, Name: values[0]})
 		return winner.Site, ok
 	}
 
@@ -103,12 +102,12 @@ type candidate struct {
 var candidates struct {
 	sync.Mutex
 	mods  *index.Index
-	lists map[game.PictureStep][]candidate
+	lists map[lang.PictureStep][]candidate
 }
 
 // listCandidates returns the candidates of a hop that matches by a key path,
 // in load order. A definition whose file cannot be read is left out.
-func listCandidates(ws *workspace.Session, mods *index.Index, step game.PictureStep) []candidate {
+func listCandidates(ws *workspace.Session, mods *index.Index, step lang.PictureStep) []candidate {
 	candidates.Lock()
 	list, listed := candidates.lists[step]
 	listed = listed && candidates.mods == mods
@@ -126,7 +125,7 @@ func listCandidates(ws *workspace.Session, mods *index.Index, step game.PictureS
 
 	candidates.Lock()
 	if candidates.mods != mods {
-		candidates.mods, candidates.lists = mods, map[game.PictureStep][]candidate{}
+		candidates.mods, candidates.lists = mods, map[lang.PictureStep][]candidate{}
 	}
 
 	candidates.lists[step] = list
@@ -180,7 +179,7 @@ func pickChild(tree *jomini.Tree, statement int32, key string) (int32, bool) {
 			}
 			continue
 		}
-		if _, triggered := tree.FindChild(child, game.TriggerKey); !triggered {
+		if _, triggered := tree.FindChild(child, lang.TriggerKey); !triggered {
 			return child, true
 		}
 		if !ok {

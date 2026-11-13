@@ -13,9 +13,8 @@ import (
 	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
@@ -31,7 +30,7 @@ const (
 // listDefinitionFindings lists the findings about the loaded copies of one
 // name, given the winner: contests, undecided contests, overrides and unused
 // copies. A database that keeps every copy has none.
-func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference schema.Reference, winner index.Winner) []Finding {
+func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference lang.Reference, winner index.Winner) []Finding {
 	sites := listLoaded(mods, mods.Resolve(reference))
 	precedence := ws.Schema.Databases[reference.Database].Precedence
 	var findings []Finding
@@ -44,7 +43,7 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 			findings = append(findings, finding)
 		}
 	}
-	if winner.Reason == game.ReasonUnsettled {
+	if winner.Reason == lang.ReasonUnsettled {
 		if finding, ok := makeUndecided(ws, mods, sites, describeCause(winner, precedence)); ok {
 			findings = append(findings, finding)
 		}
@@ -57,7 +56,7 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 		return mods.File(site).Origin, isMod(mods, site)
 	}))
 	if len(origins) >= 2 && isMod(mods, winner.Site) {
-		contest := makeFinding(mods, contestCode, schema.DescribeReference(reference), lsp.MakeSites(ws, mods, sites, &winner))
+		contest := makeFinding(mods, contestCode, lang.DescribeReference(reference), lsp.MakeSites(ws, mods, sites, &winner))
 		if len(listBeaten(contest)) > 0 {
 			contest.Comparable = true
 			findings = append(findings, contest)
@@ -68,7 +67,7 @@ func listDefinitionFindings(ws *workspace.Session, mods *index.Index, reference 
 		return findings
 	}
 	if site, ok := lo.Find(sites, func(site index.Site) bool { return isMod(mods, site) && mods.ResolveSite(winner, site).Kept }); ok {
-		facts := schema.DescribeReference(reference)
+		facts := lang.DescribeReference(reference)
 		facts["kept"] = describeKept(mods, site)
 		findings = append(findings, makeFinding(mods, "override", facts, lsp.MakeSites(ws, mods, sites, &winner)))
 	}
@@ -102,7 +101,7 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 	kept := lo.SomeBy(shipped, func(site lsp.Site) bool { return site.Kept })
 	var findings []Finding
 	if len(lo.UniqBy(shipped, func(site lsp.Site) string { return site.Place.Origin })) >= 2 && kept {
-		facts := schema.DescribeReference(schema.Reference{Database: game.File, Name: shipped[0].Place.Rel})
+		facts := lang.DescribeReference(lang.Reference{Database: lang.File, Name: shipped[0].Place.Rel})
 		contest := makeFinding(mods, fileContestCode, facts, shipped)
 		contest.Removed = listRemoved(contest.Sites)
 		findings = append(findings, contest)
@@ -110,7 +109,7 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 	if len(installed) == 0 {
 		return findings
 	}
-	facts := schema.DescribeReference(schema.Reference{Database: game.File, Name: installed[0].Place.Rel})
+	facts := lang.DescribeReference(lang.Reference{Database: lang.File, Name: installed[0].Place.Rel})
 	facts["kept"] = lo.Ternary(kept, "the game keeps the mod's", "the game keeps its own")
 	var uses []Use
 	var users []string
@@ -133,13 +132,13 @@ func listPathFindings(ws *workspace.Session, mods *index.Index, path string) []F
 
 // describeCause returns the words that say why the sources leave a winner
 // open.
-func describeCause(winner index.Winner, precedence game.Precedence) string {
+func describeCause(winner index.Winner, precedence lang.Precedence) string {
 	switch winner.Cause {
-	case game.CausePriority:
+	case lang.CausePriority:
 		return "both have the same override priority; give one a higher " + precedence.PriorityKey
-	case game.CauseKeyword:
+	case lang.CauseKeyword:
 		return "no source says that the folder takes the " + winner.Prefix + " keyword, or what the game does with it"
-	case game.CauseInject:
+	case lang.CauseInject:
 		return "the folder takes REPLACE only, and whether " + winner.Prefix + " is refused or replaces is not documented"
 	}
 	return "it is not documented whether a replace_path drops another mod's files"
@@ -149,12 +148,12 @@ func describeCause(winner index.Winner, precedence game.Precedence) string {
 // source names. It returns false if they lie in fewer than two of the mods and
 // the game.
 func makeUndecided(ws *workspace.Session, mods *index.Index, definitions []index.Site, why string) (Finding, bool) {
-	sites := lsp.MakeSites(ws, mods, definitions, &index.Winner{Reason: game.ReasonUnsettled})
+	sites := lsp.MakeSites(ws, mods, definitions, &index.Winner{Reason: lang.ReasonUnsettled})
 	parties := listParties(sites)
 	if len(parties) < 2 {
 		return Finding{}, false
 	}
-	facts := schema.DescribeReference(mods.ToReference(definitions[0]))
+	facts := lang.DescribeReference(mods.ToReference(definitions[0]))
 	facts["mods"], facts["why"] = describeMods(ws, parties), why
 	finding := makeFinding(mods, undecidedCode, facts, sites)
 	finding.Comparable = true
@@ -194,7 +193,7 @@ func listSharedMessages(ws *workspace.Session, mods *index.Index, messages []ind
 			continue
 		}
 		reference, language := mods.ToReference(sites[0]), mods.Language(sites[0])
-		facts := schema.DescribeReference(reference)
+		facts := lang.DescribeReference(reference)
 		facts["language"], facts["mods"] = language, describeMods(ws, listMods(mods, origins))
 		var shown *index.Winner
 		if winner, ok := mods.FindMessage(reference.Name, language); ok {
@@ -228,9 +227,9 @@ func resolveContest(ws *workspace.Session, finding *Finding, forgiven map[[2]str
 // form.
 func splitWhy(finding Finding) []lsp.Part {
 	winner, ok := lo.Find(finding.Sites, func(site lsp.Site) bool {
-		return site.Kept && game.Reasons[site.Reason].Why != ""
+		return site.Kept && lang.Reasons[site.Reason].Why != ""
 	})
-	if !ok || finding.Facts["winner"] == "" || finding.Database == game.File {
+	if !ok || finding.Facts["winner"] == "" || finding.Database == lang.File {
 		return nil
 	}
 	folder := winner.Place.Folder
@@ -239,8 +238,8 @@ func splitWhy(finding Finding) []lsp.Part {
 			!site.Kept && site.Place.Origin != files.OriginVanilla
 	})
 	facts := maps.Clone(finding.Facts)
-	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, game.JoinList(beaten, "and")
-	return lsp.SplitMessage(game.Reasons[winner.Reason].Why, facts)
+	facts["folder"], facts["file"], facts["beatenFile"] = folder+"/", winner.Place.Name, lang.JoinList(beaten, "and")
+	return lsp.SplitMessage(lang.Reasons[winner.Reason].Why, facts)
 }
 
 // resolveForgiven sets a finding's level to info if every pair of the mods and
@@ -265,7 +264,7 @@ func listEveryPair(ids []string) [][2]string {
 // the finding's own origin if no copy is kept.
 func findWinner(finding Finding) string {
 	site, ok := lo.Find(finding.Sites, func(site lsp.Site) bool {
-		return site.Kept && site.Reason != game.ReasonInjected && site.Reason != game.ReasonCombined
+		return site.Kept && site.Reason != lang.ReasonInjected && site.Reason != lang.ReasonCombined
 	})
 	return lo.Ternary(ok, site.Place.Origin, finding.Origin)
 }
@@ -281,7 +280,7 @@ func listBeaten(finding Finding) []string {
 // describeMods returns the titles of mods joined as in a sentence, such as "A,
 // B and C". It returns "" for none.
 func describeMods(ws *workspace.Session, modIDs []string) string {
-	return game.JoinList(lo.Map(modIDs, func(id string, _ int) string { return ws.DescribeMod(id) }), "and")
+	return lang.JoinList(lo.Map(modIDs, func(id string, _ int) string { return ws.DescribeMod(id) }), "and")
 }
 
 // resolveOrder gives a critical contest that the load order decides the order
@@ -300,12 +299,12 @@ func resolveOrder(finding *Finding, order []string, declared map[[2]string]bool)
 // mods ship, or a name the game keeps by the load order.
 func isOrderDecided(finding Finding) bool {
 	return finding.Code == fileContestCode ||
-		lo.SomeBy(finding.Sites, func(site lsp.Site) bool { return site.Kept && site.Reason == game.ReasonPlayset })
+		lo.SomeBy(finding.Sites, func(site lsp.Site) bool { return site.Kept && site.Reason == lang.ReasonPlayset })
 }
 
 // listDefinitionChanges lists the names whose kept copy moves to another mod
 // than in the workspace's own order.
-func listDefinitionChanges(ws *workspace.Session, base, mods *index.Index, kept map[schema.Reference]index.Winner) []Change {
+func listDefinitionChanges(ws *workspace.Session, base, mods *index.Index, kept map[lang.Reference]index.Winner) []Change {
 	changes := []Change{}
 	for reference, winner := range kept {
 		if !hasWinner(ws, reference, winner) {
@@ -318,7 +317,7 @@ func listDefinitionChanges(ws *workspace.Session, base, mods *index.Index, kept 
 		before := lo.Ternary(known, base.File(previous.Site).Origin, "")
 		if after := mods.File(winner.Site).Origin; after != before {
 			changes = append(changes, Change{
-				Database: game.DescribeDefinition(reference.Database, false), Name: reference.Name, Before: before, After: after,
+				Database: lang.DescribeDefinition(reference.Database, false), Name: reference.Name, Before: before, After: after,
 			})
 		}
 	}
@@ -334,7 +333,7 @@ func listPathChanges(base, mods *index.Index, paths []string) []Change {
 		current, _, _ := mods.FindLoaded(path)
 		if previous.Origin != current.Origin {
 			changes = append(changes, Change{
-				Database: game.DescribeDefinition(game.File, false), Name: path, Before: previous.Origin, After: current.Origin,
+				Database: lang.DescribeDefinition(lang.File, false), Name: path, Before: previous.Origin, After: current.Origin,
 			})
 		}
 	}

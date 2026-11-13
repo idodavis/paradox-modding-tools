@@ -137,8 +137,8 @@ func (s Span) IsEmpty() bool { return s.Start == s.End }
 // Contains reports whether a byte offset lies inside the span.
 func (s Span) Contains(offset int) bool { return s.Start <= offset && offset < s.End }
 
-// Position is a place in a text, as a line and a column. Both count from 0,
-// and the column counts UTF-8 bytes.
+// Position is a line and a column in a text, both from 0. The column counts
+// UTF-8 bytes.
 type Position struct {
 	Line   int `json:"line"`
 	Column int `json:"column"`
@@ -146,24 +146,17 @@ type Position struct {
 
 // Problem is one problem found in a text.
 type Problem struct {
-	// Code names the kind of problem: one of the codes the package doc lists,
-	// or one of the loc package's.
+	// Code is one of the package doc's codes, or the loc package's.
 	Code string `json:"code"`
 
-	// Message says what is wrong, and Span is the text it covers.
 	Message string `json:"message"`
 	Span    Span   `json:"span"`
 }
 
-// Lines is the line index of a text. It turns a byte offset into a line and
-// a column. A line ends at \n, \r\n or a lone \r.
+// Lines is the line index of a text. A line ends at \n, \r\n or a lone \r.
 type Lines struct {
-	// starts and ends are where each line starts and ends, its line ending
-	// left out.
 	starts []int
 	ends   []int
-
-	// length is the length of the text, which an offset is clamped to.
 	length int
 }
 
@@ -178,7 +171,6 @@ func NewLines(text string) Lines {
 
 		lines.ends = append(lines.ends, i)
 
-		// \r\n is one line ending.
 		if text[i] == '\r' && i+1 < len(text) && text[i+1] == '\n' {
 			i++
 		}
@@ -191,10 +183,10 @@ func NewLines(text string) Lines {
 	return lines
 }
 
-// CountLines returns how many lines the text has. An empty text has one.
+// CountLines returns the number of lines, at least one.
 func (l Lines) CountLines() int { return len(l.starts) }
 
-// ToPosition returns the line and the column of a byte offset, clamped to the
+// ToPosition returns the line and column of a byte offset, clamped to the
 // text.
 func (l Lines) ToPosition(offset int) Position {
 	offset = min(max(offset, 0), l.length)
@@ -203,14 +195,13 @@ func (l Lines) ToPosition(offset int) Position {
 	return Position{Line: line, Column: offset - l.starts[line]}
 }
 
-// LineSpan returns the span of a line, counting lines from 0, without its
-// line ending.
+// LineSpan returns the span of a line from 0, without its line ending.
 func (l Lines) LineSpan(line int) Span {
 	return Span{Start: l.starts[line], End: l.ends[line]}
 }
 
-// Range is a span as an editor counts it: lines and columns from one, the
-// column in UTF-16 code units, the end exclusive.
+// Range is a span as an editor counts it: from one, UTF-16 columns, end
+// exclusive.
 type Range struct {
 	StartLine   int `json:"startLineNumber"`
 	StartColumn int `json:"startColumn"`
@@ -218,8 +209,7 @@ type Range struct {
 	EndColumn   int `json:"endColumn"`
 }
 
-// ToRange converts a byte span in a text to an editor's range, using the
-// text's line index.
+// ToRange converts a byte span to an editor's range.
 func ToRange(text string, lines Lines, span Span) Range {
 	start, end := lines.ToPosition(span.Start), lines.ToPosition(span.End)
 
@@ -229,8 +219,7 @@ func ToRange(text string, lines Lines, span Span) Range {
 	}
 }
 
-// ToSpan converts an editor's range to a byte span in a text, using the
-// text's line index.
+// ToSpan converts an editor's range to a byte span.
 func ToSpan(text string, lines Lines, bounds Range) Span {
 	return Span{
 		Start: ToOffset(text, lines, bounds.StartLine, bounds.StartColumn),
@@ -238,15 +227,13 @@ func ToSpan(text string, lines Lines, bounds Range) Span {
 	}
 }
 
-// ToLineRange returns the empty range at the start of a line, counted from
-// one.
+// ToLineRange returns the empty range at the start of a line.
 func ToLineRange(line int) Range {
 	return Range{StartLine: line, StartColumn: 1, EndLine: line, EndColumn: 1}
 }
 
-// ToOffset converts a line and a column as an editor counts them to a byte
-// offset in the text. A line past the text's last is the last, and a column
-// past a line's end is its end.
+// ToOffset converts an editor's line and column to a byte offset, clamped to
+// the text.
 func ToOffset(text string, lines Lines, line, column int) int {
 	span := lines.LineSpan(min(max(line-1, 0), lines.CountLines()-1))
 	units := 0
@@ -261,8 +248,8 @@ func ToOffset(text string, lines Lines, line, column int) int {
 	return span.End
 }
 
-// CountUnits returns the length of a text in UTF-16 code units, the units an
-// editor counts columns in. A character above U+FFFF counts two.
+// CountUnits returns the length of a text in UTF-16 code units. A character
+// above U+FFFF counts two.
 func CountUnits(text string) int {
 	units := 0
 	for _, character := range text {
@@ -272,8 +259,6 @@ func CountUnits(text string) int {
 	return units
 }
 
-// countColumn returns the column of a position as an editor counts it from
-// zero: how many UTF-16 code units of its line lie before it.
 func countColumn(text string, lines Lines, position Position) int {
 	start := lines.LineSpan(position.Line).Start
 
@@ -281,53 +266,43 @@ func countColumn(text string, lines Lines, position Position) int {
 }
 
 // Statement is one statement of a text: key op value, a value alone, or a
-// block with or without a tag. Each of its parts is a span of the text, and
-// is empty where the statement does not write it.
+// block with or without a tag. A part it does not write is empty.
 type Statement struct {
-	// Parent is the block that holds the statement. It is 0, the file, for a
-	// statement at the top and for the file itself.
+	// Parent is the block holding the statement. It is 0 for a top statement
+	// and for the file itself.
 	Parent int32
 
 	// Last is one past the statement's last descendant, so its children are
 	// Statements[i+1:Last].
 	Last int32
 
-	// Span is the whole statement.
 	Span Span
 
 	// Key is empty for a value alone.
 	Key Span
 
-	// Op is the operator: =, ==, !=, <, >, <=, >= or ?=.
 	Op Span
 
-	// Tag is the word before a block, such as rgb, or list before a quoted
-	// name.
 	Tag Span
 
-	// Value is a scalar's text, quotes included. It is empty for a block.
+	// Value is a scalar's text, quotes included. Block runs from the opening
+	// brace to the closing one. Each is empty for the other kind.
 	Value Span
-
-	// Block runs from the opening brace to the closing one. It is empty for
-	// a scalar.
 	Block Span
 
-	// KeyClass, TagClass and ValueClass are what the key, the tag and the
-	// value are written as, inside any quotes. Each is ClassNone where the
-	// statement does not write that part, or writes it as "".
+	// KeyClass, TagClass and ValueClass are what each part is written as,
+	// ClassNone for a part not written.
 	KeyClass, TagClass, ValueClass Class
 }
 
 // IsBlock reports whether the statement's value is a block.
 func (s Statement) IsBlock() bool { return !s.Block.IsEmpty() }
 
-// IsListed reports whether the statement is a value alone, with no key, such
-// as one name in a list. A block alone is not one.
+// IsListed reports whether the statement is a value alone, not a block.
 func (s Statement) IsListed() bool { return s.Key.IsEmpty() && !s.IsBlock() }
 
-// ResolveValueSpan returns the span of what the statement writes after its
-// operator: its tag, its value and its block. It is empty for a statement
-// that writes none of them.
+// ResolveValueSpan returns the span from the statement's tag, value or block
+// to its end. It is empty if the statement writes none.
 func (s Statement) ResolveValueSpan() Span {
 	for _, part := range []Span{s.Tag, s.Value, s.Block} {
 		if !part.IsEmpty() {
@@ -338,9 +313,7 @@ func (s Statement) ResolveValueSpan() Span {
 	return Span{}
 }
 
-// Tree is the parse of one text. Its statements are in document order, and a
-// block's children sit right after it. It also keeps the text's comments, the
-// problems its parse found and its line index.
+// Tree is the parse of one text, with its comments, problems and line index.
 type Tree struct {
 	Src        string
 	Statements []Statement
@@ -352,12 +325,11 @@ type Tree struct {
 // Text returns the source text a span covers.
 func (t *Tree) Text(span Span) string { return t.Src[span.Start:span.End] }
 
-// Unquoted returns the source text a span covers, without its surrounding
-// quotes if it has any.
+// Unquoted returns the text a span covers, without any surrounding quotes.
 func (t *Tree) Unquoted(span Span) string { return t.Text(t.UnquotedSpan(span)) }
 
-// UnquotedSpan returns a span without its surrounding quotes, if it has any.
-// A span of one quote gives an empty span.
+// UnquotedSpan returns a span without its surrounding quotes. A span of one
+// quote gives an empty span.
 func (t *Tree) UnquotedSpan(span Span) Span {
 	text := t.Text(span)
 	if strings.HasPrefix(text, `"`) {
@@ -371,15 +343,13 @@ func (t *Tree) UnquotedSpan(span Span) Span {
 	return span
 }
 
-// ParseBracketed parses the text a span covers as a data call written between
-// brackets, such as [Root.GetName], without its quotes. The call's spans are
-// offsets in the tree's text. It returns false if the text is no call.
+// ParseBracketed parses a span's text as a bracketed data call, such as
+// [Root.GetName], or returns false.
 func (t *Tree) ParseBracketed(span Span) (Call, bool) {
 	return ParseBracketed(t.Unquoted(span), t.UnquotedSpan(span).Start)
 }
 
-// Children yields the direct children of a statement in document order. The
-// file's children are the statements at the top.
+// Children yields the direct children of a statement in document order.
 func (t *Tree) Children(statement int32) iter.Seq[int32] {
 	return func(yield func(int32) bool) {
 		// A child's Last is where its next sibling starts.
@@ -391,13 +361,9 @@ func (t *Tree) Children(statement int32) iter.Seq[int32] {
 	}
 }
 
-// FindLead returns the value written alone just before a statement in its
-// block: scripted_trigger in scripted_trigger x = { }, template in
-// template x { } and blockoverride in blockoverride "x" { }. It returns false
-// if the statement is its block's first, or the one before it is no value
-// alone.
+// FindLead returns the value alone before a statement, as scripted_trigger is
+// in scripted_trigger x = { }. It returns false if there is none.
 func (t *Tree) FindLead(statement int32) (int32, bool) {
-	// A sibling with no children sits right before the statement.
 	lead := statement - 1
 	if lead < 1 || t.Statements[lead].Parent != t.Statements[statement].Parent || !t.Statements[lead].IsListed() {
 		return 0, false
@@ -409,8 +375,8 @@ func (t *Tree) FindLead(statement int32) (int32, bool) {
 // FindStatement returns the innermost statement that covers a byte offset. It
 // returns 0, the file, if no other statement does.
 func (t *Tree) FindStatement(offset int) int32 {
-	// The statements are in pre-order, so the last one that starts at or
-	// before the offset is the deepest that may cover it.
+	// The last statement starting at or before the offset is the deepest
+	// candidate.
 	statement := int32(sort.Search(len(t.Statements)-1, func(i int) bool {
 		return t.Statements[i+1].Span.Start > offset
 	}))
@@ -422,17 +388,15 @@ func (t *Tree) FindStatement(offset int) int32 {
 	return statement
 }
 
-// LookupStatement returns the statement that starts at a byte offset. It
-// returns false if none does.
+// LookupStatement returns the statement starting at a byte offset, or false.
 func (t *Tree) LookupStatement(start int) (int32, bool) {
 	statement := t.FindStatement(start)
 
 	return statement, statement > 0 && t.Statements[statement].Span.Start == start
 }
 
-// FindChild returns the child of a statement whose key is the given text. If
-// several children have that key, the last one wins. It returns false if
-// there is none.
+// FindChild returns the child of a statement with the given key. The last one
+// wins if several have it. It returns false if none does.
 func (t *Tree) FindChild(statement int32, key string) (int32, bool) {
 	match, ok := int32(0), false
 	for child := range t.Children(statement) {
@@ -459,15 +423,14 @@ func (t *Tree) FindChildValue(statement int32, key string) (string, bool) {
 	return t.Unquoted(t.Statements[child].Value), true
 }
 
-// FindComment returns the comment lines written just above a statement,
-// joined by newlines. It returns "" if there are none. A comment after code
-// on its line is not one of them.
+// FindComment returns the comment lines just above a statement, joined by
+// newlines, or "". A comment after code on its line is not one.
 func (t *Tree) FindComment(statement int32) string {
 	start := t.Statements[statement].Span.Start
 	line := t.Lines.ToPosition(start).Line
 	after := sort.Search(len(t.Comments), func(i int) bool { return t.Comments[i].Start >= start })
 
-	// The comments are read upwards, each on the line above the one before.
+	// Read upwards, each on the line above the last.
 	var lines []string
 	for position := after - 1; position >= 0; position-- {
 		comment := t.Comments[position]
@@ -485,8 +448,8 @@ func (t *Tree) FindComment(statement int32) string {
 	return strings.Join(lines, "\n")
 }
 
-// ListFolds returns the span of each block that runs over more than one line,
-// in the order the blocks open.
+// ListFolds returns the span of each block over more than one line, in order
+// of opening.
 func (t *Tree) ListFolds() []Span {
 	var folds []Span
 

@@ -16,8 +16,9 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
+	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -185,10 +186,10 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	findings := listFindings(report)
 	contest := findFinding(t, findings, "contest", "shared", "trait")
 	if contest.Question != lsp.QuestionCompatibility || len(contest.Sites) != 2 || !contest.Sites[0].Kept ||
-		contest.Sites[1].Kept || contest.Sites[0].Reason != game.ReasonLast || contest.Sites[0].Place.Origin != modB {
+		contest.Sites[1].Kept || contest.Sites[0].Reason != lang.ReasonLast || contest.Sites[0].Place.Origin != modB {
 		t.Errorf("contest of shared: %+v", contest)
 	}
-	shipped := findFinding(t, findings, "file-contest", "common/traits/m_traits.txt", game.File)
+	shipped := findFinding(t, findings, "file-contest", "common/traits/m_traits.txt", lang.File)
 	if len(shipped.Sites) != 2 || !shipped.Sites[0].Kept || shipped.Sites[1].Kept ||
 		shipped.Sites[0].Place.Origin != modB || shipped.Sites[0].Range.StartLine != 1 {
 		t.Errorf("contest of the file m_traits.txt: %+v", shipped)
@@ -199,10 +200,10 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 	// the game's own v_traits.txt loads after the mods' m_traits.txt
 	unused := findFinding(t, findings, "unused-copy", "brave", "trait")
 	if unused.Facts["beaten"] != titleB || unused.Facts["winner"] == "" || len(unused.Sites) != 2 ||
-		unused.Sites[0].Reason != game.ReasonLast || !unused.Sites[0].Place.ReadOnly || !unused.Sites[0].Kept || unused.Sites[1].Kept {
+		unused.Sites[0].Reason != lang.ReasonLast || !unused.Sites[0].Place.ReadOnly || !unused.Sites[0].Kept || unused.Sites[1].Kept {
 		t.Errorf("unused copy of brave: %+v", unused)
 	}
-	replaced := findFinding(t, findings, "override", "events/v_events.txt", game.File)
+	replaced := findFinding(t, findings, "override", "events/v_events.txt", lang.File)
 	if replaced.Facts["kept"] != "the game keeps the mod's" || len(replaced.Sites) != 2 || !replaced.Sites[0].Kept || replaced.Sites[1].Kept ||
 		lo.ContainsBy(findings, func(finding Finding) bool { return finding.Code == "override" && finding.Name == "v.1" }) {
 		t.Errorf("override of the file v_events.txt: %+v", replaced)
@@ -226,7 +227,7 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGroups(t, previewed, []string{modB, modA}, nil)
-	kept := findFinding(t, listFindings(previewed), "file-contest", "common/traits/m_traits.txt", game.File).Sites
+	kept := findFinding(t, listFindings(previewed), "file-contest", "common/traits/m_traits.txt", lang.File).Sites
 	if len(kept) != 2 || !kept[0].Kept || kept[0].Place.Origin != modA {
 		t.Errorf("contest of the file m_traits.txt with the first mod loaded last: %+v", kept)
 	}
@@ -350,7 +351,7 @@ func TestWriteScaffoldWritesMissingKeys(t *testing.T) {
 	if text, _ := files.ReadText(partial[0]); text.Text != "l_german:\n m_kept:0 \"Behalten\"\n m_orphan:0 \"Alone\"\n" {
 		t.Errorf("german file %q", text.Text)
 	}
-	if _, err := hlt.WriteScaffold(modA, "../"+game.BaseLanguage); err == nil {
+	if _, err := hlt.WriteScaffold(modA, "../"+loc.BaseLanguage); err == nil {
 		t.Error("a scaffold was written for a name that is no language")
 	}
 }
@@ -417,7 +418,7 @@ func logCounts(t *testing.T, report Report) {
 	}
 	for _, code := range []string{"contest", "override"} {
 		listed := lo.Filter(findings, func(finding Finding, _ int) bool { return finding.Code == code })
-		shipped := lo.CountBy(listed, func(finding Finding) bool { return finding.Database == game.File })
+		shipped := lo.CountBy(listed, func(finding Finding) bool { return finding.Database == lang.File })
 		t.Logf("%s: %d names, %d files", code, len(listed)-shipped, shipped)
 	}
 }

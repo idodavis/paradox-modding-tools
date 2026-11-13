@@ -6,8 +6,7 @@
 import * as jomini$0 from "../jomini/models.js";
 
 /**
- * Language is one localization language: the folder the game keeps it in,
- * and its name in English.
+ * Language is one localization language.
  */
 export interface Language {
     "folder": string;
@@ -20,7 +19,7 @@ export interface Language {
 }
 
 /**
- * Markup is the class of a segment of a localization text.
+ * Markup is the class of a segment.
  */
 export enum Markup {
     /**
@@ -29,8 +28,7 @@ export enum Markup {
     $zero = 0,
 
     /**
-     * The markups a segment can have, in order: plain text, $key$, [call],
-     * #format and its end #!, @icon! and \n.
+     * The markups of a segment.
      */
     MarkupText = 0,
     MarkupKey = 1,
@@ -41,28 +39,27 @@ export enum Markup {
 };
 
 /**
- * Segment is one piece of a localization text, with its spans in the file.
+ * Segment is one piece of a localization text.
  */
 export interface Segment {
     "markup": Markup;
 
     /**
-     * Text is the piece without its markers: the key, the call, the format's
-     * name or the icon. It is "" for a break and for the end of a format.
+     * Text is the piece without its markers. It is "" for a break and for the
+     * end of a format.
      */
     "text": string;
 
     /**
-     * Span is the piece with its markers, and TextSpan is where Text sits
-     * inside them. TextSpan is empty where the piece has no text.
+     * Span includes the markers and TextSpan does not. TextSpan is empty if
+     * the piece has no text.
      */
     "span": jomini$0.Span;
     "textSpan": jomini$0.Span;
 
     /**
-     * Kind is the kind of value a data call shows, number or text, where Text
-     * holds a sample of that value in place of the call. It is "" for a call
-     * as written and for any other piece.
+     * Kind is number or text for a data call whose Text is a sample of its
+     * value. It is "" for any other piece.
      */
     "kind": string;
 }

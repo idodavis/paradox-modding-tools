@@ -1,5 +1,4 @@
-// contents.go reads and writes the contents of files: text in its encoding,
-// atomic writes, gob caches, a table's rows and zips.
+// contents.go reads and writes text, gob caches, table rows and zips.
 
 package files
 
@@ -21,25 +20,22 @@ import (
 	"golang.org/x/text/encoding/charmap"
 )
 
-// Encoding says how a text file was stored on disk.
+// Encoding is how a text file is stored.
 type Encoding string
 
-// The encodings a text file is stored in.
+// The encodings of a text file.
 const (
 	EncodingUTF8        Encoding = "utf-8"
 	EncodingUTF8BOM     Encoding = "utf-8-bom"
 	EncodingWindows1252 Encoding = "windows-1252"
 )
 
-// TextLimit is the largest file read as text. A bigger file is treated as
-// binary.
+// TextLimit is the largest file read as text. A bigger one is binary.
 const TextLimit = 32 << 20
 
-// bom is the byte order mark that opens a UTF-8 file stored with one.
 const bom = "\xEF\xBB\xBF"
 
-// Text is the text of a file. It remembers how the file was stored, so it can
-// be written back the same way.
+// Text is a file's text and its encoding, so it is written back the same way.
 type Text struct {
 	Text     string   `json:"text"`
 	Encoding Encoding `json:"encoding"`
@@ -47,20 +43,18 @@ type Text struct {
 
 // Row is one row of a table file.
 type Row struct {
-	// Name is the row's first column, which names it.
+	// Name is the row's first column.
 	Name string
 
-	// Start is the offset in the text where the row starts, and Line is its
-	// line, counting from 0.
+	// Start is the row's offset in the text, and Line its line from 0.
 	Start, Line int
 }
 
-// ErrBinary is the error for a file that is not text: its bytes are binary,
-// or it is over TextLimit.
+// ErrBinary is the error for a binary file or one over TextLimit.
 var ErrBinary = errors.New("binary")
 
-// ReadText reads a file into its text. It returns an error wrapping ErrBinary
-// for a file over TextLimit and for one that is binary.
+// ReadText reads a text file. It returns an error wrapping ErrBinary for a
+// binary file or one over TextLimit.
 func ReadText(path string) (Text, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -90,8 +84,7 @@ func ReadText(path string) (Text, error) {
 	return DecodeText(content), nil
 }
 
-// LoadText reads a file into its text as ReadText does. A missing file gives
-// empty text and no error.
+// LoadText is ReadText, but a missing file gives empty text and no error.
 func LoadText(path string) (Text, error) {
 	text, err := ReadText(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -101,8 +94,7 @@ func LoadText(path string) (Text, error) {
 	return text, err
 }
 
-// DecodeText decodes the bytes of a text file. Bytes that are not UTF-8 are
-// read as Windows-1252.
+// DecodeText decodes text bytes, as Windows-1252 if they are not UTF-8.
 func DecodeText(content []byte) Text {
 	text := string(content)
 
@@ -118,8 +110,8 @@ func DecodeText(content []byte) Text {
 	return Text{Text: string(decoded), Encoding: EncodingWindows1252}
 }
 
-// Encode returns the bytes of the text in its encoding. A character
-// Windows-1252 cannot hold becomes `?`.
+// Encode returns the text's bytes. Windows-1252 writes a character it cannot
+// hold as `?`.
 func (t Text) Encode() []byte {
 	switch t.Encoding {
 	case EncodingUTF8BOM:
@@ -142,14 +134,12 @@ func (t Text) Encode() []byte {
 	return []byte(t.Text)
 }
 
-// WriteText writes the text to the file at the given path, in the text's
-// encoding. It writes as WriteAtomic does.
+// WriteText writes the text to a file in its encoding, atomically.
 func WriteText(path string, text Text) error {
 	return WriteAtomic(path, text.Encode())
 }
 
-// WriteAtomic writes the bytes to the file at the given path, replacing the
-// file whole or not at all. It makes the file's folder first.
+// WriteAtomic replaces a file whole or not at all, making its folder first.
 func WriteAtomic(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -172,11 +162,9 @@ func WriteAtomic(path string, content []byte) error {
 	return nil
 }
 
-// LoadGob loads a value from a gob cache file. It returns the zero value and
-// false if the file is missing, does not decode, or was saved by a build
-// whose type had another shape. gob fills what it can of such a file and
-// leaves the rest empty, which reads as a cache with holes, so the file is
-// refused and its owner builds it again.
+// LoadGob loads a gob cache file. It returns false if the file is missing,
+// does not decode, or was saved from another shape of the type, which gob
+// would fill with holes.
 func LoadGob[T any](path string) (T, bool) {
 	var zero, value T
 
@@ -198,8 +186,7 @@ func LoadGob[T any](path string) (T, bool) {
 	return value, true
 }
 
-// SaveGob saves a value as a gob cache file at the given path, with the
-// shape of its type before it. It writes as WriteAtomic does.
+// SaveGob saves a value as a gob cache file.
 func SaveGob[T any](path string, value T) error {
 	var buffer bytes.Buffer
 	encoder := gob.NewEncoder(&buffer)
@@ -210,9 +197,7 @@ func SaveGob[T any](path string, value T) error {
 	return WriteAtomic(path, buffer.Bytes())
 }
 
-// hashShape returns a number that changes when what gob stores of a type
-// changes: the type's name and kind, the names and types of its exported
-// fields, and the same of every type those hold.
+// hashShape returns a number that changes with what gob stores of a type.
 func hashShape(root reflect.Type) uint64 {
 	hash := fnv.New64a()
 	visited := map[reflect.Type]bool{}
@@ -247,15 +232,15 @@ func hashShape(root reflect.Type) uint64 {
 	return hash.Sum64()
 }
 
-// The mark between the columns of a table file's row, and the mark that opens
-// a comment row, as CK3's map_data/definition.csv writes them.
+// The marks of a table's columns and comment rows, as in CK3's
+// map_data/definition.csv.
 const (
 	tableSeparator = ";"
 	tableComment   = "#"
 )
 
-// ListRows returns the rows of a table file's text, in order. A row whose
-// first column is empty, or which starts with the comment mark, is left out.
+// ListRows returns the rows of a table's text. It skips a row with an empty
+// first column or a comment mark.
 func ListRows(text string) []Row {
 	var rows []Row
 	start, number := 0, 0
@@ -273,9 +258,8 @@ func ListRows(text string) []Row {
 	return rows
 }
 
-// Unzip writes the files of a zip into the given folder, without a top folder
-// that holds every file, and skips links. It returns an error if a file
-// cannot be written or the zip names a path outside the folder.
+// Unzip writes a zip's files into a folder, without their shared top folder,
+// and skips links. It returns an error if a name leaves the folder.
 func Unzip(archive *zip.Reader, dir string) error {
 	top := FindZipFolder(archive)
 
@@ -293,8 +277,7 @@ func Unzip(archive *zip.Reader, dir string) error {
 	return nil
 }
 
-// FindZipFolder returns the top folder that holds every file of a zip, or ""
-// if no one folder does.
+// FindZipFolder returns the folder that holds every file of a zip, or "".
 func FindZipFolder(archive *zip.Reader) string {
 	entries := listZipFiles(archive)
 	if len(entries) == 0 {
@@ -311,7 +294,6 @@ func FindZipFolder(archive *zip.Reader) string {
 	return top
 }
 
-// listZipFiles returns the files of a zip, leaving out its folders and links.
 func listZipFiles(archive *zip.Reader) []*zip.File {
 	var entries []*zip.File
 
@@ -324,7 +306,6 @@ func listZipFiles(archive *zip.Reader) []*zip.File {
 	return entries
 }
 
-// writeEntry writes one file of a zip to disk, making its folder first.
 func writeEntry(entry *zip.File, target string) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err

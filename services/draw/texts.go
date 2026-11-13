@@ -13,11 +13,10 @@ import (
 
 	"github.com/samber/lo"
 
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -28,6 +27,19 @@ var loremSentences = []string{
 	"Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.",
 	"Duis aute irure dolor in reprehenderit in voluptate velit esse.",
 	"Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia.",
+}
+
+// callOutputs is what a data call in a text writes, number or text, by its
+// last function's return type. A type with no row writes text.
+var callOutputs = map[string]string{
+	// the dumps' Return type of the last function of every data call in the
+	// three installs' GUI texts; CPdxStringView is EU5's alone and int64
+	// Vic3's. The four short integer types are the dumps' too, which a mod's
+	// text may end a call in.
+	"CString": kindText, "CUTF8String": kindText, "CPdxStringView": kindText,
+	"int8": kindNumber, "int16": kindNumber, "int32": kindNumber, "int64": kindNumber,
+	"uint8": kindNumber, "uint16": kindNumber, "uint32": kindNumber, "uint64": kindNumber,
+	"CFixedPoint": kindNumber, "float": kindNumber, "double": kindNumber,
 }
 
 // resolveSegments returns what a player reads in a text: each $key$ as its message and each break as a newline.
@@ -63,6 +75,17 @@ func (library *library) sampleText(segments []loc.Segment, context context, prop
 	return segments
 }
 
+// multilineKey is the key whose yes lets a widget's text run over several
+// lines, and resizeKey the key whose yes resizes a widget to fit what it
+// holds.
+const (
+	// the wiki's Interface page
+	multilineKey = "multiline"
+
+	// the wiki's Interface page
+	resizeKey = "autoresize"
+)
+
 // sampleCall returns the sample text of a data call and its kind. The same call always shows the same sample.
 func (library *library) sampleCall(source string, context context, properties iter.Seq[Property]) (sample, kind string) {
 	hash := fnv.New32a()
@@ -71,7 +94,7 @@ func (library *library) sampleCall(source string, context context, properties it
 	call, _ := jomini.ParseCall(source, 0)
 	path := context.expand(library.ws.Schema, call)
 	function, _ := library.ws.Schema.FindFunction(path, "", len(path.Steps)-1)
-	kind, known := game.GUI.CallOutputs[function.Returns]
+	kind, known := callOutputs[function.Returns]
 	switch {
 	case kind == kindNumber:
 		return sampleNumber(seed, call.Suffix), kind
@@ -79,13 +102,27 @@ func (library *library) sampleCall(source string, context context, properties it
 		return library.sampleDate(seed), kindDate
 	case !known:
 		return sampleWords(seed, 2), kindText
-	case !isOn(properties, game.GUI.MultilineKey):
+	case !isOn(properties, multilineKey):
 		return sampleWords(seed, 2+int(seed%2)), kind
-	case isOn(properties, game.GUI.ResizeKey):
+	case isOn(properties, resizeKey):
 		return sampleSentences(seed, 1+int(seed%2)), kind
 	}
 	return sampleSentences(seed, len(loremSentences)), kind
 }
+
+// each game's English localization: CK3 core_l_english.yml:493
+// $VALUE|V0%$, :830 $VALUE|V2$, and :831 its own plus before $VALUE|2$;
+// Vic3 interfaces_l_english.yml:20 $VALUE|%0$ and :2040 $VALUE|v1$; EU5
+// diplomacy_l_english.yml:380-383 $VALUE|+=2$, $VALUE|+2%$ and $VALUE|=$
+const (
+	// percentCode is the format code a data call in a text writes after | for
+	// a percent. A digit among the codes is the number's decimals.
+	percentCode = "%"
+
+	// signCode is the format code a data call in a text writes after | for a
+	// plus sign before a number above zero.
+	signCode = "="
+)
 
 // sampleNumber returns a sample number, picked by a seed and shaped by format codes.
 func sampleNumber(seed uint32, codes string) string {
@@ -94,33 +131,64 @@ func sampleNumber(seed uint32, codes string) string {
 		decimals = int(codes[position] - '0')
 	}
 	number := strconv.FormatFloat(minSample+float64(seed%9900)/100, 'f', decimals, 64)
-	if strings.Contains(codes, game.GUI.PercentCode) {
+	if strings.Contains(codes, percentCode) {
 		number += "%"
 	}
-	if strings.Contains(codes, game.GUI.SignCode) {
+	if strings.Contains(codes, signCode) {
 		number = "+" + number
 	}
 	return number
 }
 
-// isDate reports whether a data function writes a date, as game.GUI.DateCalls says.
-func isDate(function schema.DataFunction) bool {
-	calls := game.GUI.DateCalls
-	return function.Returns == calls.Returns && slices.ContainsFunc(calls.Endings, func(ending string) bool {
+// dateCallReturns is the type the last function of a data call that writes a
+// date returns.
+//
+// no data call in the three installs' GUI texts returns the dumps' Date
+// type; the calls that write a date return CString, such as EU5's
+// GetEndDate and GetDateString, so a name with one of these endings is
+// taken to write one
+const dateCallReturns = "CString"
+
+// dateCallEndings are the endings of the name of that function.
+var dateCallEndings = []string{"Date", "DateString"}
+
+// isDate reports whether a data function writes a date, as dateCallReturns
+// and dateCallEndings say.
+func isDate(function lang.DataFunction) bool {
+	return function.Returns == dateCallReturns && slices.ContainsFunc(dateCallEndings, func(ending string) bool {
 		return strings.HasSuffix(function.Name, ending)
 	})
 }
 
+// dateKey is the localization key of the form the games write a date in, and
+// dateDay, dateMonth and dateYear the names the form fills in.
+//
+// jomini/localization/jomini/date_l_english.yml:4 and
+// clausewitz/localization/cw_date_l_english.yml, the same in the three
+// installs (EU5's under loading_screen/)
+const (
+	dateKey   = "DATE_FORMATTING_LONG"
+	dateDay   = "DAY"
+	dateMonth = "MONTH"
+	dateYear  = "YEAR"
+)
+
+// dateMonths are the localization keys of the months' names, January first.
+var dateMonths = []string{
+	"CW_DATE_January", "CW_DATE_February", "CW_DATE_March", "CW_DATE_April", "CW_DATE_May", "CW_DATE_June",
+	"CW_DATE_July", "CW_DATE_August", "CW_DATE_September", "CW_DATE_October", "CW_DATE_November",
+	"CW_DATE_December",
+}
+
 // sampleDate returns a sample date, picked by a seed, in the game's form and the workspace's language.
 func (library *library) sampleDate(seed uint32) string {
-	form := game.GUI.DateForm
-	month := form.Months[seed%uint32(len(form.Months))]
+	month := dateMonths[seed%uint32(len(dateMonths))]
 	values := map[string]string{
-		form.Day: strconv.Itoa(1 + int(seed%28)), form.Month: library.lookupText(month),
-		form.Year: strconv.Itoa(1000 + int(seed%900)),
+		dateDay: strconv.Itoa(1 + int(seed%28)), dateMonth: library.lookupText(month),
+		dateYear: strconv.Itoa(1000 + int(seed%900)),
 	}
 	var date strings.Builder
-	for _, segment := range loc.Segments(library.lookupText(form.Key), 0) {
+	for _, segment := range loc.Segments(library.lookupText(dateKey), 0) {
 		if value, ok := values[segment.Text]; ok && segment.Markup == loc.MarkupKey {
 			date.WriteString(value)
 		} else {
@@ -153,5 +221,5 @@ func sampleSentences(seed uint32, count int) string {
 
 // isOn reports whether the given properties of a widget write the given key as yes.
 func isOn(properties iter.Seq[Property], key string) bool {
-	return game.GUI.Literals[strings.ToLower(findProperty(properties, key).Value)]
+	return literals[strings.ToLower(findProperty(properties, key).Value)]
 }

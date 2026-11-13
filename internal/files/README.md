@@ -7,7 +7,8 @@ which of them the game reads. It also reads and writes a file's text in its own 
 and joins paths, unpacks a zip and applies ignore rules. The formats, the stage folders, the rules of the mounts, the
 table syntax and what it does with input that breaks them are its package doc, in [files.go](files.go).
 
-It knows no game. Which folders a game reads and what each one holds are [game](../game/README.md)'s rows, and a root
+It knows no game. Which folders a game reads are [game](../game/README.md)'s rows, what each one holds are
+[lang](../lang/README.md)'s, and a root
 carries what the game mounts below it: its stage folders, and a mod's `replace_path` folders.
 
 **Uses** nothing else of PMT · **Used by** most of the engine and most services.

@@ -698,14 +698,14 @@ func (w *walker) judgeCalls() {
 			key := w.tree.Statements[child].Key
 			given[w.tree.Unquoted(key)] = true
 			if _, isParameter := field.Children[w.tree.Unquoted(key)]; !isParameter && !key.IsEmpty() {
-				w.recordArgument(key, w.tree.Unquoted(key), "is never read by", callee)
+				w.recordArgument(key, w.tree.Unquoted(key), callee, "Unknown")
 			}
 		}
 
 		for _, parameter := range slices.Sorted(maps.Keys(field.Children)) {
 			_, isOuter := enclosing.Children[parameter]
 			if !given[parameter] && !isOuter && !field.Children[parameter].Default.IsStated() {
-				w.recordArgument(current.Key, parameter, "is not given to", callee)
+				w.recordArgument(current.Key, parameter, callee, "Missing")
 			}
 		}
 	}
@@ -727,9 +727,9 @@ func (w *walker) listOwnDefinitions() map[string]int32 {
 	return definitions
 }
 
-// recordArgument records a problem with one argument of a call, with the
-// words that say what is wrong and the name of the definition called.
-func (w *walker) recordArgument(span jomini.Span, parameter, why, callee string) {
+// recordArgument records a parameter that is missing or unknown where a
+// scripted definition is used.
+func (w *walker) recordArgument(span jomini.Span, parameter, callee, why string) {
 	facts := DescribeReference(Reference{Name: parameter})
 	facts["why"], facts["callee"] = why, callee
 	w.record(ProblemArgument, span, facts)

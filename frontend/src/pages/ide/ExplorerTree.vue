@@ -461,14 +461,19 @@ function collapseAll(): void {
   for (const row of listRows()) findHandle(row)?.collapse();
 }
 
-// The tree has moved the row already; a move Go refuses puts it back.
+// The tree has moved the row already; a move Go refuses puts it back, and the app's toast says why.
 const { mutate: rename } = useMutation({
   mutation: async ({ source, destination }: { source: string; destination: string }): Promise<Move> => {
     const move = {
       oldPath: findPath(source),
       newPath: `${findPath(findParent(destination))}/${takeName(destination)}`,
     };
-    await editor.rename(move.oldPath, move.newPath);
+    try {
+      await editor.rename(move.oldPath, move.newPath);
+    } catch (error) {
+      view.value?.move(destination, source);
+      throw error;
+    }
     return move;
   },
   onSuccess: (move, { source }) => {
@@ -477,7 +482,6 @@ const { mutate: rename } = useMutation({
     record(move);
     forget(source);
   },
-  onError: (_error, { source, destination }) => view.value?.move(destination, source),
 });
 
 /** record adds a move to the history and drops the moves undone before it. */

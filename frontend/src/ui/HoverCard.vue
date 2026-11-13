@@ -31,10 +31,10 @@ const { data: codes } = useQuery(codesQuery);
 const { data: levels } = useQuery(levelsQuery);
 const short = computed(() => settings.isHidden("hover.details"));
 
-/** describeProblem returns a problem's cost and its advice, each labelled. */
+/** describeProblem returns a problem's effect in the game and its advice. */
 function describeProblem(problem: Diagnostic): [string, string][] {
   const all = [
-    ["What it costs", levels.value?.find((level) => level.id === problem.level)?.cost],
+    ["In the game", levels.value?.find((level) => level.id === problem.level)?.cost],
     ["What to do", codes.value?.find((code) => code.id === problem.code)?.advice],
   ];
   return all.filter((row): row is [string, string] => !!row[1]);

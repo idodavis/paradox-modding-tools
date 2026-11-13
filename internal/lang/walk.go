@@ -884,6 +884,7 @@ func (w *walker) resolveStatement(context *Context, statement int32, level int) 
 	parent := w.frames[level-1].context
 	current := w.tree.Statements[statement]
 	label, span := w.frames[level].label, w.frames[level].span
+	lead := w.findLead(statement)
 	switch {
 	// blockoverride "name" { … } names the block by its tag, and its braces
 	// hold what the widget around it holds (CK3
@@ -893,11 +894,16 @@ func (w *walker) resolveStatement(context *Context, statement int32, level int) 
 		w.resolveLead(context, label, w.tree.Text(name), name)
 		context.Shape, context.Field, context.Scope = parent.Shape, parent.Field, parent.Scope
 
+	// with its braces on the next line, the name is the statement's own label
+	case w.file.Format == files.FormatGUI && lead == GUIBlockCalls:
+		w.resolveLead(context, lead, label, span)
+		context.Shape, context.Field, context.Scope = parent.Shape, parent.Field, parent.Scope
+
 	case label != "":
 		w.frames[level].wraps = w.frames[level-1].wraps && w.database != nil &&
 			slices.Contains(w.database.Declaration.WrapperKeys, label)
 		w.resolveKey(context, statement, level)
-		w.resolveLead(context, w.findLead(statement), label, span)
+		w.resolveLead(context, lead, label, span)
 
 	case current.IsBlock():
 		context.Shape, context.Field, context.Scope = parent.Shape, parent.Field, parent.Scope
@@ -1113,7 +1119,15 @@ func (w *walker) takeCall(parent *Context, key string, span jomini.Span) (match,
 	}
 
 	fit := match{category: CategoryCall, field: callee.Field, callee: callee}
-	if database := w.schema.Databases[callee.Database]; fit.field == nil && database != nil {
+	database := w.schema.Databases[callee.Database]
+	if caller == GUITagCalls {
+		// A widget type's block holds a widget. One the game builds in, such
+		// as margin_widget, has no keys of its own and takes any widget's.
+		fit.shape = ShapeWidget
+		database = cmp.Or(database, w.schema.Databases[GUIWidgetDatabase])
+	}
+
+	if fit.field == nil && database != nil {
 		fit.field = database.Field
 	}
 
@@ -1533,6 +1547,17 @@ var linkUsers = map[string]string{
 	"every_in_global_list/variable":               GlobalVariables,
 	"ordered_in_global_list/variable":             GlobalVariables,
 	"random_in_global_list/variable":              GlobalVariables,
+
+	// the effects that change or remove a saved variable
+	"remove_variable": Variables, "clear_variable_list": Variables, "clear_variable_map": Variables,
+	"change_variable/name": Variables, "clamp_variable/name": Variables, "round_variable/name": Variables,
+	"remove_list_variable/name": Variables, "remove_from_variable_map/name": Variables,
+	"remove_local_variable": LocalVariables, "clear_local_variable_list": LocalVariables,
+	"change_local_variable/name": LocalVariables, "clamp_local_variable/name": LocalVariables,
+	"round_local_variable/name": LocalVariables, "remove_list_local_variable/name": LocalVariables,
+	"remove_global_variable": GlobalVariables, "clear_global_variable_list": GlobalVariables,
+	"change_global_variable/name": GlobalVariables, "clamp_global_variable/name": GlobalVariables,
+	"round_global_variable/name": GlobalVariables, "remove_list_global_variable/name": GlobalVariables,
 
 	"is_in_list": Lists, "any_in_list/list": Lists, "every_in_list/list": Lists,
 	"ordered_in_list/list": Lists, "random_in_list/list": Lists,

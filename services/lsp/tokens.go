@@ -181,10 +181,17 @@ func listTokens(document lang.Document, bounds jomini.Span, whole bool) []token 
 }
 
 // classifyKey returns a key's token type. A list iterator such as every_vassal
-// is a keyword, though the walk holds it as a command.
+// is a keyword, though the walk holds it as a command. A key in a GUI widget,
+// whether it sets a property or opens a child widget such as vbox, is a field:
+// the walk reads a child as a call of its type, but on screen both are what
+// the widget is made of.
 func classifyKey(context *lang.Context) lang.Category {
-	if context.Iterates {
+	isWidget := context.Shape == lang.ShapeWidget || context.Parent != nil && context.Parent.Shape == lang.ShapeWidget
+	switch {
+	case context.Iterates:
 		return lang.CategoryKeyword
+	case context.Category == lang.CategoryCall && isWidget:
+		return lang.CategoryField
 	}
 
 	return context.Category

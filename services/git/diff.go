@@ -22,13 +22,14 @@ type LineChange struct {
 }
 
 // DiffFile returns the runs of lines the text changes from the file's last
-// commit. It returns an error if git does not track the file.
+// commit. A file with no committed copy, untracked or in a repository with no
+// commit yet, has none, since there is nothing to compare it with.
 func (s *Service) DiffFile(path, text string) ([]LineChange, error) {
 	// git reads a path that starts with ./ from the folder it runs in.
 	dir, rel := filepath.Dir(path), "./"+filepath.Base(path)
 	committed, err := s.ReadFile(dir, "HEAD", rel)
 	if err != nil {
-		return nil, err
+		return []LineChange{}, nil
 	}
 
 	diff := diffmatchpatch.New()

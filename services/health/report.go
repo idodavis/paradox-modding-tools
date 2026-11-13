@@ -457,17 +457,16 @@ func groupReport(findings []Finding, order []string, external map[string]bool) R
 	}
 
 	mods := make([]Group, len(order))
-	every, own := slices.Clone(compatibility), []Finding{}
+	own := []Finding{}
 	for position, id := range order {
 		mods[position] = makeGroup(id, problems[id], languages[id])
-		every = append(every, mods[position].Findings...)
 		if !external[id] {
 			own = append(own, mods[position].Findings...)
 		}
 	}
 
 	return Report{
-		Tally:         makeTally(every),
+		Tally:         makeTally(slices.Concat(compatibility, own)),
 		Compatibility: makeGroup("", compatibility, nil),
 		Mods:          mods,
 		Own:           makeTally(own),

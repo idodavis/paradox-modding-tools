@@ -54,13 +54,19 @@ func (w *walker) lookupValue(context *Context, statement int32, level int) {
 		return
 	}
 
-	if text != "" && !strings.ContainsAny(text, "[$") && !isSavedName(context, span) {
+	isSaved := isSavedName(context, span)
+	if text != "" && !strings.ContainsAny(text, "[$") && !isSaved {
 		context.References = append(context.References, w.listNames(context, statement, level, span)...)
 	}
 
 	field := context.Field
 	switch {
-	case len(context.References) > before:
+	// a name the statement saves, as in save_scope_as = x, is defined by
+	// the value
+	case isSaved && context.Defines && context.Definition.Span == span:
+		context.ValueGroup = CategoryDefinition
+
+	case isSaved || len(context.References) > before:
 		context.ValueGroup = CategoryReference
 
 	case field != nil && field.Value.Value.Type == ValueTypeChoice && w.schema.MatchValue(field.Value.Value, text):

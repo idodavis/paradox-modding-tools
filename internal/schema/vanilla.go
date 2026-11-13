@@ -843,8 +843,13 @@ func (c *counter) resolveClaims(field *lang.Field, isArgument bool) {
 	}
 
 	claim, labels := field.Value.Value, c.listLabels(vanilla.Values)
+	// a doc names the kind of thing a value is, as <production method>, but
+	// the game may keep such things in another database, as EU5 does the
+	// unique production methods of its buildings; the files settle where
+	isDocKind := claim.Type == lang.ValueTypeReference && field.Value.Source == lang.SourceDocs &&
+		claim.Database != lang.File && !hasAll(labels, c.defined[claim.Database])
 	isOpen := claim.Type == lang.ValueTypeReference && claim.Database == "" || claim.Type == lang.ValueTypeBlock ||
-		claim.Type == lang.ValueTypeText
+		claim.Type == lang.ValueTypeText || isDocKind
 
 	// a source that says the value may name a database is trusted only if
 	// that database defines every name the game's files write there

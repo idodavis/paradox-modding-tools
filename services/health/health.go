@@ -210,7 +210,8 @@ type Group struct {
 // Report is the findings for one load order, grouped and counted, and what
 // that order changes.
 type Report struct {
-	// Tally counts every finding of the compatibility and of the mods.
+	// Tally counts the compatibility's findings and the user's own mods'.
+	// External mods are left out, as they are not the user's to fix.
 	Tally
 
 	Compatibility Group `json:"compatibility"`

@@ -726,6 +726,11 @@ func (d *docReader) resolveValue(field *lang.Field, value string) {
 	_, isDate := jomini.ParseDate(value)
 	stem, isKey := strings.CutSuffix(inner, "_key")
 	database, hasDatabase := d.schema.ResolveTypeDatabase(stem)
+
+	// a placeholder that names a game type, as <pop type>, names its
+	// definitions; a doc never means a GUI or graphics database by it
+	isDrawn := strings.HasPrefix(database, lang.GUIDatabasePrefix) || strings.HasPrefix(database, "gfx/")
+	namesDatabase := hasDatabase && !isType && (isKey || isPlaceholder && !isDrawn)
 	switch {
 	case value == "": // nothing is written
 
@@ -739,7 +744,7 @@ func (d *docReader) resolveValue(field *lang.Field, value string) {
 			resolveChoices(field, parts, lang.SourceDocs)
 		}
 
-	case isKey && hasDatabase && !isType:
+	case namesDatabase:
 		field.Value.Resolve(lang.Expected{Type: lang.ValueTypeReference, Database: database}, lang.SourceDocs)
 
 	case isPlaceholder || isType:

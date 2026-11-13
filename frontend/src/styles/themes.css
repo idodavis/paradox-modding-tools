@@ -49,10 +49,9 @@
   --radius-tile: 0.625rem;
 }
 
-/* The syntax colors most themes take from their palette. In every theme only the macros are red or pink. A theme
-   sets its own keyword, field and operator. A call of a scripted definition and a reference to a definition are
-   each a mix of two of the theme's own colors, so every theme has them; a theme may set its own. A theme may also
-   draw a color in bold, as `--syn-<category>-weight: bold`. */
+/* The code colors a theme takes from its palette unless it sets its own. A theme sets its own keyword, field and
+   operator. A call of a scripted definition and a reference to a definition are each a mix of two of the theme's
+   own colors, so every theme has them. */
 [data-theme] {
   --syn-name: var(--purple);
   --syn-macro: var(--red);
@@ -73,7 +72,19 @@
   --bracket-3: color-mix(in oklab, var(--syn-operator) 55%, var(--syn-comment));
 }
 
-/* PMT; its terminal's colors and the three games' are the design system's */
+/* PMT; its terminal's colors and the three games' are the design system's. Its code colors are its own palette's. */
+[data-theme="pmt-dark"],
+[data-theme="pmt-light"] {
+  --syn-reference: var(--purple);
+  --syn-field: var(--link);
+  --syn-keyword: var(--accent);
+  --syn-command: var(--red);
+  --syn-call: var(--red);
+  --syn-link: var(--blue);
+  --syn-macro: var(--accent);
+  --syn-operator: var(--fg-2);
+}
+
 [data-theme="pmt-dark"] {
   --bg-0: #0f1116;
   --bg-1: #13161c;
@@ -93,18 +104,6 @@
   --blue: #6fb7f0;
   --green: #5ccb8f;
   --purple: #b19cf5;
-  --syn-name: #bd7bff;
-  --syn-reference: #dbb7ff;
-  --syn-field: #bfe9f7;
-  --syn-keyword: #ffd239;
-  --syn-call: var(--syn-reference);
-  --syn-command: #70e7cf;
-  --syn-link: #20cdff;
-  --syn-number: #f28746;
-  --syn-string: #57ec7c;
-  --syn-macro: #ff5555;
-  --syn-comment: #6b7684;
-  --syn-operator: #c5cacf;
   --ansi-black: #1e232c;
   --ansi-red: #f0716b;
   --ansi-green: #5ccb8f;
@@ -146,19 +145,6 @@
   --blue: #2568b8;
   --green: #1f8a4c;
   --purple: #6b4fd1;
-  --syn-name: #a74fff;
-  --syn-name-weight: bold;
-  --syn-reference: #9d3cff;
-  --syn-field: #1a708c;
-  --syn-keyword: #e3b000;
-  --syn-call: var(--syn-reference);
-  --syn-command: #058472;
-  --syn-link: #04c1f0;
-  --syn-number: #d65f0a;
-  --syn-string: #05b84d;
-  --syn-macro: #e72323;
-  --syn-comment: #7b8594;
-  --syn-operator: #434954;
   --ansi-black: #1a1f27;
   --ansi-red: #c4372f;
   --ansi-green: #1f8a4c;
@@ -581,6 +567,114 @@
   --ol: 0.56;
   --oc: 0.121;
   --shadow: 0 8px 24px rgba(30, 32, 40, 0.14), 0 0 0 1px var(--line-2);
+  color-scheme: light;
+}
+
+/* VS Code Modern: Dark Modern and Light Modern, after VS Code's own themes. The terminal colors are VS Code's
+   default ANSI colors. */
+[data-theme="vscode-dark"] {
+  --bg-0: #1f1f1f;
+  --bg-1: #181818;
+  --bg-2: #181818;
+  --bg-3: #222222;
+  --bg-4: #2b2b2b;
+  --line-1: #2b2b2b;
+  --line-2: #3c3c3c;
+  --fg-1: #cccccc;
+  --fg-2: #9d9d9d;
+  --fg-3: #6e7681;
+  --accent: #0078d4;
+  --accent-ink: #ffffff;
+  --link: #9cdcfe;
+  --red: #f14c4c;
+  --orange: #ce9178;
+  --blue: #4daafc;
+  --green: #89d185;
+  --purple: #c586c0;
+  --syn-name: #4ec9b0;
+  --syn-reference: #4ec9b0;
+  --syn-field: #9cdcfe;
+  --syn-keyword: #c586c0;
+  --syn-command: #dcdcaa;
+  --syn-call: #dcdcaa;
+  --syn-link: #569cd6;
+  --syn-number: #b5cea8;
+  --syn-string: #ce9178;
+  --syn-macro: #4fc1ff;
+  --syn-comment: #6a9955;
+  --syn-operator: #d4d4d4;
+  --ansi-black: #000000;
+  --ansi-red: #cd3131;
+  --ansi-green: #0dbc79;
+  --ansi-yellow: #e5e510;
+  --ansi-blue: #2472c8;
+  --ansi-magenta: #bc3fbc;
+  --ansi-cyan: #11a8cd;
+  --ansi-white: #e5e5e5;
+  --ansi-bright-black: #666666;
+  --ansi-bright-red: #f14c4c;
+  --ansi-bright-green: #23d18b;
+  --ansi-bright-yellow: #f5f543;
+  --ansi-bright-blue: #3b8eea;
+  --ansi-bright-magenta: #d670d6;
+  --ansi-bright-cyan: #29b8db;
+  --ansi-bright-white: #e5e5e5;
+  --ol: 0.76;
+  --oc: 0.16;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
+  color-scheme: dark;
+}
+
+[data-theme="vscode-light"] {
+  --bg-0: #ffffff;
+  --bg-1: #f8f8f8;
+  --bg-2: #f8f8f8;
+  --bg-3: #ffffff;
+  --bg-4: #e8e8e8;
+  --line-1: #e5e5e5;
+  --line-2: #cecece;
+  --fg-1: #3b3b3b;
+  --fg-2: #616161;
+  --fg-3: #767676;
+  --accent: #005fb8;
+  --accent-ink: #ffffff;
+  --link: #001080;
+  --red: #cd3131;
+  --orange: #a31515;
+  --blue: #0451a5;
+  --green: #098658;
+  --purple: #af00db;
+  --syn-name: #267f99;
+  --syn-reference: #267f99;
+  --syn-field: #001080;
+  --syn-keyword: #af00db;
+  --syn-command: #795e26;
+  --syn-call: #795e26;
+  --syn-link: #0000ff;
+  --syn-number: #098658;
+  --syn-string: #a31515;
+  --syn-macro: #0070c1;
+  --syn-comment: #008000;
+  --syn-operator: #3b3b3b;
+  --ansi-black: #000000;
+  --ansi-red: #cd3131;
+  --ansi-green: #107c10;
+  --ansi-yellow: #949800;
+  --ansi-blue: #0451a5;
+  --ansi-magenta: #bc05bc;
+  --ansi-cyan: #0598bc;
+  --ansi-white: #555555;
+  --ansi-bright-black: #666666;
+  --ansi-bright-red: #cd3131;
+  --ansi-bright-green: #14ce14;
+  --ansi-bright-yellow: #b5ba00;
+  --ansi-bright-blue: #0451a5;
+  --ansi-bright-magenta: #bc05bc;
+  --ansi-bright-cyan: #0598bc;
+  --ansi-bright-white: #a5a5a5;
+  --ol: 0.56;
+  --oc: 0.121;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
 

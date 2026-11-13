@@ -24,7 +24,8 @@ export function DeleteBranch(root: string, name: string, force: boolean): $Cance
 
 /**
  * DiffFile returns the runs of lines the text changes from the file's last
- * commit. It returns an error if git does not track the file.
+ * commit. A file with no committed copy, untracked or in a repository with no
+ * commit yet, has none, since there is nothing to compare it with.
  */
 export function DiffFile(path: string, text: string): $CancellablePromise<$models.LineChange[] | null> {
     return $Call.ByID(297592599, path, text);

@@ -80,9 +80,14 @@ watch(
 const history = shallowRef<string[]>([]);
 const position = shallowRef(-1);
 const backLabel = computed(() => (position.value > 0 ? `Back to ${history.value[position.value - 1]}` : "Back"));
+// The history is one workspace's: switching workspace starts a new one.
 watch(
-  () => root,
-  (next) => {
+  () => [id, root] as const,
+  ([workspaceId, next], previous) => {
+    if (previous && previous[0] !== workspaceId) {
+      history.value = [];
+      position.value = -1;
+    }
     if (!next || history.value[position.value] === next) return;
     history.value = [...history.value.slice(0, position.value + 1), next];
     position.value = history.value.length - 1;

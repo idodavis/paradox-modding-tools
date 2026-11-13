@@ -256,14 +256,13 @@ func listFindings(report Report) []Finding {
 
 // assertGroups checks that a report has a group for each mod in the order, and
 // that each group's tally, checks and sort say what its findings do. The tally
-// of the user's own mods leaves out the groups of the given external mods.
+// of the user's own mods, and the report's, leave out the groups of the given
+// external mods.
 func assertGroups(t *testing.T, report Report, order []string, external map[string]bool) {
 	t.Helper()
 	var ids []string
-	var every []Finding
 	for _, group := range report.Mods {
 		ids = append(ids, group.Mod)
-		every = append(every, group.Findings...)
 	}
 	if !slices.Equal(ids, order) {
 		t.Fatalf("the mods' groups are %v, want %v", ids, order)
@@ -295,7 +294,7 @@ func assertGroups(t *testing.T, report Report, order []string, external map[stri
 	if want := makeTally(own); report.Own.Worst == "" || !maps.Equal(report.Own.Counts, want.Counts) {
 		t.Errorf("the own mods' tally is %+v, want %+v", report.Own, want)
 	}
-	if want := makeTally(slices.Concat(report.Compatibility.Findings, every)); !maps.Equal(report.Counts, want.Counts) {
+	if want := makeTally(slices.Concat(report.Compatibility.Findings, own)); !maps.Equal(report.Counts, want.Counts) {
 		t.Errorf("the report's tally is %+v, want %+v", report.Tally, want)
 	}
 }

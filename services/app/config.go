@@ -185,7 +185,7 @@ var Catalog = []Setting{
 		Words: "beginner novice minimal clutter hide advanced everything"},
 	{Key: "appearance.theme", Label: "Theme",
 		Section: "appearance", Type: "choice", Default: "pmt",
-		Choices: []string{"pmt", "catppuccin", "one", "pierre", "jetbrains", "ck3", "eu5", "vic3"},
+		Choices: []string{"pmt", "catppuccin", "one", "pierre", "jetbrains", "vscode", "ck3", "eu5", "vic3"},
 		Help:    "Each theme comes dark and light and colors every page and the editor.",
 		Words:   "colors palette skin"},
 	{Key: "appearance.dark", Label: "Dark",

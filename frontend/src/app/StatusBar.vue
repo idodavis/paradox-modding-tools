@@ -327,15 +327,8 @@ const LAUNCH = findCommand("game.launch");
       :ui="{ content: 'h-160 sm:max-w-3xl' }"
       @update:open="(opened) => opened && refetchReleases()"
     >
-      <UTooltip :text="update?.available ? 'Releases and updates: a newer version is out' : 'Releases and updates'">
-        <UButton
-          v-if="update?.available"
-          :label="version"
-          icon="i-lucide-download"
-          size="xs"
-          color="primary"
-          variant="soft"
-        />
+      <UTooltip :text="update ? 'Releases and updates: a newer version is out' : 'Releases and updates'">
+        <UButton v-if="update" :label="version" icon="i-lucide-download" size="xs" color="primary" variant="soft" />
         <button v-else type="button" :class="STATUS_ITEM">
           <UIcon name="i-lucide-tag" class="size-3" />{{ version }}
         </button>
@@ -368,7 +361,7 @@ const LAUNCH = findCommand("game.launch");
         <span class="grow text-12 text-error">
           {{ checkError && `The check for updates failed. ${toSentence(checkError.message)}` }}
         </span>
-        <UButton v-if="update?.available" :label="`Update to ${update.version}`" @click="applyUpdate()" />
+        <UButton v-if="update" :label="`Update to ${update}`" @click="applyUpdate()" />
         <UButton v-else label="Check for updates" :loading="checking" @click="checkUpdate()" />
       </template>
     </UModal>

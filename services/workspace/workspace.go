@@ -34,19 +34,12 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"image"
-	"image/png"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
-	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -55,7 +48,6 @@ import (
 	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/schema"
-	"paradox-modding-tools/internal/texture"
 	"paradox-modding-tools/services/app"
 )
 
@@ -109,16 +101,6 @@ type Scanning struct {
 	Percent int `json:"percent"`
 }
 
-// FileText is a file's text with its place in the workspace.
-type FileText struct {
-	Place Place      `json:"place"`
-	Text  files.Text `json:"text"`
-
-	// Draft is the editor's unsaved text, "" if none or the same as the disk.
-	Draft  string `json:"draft"`
-	Binary bool   `json:"binary"`
-}
-
 // Workspace is one recorded workspace as the pages list it.
 type Workspace struct {
 	Record app.Workspace `json:"record"`
@@ -160,8 +142,8 @@ func (s *Service) ServiceShutdown() error {
 	return nil
 }
 
-// ListGames returns the supported games, each example's Modes filled from
-// its database's precedence row.
+// ListGames returns the supported games, each with whether its example's
+// database takes entry modes such as INJECT:.
 func (s *Service) ListGames() []game.Game {
 	rows := game.ListGames()
 	for position := range rows {
@@ -188,7 +170,8 @@ func (s *Service) ListInstalls(gameID string) []app.Install {
 	return installs
 }
 
-// ListReadyInstalls returns the ids of the installs that open without a scan.
+// ListReadyInstalls returns the ids of the installs whose caches are built, so
+// they open without a scan.
 func (s *Service) ListReadyInstalls() []string {
 	ready := []string{}
 	for _, install := range s.Config.Config().Installs {
@@ -243,7 +226,8 @@ func (s *Service) AddInstall(gameID, path, name, version string) (app.Install, e
 	return install, err
 }
 
-// UpdateInstall moves an install to another folder and reads its version again.
+// UpdateInstall moves an install to another folder and reads its version
+// again. An open workspace on the install opens again.
 func (s *Service) UpdateInstall(id, path string) error {
 	if !files.IsFolder(path) {
 		return fmt.Errorf("%s is not a folder", path)
@@ -320,6 +304,7 @@ func (s *Service) RescanInstall(id string) error {
 	if err != nil {
 		return err
 	}
+
 	if err := os.RemoveAll(folder); err != nil {
 		return err
 	}
@@ -379,8 +364,9 @@ func (s *Service) ListWorkspaces() []Workspace {
 		}
 
 		workspaces[position].Mods = make([]Mod, len(record.Mods))
+		roots := row.ListWorkshopRoots()
 		for modPosition, mod := range record.Mods {
-			workspaces[position].Mods[modPosition] = readMod(row, mod)
+			workspaces[position].Mods[modPosition] = readMod(row, roots, mod)
 		}
 	}
 
@@ -404,7 +390,7 @@ func (s *Service) CreateWorkspace(name, install, language string) (app.Workspace
 // UpdateWorkspace replaces a workspace's record but keeps its mods, settings
 // and ignored pairs.
 func (s *Service) UpdateWorkspace(workspace app.Workspace) error {
-	return s.updateWorkspace(workspace.ID, func(record *app.Workspace) error {
+	return s.UpdateRecord(workspace.ID, func(record *app.Workspace) error {
 		workspace.Mods, workspace.Settings, workspace.IgnoredPairs = record.Mods, record.Settings, record.IgnoredPairs
 		*record = workspace
 
@@ -412,9 +398,11 @@ func (s *Service) UpdateWorkspace(workspace app.Workspace) error {
 	})
 }
 
-// updateWorkspace applies a change to a workspace's record, and opens the
+// UpdateRecord applies a change to a workspace's record, and opens the
 // workspace again if the change alters what it opens from.
-func (s *Service) updateWorkspace(workspaceID string, change func(record *app.Workspace) error) error {
+//
+//wails:ignore
+func (s *Service) UpdateRecord(workspaceID string, change func(record *app.Workspace) error) error {
 	reopens := false
 	err := s.Config.Update("workspaces", func(records *app.Config) error {
 		position := slices.IndexFunc(records.Workspaces, func(record app.Workspace) bool { return record.ID == workspaceID })
@@ -438,7 +426,8 @@ func (s *Service) updateWorkspace(workspaceID string, change func(record *app.Wo
 	return err
 }
 
-// makeOpenKey returns the parts of a workspace's record that opening it reads.
+// makeOpenKey joins the parts of a workspace's record that opening it reads,
+// so a change to any of them opens it again.
 func makeOpenKey(record app.Workspace) string {
 	parts := []string{record.Install, record.Language}
 	for _, mod := range record.Mods {
@@ -464,7 +453,8 @@ func (s *Service) DeleteWorkspace(id string) error {
 }
 
 // Open opens a workspace in the background, closing the open one first, and
-// sends workspace:opened or workspace:failed.
+// sends workspace:opened or workspace:failed. The lock is held until the open
+// ends, so every call that asks for the session waits for it.
 func (s *Service) Open(workspaceID string) {
 	s.mu.Lock()
 
@@ -605,22 +595,16 @@ func (s *Service) LookupMod(modID string) (Mod, bool) {
 }
 
 // ResolveFolder returns the folder a shell or an agent starts in, and its mod's
-// id. It is the folder of the mod that holds the file, else of the first mod
-// that has a folder, else the home folder with the id "".
+// id: the mod that holds the file, else the first mod that has a folder, else
+// the home folder with the id "".
 //
 //wails:ignore
 func (s *Service) ResolveFolder(path string) (string, string) {
 	mods := s.ListMods()
 	if path != "" {
-		origin := s.Locate(path).Origin
-		var own []Mod
-		for _, mod := range mods {
-			if mod.ID == origin {
-				own = append(own, mod)
-			}
+		if mod, ok := findMod(mods, s.Locate(path).Origin); ok && !mod.Broken {
+			return mod.Dir, mod.ID
 		}
-
-		mods = append(own, mods...)
 	}
 
 	for _, mod := range mods {
@@ -661,375 +645,4 @@ func (s *Service) Launch() error {
 	}()
 
 	return nil
-}
-
-// Read returns a file's text, its place and the editor's draft of it. A file
-// that is not text comes back as binary.
-func (s *Service) Read(path string) (FileText, error) {
-	ws, err := s.Session()
-	if err != nil {
-		return FileText{}, err
-	}
-
-	place := ws.Locate(ws.Mods.Load(), path)
-	text, err := files.ReadText(path)
-	if errors.Is(err, files.ErrBinary) {
-		return FileText{Place: place, Binary: true}, nil
-	}
-	if err == nil && text.Text == "" && text.Encoding == files.EncodingUTF8 {
-		text.Encoding = place.Format.DefaultEncoding()
-	}
-
-	draft, open := ws.LookupBuffer(path)
-	if !open || draft == text.Text {
-		draft = ""
-	}
-
-	return FileText{Place: place, Text: text, Draft: draft}, err
-}
-
-// ReadHeader returns an image file's header.
-func (s *Service) ReadHeader(path string) (texture.Header, error) {
-	ws, err := s.Session()
-	if err != nil {
-		return texture.Header{}, err
-	}
-
-	if _, ok := ws.Mods.Load().FindRoot(path); !ok {
-		return texture.Header{}, fmt.Errorf("%s is outside the workspace", path)
-	}
-
-	return texture.ReadHeader(path)
-}
-
-// Write writes a file's text. It fails outside the workspace's mods.
-func (s *Service) Write(path string, text files.Text) error {
-	if _, err := s.FindWritable(path); err != nil {
-		return err
-	}
-
-	return files.WriteText(path, text)
-}
-
-// WriteBytes writes a file's bytes, as Write does.
-//
-//wails:ignore
-func (s *Service) WriteBytes(path string, bytes []byte) error {
-	if _, err := s.FindWritable(path); err != nil {
-		return err
-	}
-
-	return files.WriteAtomic(path, bytes)
-}
-
-// CreateCopy copies a file to the same place in a mod and returns the copy's
-// path. It fails if the mod has a file there.
-func (s *Service) CreateCopy(path, modID string) (string, error) {
-	ws, err := s.Session()
-	if err != nil {
-		return "", err
-	}
-
-	mod, ok := s.LookupMod(modID)
-	if !ok || mod.Broken {
-		return "", fmt.Errorf("the mod %s is not in the workspace or has no folder", modID)
-	}
-
-	place := ws.Locate(ws.Mods.Load(), path)
-	if place.Root == "" {
-		return "", fmt.Errorf("%s is outside the workspace", path)
-	}
-
-	target := files.Join(mod.Dir, place.Rel)
-	if files.IsFile(target) {
-		return "", fmt.Errorf("%s has %s already", ws.DescribeMod(modID), place.Rel)
-	}
-
-	bytes, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-
-	return target, s.WriteBytes(target, bytes)
-}
-
-// FindWritable returns the open session if every path is in one of its mods. It
-// fails for the game's own files and a Workshop mod's.
-//
-//wails:ignore
-func (s *Service) FindWritable(paths ...string) (*Session, error) {
-	ws, err := s.Session()
-	if err != nil {
-		return nil, err
-	}
-
-	mods := ws.Mods.Load()
-	for _, path := range paths {
-		switch place := ws.Locate(mods, path); {
-		case place.Root == "":
-			return nil, fmt.Errorf("%s is outside the workspace", path)
-		case place.Origin == files.OriginVanilla:
-			return nil, errors.New("the game's own files are not changed")
-		case place.ReadOnly:
-			return nil, fmt.Errorf("%s is Steam's copy of a Workshop mod; Steam replaces it when its author updates it",
-				ws.DescribeMod(place.Origin))
-		}
-	}
-
-	return ws, nil
-}
-
-// ListFolder returns the places of a folder's entries, folders first, without
-// what the settings hide.
-func (s *Service) ListFolder(dir string) ([]Place, error) {
-	ws, err := s.Session()
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	hideBinaries, _ := s.Config.LookupSetting(ws.ID, "ide.hideBinaries")
-	hideDots, _ := s.Config.LookupSetting(ws.ID, "ide.hideDotFolders")
-	mods := ws.Mods.Load()
-	places := make([]Place, 0, len(entries))
-	for _, entry := range entries {
-		place := ws.Locate(mods, filepath.Join(dir, entry.Name()))
-		place.IsDir = entry.IsDir()
-
-		listed := hideBinaries != "true" || place.Format.IsText()
-		if place.IsDir {
-			listed = isListed(entry.Name(), hideDots == "true")
-		}
-		if listed {
-			places = append(places, place)
-		}
-	}
-
-	slices.SortStableFunc(places, func(first, second Place) int {
-		switch {
-		case first.IsDir == second.IsDir:
-			return 0
-		case first.IsDir:
-			return -1
-		}
-
-		return 1
-	})
-
-	return places, nil
-}
-
-func isListed(name string, hideDots bool) bool {
-	return name != ".git" && (!hideDots || !files.IsHiddenDir(name))
-}
-
-// Create makes an empty file or a folder, and its parents.
-func (s *Service) Create(path string, dir bool) error {
-	if _, err := s.FindWritable(path); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if dir {
-		return os.Mkdir(path, 0o755)
-	}
-
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-
-	return file.Close()
-}
-
-// Rename moves a file or a folder. It fails if the target exists.
-func (s *Service) Rename(source, target string) error {
-	ws, err := s.FindWritable(source, target)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Lstat(target); err == nil {
-		return fmt.Errorf("%s exists already", target)
-	}
-
-	return ws.watcher.Move(source, func() error { return os.Rename(source, target) })
-}
-
-// Delete moves a file or a folder to PMT's trash and returns where it went. A
-// mod's folder takes the mod out of the workspace too.
-func (s *Service) Delete(path string) (string, error) {
-	ws, err := s.FindWritable(path)
-	if err != nil {
-		return "", err
-	}
-
-	trashed := filepath.Join(s.Config.Dirs.Trash, strconv.FormatInt(time.Now().UnixNano(), 10), filepath.Base(path))
-	if err := ws.watcher.Move(path, func() error { return move(path, trashed) }); err != nil {
-		return "", err
-	}
-
-	for _, mod := range *ws.Order.Load() {
-		if files.ToKey(mod.Dir) == files.ToKey(path) {
-			return trashed, s.RemoveMod(ws.ID, mod.ID)
-		}
-	}
-
-	return trashed, nil
-}
-
-// Restore moves a file or a folder back from PMT's trash. It fails if the
-// target exists.
-func (s *Service) Restore(trashed, path string) error {
-	if !files.IsUnder(s.Config.Dirs.Trash, trashed) {
-		return fmt.Errorf("%s is not in the trash", trashed)
-	}
-	if _, err := s.FindWritable(path); err != nil {
-		return err
-	}
-	if _, err := os.Lstat(path); err == nil {
-		return fmt.Errorf("%s exists already", path)
-	}
-
-	return move(trashed, path)
-}
-
-// move moves a file or a folder, making the folder it goes into. Across drives
-// it copies, then deletes the original.
-func move(source, target string) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
-	}
-
-	err := os.Rename(source, target)
-	crossesDrives := errors.Is(err, syscall.EXDEV) || filepath.VolumeName(source) != filepath.VolumeName(target)
-	if err == nil || !crossesDrives {
-		return err
-	}
-
-	if files.IsFolder(source) {
-		err = os.CopyFS(target, os.DirFS(source))
-	} else {
-		var content []byte
-		if content, err = os.ReadFile(source); err == nil {
-			err = os.WriteFile(target, content, 0o644)
-		}
-	}
-	if err != nil {
-		return err
-	}
-
-	return os.RemoveAll(source)
-}
-
-// Locate returns the place of a file or folder, empty if no workspace is open.
-func (s *Service) Locate(path string) Place {
-	ws, err := s.Session()
-	if err != nil {
-		return Place{}
-	}
-
-	place := ws.Locate(ws.Mods.Load(), path)
-	place.IsDir = files.IsFolder(path)
-
-	return place
-}
-
-// ServeHTTP serves the file a request names. A DDS or TGA, or a request for a
-// frame or a mip level, is served as PNG. A file outside the installs, mods and
-// Workshop folders is refused.
-func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	query := request.URL.Query()
-	path := query.Get("path")
-	records := s.Config.Config()
-
-	var dirs []string
-	for _, install := range records.Installs {
-		dirs = append(dirs, install.Path)
-	}
-	for _, record := range records.Workspaces {
-		for _, mod := range record.Mods {
-			dirs = append(dirs, mod.Dir)
-		}
-	}
-
-	isRecorded := slices.ContainsFunc(dirs, func(dir string) bool {
-		_, ok := files.ToRel(dir, path)
-
-		return ok
-	})
-
-	// The Workshop picker shows a mod's thumbnail before the mod is added.
-	isDownloaded := slices.ContainsFunc(records.Installs, func(install app.Install) bool {
-		row := game.LookupGame(install.Game)
-
-		return row != nil && row.IsWorkshopFolder(path)
-	})
-	if !isRecorded && !isDownloaded {
-		http.Error(writer, "the path is outside every recorded install and mod", http.StatusForbidden)
-
-		return
-	}
-
-	isCut := query.Has("framesize") || query.Has("framegrid") || query.Has("level")
-	if ext := strings.ToLower(filepath.Ext(path)); ext != ".dds" && ext != ".tga" && !isCut {
-		http.ServeFile(writer, request, path)
-
-		return
-	}
-
-	bytes, err := os.ReadFile(path)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusNotFound)
-
-		return
-	}
-
-	level, _ := strconv.Atoi(query.Get("level"))
-	picture, err := texture.Decode(bytes, level)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusUnprocessableEntity)
-
-		return
-	}
-
-	writer.Header().Set("Content-Type", "image/png")
-	_ = png.Encode(writer, cutFrame(picture, query))
-}
-
-// cutFrame returns the frame of a sprite sheet that a query names, counted from
-// 1 across and then down. A frame past the end is the last. It returns the
-// whole image if the query gives no usable frame size.
-func cutFrame(picture image.Image, query url.Values) image.Image {
-	bounds := picture.Bounds()
-	var width, height, columns, rows float64
-	if _, err := fmt.Sscan(query.Get("framesize"), &width, &height); err == nil {
-		density, err := strconv.ParseFloat(query.Get("density"), 64)
-		if err != nil || density <= 0 {
-			density = 1
-		}
-
-		width, height = width*density, height*density
-	} else if _, err := fmt.Sscan(query.Get("framegrid"), &columns, &rows); err == nil && columns >= 1 && rows >= 1 {
-		width, height = float64(bounds.Dx())/columns, float64(bounds.Dy())/rows
-	}
-
-	size := image.Pt(int(width), int(height))
-	sheet, ok := picture.(interface {
-		SubImage(image.Rectangle) image.Image
-	})
-	if !ok || size.X < 1 || size.Y < 1 || size.X > bounds.Dx() || size.Y > bounds.Dy() {
-		return picture
-	}
-
-	frame, _ := strconv.Atoi(query.Get("frame"))
-	rowFrames := bounds.Dx() / size.X
-	position := min(max(frame, 1), rowFrames*(bounds.Dy()/size.Y)) - 1
-	corner := bounds.Min.Add(image.Pt(position%rowFrames*size.X, position/rowFrames*size.Y))
-
-	return sheet.SubImage(image.Rectangle{Min: corner, Max: corner.Add(size)})
 }

@@ -41,15 +41,10 @@ var elements = map[atom.Atom]element{
 	atom.Nav: {dropped: true}, atom.Head: {dropped: true},
 }
 
-// Sanitize cuts a wiki page's HTML down to what the pane shows, making links
-// absolute against the wiki's address. It returns "" if the HTML cannot be
-// parsed.
-func Sanitize(text string, origin *url.URL) string {
-	root, err := parseFragment(text)
-	if err != nil {
-		return ""
-	}
-
+// sanitizePage cuts a parsed wiki page down to what the pane shows and
+// returns its HTML: no chrome, citations, pictures or reference sections, long
+// tables folded, and only web links, made absolute.
+func sanitizePage(root *html.Node, origin *url.URL) string {
 	sanitize(root, origin)
 	arrangeSections(root)
 	var sanitized strings.Builder
@@ -76,6 +71,7 @@ func parseFragment(text string) (*html.Node, error) {
 	return root, nil
 }
 
+// openRows is the most rows a table may have and stay unfolded.
 const openRows = 2
 
 func sanitize(parent *html.Node, origin *url.URL) {

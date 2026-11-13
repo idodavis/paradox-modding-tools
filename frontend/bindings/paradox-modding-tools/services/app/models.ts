@@ -9,18 +9,19 @@ export interface Agent {
     "name": string;
 
     /**
-     * Program is the user's own agent, "" for one PMT offers.
+     * Program starts the user's own agent. It is "" for an agent PMT offers.
      */
     "program"?: string;
     "args"?: string[] | null;
 
     /**
-     * Register is how PMT's tools are registered with the agent outside PMT.
+     * Register is the text that registers PMT's tools with the agent outside
+     * PMT.
      */
     "register"?: string;
 
     /**
-     * Files are the agent's instruction files and folders, by name in a mod.
+     * Files are the instruction files and folders the agent reads in a mod.
      */
     "files"?: string[] | null;
 }
@@ -32,7 +33,7 @@ export interface Calendar {
     "eras": Era[] | null;
 
     /**
-     * Months are twelve names, or none for the game's.
+     * Months are twelve names, or none for the game's own.
      */
     "months"?: string[] | null;
 }
@@ -65,7 +66,7 @@ export interface Mod {
     "dir": string;
 
     /**
-     * Color is a slot `o1` to `o16`, or a CSS color.
+     * Color is a slot o1 to o16, or a CSS color.
      */
     "color": string;
     "calendar": Calendar;
@@ -74,11 +75,6 @@ export interface Mod {
      * WorkshopID is "" for an unpublished mod.
      */
     "workshopId": string;
-
-    /**
-     * Ignore is the upload exclusions, one pattern per line.
-     */
-    "ignore": string;
 
     /**
      * LeftOut keeps the mod out of the compatibility checks.
@@ -103,7 +99,8 @@ export interface Release {
     "older": boolean;
 
     /**
-     * Installable is true when the release is firstInstallable or newer.
+     * Installable is false for a release older than firstInstallable, whose
+     * zip the updater cannot install.
      */
     "installable": boolean;
 }
@@ -113,7 +110,7 @@ export interface Release {
  */
 export interface Setting {
     /**
-     * Key is `<area>.<noun>`.
+     * Key is written area.noun, such as ide.minimap.
      */
     "key": string;
     "label": string;
@@ -147,14 +144,6 @@ export interface Setting {
      * Words are what the palette's search also matches.
      */
     "words": string;
-}
-
-/**
- * Update is the result of a check for a newer version of the app.
- */
-export interface Update {
-    "version": string;
-    "available": boolean;
 }
 
 /**

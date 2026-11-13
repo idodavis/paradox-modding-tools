@@ -32,6 +32,7 @@ func (s *Service) ListCommits(dir string, limit int, refs []string) ([]Commit, e
 	}, refs, []string{"--"})
 	stdout, err := s.run(dir, args...)
 	if err != nil {
+		// log fails in a repository with no commit, which has no HEAD.
 		if _, headErr := s.run(dir, "rev-parse", "--verify", "-q", "HEAD"); headErr != nil {
 			return []Commit{}, nil
 		}
@@ -73,6 +74,23 @@ func (s *Service) ListCommits(dir string, limit int, refs []string) ([]Commit, e
 	}
 
 	return commits, nil
+}
+
+// ListSubjects returns the subjects of the commits that change a folder,
+// newest first: those since the given time, or every one for the zero time.
+// It returns an error outside a repository or in one with no commit.
+func (s *Service) ListSubjects(dir string, cutoff time.Time) ([]string, error) {
+	args := []string{"log", "--format=%s"}
+	if !cutoff.IsZero() {
+		args = append(args, "--since="+cutoff.Format(time.RFC3339))
+	}
+
+	stdout, err := s.run(dir, append(args, "--", ".")...)
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(strings.Split(stdout, "\n"), func(subject string) bool { return subject == "" }), nil
 }
 
 // ListCommitFiles returns the files a commit changed, a renamed one with its

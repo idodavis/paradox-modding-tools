@@ -31,7 +31,8 @@ type Completion struct {
 
 	Blurb string `json:"blurb,omitempty"`
 
-	// Rank is how often the game writes the candidate there.
+	// Rank sorts the list, the highest first. Most ranks count how often the
+	// game writes the candidate.
 	Rank int `json:"rank"`
 
 	// Snippet is whether Insert has placeholders.
@@ -63,14 +64,15 @@ func (s *Service) Complete(path string, line, column int) (CompletionList, error
 		return CompletionList{}, err
 	}
 
-	tree, mods := document.Tree, ws.Mods.Load()
-	place := ws.Locate(mods, path)
-	list := CompletionList{Candidates: []Completion{}}
 	if document.Contexts == nil {
-		return list, nil
+		return CompletionList{Candidates: []Completion{}}, nil
 	}
 
+	tree, mods := document.Tree, ws.Mods.Load()
+	place := ws.Locate(mods, path)
 	offset := jomini.ToOffset(tree.Src, tree.Lines, line, column)
+
+	var list CompletionList
 	statement, listed, ok := findValue(tree, offset)
 	if ok {
 		current := tree.Statements[statement]
@@ -82,11 +84,7 @@ func (s *Service) Complete(path string, line, column int) (CompletionList, error
 		context := &document.Contexts[statement]
 		list.Candidates, list.Cut = listValues(ws, mods, place.Position, tree, context, typed, offset)
 		links := listChainLinks(ws.Schema, context, strings.TrimPrefix(typed, `"`))
-		list.Candidates = dropRepeats(append(list.Candidates, links...))
-	}
-
-	if ok && !listed {
-		return list, nil
+		list.Candidates = append(list.Candidates, links...)
 	}
 
 	// The innermost block holding the offset gives the keys.
@@ -95,12 +93,12 @@ func (s *Service) Complete(path string, line, column int) (CompletionList, error
 		holder = tree.Statements[holder].Parent
 	}
 
-	if holder == 0 || document.Contexts[holder].Shape == "" {
-		return list, nil
+	if (!ok || listed) && holder > 0 && document.Contexts[holder].Shape != "" {
+		keys := listKeys(mods, place.Position, ws.Schema, lang.LookupDialect(ws.Game.ID), &document.Contexts[holder])
+		list.Candidates = slices.Concat(keys, list.Candidates)
 	}
 
-	keys := listKeys(mods, place.Position, ws.Schema, lang.LookupDialect(ws.Game.ID), &document.Contexts[holder])
-	list.Candidates = dropRepeats(slices.Concat(keys, list.Candidates))
+	list.Candidates = dropRepeats(list.Candidates)
 
 	return list, nil
 }
@@ -130,10 +128,10 @@ func findValue(tree *jomini.Tree, offset int) (int32, bool, bool) {
 	return statement, false, !pastLine && !pastValue
 }
 
-// listValues returns what may be written as a statement's value: constants, the
-// names of the databases its references name, and for a target the links and
-// prefixes of its scope. With none of these it offers the values the game
-// writes there. It reports whether a limit cut the names short.
+// listValues returns what may be written as a statement's value: its
+// constants and the names its references can take, or failing those the values
+// the game writes there. A target also gets the links that lead to its scope.
+// It reports whether a limit cut the names short.
 func listValues(
 	ws *workspace.Session, mods *index.Index, file int32, tree *jomini.Tree, context *lang.Context, typed string,
 	offset int,
@@ -190,17 +188,19 @@ func listValues(
 		values = append(values, listScopeLinks(context, isScope, rank)...)
 	}
 
-	return dropRepeats(values), cut
+	return values, cut
 }
 
 // listChainLinks returns what continues the links typed so far. After scope:
 // it is the saved scopes, whatever the field takes. After a dot it is the
-// links that run in the scope the chain leads to, each written after the
-// chain, as root.liege after root. An unknown link before the dot gives none.
+// links that run in the scope the chain leads to, written after the chain. An
+// unknown link before the dot gives none.
 func listChainLinks(language *lang.Schema, context *lang.Context, typed string) []Completion {
+	unranked := func(string) int { return 0 }
+
 	var links []Completion
 	if strings.HasPrefix(typed, lang.SavedScopes+":") {
-		links = listScopeLinks(context, func(string) bool { return true }, func(string) int { return 0 })
+		links = listScopeLinks(context, func(string) bool { return true }, unranked)
 	}
 
 	position := strings.LastIndex(typed, ".")
@@ -214,12 +214,20 @@ func listChainLinks(language *lang.Schema, context *lang.Context, typed string) 
 	}
 
 	scope := chain[len(chain)-1].Scope
+
+	return append(links, listLinks(language, scope, typed[:position+1], unranked)...)
+}
+
+// listLinks returns the links written alone that run in a scope, each written
+// after the given text, such as "root.".
+func listLinks(language *lang.Schema, scope, head string, rank func(key string) int) []Completion {
+	var links []Completion
 	for _, key := range language.ListKeys(lang.DumpLinks) {
 		link := language.LookupDefinition(lang.DumpLinks, key)
-		if label := typed[:position+1] + key; !link.Prefixed && link.ResolveTarget(scope) != "" {
+		if !link.Prefixed && link.ResolveTarget(scope) != "" {
 			links = append(links, Completion{
-				Label: label, Insert: label, Category: lang.CategoryLink, Detail: findClass(lang.DumpLinks).ID,
-				Blurb: link.Blurb,
+				Label: head + key, Insert: head + key, Category: lang.CategoryLink,
+				Detail: findClass(lang.DumpLinks).ID, Blurb: link.Blurb, Rank: rank(key),
 			})
 		}
 	}
@@ -367,6 +375,7 @@ func listScopeLinks(context *lang.Context, fits func(scope string) bool, rank fu
 			})
 		}
 	}
+
 	offer(lang.LinkThis, holder.Scope, "the scope this line runs in")
 	offer(lang.LinkRoot, holder.Root, "the scope the definition starts in")
 	previous := ""
@@ -402,9 +411,7 @@ func dropRepeats(candidates []Completion) []Completion {
 }
 
 // listKeys returns the keys a block takes: keywords, then commands, calls and
-// links, then fields, each kind ranked above the next. A repeated key is kept
-// once. A command ranks by how often the game writes it, in the field's blocks
-// or anywhere.
+// links, then fields, each kind ranked above the next.
 func listKeys(
 	mods *index.Index, file int32, language *lang.Schema, dialect *lang.Dialect, holder *lang.Context,
 ) []Completion {
@@ -425,24 +432,19 @@ func listKeys(
 
 	keywords := listKeywords(dialect, language, holder, findTopRank(commands)+1)
 
-	return dropRepeats(slices.Concat(keywords, commands, fields))
+	return slices.Concat(keywords, commands, fields)
 }
 
-// listFields returns the keys the block's field declares, alphabetically,
-// except those beginning with "<", then the names of the database its keys
-// name. It returns nil without a field.
+// listFields returns the keys the block's field declares, then the names of
+// the database its keys name. It returns nil without a field.
 func listFields(mods *index.Index, file int32, holder *lang.Context) []Completion {
 	if holder.Field == nil {
 		return nil
 	}
 
 	var fields []Completion
-	for _, key := range slices.Sorted(maps.Keys(holder.Field.Children)) {
+	for _, key := range listDeclared(holder.Field) {
 		field := holder.Field.Children[key]
-		if strings.HasPrefix(key, "<") {
-			continue
-		}
-
 		fields = append(fields, makeKey(Completion{
 			Label: key, Category: lang.CategoryField, Detail: string(field.Value.Value.Type), Blurb: field.Blurb.Value,
 			Rank: field.Vanilla.Count,
@@ -457,6 +459,14 @@ func listFields(mods *index.Index, file int32, holder *lang.Context) []Completio
 	}
 
 	return fields
+}
+
+// listDeclared returns the keys a field declares, sorted, without the patterns
+// such as <int> that stand for any key of a kind.
+func listDeclared(field *lang.Field) []string {
+	return slices.DeleteFunc(slices.Sorted(maps.Keys(field.Children)), func(key string) bool {
+		return strings.HasPrefix(key, "<")
+	})
 }
 
 func findTopRank(candidates []Completion) int {
@@ -518,19 +528,11 @@ func listCalls(
 // listKeyLinks returns the links a key may be: those written alone that run in
 // the block's scope, then this, root, prev and the saved scopes.
 func listKeyLinks(language *lang.Schema, holder *lang.Context, rank func(database, key string) int) []Completion {
-	var links []Completion
-	for _, key := range language.ListKeys(lang.DumpLinks) {
-		link := language.LookupDefinition(lang.DumpLinks, key)
-		if !link.Prefixed && link.ResolveTarget(holder.Scope) != "" {
-			links = append(links, Completion{
-				Label: key, Category: lang.CategoryLink, Detail: findClass(lang.DumpLinks).ID, Blurb: link.Blurb,
-				Rank: rank(lang.DumpLinks, key),
-			})
-		}
-	}
-
 	rankLink := func(key string) int { return rank(lang.DumpLinks, key) }
-	links = append(links, listScopeLinks(holder, func(string) bool { return true }, rankLink)...)
+	links := slices.Concat(
+		listLinks(language, holder.Scope, "", rankLink),
+		listScopeLinks(holder, func(string) bool { return true }, rankLink),
+	)
 	for position := range links {
 		links[position] = makeKey(links[position], true)
 	}
@@ -545,6 +547,7 @@ func listKeywords(dialect *lang.Dialect, language *lang.Schema, holder *lang.Con
 	fitting := slices.DeleteFunc(dialect.ListKeywords(cmp.Or(holder.Shape, lang.ShapeUnknown), holder.Label), func(keyword lang.Keyword) bool {
 		return language.FindCommand(keyword.Key) != nil && findTaken(language, holder, keyword.Key) == nil
 	})
+
 	// The classes come in the order their first keyword does.
 	var classes []lang.KeywordClass
 	for _, keyword := range fitting {

@@ -689,7 +689,7 @@ func TestServiceRefusesGameFiles(t *testing.T) {
 	_, deleteRootErr := wsp.Delete(filepath.Join(resolveFixture(t, ck3), "game"))
 	refusals := map[string]error{
 		"Write":         wsp.Write(vanilla, files.Text{}),
-		"Create":        wsp.Create(filepath.Join(filepath.Dir(vanilla), "new.txt"), false),
+		"CreateFile":    wsp.CreateFile(filepath.Join(filepath.Dir(vanilla), "new.txt")),
 		"Rename from":   wsp.Rename(vanilla, filepath.Join(mod, "moved.txt")),
 		"Rename to":     wsp.Rename(mine, filepath.Join(filepath.Dir(vanilla), "moved.txt")),
 		"Delete":        deleteErr,

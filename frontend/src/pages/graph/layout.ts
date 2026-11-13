@@ -3,7 +3,7 @@ import dagre, { type Graph as DagreGraph } from "@dagrejs/dagre";
 import type { Edge as FlowEdge, Node as FlowNode } from "@vue-flow/core";
 
 import type { Edge, Graph, Node } from "@services/graph/models";
-import { describeStep, writeConditions } from "./ConditionList.vue";
+import { writeConditions } from "./ConditionList.vue";
 
 /** Look is how a database's nodes are drawn. */
 export type Look = { shape: "frame" | "toast" | "pill"; filled: boolean; color: string; icon: string };
@@ -189,7 +189,7 @@ function buildEdges(graph: Graph, placed: DagreGraph, lit: Lit | null): FlowEdge
         // also gives every edge a point halfway, where a label would sit; an edge between neighbouring ranks has only
         // that one, and it bends the curve, so such an edge keeps none.
         points: dropHalfway(route?.points?.slice(1, -1) ?? []),
-        conditions: writeConditions((edge.steps ?? []).flatMap(describeStep)),
+        conditions: writeConditions((edge.steps ?? []).flatMap((step) => step.conditions ?? [])),
       },
     };
   });

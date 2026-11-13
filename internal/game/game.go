@@ -45,43 +45,38 @@ package game
 type Game struct {
 	ID string `json:"id"`
 
-	// Name is the game's full name. Its folder under Documents/Paradox
-	// Interactive has the same name.
+	// Name is the game's full name, which is also its folder under
+	// Documents/Paradox Interactive.
 	Name string `json:"name"`
 
 	ShortName string `json:"shortName"`
 
-	// Stages are the folders the game loads at its different stages, as
-	// EU5's main_menu and in_game, in the order it mounts them. The game's
-	// own folder and a mod's each hold them. They are none for a game that
-	// has no stages.
+	// Stages are the folders a game with load stages mounts in turn, such as
+	// EU5's main_menu and in_game. The game's folder and each mod's hold them.
 	Stages []string `json:"-"`
 
-	// ModDescriptor is the path of the file that describes a mod, from the
-	// mod's folder.
+	// ModDescriptor is the file that describes a mod, from the mod's folder.
 	ModDescriptor string `json:"descriptor,omitempty"`
 
-	// FixedModFolder is whether the launcher loads a local mod only from its
+	// FixedModFolder is whether the launcher loads local mods only from its
 	// own mod folder.
 	FixedModFolder bool `json:"fixedModFolder"`
 
-	// ThumbnailDir is the folder a new thumbnail of a mod is saved in, from
-	// the mod's folder. It is "" for the mod's folder itself.
+	// ThumbnailDir is where a new mod thumbnail is saved, from the mod's
+	// folder. It is "" for the mod's folder itself.
 	ThumbnailDir string `json:"-"`
 
 	SteamAppID int `json:"-"`
 
-	// SteamLibrary is the path of the game's own copy of Steam's library,
-	// from the install's folder, for each system by its GOOS name. A system
-	// that is not listed has none.
+	// SteamLibrary is the game's own copy of Steam's library, from the
+	// install's folder, by GOOS. A system that is not listed has none.
 	SteamLibrary map[string]string `json:"-"`
 
-	// ModFolders are the folders a new mod is made with, from the mod's
-	// folder.
+	// ModFolders are the folders a new mod is made with.
 	ModFolders []string `json:"-"`
 
-	// Program is how the game is started on each system, by its GOOS name.
-	// The game has no build for a system that is not listed.
+	// Program is how the game is started, by GOOS. The game has no build for
+	// a system that is not listed.
 	Program map[string]Program `json:"-"`
 
 	Guide   Guide   `json:"guide"`
@@ -90,18 +85,17 @@ type Game struct {
 
 // Program is how a game is started on one system.
 type Program struct {
-	// Executable is the path of the game's program, from the install's
-	// folder. It is "" where it is not known.
+	// Executable is the game's program, from the install's folder. It is ""
+	// where it is not known.
 	Executable string
 
-	// DebugArgs are the flags that start the game in debug mode, in which it
-	// loads changed script while it runs.
+	// DebugArgs start the game in debug mode, where it reloads changed script
+	// while it runs.
 	DebugArgs []string
 
-	// Settings is the path of the launcher's settings file, from the
-	// install's folder. The program its exePath names is started in place of
-	// Executable, and its arguments come before DebugArgs. It is "" for a
-	// game whose launcher has no such file.
+	// Settings is the launcher's settings file, from the install's folder, or
+	// "" if the launcher has none. The program it names replaces Executable,
+	// and its arguments come before DebugArgs.
 	Settings string
 }
 
@@ -110,23 +104,22 @@ type Program struct {
 type Example struct {
 	Database string `json:"database"`
 
-	// Folder is the folder of the database's files, from the game's folder.
+	// Folder is the database's folder, from the game's folder.
 	Folder string `json:"folder"`
 
 	Names []string `json:"names"`
 
-	// Modes is whether a mod changes a definition of this game by writing a
-	// mode before its name, as REPLACE:brave does.
+	// Modes is whether a mod changes these definitions by writing a mode
+	// before the name, as in REPLACE:brave.
 	Modes bool `json:"modes"`
 }
 
-// Guide is the text that tells a modder how a game picks which copy of a
-// file or of a definition it keeps.
+// Guide tells a modder how a game picks which copy of a file or of a
+// definition it keeps.
 type Guide struct {
-	// Hint says what the load order decides. Files says which of a mod's
-	// files the game reads. Kept says which copy of a definition each
-	// database keeps. Changes says what moving a mod in the load order
-	// changes.
+	// Hint says what the load order decides, Files which of a mod's files the
+	// game reads, Kept which copy of a definition each database keeps, and
+	// Changes what moving a mod in the load order changes.
 	Hint    string `json:"hint"`
 	Files   string `json:"files"`
 	Kept    string `json:"kept"`
@@ -143,23 +136,20 @@ const (
 // ScriptRoot is the folder of an install that holds the game's own files.
 const ScriptRoot = "game"
 
-// MetadataDir is the folder of a mod that holds its metadata.json and, for
-// EU5, its thumbnail.
+// MetadataDir is a mod's metadata folder, which holds its metadata.json and
+// EU5's thumbnail.
 const MetadataDir = ".metadata"
 
-// PictureExtensions are the file extensions a mod's thumbnail and the
-// pictures of its gallery may have.
+// PictureExtensions are the extensions a mod's thumbnail and gallery
+// pictures may have.
 var PictureExtensions = []string{".png", ".gif", ".jpg", ".jpeg", ".webp"}
 
-// launcherFile is the path of the launcher's settings file, from the
-// install's folder.
+// launcherFile is the launcher's settings file, from the install's folder.
 const launcherFile = "launcher/launcher-settings.json"
 
-// steamLibrary is where CK3 and Vic3 keep their copy of Steam's library, by
-// GOOS name.
+// steamLibrary is where CK3 and Vic3 keep their copy of Steam's library.
 var steamLibrary = map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"}
 
-// games holds the supported games, by id.
 var games = map[string]*Game{
 	CK3: {
 		ID:            CK3,
@@ -179,7 +169,6 @@ var games = map[string]*Game{
 			Kept:    "Most things keep the copy read last; events keep the highest override priority, and on a tie the game logs an error and keeps one copy without saying which; a character takes its name, traits, skills, parents and birth from the copy with the highest override priority and combines the rest, and the game calls a tie an error without saying what it keeps; on_actions combine their lists.",
 			Changes: "Only files at the same path.",
 		},
-		// common/traits/00_traits.txt
 		Example: Example{Database: "traits", Folder: "common/traits", Names: []string{"gregarious", "shy", "brave"}},
 	},
 	Vic3: {
@@ -201,7 +190,6 @@ var games = map[string]*Game{
 			Kept:    "Most things keep the copy read last; events and GUI types keep the first; where a folder takes INJECT: and REPLACE:, the first plain copy stays and a later one is refused, so mods change it with those keywords, which act after every plain copy whatever their file's name, by mode (INJECT_OR_CREATE first, REPLACE last) and then by file name; character DNA copies all exist.",
 			Changes: "Only files at the same path.",
 		},
-		// common/buildings/01_industry.txt
 		Example: Example{
 			Database: "buildings", Folder: "common/buildings",
 			Names: []string{"building_food_industry", "building_textile_mill", "building_furniture_manufactory"},
@@ -211,15 +199,14 @@ var games = map[string]*Game{
 		ID:        EU5,
 		Name:      "Europa Universalis V",
 		ShortName: "EU5",
-		// debug.log:5372-5394 mounts each root's stages in this order, and only
-		// them; the wiki's Mod structure, l.46-57
+		// the game mounts each root's stages in this order, and nothing else
 		Stages:         []string{"loading_screen", "main_menu", "in_game"},
 		ModDescriptor:  MetadataDir + "/metadata.json",
 		FixedModFolder: true,
 		ThumbnailDir:   MetadataDir,
 		SteamAppID:     3450310,
-		// EU5 has no Linux build. On Linux it runs under Proton, with only
-		// the Windows library.
+		// EU5 has no Linux build; there it runs under Proton with the Windows
+		// library
 		SteamLibrary: map[string]string{"windows": "binaries/steam_api64.dll"},
 		ModFolders:   []string{"in_game/common", "in_game/events", "main_menu/localization"},
 		Program: map[string]Program{
@@ -231,20 +218,19 @@ var games = map[string]*Game{
 			Kept:    "Under common/ the first plain copy stays and mods change it with INJECT: and REPLACE:, which act after every plain copy whatever their file's name, by mode (INJECT_OR_CREATE first, REPLACE last) and then by file name; events keep the first; GUI types and templates follow the load order; coats of arms and defines keep the last.",
 			Changes: "Only files at the same path and GUI types and templates.",
 		},
-		// in_game/common/traits/00_ruler.txt
 		Example: Example{Database: "traits", Folder: "in_game/common/traits", Names: []string{"righteous", "cruel", "tolerant"}},
 	},
 }
 
-// LookupGame returns the game with the given id. It returns nil for an id
-// the app does not support.
+// LookupGame returns the game with the given id, or nil if the app does not
+// support it.
 func LookupGame(id string) *Game {
 	return games[id]
 }
 
 // ListGames returns the supported games in the order the app shows them.
-// Modes of each game's example is false here, since the language's own rows
-// say which games take modes.
+// Example.Modes is left false: the language's rows know which databases take
+// modes.
 func ListGames() []Game {
 	return []Game{*games[CK3], *games[EU5], *games[Vic3]}
 }

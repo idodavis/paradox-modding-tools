@@ -23,12 +23,14 @@ type Mounts struct {
 	// byKey holds the position in Files of each listed file, by key.
 	byKey map[string]int32
 
-	// groups holds the positions of files sharing a path below their stage, in
-	// load order, by toGroupKey.
+	// groups holds, by lower-case path below the stage, the positions of the
+	// files at that path in load order.
 	groups map[string][]int32
 
+	// placements holds where the game mounts each file, by its position.
 	placements []placement
 
+	// rootKeys holds each root's key with a trailing slash.
 	rootKeys []string
 
 	// origins holds the ids of the mods Narrow kept. It is nil for every mod.
@@ -52,15 +54,15 @@ type placement struct {
 	unmounted bool
 }
 
-// Mount is Mounts.Mount on empty mounts.
+// Mount walks the roots and returns their mounts.
 func Mount(roots []Root) (*Mounts, error) {
 	return new(Mounts).Mount(roots)
 }
 
-// Mount returns new mounts of these roots and files followed by those under
-// the given roots, so a file's position means the same in both. A file below a
-// root inside another given root is listed once, under the inner one. It
-// returns an error if a root cannot be walked.
+// Mount returns new mounts that add the given roots after these, so a file's
+// position means the same in both. A file below a root nested in another
+// given root is listed once, under the inner one. It returns an error if a
+// root cannot be walked.
 func (m *Mounts) Mount(roots []Root) (*Mounts, error) {
 	keys := listRootKeys(roots)
 	var list []File
@@ -103,8 +105,9 @@ func findRoot(rootKeys []string, key string) (int, bool) {
 	return position, ok
 }
 
-// NewMounts returns the mounts for the given roots and their files, as Mount
-// lists them. It also restores mounts from a gob cache.
+// NewMounts builds mounts from root folders and the files Mount listed for
+// them.
+// It also rebuilds mounts loaded from a gob cache.
 func NewMounts(roots []Root, list []File) *Mounts {
 	mounts := &Mounts{
 		Roots: roots, Files: list, rootKeys: listRootKeys(roots),
@@ -149,8 +152,7 @@ func (m *Mounts) buildGroup(position int32) {
 }
 
 // isUnmounted reports whether the game never mounts a file: a mod's file
-// outside every stage of a root that has stages (EU5 debug.log:80-83, 5392;
-// the wiki's Mod structure, l.46-48).
+// outside every stage of a root that has stages.
 func isUnmounted(file File, stages []string) bool {
 	return len(stages) > 0 && file.Origin != OriginVanilla && file.Stage == ""
 }
@@ -380,7 +382,7 @@ func (m *Mounts) ListImages(folder string) []File {
 	return images
 }
 
-// CompareRoots orders two files by root in load order. It is 0 for one root.
+// CompareRoots orders two files by their roots' load order.
 func (m *Mounts) CompareRoots(first, second int32) int {
 	return cmp.Compare(m.placements[first].root, m.placements[second].root)
 }
@@ -446,7 +448,8 @@ func (m *Mounts) Add(file File) int32 {
 	return position
 }
 
-// Unlist drops the file with a key from the listed files.
+// Unlist drops the file with a key from the listed files. It keeps its
+// position in Files.
 func (m *Mounts) Unlist(key string) {
 	delete(m.byKey, key)
 }

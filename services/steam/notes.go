@@ -50,12 +50,18 @@ func (s *Service) ListChangeNotes(modID, key string) ([]ChangeNote, error) {
 
 	notes := []ChangeNote{}
 	if len(commits) > 0 {
-		note, err := s.buildGitNote(mod.Dir, listing.Version, s.resolveSince(ws, listing.WorkshopID))
+		cutoff := s.resolveSince(ws, listing.WorkshopID)
+		subjects, err := s.Git.ListSubjects(mod.Dir, cutoff)
 		if err != nil {
 			return nil, err
 		}
 
-		notes = append(notes, note)
+		lines := []string{"Version " + listing.Version}
+		for _, subject := range subjects {
+			lines = append(lines, "- "+subject)
+		}
+
+		notes = append(notes, ChangeNote{Source: noteGit, Text: strings.Join(lines, "\n"), Count: len(subjects), Since: cutoff})
 	}
 
 	note, ok, err := findChangelogNote(mod.Dir, listing.Version)
@@ -77,31 +83,9 @@ func (s *Service) resolveSince(ws *workspace.Session, workshopID string) time.Ti
 		return answer.Steam.UpdatedAt
 	}
 
-	snapshot, _ := LoadSnapshot(s.Workspace.Config.Dirs.Cache, workshopID)
+	snapshot, _ := lookupSnapshot(s.Workspace.Config.Dirs.Cache, workshopID)
 
 	return snapshot.UpdatedAt
-}
-
-// buildGitNote drafts a note from the subjects of the commits since a time, or
-// of every commit for the zero time.
-func (s *Service) buildGitNote(dir, version string, cutoff time.Time) (ChangeNote, error) {
-	args := []string{"log", "--format=%s"}
-	if !cutoff.IsZero() {
-		args = append(args, "--since="+cutoff.Format(time.RFC3339))
-	}
-
-	stdout, err := s.Git.Run(dir, append(args, "--", ".")...)
-	if err != nil {
-		return ChangeNote{}, err
-	}
-
-	subjects := slices.DeleteFunc(strings.Split(stdout, "\n"), func(subject string) bool { return subject == "" })
-	lines := []string{"Version " + version}
-	for _, subject := range subjects {
-		lines = append(lines, "- "+subject)
-	}
-
-	return ChangeNote{Source: noteGit, Text: strings.Join(lines, "\n"), Count: len(subjects), Since: cutoff}, nil
 }
 
 // findChangelogNote returns the section of a mod's changelog file for a

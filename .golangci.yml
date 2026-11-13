@@ -37,12 +37,12 @@ linters:
       - frontend
     rules:
       # the registry's rows repeat a word as data: two rows naming one database are two facts
-      - path: internal/(lang/(declarations|keywords|keep|gui)|schema/(dumps|docs)|index/fires)\.go
+      - path: internal/(lang/(declarations|keywords|keep|gui)|schema/(dumps|docs|commands)|index/fires)\.go
         linters: [goconst]
-      # the coat's and the GUI's rows repeat a game's key or a placeholder's term as data
-      - path: services/draw/(coat|gui|texts|textures)\.go
+      # the coat's rows and the placeholders repeat a game's key or a placeholder's term as data
+      - path: services/draw/(coat|textures)\.go
         linters: [goconst]
-        text: 'string `(pattern|colored_emblem|scale|sub|texture|color|pair|number|text|portrait texture|flag)`'
+        text: 'string `(pattern|colored_emblem|scale|texture|color|pair|portrait texture|flag)`'
       # each problem the engine reports names its own facts
       - path: internal/(index/problems|lang/walk)\.go
         linters: [goconst]

@@ -56,19 +56,20 @@ type Header struct {
 	Width  int `json:"width"`
 	Height int `json:"height"`
 
-	// Mipmaps is how many mip levels the image has. It is 1 for all but a DDS.
+	// Mipmaps is the number of mip levels, 1 for all but a DDS.
 	Mipmaps int `json:"mipmaps"`
 
-	// PixelFormat is a DDS's DXGI format as dds-go names it, such as
-	// BC7_UNORM, and DXGI its number. Both are empty for other images and for
-	// a DDS described only by bit masks.
+	// PixelFormat and DXGI are a DDS's DXGI format by name and by number.
+	// Both are empty for other images and for a DDS described only by bit
+	// masks.
 	PixelFormat string `json:"pixelFormat"`
 	DXGI        uint32 `json:"dxgi"`
 
 	Bytes int64 `json:"bytes"`
 }
 
-// tgaHeaderSize is how many bytes tell the formats apart.
+// tgaHeaderSize is the size of a TGA header, which is also enough of any
+// file to tell the formats apart.
 const tgaHeaderSize = 18
 
 // extensions are the image extensions the game accepts, in Resolve's order.
@@ -76,8 +77,7 @@ var extensions = []string{".dds", ".png", ".tga"}
 
 var errUnknown = errors.New("not a DDS, TGA, PNG or JPEG")
 
-// ReadHeader reads an image file's header without its pixels. It returns an
-// error if the file cannot be read or is no image PMT reads.
+// ReadHeader reads an image file's header without its pixels.
 func ReadHeader(path string) (Header, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -107,12 +107,12 @@ var (
 	jpegMagic = []byte("\xff\xd8\xff")
 )
 
-// decodeHeader decodes an image header from the reader's start, as its first
-// bytes say. It returns errUnknown if they are no known format.
+// decodeHeader decodes the header of the image at the reader's start, telling
+// the format from its first bytes.
 func decodeHeader(reader io.ReadSeeker) (Header, error) {
 	head := make([]byte, tgaHeaderSize)
 
-	// Short input is read as far as it goes.
+	// a file shorter than a TGA header may still be another format
 	count, err := io.ReadFull(reader, head)
 	short := errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 	if err != nil && !short {
@@ -155,20 +155,19 @@ func decodeDDSHeader(reader io.Reader) (Header, error) {
 	return header, nil
 }
 
-// tgaTypes are the TGA types pdx-asset-go reads, true color and gray, raw or
-// run-length encoded. tgaPaletteTypes are those of palette indices, which it
-// does not.
+// tgaTypes are the TGA types pdx-asset-go reads: true color and gray, raw or
+// run-length encoded. tgaPaletteTypes hold palette indices, which it does
+// not read.
 var (
 	tgaTypes        = []byte{2, 3, 10, 11}
 	tgaPaletteTypes = []byte{1, 9}
 )
 
-// tgaDepths are the bits a pixel may take.
+// tgaDepths are the bits per pixel a TGA may have.
 var tgaDepths = []byte{8, 16, 24, 32}
 
-// decodeTGAHeader decodes the 18 bytes a TGA opens with. A TGA has no magic
-// bytes, so it is known by its header. It returns an error for palette
-// indices and errUnknown for other bytes.
+// decodeTGAHeader decodes a TGA header. A TGA has no magic bytes, so other
+// bytes count as one only when they make a valid header.
 func decodeTGAHeader(head []byte) (Header, error) {
 	if len(head) < tgaHeaderSize {
 		return Header{}, errUnknown
@@ -189,9 +188,8 @@ func decodeTGAHeader(head []byte) (Header, error) {
 	return Header{Format: "tga", Width: width, Height: height, Mipmaps: 1}, nil
 }
 
-// Decode decodes one mip level of an image, 0 being the whole. It returns an
-// error for bytes that are not a DDS, TGA or PNG, a side past Direct3D's
-// limit, a missing level or undecodable pixels.
+// Decode decodes one mip level of an image, level 0 being the full size. A
+// JPEG is read for its header alone and is not decoded.
 func Decode(data []byte, level int) (image.Image, error) {
 	header, err := decodeHeader(bytes.NewReader(data))
 	if err != nil {
@@ -218,7 +216,7 @@ func Decode(data []byte, level int) (image.Image, error) {
 	return nil, errors.New("a JPEG is read for its header alone")
 }
 
-// sideLimit is Direct3D's limit on pixels on a side.
+// sideLimit is Direct3D's limit on an image's side, in pixels.
 const sideLimit = 16384
 
 func checkSides(width, height int) error {
@@ -229,7 +227,7 @@ func checkSides(width, height int) error {
 	return nil
 }
 
-// decodeDDS decodes a level of a DDS's first image, for a cubemap its first
+// decodeDDS decodes a level of a DDS's first image; for a cubemap, its first
 // face.
 func decodeDDS(data []byte, level int) (image.Image, error) {
 	file, err := dds.Parse(data)
@@ -246,17 +244,15 @@ func decodeTGA(data []byte) (image.Image, error) {
 		return nil, err
 	}
 
-	// The pixels are non-premultiplied RGBA, first row on top, as an
-	// image.NRGBA keeps them.
+	// the pixels are non-premultiplied RGBA, top row first, which is
+	// image.NRGBA's layout
 	bounds := image.Rect(0, 0, pixels.Width, pixels.Height)
 
 	return &image.NRGBA{Pix: pixels.Data, Stride: 4 * pixels.Width, Rect: bounds}, nil
 }
 
-// EncodeDDS writes a picture as a DDS in a DXGI format, such as 98 for
-// BC7_UNORM. Format 0 is R8G8B8A8_UNORM. With mipmaps, every level down to
-// one pixel follows. It returns an error for an empty picture, one past
-// Direct3D's limit, or a format dds-go does not write.
+// EncodeDDS writes a picture as a DDS in a DXGI format, 0 meaning
+// R8G8B8A8_UNORM. With mipmaps, every level down to one pixel is written.
 func EncodeDDS(picture image.Image, dxgi uint32, mipmaps bool) ([]byte, error) {
 	size := picture.Bounds().Size()
 	if err := checkSides(size.X, size.Y); err != nil {
@@ -276,9 +272,9 @@ func EncodeDDS(picture image.Image, dxgi uint32, mipmaps bool) ([]byte, error) {
 	return file.Bytes(), nil
 }
 
-// Resolve finds the image file a script path names, through a lookup of
-// relative paths. It tries the path as written, then each other image
-// extension, and ignores a leading slash. It returns false for none.
+// Resolve finds the image file a script path names. Like the game, it tries
+// the path as written, then with each other image extension, and ignores a
+// leading slash.
 func Resolve(scriptPath string, lookup func(rel string) (path string, ok bool)) (path string, ok bool) {
 	scriptPath = strings.TrimPrefix(scriptPath, "/")
 	if path, ok = lookup(scriptPath); ok {

@@ -131,12 +131,9 @@ type builder struct {
 	*lang.Schema
 }
 
-// Build returns the schema of one game version. dialect holds the game's
-// language facts, dumpDirs are the folders its dump files are in, and
-// listing is the game's own files, which parse reads. The files of DLCs are
-// left out, since the game's own folders list them too. It returns an error
-// if a dump file's time or a doc cannot be read, or if no script file can
-// be parsed.
+// Build returns the schema of one game version from its dumps, its docs and
+// the game's own files. DLC files are left out of the listing, since the
+// game's own folders list them too.
 func Build(
 	dialect *lang.Dialect, dumpDirs []string, installPath string, listing []files.File,
 	parse func(path string) (*jomini.Tree, error),
@@ -167,9 +164,8 @@ func Build(
 		return nil, err
 	}
 
-	// the count reads the keys an effect and a trigger of one name have
-	// together, and then adds to both, so they are put together before the
-	// count and again after it
+	// the count reads the keys an effect and a trigger of one name share, and
+	// then adds to both, so the two are united before the count and after it
 	schema.buildUnions()
 	if err := schema.countVanilla(listing, parse); err != nil {
 		return nil, err
@@ -181,9 +177,8 @@ func Build(
 	return schema.Schema, nil
 }
 
-// listSetups returns the folders that the game's bookmarks name for their
-// start setups, sorted, each once. It returns none for a game with no
-// bookmark folder.
+// listSetups returns the folders the game's bookmarks name for their start
+// setups, sorted and each once.
 func listSetups(dialect *lang.Dialect, listing []files.File, parse func(path string) (*jomini.Tree, error)) []string {
 	var setups []string
 	for _, file := range listing {
@@ -208,9 +203,9 @@ func listSetups(dialect *lang.Dialect, listing []files.File, parse func(path str
 	return slices.Compact(setups)
 }
 
-// listFolders returns the folder of each database the game's files make,
-// sorted: the folder each script file belongs to, and each folder a
-// declaration names that the listing has.
+// listFolders returns the folder of each database the game's files make: the
+// folder each script file belongs to, and each declared folder the listing
+// has.
 func listFolders(dialect *lang.Dialect, listing []files.File) []string {
 	folders := map[string]bool{}
 	present := map[string]bool{}
@@ -236,10 +231,9 @@ func listFolders(dialect *lang.Dialect, listing []files.File) []string {
 	return slices.Sorted(maps.Keys(folders))
 }
 
-// findFolder returns the folder of the database a script file belongs to.
-// It is the file itself where a declaration names the file, else the
-// nearest folder above it that a declaration names, else the folder the
-// file is in.
+// findFolder returns the folder of the database a script file belongs to. A
+// declaration may name the file itself or a folder above it; otherwise it is
+// the file's own folder.
 func findFolder(dialect *lang.Dialect, rel string) string {
 	if _, ok := dialect.FindDeclaration(rel); ok {
 		return rel
@@ -254,19 +248,16 @@ func findFolder(dialect *lang.Dialect, rel string) string {
 	return path.Dir(rel)
 }
 
-// fireContents are the kinds of database whose definitions fire one another:
-// events, on_actions, decisions and messages. A message is fired when an
-// effect sends it.
+// fireContents are the kinds of database whose definitions fire one another.
+// A message is fired when an effect sends it.
 var fireContents = []lang.Contents{
 	lang.ContentsEvents, lang.ContentsOnActions, lang.ContentsDecisions, lang.ContentsMessages,
 }
 
-// buildDatabases makes a database for each folder, for each database nested
-// in one, for the widgets, types, text formats and text icons that GUI
+// buildDatabases makes a database for each folder and nesting, for what GUI
 // files declare, and for the events' namespaces. It then records which
-// database holds the events, the messages, the lists, the game concepts,
-// the modifier types and the on_actions, each only where exactly one does,
-// and which hold the scripted effects and the script values.
+// database plays each role the schema names, such as the events' or the
+// messages', only where exactly one does.
 func (b *builder) buildDatabases(dialect *lang.Dialect, folders []string) {
 	for _, folder := range folders {
 		declaration, _ := dialect.FindDeclaration(folder)
@@ -295,8 +286,8 @@ func (b *builder) buildDatabases(dialect *lang.Dialect, folders []string) {
 	for label, database := range b.Databases {
 		housed[database.Declaration.Contents] = append(housed[database.Declaration.Contents], label)
 
-		// of the databases whose definitions are called and hold effects,
-		// the first by name is taken, and the same for script values
+		// of several called databases of effects, or of script values, the
+		// first by name is taken
 		called, shape := len(database.Declaration.Callers) > 0, database.Declaration.Shape
 		switch {
 		case called && shape == lang.ShapeEffects && (b.Effects == "" || label < b.Effects):
@@ -313,6 +304,7 @@ func (b *builder) buildDatabases(dialect *lang.Dialect, folders []string) {
 
 		return ""
 	}
+
 	b.Events, b.Messages, b.Lists = findOnly(lang.ContentsEvents), findOnly(lang.ContentsMessages),
 		findOnly(lang.ContentsLists)
 	b.Concepts, b.ModifierTypes = findOnly(lang.ContentsConcepts), findOnly(lang.ContentsModifiers)
@@ -327,12 +319,10 @@ func (b *builder) buildDatabases(dialect *lang.Dialect, folders []string) {
 	b.listCallees()
 }
 
-// buildDatabase adds a database of the given name from its declaration,
-// with only the rows of the declaration that hold for the game. It does
-// nothing if the database exists. It also records the database under the
-// words of its name, so that "government type" leads to governments. A
-// database whose definitions each stand for a scope, such as the history of
-// titles, is recorded under no words.
+// buildDatabase adds a database from its declaration, keeping only the rows
+// that hold for the game, unless the database exists. It records the
+// database under the words of its name, so "government type" finds
+// governments, unless its definitions stand for scopes.
 func (b *builder) buildDatabase(dialect *lang.Dialect, label string, declaration lang.Declaration) {
 	if b.Databases[label] != nil {
 		return
@@ -374,9 +364,8 @@ func isNamedExactly(label, phrase string) bool {
 	return label == strings.ReplaceAll(phrase, " ", "_")
 }
 
-// buildNested adds the database of each nesting that has one of its own,
-// and lists it in its parent database. A nesting whose definitions belong
-// to its parent's database adds none.
+// buildNested adds the database of each nesting that has one of its own and
+// lists it in its parent database.
 func (b *builder) buildNested(dialect *lang.Dialect, nestings []lang.Nesting) {
 	for _, nesting := range nestings {
 		if nesting.Database == "" {
@@ -396,8 +385,8 @@ func (b *builder) buildNested(dialect *lang.Dialect, nestings []lang.Nesting) {
 	}
 }
 
-// listCallees records, for each kind of caller, such as a trigger block,
-// the databases whose definitions it may call.
+// listCallees records, for each kind of caller such as a trigger block, the
+// databases whose definitions it may call.
 func (b *builder) listCallees() {
 	for _, label := range lang.Called {
 		if database := b.Databases[label]; database != nil {
@@ -408,9 +397,8 @@ func (b *builder) listCallees() {
 	}
 }
 
-// buildFields gives each field that a database's declaration lists what its
-// row says: what its block holds, whether its key is a chance, and its
-// hover text.
+// buildFields gives each field a database's declaration lists what its row
+// says.
 func (b *builder) buildFields() {
 	for _, database := range b.Databases {
 		for _, entry := range database.Declaration.Fields {

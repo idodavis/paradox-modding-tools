@@ -13,6 +13,7 @@ export type {
     Coat,
     CoatStrength,
     DDS,
+    DDSFormat,
     Font,
     Group,
     Image,

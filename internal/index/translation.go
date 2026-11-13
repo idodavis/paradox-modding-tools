@@ -106,7 +106,8 @@ func (i *Index) FindText(key string, languages []string) (Winner, bool) {
 // choice open, and the first is given as unsettled. It returns false if no
 // file the game reads has the key in that language.
 func (i *Index) FindMessage(key, language string) (Winner, bool) {
-	unreplaced := len(i.dialect.LocReplaceFolders)
+	dialect := i.dialect()
+	unreplaced := len(dialect.LocReplaceFolders)
 	var winner Winner
 	best, tied := unreplaced+1, 0
 
@@ -115,7 +116,7 @@ func (i *Index) FindMessage(key, language string) (Winner, bool) {
 			continue
 		}
 
-		rank, replaces := i.dialect.FindLocReplacement(i.Files[site.File].StageRel(), language)
+		rank, replaces := dialect.FindLocReplacement(i.Files[site.File].StageRel(), language)
 		if !replaces {
 			rank = unreplaced
 		}

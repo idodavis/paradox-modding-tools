@@ -164,13 +164,12 @@ func (s *Service) ListTags() (Tags, error) {
 	}
 
 	cacheDir := s.Workspace.Config.Dirs.Cache
-	declared, err := fetchTags(ws.Game.SteamAppID)
-	if err == nil {
-		err = app.SaveJSON(resolveTagsPath(cacheDir, ws.Game.SteamAppID), declared)
-	} else if saved := loadTags(cacheDir, ws.Game.SteamAppID); hasTags(saved) {
-		declared, err = saved, nil
+	declared, err := fetchTags(cacheDir, ws.Game.SteamAppID)
+	if !hasTags(declared) {
+		declared = loadTags(cacheDir, ws.Game.SteamAppID)
 	}
-	if err != nil {
+
+	if !hasTags(declared) {
 		return Tags{}, err
 	}
 
@@ -201,15 +200,13 @@ func (s *Service) listVersionTags(appID int) []string {
 			return loadTags(cacheDir, appID), nil
 		}
 
-		declared, err := fetchTags(appID)
-		if err != nil {
-			return Tags{}, nil
-		}
+		declared, _ := fetchTags(cacheDir, appID)
 
-		return declared, app.SaveJSON(resolveTagsPath(cacheDir, appID), declared)
+		return declared, nil
 	})
+	tags, _ := shared.(Tags)
 
-	return shared.(Tags).Versions
+	return tags.Versions
 }
 
 const (
@@ -218,8 +215,9 @@ const (
 )
 
 // fetchTags fetches the tags a game's Workshop page declares, without those
-// only Steam's admins may set. It returns an error if the page declares none.
-func fetchTags(appID int) (Tags, error) {
+// only Steam's admins may set, and keeps them in the cache. It returns an
+// error if the page declares none.
+func fetchTags(cacheDir string, appID int) (Tags, error) {
 	body, err := app.FetchURL(fmt.Sprintf(browsePage, appID), 30*time.Second)
 	if err != nil {
 		return Tags{}, err
@@ -252,7 +250,7 @@ func fetchTags(appID int) (Tags, error) {
 		return Tags{}, errors.New("steam's Workshop page declares no tags; its layout may have changed")
 	}
 
-	return tags, nil
+	return tags, app.SaveJSON(resolveTagsPath(cacheDir, appID), tags)
 }
 
 // decodeTagGroups returns the groups of tags a Workshop page's script declares.

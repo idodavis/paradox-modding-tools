@@ -60,7 +60,7 @@ game reads. It is shown at the copy the game keeps, or at the first copy the gra
 Where the game keeps no copy for every file, the node is the copy a file keeps for itself, such as a scripted effect an
 events file defines.
 
-A node says how the player sees it: an event shows a window or is hidden (`game.HiddenKey`), and a message is sent. An
+A node says how the player sees it: an event shows a window or is hidden (`hidden = yes`), and a message is sent. An
 event's node holds its background picture, found by the `Picture` chain of the game's `Events` row. At each hop of the
 chain, of several copies of a key the first with no trigger of its own wins, or the one a `key[field=value]` names.
 Every node holds the comment lines just above its definition and the origin of the copy of its name it hides.
@@ -74,13 +74,17 @@ fan-out, and `Count` says how many.
 An `Edge` is one firing, from a firer to what it fires. It holds where it is written (`Site`), its delay in words
 ("7 days", "10–30 days"), the effect that writes it and that effect's title. Its `Steps` are the blocks around it from
 the top of the definition: a branch of an if's chain, a weighted branch, a list, a link to another scope, an option or
-another block. Each has its condition in words and, for an option, its name. A firing written as an entry that an
-on_action's `random_events` picks by weight has that entry as its last step. What kind a step is, and which
-statement is the effect that fires, are read from what the walk decided at each statement, not decided again here.
+another block. Each carries its `Conditions`: the step in words (`describeStep`, with an option's name and a branch's
+weight), then its own condition. A firing written as an entry that an on_action's `random_events` picks by weight has
+that entry as its last step. What kind a step is is read from what the walk decided at each statement. Which statement
+is the effect that fires is the scan's: an occurrence's `Firing` says how many blocks above the reference it is
+written (`index/fires.go`), and nothing here decides it again.
 
 ## Conditions in words
 
-A condition in words is a block's limit, else its trigger, each statement a `Condition`.
+A condition in words is a block's limit, else its trigger, each statement a `Condition`. Where some of a trigger's
+conditions are negated, `groupConditions` sets them under "must be true" and "must be false", so the page draws them
+as they come.
 
 - A key with words of its own reads them from `phrases` ("any of", "any province where"), and one that `Covers`
   what it holds reads its text as the player does (a `custom_tooltip`).

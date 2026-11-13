@@ -9,7 +9,7 @@ export interface DetectedInstall {
     "path": string;
 
     /**
-     * Version is the install's version. It is "" where none was found.
+     * Version is "" where none was found.
      */
     "version": string;
 }
@@ -22,14 +22,14 @@ export interface Example {
     "database": string;
 
     /**
-     * Folder is the folder of the database's files, from the game's folder.
+     * Folder is the database's folder, from the game's folder.
      */
     "folder": string;
     "names": string[] | null;
 
     /**
-     * Modes is whether a mod changes a definition of this game by writing a
-     * mode before its name, as REPLACE:brave does.
+     * Modes is whether a mod changes these definitions by writing a mode
+     * before the name, as in REPLACE:brave.
      */
     "modes": boolean;
 }
@@ -42,20 +42,19 @@ export interface Game {
     "id": string;
 
     /**
-     * Name is the game's full name. Its folder under Documents/Paradox
-     * Interactive has the same name.
+     * Name is the game's full name, which is also its folder under
+     * Documents/Paradox Interactive.
      */
     "name": string;
     "shortName": string;
 
     /**
-     * ModDescriptor is the path of the file that describes a mod, from the
-     * mod's folder.
+     * ModDescriptor is the file that describes a mod, from the mod's folder.
      */
     "descriptor"?: string;
 
     /**
-     * FixedModFolder is whether the launcher loads a local mod only from its
+     * FixedModFolder is whether the launcher loads local mods only from its
      * own mod folder.
      */
     "fixedModFolder": boolean;
@@ -64,15 +63,14 @@ export interface Game {
 }
 
 /**
- * Guide is the text that tells a modder how a game picks which copy of a
- * file or of a definition it keeps.
+ * Guide tells a modder how a game picks which copy of a file or of a
+ * definition it keeps.
  */
 export interface Guide {
     /**
-     * Hint says what the load order decides. Files says which of a mod's
-     * files the game reads. Kept says which copy of a definition each
-     * database keeps. Changes says what moving a mod in the load order
-     * changes.
+     * Hint says what the load order decides, Files which of a mod's files the
+     * game reads, Kept which copy of a definition each database keeps, and
+     * Changes what moving a mod in the load order changes.
      */
     "hint": string;
     "files": string;

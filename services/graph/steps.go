@@ -1,12 +1,12 @@
-// steps.go finds where a firing sits in the definition that writes it.
+// steps.go finds where a firing is written in its definition, and puts the
+// blocks around it into words.
 
 package graph
 
 import (
 	"slices"
+	"strconv"
 	"strings"
-
-	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
@@ -15,45 +15,70 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Step is one block a firing is written inside, as the page shows it.
+// Step is one block a firing is written inside.
 type Step struct {
-	Key       string      `json:"key"`                 // as written, such as if, random_list or scope:child.dynasty
-	Kind      string      `json:"kind"`                // branch, weight, list, scope, option or block
-	Weight    string      `json:"weight,omitempty"`    // a weighted branch's number as written
-	Modifiers int         `json:"modifiers,omitempty"` // the blocks in a weighted branch that change its weight
-	When      []Condition `json:"when,omitempty"`      // its limit, else its trigger, in words
-	Title     string      `json:"title,omitempty"`     // an option's name in words; "" for the other kinds
-	Line      int         `json:"line"`                // counted from one
+	// Key is the block's key as written, such as if or scope:child.dynasty.
+	// A weighted branch has the key of the list it is in.
+	Key string `json:"key"`
+
+	// Kind is branch, weight, list, scope, option or block.
+	Kind string `json:"kind"`
+
+	// Weight is a weighted branch's number, as written.
+	Weight string `json:"weight,omitempty"`
+
+	// Line counts from one.
+	Line int `json:"line"`
+
+	// Conditions is the step in words as the page lists it: the kind of
+	// block, then the conditions it runs on. A plain block has none.
+	Conditions []Condition `json:"conditions,omitempty"`
 }
 
-// The kinds of block a firing can sit in.
+// The kinds of block a firing can be written in.
 const (
-	kindBranch = "branch" // one block of a chain of ifs
-	kindWeight = "weight" // one weighted branch, such as a random list's
-	kindList   = "list"   // the items of a list, each in turn or one of them
-	kindScope  = "scope"  // another scope, reached by a link
-	kindOption = "option" // one of an event's options
-	kindBlock  = "block"  // any other block
+	// kindBranch is one block of a chain of ifs.
+	kindBranch = "branch"
+
+	// kindWeight is one weighted branch, such as a random_list's.
+	kindWeight = "weight"
+
+	// kindList is a block run over the items of a list, each or one of them.
+	kindList = "list"
+
+	// kindScope is a block in another scope, reached through a link.
+	kindScope = "scope"
+
+	kindOption = "option"
+
+	// kindBlock is any other block.
+	kindBlock = "block"
 )
 
-// makeEdge returns the edge of one firing. A firing written as a weighted entry
-// of a list that picks one, such as an on_action's random_events, has that
-// entry as its last step. If the file cannot be read, the edge has only its
-// ends and its place.
+// makeEdge returns the edge of one firing, with the blocks around it. A
+// firing written as a weighted entry, as in an on_action's random_events,
+// has that entry as its last step. If the file cannot be walked, the edge
+// has only its ends and its place.
 func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
-	edge := Edge{
-		From: toID(mods, fire.Source), To: toID(mods, fire.Target),
-		Via:  lo.Map(fire.Via, func(site index.Site, _ int) string { return mods.ToReference(site).Name }),
-		Site: lsp.LocateSite(ws, mods, fire.Use),
+	edge := Edge{From: toID(mods, fire.Source), To: toID(mods, fire.Target), Site: lsp.LocateSite(ws, mods, fire.Use)}
+	for _, site := range fire.Via {
+		edge.Via = append(edge.Via, mods.ToReference(site).Name)
 	}
-	// a step is what the walk decided its block is, so the file is walked
+
 	document, err := ws.WalkDocument(edge.Site.Place.Path)
 	if err != nil || document.Contexts == nil {
 		return edge
 	}
+
+	// The scan recorded how many blocks above the reference the statement
+	// that fires is.
 	tree := document.Tree
 	use := tree.FindStatement(mods.Occurrence(fire.Use).Span.Start)
-	firing := findFiring(document, ws.Schema.Effects, use)
+	firing := use
+	for blocks := mods.Occurrence(fire.Use).Firing; blocks > 1; blocks-- {
+		firing = tree.Statements[firing].Parent
+	}
+
 	edge.Effect = tree.Text(tree.Statements[firing].Key)
 	edge.Delay = findDelay(tree, firing)
 	edge.Title = findTitle(ws, mods, tree, firing, lang.TitleKey)
@@ -63,62 +88,37 @@ func makeEdge(ws *workspace.Session, mods *index.Index, fire index.Fire) Edge {
 	if entry := makeStep(ws, mods, document, use, definition); use != firing && entry.Kind == kindWeight {
 		edge.Steps = append(edge.Steps, entry)
 	}
+
 	return edge
 }
 
-// makeEdges returns the edges of some firings, one for each place a firing is
-// written.
+// makeEdges returns one edge for each place the firings are written.
 func makeEdges(ws *workspace.Session, mods *index.Index, fires []index.Fire) []Edge {
-	type firing struct {
-		source, target, path string
-		line                 int
+	edges := make([]Edge, len(fires))
+	for position, fire := range fires {
+		edges[position] = makeEdge(ws, mods, fire)
 	}
-	edges := lo.Map(fires, func(fire index.Fire, _ int) Edge { return makeEdge(ws, mods, fire) })
-	return lo.UniqBy(edges, func(edge Edge) firing { return firing{edge.From, edge.To, edge.Site.Place.Path, edge.Site.Line} })
+
+	return dropRepeats(edges, func(edge Edge) [4]string {
+		return [4]string{edge.From, edge.To, edge.Site.Place.Path, strconv.Itoa(edge.Site.Line)}
+	})
 }
 
-// findFiring returns the statement that writes a firing, given the statement
-// its reference sits in. That is the block around it where the reference is a
-// list value, a numbered branch or a field of an effect, such as
-// trigger_event's id.
-func findFiring(document lang.Document, effects string, statement int32) int32 {
-	for {
-		current := document.Tree.Statements[statement]
-		isField := isEffect(&document.Contexts[current.Parent], effects) && !isEffect(&document.Contexts[statement], effects)
-		isHeld := current.IsListed() || current.KeyClass.IsNumberKey() || isField
-		if current.Parent == 0 || !isHeld {
-			return statement
-		}
-
-		statement = current.Parent
-	}
-}
-
-// isEffect reports whether the walk decided a statement's key is an effect:
-// one the dumps declare, or a call of a scripted effect, whose database is
-// given. So a firing written as a scripted effect's argument, as in
-// my_effect = { EVENT = x.1 }, is the call and not the argument.
-func isEffect(context *lang.Context, effects string) bool {
-	return context.Command != nil && context.Command.Database == lang.DumpEffects ||
-		context.Callee != nil && context.Callee.Database == effects
-}
-
-// delayKey is the key of a block that holds the delay of every firing written
-// after it, and delayUnits the keys that write how long a firing waits, in the
-// order they are looked for (Vic3 effects.log:38529).
+// delayKey is a block that sets the delay of the firings beside it.
+// delayUnits are the keys that give a delay, in the order looked for.
 const delayKey = "delay"
 
 var delayUnits = []string{"days", "weeks", "months", "years"}
 
-// findDelay returns the delay written for a firing, in words, or "" if none is
-// written. It is the delay of the nearest block around the firing that writes
-// one.
+// findDelay returns a firing's delay in words: that of the nearest block
+// around it that writes one. It returns "" if none does.
 func findDelay(tree *jomini.Tree, statement int32) string {
 	for ; statement > 0; statement = tree.Statements[statement].Parent {
 		holders := []int32{statement}
 		if block, ok := tree.FindChild(statement, delayKey); ok {
 			holders = append(holders, block)
 		}
+
 		for _, holder := range holders {
 			for _, unit := range delayUnits {
 				if child, ok := tree.FindChild(holder, unit); ok {
@@ -127,81 +127,151 @@ func findDelay(tree *jomini.Tree, statement int32) string {
 			}
 		}
 	}
+
 	return ""
 }
 
-// describeDelay returns a delay in words, such as 7 days, 1 day or 10–30 days,
-// from the statement that writes it and the key of its unit.
+// describeDelay returns a delay in words, such as "1 day" or "10–30 days".
 func describeDelay(tree *jomini.Tree, statement int32, unit string) string {
 	amount := tree.Unquoted(tree.Statements[statement].Value)
 	if tree.Statements[statement].IsBlock() {
-		amount = strings.Join(lo.Map(slices.Collect(tree.Children(statement)), func(child int32, _ int) string {
-			return tree.Unquoted(tree.Statements[child].Value)
-		}), "–")
+		var bounds []string
+		for child := range tree.Children(statement) {
+			bounds = append(bounds, tree.Unquoted(tree.Statements[child].Value))
+		}
+
+		amount = strings.Join(bounds, "–")
 	}
-	return amount + " " + lo.Ternary(amount == "1", strings.TrimSuffix(unit, "s"), unit)
+
+	if amount == "1" {
+		unit = strings.TrimSuffix(unit, "s")
+	}
+
+	return amount + " " + unit
 }
 
-// findTitle returns the text a field of a statement names, in words: a firing's
-// title or an option's name. It returns "" if the statement writes no such
-// field or no message has its key.
+// findTitle returns the text a field of a statement names, in words, such
+// as a firing's title or an option's name. It returns "" if there is none.
 func findTitle(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32, field string) string {
 	position, ok := lang.FindTextKey(tree, statement, field)
 	if !ok {
 		return ""
 	}
+
 	text, _, _ := ws.LookupText(mods, tree.Unquoted(tree.Statements[position].Value))
+
 	return toTitle(ws, mods, text)
 }
 
-// listSteps returns the blocks a firing's statement sits in, from the top of
-// the definition down, leaving out the definition and the firing itself.
+// listSteps returns the blocks around a firing, from the top of its
+// definition down, the definition itself left out.
 func listSteps(ws *workspace.Session, mods *index.Index, document lang.Document, firing, definition int32) []Step {
 	var steps []Step
 	statements := document.Tree.Statements
 	for statement := statements[firing].Parent; statement > definition; statement = statements[statement].Parent {
 		step := makeStep(ws, mods, document, statement, definition)
+
+		// A weighted branch's step already names its list.
 		if step.Kind == kindWeight {
 			statement = statements[statement].Parent
 		}
+
 		steps = append(steps, step)
 	}
+
 	slices.Reverse(steps)
+
 	return steps
 }
 
-// weightModifiers are the keys of the blocks that change the weight of the
-// branch they are written in.
+// weightModifiers are the blocks that change the weight of the branch they
+// are in.
 var weightModifiers = []string{"modifier", "opinion_modifier", "compare_modifier", "compatibility_modifier"}
 
-// makeStep returns the step of one block a firing sits in, in the given
-// definition. Whether the block is a branch, a weighted branch or a list is
-// what the walk decided its key is.
+// makeStep returns the step of one block around a firing. Its kind is what
+// the walk decided the block's key is, and a plain block has no words.
 func makeStep(ws *workspace.Session, mods *index.Index, document lang.Document, statement, definition int32) Step {
 	tree, context := document.Tree, &document.Contexts[statement]
 	current := tree.Statements[statement]
-	key, holder := tree.Text(current.Key), tree.Text(tree.Statements[current.Parent].Key)
+	key := tree.Text(current.Key)
 	keyword := lang.Keyword{}
 	if context.Keyword != nil {
 		keyword = *context.Keyword
 	}
-	step := Step{
-		Key: key, Kind: kindBlock, When: findCondition(ws, mods, tree, statement), Line: toSourceLine(tree, current.Key),
-	}
+
+	step := Step{Key: key, Kind: kindBlock, Line: toSourceLine(tree, current.Key)}
+	detail := key
 	switch {
 	case keyword.Class == lang.KeywordClassConditional:
 		step.Kind = kindBranch
+
 	case keyword.Weighted || context.Field != nil && context.Field.Weighted:
-		step.Key, step.Kind, step.Weight = holder, kindWeight, key
-		step.Modifiers = lo.CountBy(slices.Collect(tree.Children(statement)), func(child int32) bool {
+		// The step names the list the branch is in, as "10± in random_list",
+		// where the ± marks a weight that blocks inside the branch change.
+		step.Key, step.Kind, step.Weight = tree.Text(tree.Statements[current.Parent].Key), kindWeight, key
+		isChanged := slices.ContainsFunc(slices.Collect(tree.Children(statement)), func(child int32) bool {
 			return slices.Contains(weightModifiers, strings.ToLower(tree.Text(tree.Statements[child].Key)))
 		})
+		detail = key + " in " + step.Key
+		if isChanged {
+			detail = key + "± in " + step.Key
+		}
+
 	case context.Iterates:
 		step.Kind = kindList
+
 	case context.Category == lang.CategoryLink:
 		step.Kind = kindScope
+
 	case key == optionKey && current.Parent == definition:
-		step.Kind, step.Title = kindOption, findTitle(ws, mods, tree, statement, optionTitleKey)
+		step.Kind, detail = kindOption, findTitle(ws, mods, tree, statement, optionTitleKey)
+
+	default:
+		return step
 	}
+
+	step.Conditions = describeStep(step, detail, findCondition(ws, mods, tree, statement))
+
 	return step
+}
+
+// stepPhrases is how the page starts a weight, list or scope step.
+var stepPhrases = map[string]string{kindWeight: "weight", kindList: "for", kindScope: "in"}
+
+// elseKey is the block that ends a chain of ifs. The page names it as
+// written, and any other branch "if".
+const elseKey = "else"
+
+// describeStep returns a step in words as the page lists it: a heading with
+// the given detail as its value, then the conditions under "when", or
+// "where" for a list. A branch is "if" or "else" with its conditions under
+// it.
+func describeStep(step Step, detail string, when []Condition) []Condition {
+	if step.Kind == kindBranch {
+		text := "if"
+		if step.Key == elseKey {
+			text = elseKey
+		}
+
+		return []Condition{{Text: text, Conditions: when, Line: step.Line}}
+	}
+
+	head := Condition{Text: stepPhrases[step.Kind], Value: detail, Line: step.Line}
+	if step.Kind == kindOption {
+		head = Condition{Text: "option chosen", Line: step.Line}
+		if detail != "" {
+			head.Text = "option “" + detail + "” chosen"
+		}
+	}
+
+	if len(when) == 0 {
+		return []Condition{head}
+	}
+
+	text := "when"
+	if step.Kind == kindList {
+		text = "where"
+	}
+
+	return []Condition{head, {Text: text, Conditions: when, Line: step.Line}}
 }

@@ -19,8 +19,24 @@ import { findTypeIcon } from "./properties";
 
 const { path, window } = defineProps<{ path: string; window: Window }>();
 
-/** A Box is one card of the tab: the box Go gives a group, with the groups it shows. */
-type Box = Group["box"] & { groups: Group[] };
+/**
+ * LOOKS holds how each kind of box draws: its icon, and its groups as rows
+ * with a control each, as chips, or as the window's own controls. Go names
+ * the first four kinds; a family is the page's own, made by mergeKinds.
+ */
+const LOOKS = {
+  item: { icon: "i-lucide-list", look: "rows" },
+  window: { icon: "i-lucide-app-window", look: "window" },
+  has: { icon: "i-lucide-check-check", look: "chips" },
+  object: { icon: "i-lucide-circle-dot", look: "rows" },
+  family: { icon: "i-lucide-tags", look: "chips" },
+} as const;
+
+/**
+ * A Box is one card of the tab: the box Go gives a group, with how its kind
+ * draws and the groups it shows.
+ */
+type Box = Group["box"] & (typeof LOOKS)[keyof typeof LOOKS] & { groups: Group[] };
 
 // EVERY and NONE are Go's picks for every value of a group at once and for none.
 const EVERY = "*every";
@@ -78,7 +94,10 @@ const candidates = computed(() => {
 // The candidates in the boxes Go puts them in: the window's own, then the objects', then the rows of each list.
 const boxes = computed<Box[]>(() => {
   const grouping = Map.groupBy(candidates.value, (group) => group.box.id);
-  const shown = [...grouping.values()].map((members): Box => ({ ...members[0].box, groups: members }));
+  const shown = [...grouping.values()].map((members): Box => {
+    const { box } = members[0];
+    return { ...box, ...(LOOKS[box.kind as keyof typeof LOOKS] ?? LOOKS.object), groups: members };
+  });
   return [
     ...shown.filter((box) => box.look === "window"),
     ...mergeKinds(shown.filter((box) => box.look !== "window" && !isList(box))),
@@ -113,8 +132,8 @@ function mergeKinds(list: Box[]): Box[] {
   const kindBoxes = families.map((kind): Box => ({
     id: `kind:${kind[0].groups[0].subject}:${kind[0].groups[0].label}`,
     title: `${kind[0].groups[0].subject}: ${kind[0].groups[0].label}`,
-    icon: "i-lucide-tags",
-    look: "chips",
+    kind: "family",
+    ...LOOKS.family,
     groups: kind.flatMap((box) => box.groups),
   }));
   const reach = (box: Box) => box.groups.reduce((sum, group) => sum + (group.reach ?? 0), 0);
@@ -125,7 +144,7 @@ function mergeKinds(list: Box[]): Box[] {
 
 /** isList reports whether a box holds the rows of a list. */
 function isList(box: Box): boolean {
-  return box.id.startsWith("item:");
+  return box.kind === "item";
 }
 
 /** isFolded reports whether a box is folded. A list's rows start folded, the rest open. */

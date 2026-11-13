@@ -94,7 +94,7 @@ export interface Mod {
     "dir": string;
 
     /**
-     * Color is a slot `o1` to `o16`, or a CSS color.
+     * Color is a slot o1 to o16, or a CSS color.
      */
     "color": string;
     "calendar": app$0.Calendar;
@@ -103,11 +103,6 @@ export interface Mod {
      * WorkshopID is "" for an unpublished mod.
      */
     "workshopId": string;
-
-    /**
-     * Ignore is the upload exclusions, one pattern per line.
-     */
-    "ignore": string;
 
     /**
      * LeftOut keeps the mod out of the compatibility checks.
@@ -130,6 +125,10 @@ export interface Mod {
      * Thumbnail is the full path of the picture shown for the mod, "" if none.
      */
     "thumbnail": string;
+
+    /**
+     * Workshop is true for Steam's copy of a Workshop mod, which is read only.
+     */
     "workshop": boolean;
 }
 
@@ -151,6 +150,10 @@ export interface ModFolder {
  */
 export interface Place {
     "path": string;
+
+    /**
+     * Key is the path as paths are compared: lower case, with slashes.
+     */
     "key": string;
 
     /**

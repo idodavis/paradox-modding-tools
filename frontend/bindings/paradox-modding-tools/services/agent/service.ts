@@ -36,8 +36,7 @@ export function DescribeNode(): $CancellablePromise<$models.Node> {
 
 /**
  * InstallAgent installs an offered agent with npm and removes its other
- * versions. It returns an error if the registry lacks the agent, no Node is
- * new enough, an install of it already runs, or npm fails.
+ * versions.
  */
 export function InstallAgent(id: string): $CancellablePromise<void> {
     return $Call.ByID(244046317, id);
@@ -52,8 +51,7 @@ export function InstallNode(): $CancellablePromise<void> {
 }
 
 /**
- * ListAgents returns the agents PMT offers, then the user's own. An installed
- * agent that a Node can run gets the Program and Args that start it.
+ * ListAgents returns the agents PMT offers, then the user's own.
  */
 export function ListAgents(): $CancellablePromise<$models.Agent[] | null> {
     return $Call.ByID(1147572071);
@@ -68,9 +66,8 @@ export function RemoveAgent(id: string): $CancellablePromise<void> {
 }
 
 /**
- * UninstallAgent removes every installed version of an offered agent. It
- * returns an error if npm is installing it or a folder cannot be removed, as
- * while the agent runs.
+ * UninstallAgent removes every installed version of an offered agent. It fails
+ * while the agent runs, since its folder cannot be removed then.
  */
 export function UninstallAgent(id: string): $CancellablePromise<void> {
     return $Call.ByID(2219574446, id);

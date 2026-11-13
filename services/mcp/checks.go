@@ -76,29 +76,26 @@ func (s *Service) checkPage(page string, query map[string]string) error {
 		return fmt.Errorf("PMT has no page %q; its pages are %s", page, strings.Join(ids, ", "))
 	}
 
-	var rows []queryKey
 	var keys []string
 	for _, row := range queryKeys {
 		if row.Page == page {
-			rows = append(rows, row)
 			keys = append(keys, row.Key)
 		}
 	}
 
 	var errs []error
 	for _, key := range slices.Sorted(maps.Keys(query)) {
-		index := slices.IndexFunc(rows, func(row queryKey) bool { return row.Key == key })
-		ok := index >= 0
+		position := slices.IndexFunc(queryKeys, func(row queryKey) bool { return row.Page == page && row.Key == key })
 		var row queryKey
-		if ok {
-			row = rows[index]
+		if position >= 0 {
+			row = queryKeys[position]
 		}
 
 		value := query[key]
 		switch {
-		case !ok && len(keys) == 0:
+		case position < 0 && len(keys) == 0:
 			errs = append(errs, fmt.Errorf("%s takes no query", page))
-		case !ok:
+		case position < 0:
 			errs = append(errs, fmt.Errorf("%s takes no %q in its query; it takes %s", page, key, lang.JoinList(keys, "or")))
 		case len(row.Values) > 0 && !slices.Contains(row.Values, value):
 			errs = append(errs, fmt.Errorf("%s's %s is %s, not %q", page, key, lang.JoinList(row.Values, "or"), value))
@@ -278,8 +275,8 @@ func (s *Service) checkDrawable(place workspace.Place, drawable string, picks ma
 
 	var errs []error
 	for _, id := range slices.Sorted(maps.Keys(picks)) {
-		index := slices.IndexFunc(window.Groups, func(group draw.Group) bool { return group.ID == id })
-		if index < 0 {
+		position := slices.IndexFunc(window.Groups, func(group draw.Group) bool { return group.ID == id })
+		if position < 0 {
 			ids := make([]string, 0, len(window.Groups))
 			for _, group := range window.Groups {
 				ids = append(ids, group.ID)
@@ -290,7 +287,7 @@ func (s *Service) checkDrawable(place workspace.Place, drawable string, picks ma
 			continue
 		}
 
-		group := window.Groups[index]
+		group := window.Groups[position]
 		if option, isOption := findOption(group, picks[id]); isOption {
 			picks[id] = option
 
@@ -315,12 +312,14 @@ func findOption(group draw.Group, text string) (string, bool) {
 		return text, true
 	}
 
-	index := slices.IndexFunc(group.Options, func(option string) bool { return strings.EqualFold(group.Captions[option], text) })
-	if index < 0 {
+	position := slices.IndexFunc(group.Options, func(option string) bool {
+		return strings.EqualFold(group.Captions[option], text)
+	})
+	if position < 0 {
 		return "", false
 	}
 
-	return group.Options[index], true
+	return group.Options[position], true
 }
 
 // describeOption returns an option as the States panel writes it: its caption,
@@ -340,12 +339,14 @@ func (s *Service) checkLookUp(lookUp *Lookup) error {
 	switch {
 	case lookUp == nil:
 		return nil
+
 	case lookUp.Title != "":
 		if _, err := s.Wiki.ReadPage(lookUp.Title); err != nil {
 			return fmt.Errorf("%w; search_pages gives the wiki's titles", err)
 		}
 
 		return nil
+
 	case lookUp.Class == "" || lookUp.Name == "":
 		return errors.New("a look-up names a wiki page's title, or a Lexicon entry's class and name")
 	}

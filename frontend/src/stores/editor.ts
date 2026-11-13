@@ -147,7 +147,7 @@ export const useEditorStore = defineStore("editor", () => {
     if (fix.creates) {
       const place = await loadQuery(placeQuery(fix.creates));
       if (place?.format === Format.FormatLocalization) await workspaceApi.CreateLocalization(fix.creates);
-      else await workspaceApi.Create(fix.creates, false);
+      else await workspaceApi.CreateFile(fix.creates);
     }
     for (const [path, edits] of Object.entries(fix.edits ?? {})) {
       const place = await loadQuery(placeQuery(path));

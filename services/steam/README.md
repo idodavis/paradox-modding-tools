@@ -95,7 +95,8 @@ sends the files of its zip, read where they are, from the one folder in the zip 
 Its descriptor goes with the listing's name, versions and Workshop id, and the zip itself is never changed.
 
 Either way, `ListUpload` leaves out what the rules name: files that start with a dot, though the `.metadata` folder
-stays, the coding agents' instruction files, and what the mod's `.gitignore` and its own exclusions cover. The upload
+stays, the coding agents' instruction files, and what the mod's `.gitignore` and its own patterns cover. The mod's own
+patterns are its `.workshop-ignore` file, the one place they are kept (`ReadIgnore`, `WriteIgnore`). The upload
 sends copies of the set, made in a folder of their own, so Steam gets those files and no others.
 
 ## The compare

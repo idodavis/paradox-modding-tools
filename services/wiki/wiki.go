@@ -3,8 +3,9 @@
 // file, and builds the lexicon of the game's script commands.
 //
 // A client asks the wiki's API at most twice a second. Each page is cached as
-// one JSON file with its HTML sanitized. A refresh fetches the pages that are
-// not cached or are over seven days old.
+// one JSON file with its HTML sanitized, and a client keeps the pages it has
+// read in memory. A refresh fetches the pages that are not cached or are over
+// seven days old.
 //
 // The wiki's rules, as the package applies them:
 //
@@ -26,7 +27,7 @@
 // fetched the listing.
 //
 // A cached file that is missing or does not decode reads as not cached, and a
-// note whose page is not cached has no release date. Sanitize reads past
+// note whose page is not cached has no release date. Sanitizing reads past
 // elements and attributes it does not keep.
 package wiki
 
@@ -57,7 +58,8 @@ type Service struct {
 	mu     sync.Mutex
 	client *Client
 
-	// lexicon holds each class's rows, built from the index mods.
+	// lexicon caches each class's rows for the mods index they were built
+	// from.
 	lexicon map[string][]LexiconRow
 	mods    *index.Index
 }
@@ -164,7 +166,7 @@ func (s *Service) resolveClient(ws *workspace.Session) *Client {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.client == nil || s.client.game.ID != ws.Game.ID {
-		s.client = NewClient(s.Workspace.Config.Dirs.Cache, ws.Game)
+		s.client = newClient(s.Workspace.Config.Dirs.Cache, ws.Game)
 	}
 
 	return s.client

@@ -19,9 +19,9 @@ import * as lsp$0 from "../lsp/models.js";
 import * as $models from "./models.js";
 
 /**
- * AddIgnoredPair makes the open workspace ignore the conflicts between two of
- * its mods. It returns an error if they are not two mods of the workspace, or
- * the config cannot be saved.
+ * AddIgnoredPair makes the open workspace ignore the conflicts between two
+ * of its mods. It returns an error if they are not two mods of the
+ * workspace, or the config cannot be saved.
  */
 export function AddIgnoredPair(first: string, second: string): $CancellablePromise<void> {
     return $Call.ByID(1458913961, first, second);
@@ -29,11 +29,10 @@ export function AddIgnoredPair(first: string, second: string): $CancellablePromi
 
 /**
  * BuildReport returns the report of the mods' problems in a load order. An
- * empty order means the workspace's own. Another order is not saved. The report
- * lists what it changes. A report is built once and kept until the workspace,
- * its files, the editor's unsaved text or config.json change, and a caller that
- * asks while it is built waits for it. It returns an error if the mods cannot
- * be scanned.
+ * empty order is the workspace's own; another is a preview, which is not
+ * saved. A report is built once and kept until the workspace, its files, the
+ * editor's unsaved text or config.json change. It returns an error if no
+ * workspace is open or the order does not name each mod once.
  */
 export function BuildReport(order: string[] | null): $CancellablePromise<$models.Report> {
     return $Call.ByID(2998965940, order);
@@ -56,9 +55,9 @@ export function ListCodes(): $CancellablePromise<lsp$0.Code[] | null> {
 
 /**
  * ListErrorLog lists the messages of the game's error log as findings. A
- * message repeated at one place is one row with its count and the last one's
- * time. It returns no findings if there is no log, and an error if the log
- * cannot be read.
+ * message repeated at one place is one row, with its count and the last
+ * one's time. It returns no findings if there is no log, and an error if the
+ * log cannot be read.
  */
 export function ListErrorLog(): $CancellablePromise<$models.GameLog> {
     return $Call.ByID(798966238);
@@ -72,8 +71,8 @@ export function ListLevels(): $CancellablePromise<lsp$0.Level[] | null> {
 }
 
 /**
- * ListOverview counts the definitions, files and messages of each mod in the
- * workspace, and lists the mods each is judged with.
+ * ListOverview counts each mod's definitions, files and messages, and lists
+ * the mods each is judged with.
  */
 export function ListOverview(): $CancellablePromise<$models.Overview[] | null> {
     return $Call.ByID(147932697);
@@ -88,10 +87,9 @@ export function ListReaders(key: string): $CancellablePromise<lsp$0.Site[] | nul
 }
 
 /**
- * ListSnippets returns the code at each finding site, at most ten lines of it:
- * the site's range, or the statement on its line if it has none. A site of one
- * line also gets two lines on each side. It returns an error if a file cannot
- * be read.
+ * ListSnippets returns the code at each finding site: its range, or the
+ * statement on its line where it has none. It returns an error if a file
+ * cannot be read.
  */
 export function ListSnippets(sites: lsp$0.Site[] | null): $CancellablePromise<$models.Snippet[] | null> {
     return $Call.ByID(354852256, sites);
@@ -105,8 +103,8 @@ export function ListTopics(): $CancellablePromise<lsp$0.Topic[] | null> {
 }
 
 /**
- * RemoveIgnoredPair makes the open workspace show the conflicts between two of
- * its mods again. It returns an error if they are not two mods of the
+ * RemoveIgnoredPair makes the open workspace show the conflicts between two
+ * of its mods again. It returns an error if they are not two mods of the
  * workspace, the pair is not ignored, or the config cannot be saved.
  */
 export function RemoveIgnoredPair(first: string, second: string): $CancellablePromise<void> {
@@ -114,10 +112,10 @@ export function RemoveIgnoredPair(first: string, second: string): $CancellablePr
 }
 
 /**
- * WriteScaffold writes the localization keys a mod lacks in a language, with
- * the base text as the placeholder, and returns the files it wrote. Each key
- * goes at the end of the language's matching file, which gets its header first
- * if it is missing or empty. It returns an error if the mod or the language is
+ * WriteScaffold writes the localization keys a mod lacks in a language,
+ * with the base text as a placeholder, and returns the files it wrote. Each
+ * key goes at the end of the matching file, which gets its header first if
+ * it is missing or empty. It returns an error if the mod or the language is
  * not valid, or a file cannot be read or written.
  */
 export function WriteScaffold(modID: string, language: string): $CancellablePromise<string[] | null> {

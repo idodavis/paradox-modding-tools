@@ -525,7 +525,7 @@ const { mutate: create } = useMutation({
     if (dir) for (let count = 2; occupied(label); count++) label = `new_folder_${count}`;
     const row = `${folder}${label}${dir ? "/" : ""}`;
     const path = `${findPath(folder)}/${label}`;
-    await service.Create(path, dir);
+    await (dir ? service.CreateFolder(path) : service.CreateFile(path));
     if (draft?.text.text) await service.Write(path, draft.text);
     return { row, path };
   },

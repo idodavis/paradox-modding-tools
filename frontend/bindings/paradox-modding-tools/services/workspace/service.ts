@@ -53,18 +53,27 @@ export function Close(): $CancellablePromise<void> {
 }
 
 /**
- * Create makes an empty file or a folder, and its parents.
- */
-export function Create(path: string, dir: boolean): $CancellablePromise<void> {
-    return $Call.ByID(4164671313, path, dir);
-}
-
-/**
  * CreateCopy copies a file to the same place in a mod and returns the copy's
  * path. It fails if the mod has a file there.
  */
 export function CreateCopy(path: string, modID: string): $CancellablePromise<string> {
     return $Call.ByID(1678022200, path, modID);
+}
+
+/**
+ * CreateFile makes an empty file and the folders it goes in. It fails if the
+ * file exists.
+ */
+export function CreateFile(path: string): $CancellablePromise<void> {
+    return $Call.ByID(4022081719, path);
+}
+
+/**
+ * CreateFolder makes a folder and the folders it goes in. It fails if the
+ * folder exists.
+ */
+export function CreateFolder(path: string): $CancellablePromise<void> {
+    return $Call.ByID(86628945, path);
 }
 
 /**
@@ -143,8 +152,8 @@ export function ListFolder(dir: string): $CancellablePromise<$models.Place[] | n
 }
 
 /**
- * ListGames returns the supported games, each example's Modes filled from
- * its database's precedence row.
+ * ListGames returns the supported games, each with whether its example's
+ * database takes entry modes such as INJECT:.
  */
 export function ListGames(): $CancellablePromise<game$0.Game[] | null> {
     return $Call.ByID(3286235044);
@@ -165,7 +174,8 @@ export function ListLanguages(installID: string): $CancellablePromise<loc$0.Lang
 }
 
 /**
- * ListReadyInstalls returns the ids of the installs that open without a scan.
+ * ListReadyInstalls returns the ids of the installs whose caches are built, so
+ * they open without a scan.
  */
 export function ListReadyInstalls(): $CancellablePromise<string[] | null> {
     return $Call.ByID(1067958076);
@@ -203,7 +213,8 @@ export function Locate(path: string): $CancellablePromise<$models.Place> {
 
 /**
  * Open opens a workspace in the background, closing the open one first, and
- * sends workspace:opened or workspace:failed.
+ * sends workspace:opened or workspace:failed. The lock is held until the open
+ * ends, so every call that asks for the session waits for it.
  */
 export function Open(workspaceID: string): $CancellablePromise<void> {
     return $Call.ByID(2144133549, workspaceID);
@@ -311,7 +322,8 @@ export function State(): $CancellablePromise<$models.State> {
 }
 
 /**
- * UpdateInstall moves an install to another folder and reads its version again.
+ * UpdateInstall moves an install to another folder and reads its version
+ * again. An open workspace on the install opens again.
  */
 export function UpdateInstall(id: string, path: string): $CancellablePromise<void> {
     return $Call.ByID(2552603427, id, path);

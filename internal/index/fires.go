@@ -27,18 +27,17 @@ type Fire struct {
 }
 
 // fireWalk is one walk along the firings from one definition, through the
-// scripted effects between if asked. The scripted effects on the way are
-// open, so that effects that call each other end the walk.
+// scripted effects between if asked. The definitions on the way are kept
+// open, so effects that call each other end the walk.
 type fireWalk struct {
 	index  *Index
 	schema *lang.Schema
 
-	// start is the definition the walk starts from, and follow whether it
-	// goes through scripted effects.
-	start  Site
+	start Site
+
+	// follow is set for a walk that goes through scripted effects.
 	follow bool
 
-	// open holds the definitions on the way from the start.
 	open map[Site]bool
 
 	fires []Fire
@@ -67,14 +66,13 @@ func (i *Index) ListFiredBy(schema *lang.Schema, site Site, follow bool) []Fire 
 }
 
 // forward adds what a definition fires, and goes on into each scripted effect
-// it calls where the walk follows them. The given effects are those entered
-// on the way.
+// it calls where the walk follows them.
 func (f *fireWalk) forward(current Site, effects []Site) {
 	f.open[current] = true
 	defer delete(f.open, current)
 
 	for _, use := range f.index.listReferences(current) {
-		if !f.index.Occurrence(use).Firing {
+		if f.index.Occurrence(use).Firing == 0 {
 			continue
 		}
 
@@ -97,9 +95,8 @@ func (f *fireWalk) forward(current Site, effects []Site) {
 }
 
 // backward adds what fires a definition, and goes on back from each scripted
-// effect that fires it where the walk follows them. The given effects are
-// those passed on the way, and the given use is the reference that names the
-// start, found at the first step.
+// effect that fires it where the walk follows them. The given use is the
+// reference that names the start, found at the first step.
 func (f *fireWalk) backward(current Site, effects []Site, use Site) {
 	f.open[current] = true
 	defer delete(f.open, current)
@@ -112,7 +109,7 @@ func (f *fireWalk) backward(current Site, effects []Site, use Site) {
 
 	for _, referrer := range f.index.ListUses(reference.Database, reference.Name) {
 		parent, nested := f.index.FindDefinition(referrer)
-		if !nested || !f.index.Occurrence(referrer).Firing {
+		if !nested || f.index.Occurrence(referrer).Firing == 0 {
 			continue
 		}
 
@@ -145,16 +142,15 @@ func (f *fireWalk) backward(current Site, effects []Site, use Site) {
 }
 
 // listReferences returns the references that sit directly inside a
-// definition, in source order.
+// definition, in source order. They follow it without a break, so the list
+// ends at the first occurrence outside it.
 func (i *Index) listReferences(definition Site) []Site {
 	var sites []Site
 
-	// A definition's references follow it without a break, so the list ends
-	// at the first occurrence that is not inside it.
 	occurrences := i.Occurrences[definition.File]
 	for position := definition.Occurrence + 1; int(position) < len(occurrences); position++ {
 		occurrence := occurrences[position]
-		if !occurrence.Nested || occurrence.Parent < definition.Occurrence {
+		if occurrence.Parent < definition.Occurrence {
 			break
 		}
 
@@ -177,35 +173,27 @@ func (i *Index) ListActing(schema *lang.Schema, reference lang.Reference, file i
 	return slices.DeleteFunc(i.ResolveLocal(reference, file), func(site Site) bool { return !i.isActing(winner, site) })
 }
 
-// isActing reports whether a definition of the name a winner won takes part
-// in what the game runs: the one it keeps, one merged into it, or, where no
-// source says which it keeps, any copy in a file it reads.
+// isActing reports whether a copy of a winner's name takes part in what the
+// game runs: the one it keeps, one merged into it, or, where no source says
+// which it keeps, any copy in a file it reads.
 func (i *Index) isActing(winner Winner, site Site) bool {
 	outcome := i.ResolveSite(winner, site)
 
 	return outcome.Kept || outcome.Reason == lang.ReasonUnsettled
 }
 
-// firingFields holds, by database, the key paths in its definitions where a
-// name fires the event, on_action or decision it names, as it would in
-// effect script. A row holds for the games its Games lists.
+// firingFields holds, by database, the key paths in its definitions where
+// the game runs the event, on_action or decision a name names, as effect
+// script would. A row holds for the games its Games lists.
 var firingFields = map[string][]lang.KeyReference{
-	// CK3 common/council_tasks/00_chancellor_tasks.txt:150
-	"council_tasks": {{Games: []string{game.CK3}, KeyPath: "monthly_on_action"}},
-	// CK3 common/schemes/scheme_types/coerce_contribution_scheme.txt:143
+	"council_tasks":        {{Games: []string{game.CK3}, KeyPath: "monthly_on_action"}},
 	"schemes/scheme_types": {{Games: []string{game.CK3}, KeyPath: "on_monthly/**"}},
-	// CK3 common/defines/00_defines.txt:1813-1816: "Default event to run when
-	// a player province is infected"
 	"defines.define": {
 		{Games: []string{game.CK3}, KeyPath: "DEFAULT_HOLDER_INFECTION_EVENT"},
 		{Games: []string{game.CK3}, KeyPath: "DEFAULT_LIEGE_INFECTION_EVENT"},
 		{Games: []string{game.CK3}, KeyPath: "DEFAULT_REALM_INFECTION_EVENT"},
 	},
-	// CK3 common/puppets/actions/puppet_actions.txt:26
 	"puppets/actions": {{Games: []string{game.CK3}, KeyPath: "decision"}},
-	// Vic3 journal_entries.md:354-375: the fields that fire the events they
-	// name, as journal_entries.md:357, 00_belle_epoque.txt:215,
-	// 00_acw_entries.txt:61,120,68 and journal_entries.md:373-375 write them
 	"journal_entries": {
 		{Games: []string{game.Vic3}, KeyPath: "on_weekly_pulse/random_events/<number>"},
 		{Games: []string{game.Vic3}, KeyPath: "on_weekly_pulse/events"},
@@ -216,6 +204,29 @@ var firingFields = map[string][]lang.KeyReference{
 	},
 }
 
+// countFiring returns the Firing an occurrence of a reference keeps. It
+// climbs from the reference through the blocks that only hold it: a list, a
+// numbered branch of a random list, or an effect's own fields.
+func (c *collector) countFiring(tree *jomini.Tree, statement int32, context *lang.Context, reference lang.Reference) uint8 {
+	if !c.isFiring(context, reference) {
+		return 0
+	}
+
+	effects, blocks := c.schema.Effects, uint8(1)
+	for blocks < 255 {
+		current, parent := tree.Statements[statement], context.Parent
+		isField := parent != nil && isEffect(parent, effects) && !isEffect(context, effects)
+		isHeld := current.IsListed() || current.KeyClass.IsNumberKey() || isField
+		if current.Parent == 0 || parent == nil || !isHeld {
+			break
+		}
+
+		statement, context, blocks = current.Parent, parent, blocks+1
+	}
+
+	return blocks
+}
+
 // isFiring reports whether a reference fires the event, on_action or decision
 // it names.
 func (c *collector) isFiring(context *lang.Context, reference lang.Reference) bool {
@@ -223,7 +234,6 @@ func (c *collector) isFiring(context *lang.Context, reference lang.Reference) bo
 		return false
 	}
 
-	dialect := c.index.dialect
 	effect := context
 	if !isEffect(effect, c.schema.Effects) {
 		effect = context.Parent
@@ -233,11 +243,16 @@ func (c *collector) isFiring(context *lang.Context, reference lang.Reference) bo
 		target := c.schema.Databases[reference.Database]
 
 		return target == nil || target.Declaration.Contents != lang.ContentsDecisions ||
-			slices.Contains(dialect.DecisionEffects, effect.Label)
+			slices.Contains(c.index.dialect().DecisionEffects, effect.Label)
 	}
 
 	if holder := c.schema.Databases[context.Database]; holder != nil && holder.Declaration.Contents == lang.ContentsOnActions {
 		return true
+	}
+
+	fields := firingFields[context.Database]
+	if len(fields) == 0 {
+		return false
 	}
 
 	keys := context.Path
@@ -245,8 +260,8 @@ func (c *collector) isFiring(context *lang.Context, reference lang.Reference) bo
 		keys = slices.Concat(keys, []string{context.Label})
 	}
 
-	return slices.ContainsFunc(firingFields[context.Database], func(field lang.KeyReference) bool {
-		return dialect.Matches(field.Games) && jomini.MatchKeyPath(field.KeyPath, keys)
+	return slices.ContainsFunc(fields, func(field lang.KeyReference) bool {
+		return c.index.dialect().Matches(field.Games) && jomini.MatchKeyPath(field.KeyPath, keys)
 	})
 }
 

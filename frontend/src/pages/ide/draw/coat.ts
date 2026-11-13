@@ -168,10 +168,9 @@ async function buildLayer(
     }
     context.restore();
   }
-  const isEmblem = layer.role !== "pattern" && layer.role !== "sub";
   const masks = [
     ...(layer.mask ? [{ path: layer.mask, alpha: buildRegionMask(layer.maskChannels ?? []) }] : []),
-    ...(isEmblem && shading?.grain.strength ? [{ path: shading.path, alpha: buildGrainMask(shading.grain) }] : []),
+    ...(layer.emblem && shading?.grain.strength ? [{ path: shading.path, alpha: buildGrainMask(shading.grain) }] : []),
   ];
   for (const mask of masks) {
     const pixels = await loadPixels(mask.path, width, height);

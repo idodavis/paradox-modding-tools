@@ -51,7 +51,7 @@ export interface Commit {
 
 /**
  * LineChange is one run of lines changed from the last commit. A removed run
- * has no line, so it is marked on the line before it.
+ * has no line left, so it is marked on the line before it.
  */
 export interface LineChange {
     /**

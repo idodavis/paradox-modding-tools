@@ -32,7 +32,8 @@ flowchart TD
 | file | what it holds |
 |---|---|
 | `schema.go` | The package doc, `Build`, and the databases made from the game's folders and from lang's declarations. |
-| `dumps.go` | The reader of the dump files, and the commands, their keys and the links built from them. |
+| `dumps.go` | The reader of the dump files, the shipped backup filling what they lack, and the dumps' corrections. |
+| `commands.go` | The commands, their keys and the links built from the dumps. |
 | `docs.go` | The reader of the doc files: which files are docs, and the hover text, type, default and values they give each field. |
 | `vanilla.go` | The count of the game's own files, and what the counts show about each field, each link and each star key. |
 | `shipped.go` | The backup of each game's dumps that the app ships, embedded from `shipped/*.gob`. |

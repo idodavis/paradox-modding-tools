@@ -154,7 +154,7 @@ const nodeURL = "https://nodejs.org/dist/"
 
 const windowsOS = "windows"
 
-// minNode is the floor Claude's adapter sets.
+// minNode is the oldest Node that Claude's adapter runs on.
 const minNode = "22"
 
 const fetchTimeout = 5 * time.Minute
@@ -175,52 +175,51 @@ func ListFiles() []string {
 	return entries
 }
 
-// ListAgents returns the agents PMT offers, then the user's own. An installed
-// agent that a Node can run gets the Program and Args that start it.
+// ListAgents returns the agents PMT offers, then the user's own.
 func (s *Service) ListAgents() []Agent {
 	listing, _ := s.loadRegistry()
 	node := s.DescribeNode()
 	access := s.MCP.ResolveAccess()
 	replacer := strings.NewReplacer("{url}", access.URL, "{token}", access.Token)
+	records := s.Workspace.Config.Config().Agents
 
-	offers := make([]Agent, 0, len(agents))
+	listed := make([]Agent, 0, len(agents)+len(records))
 	for _, row := range agents {
 		row.Register = replacer.Replace(row.Register)
-
-		var entry registryAgent
-		if index := slices.IndexFunc(listing.Agents, func(candidate registryAgent) bool { return candidate.ID == row.ID }); index >= 0 {
-			entry = listing.Agents[index]
-		}
-
-		versions := s.listInstalled(row.ID)
-		slices.SortFunc(versions, func(first, second string) int { return semver.Compare("v"+first, "v"+second) })
-
-		agent := Agent{Agent: row, Version: entry.Version, Description: entry.Description}
-		if len(versions) > 0 {
-			agent.Installed = versions[len(versions)-1]
-		}
-
-		started, _ := s.installs.Load(row.ID)
-		agent.Installing, _ = started.(time.Time)
-
-		script, err := findScript(filepath.Join(s.resolveDir(), row.ID+"@"+agent.Installed))
-		canStart := agent.Installed != "" && err == nil && node.Path != ""
-		if canStart {
-			agent.Program, agent.Args = node.Path, []string{script}
-			if npx := entry.Distribution.Npx; npx != nil {
-				agent.Args = append(agent.Args, npx.Args...)
-			}
-		}
-
-		offers = append(offers, agent)
+		listed = append(listed, s.makeOffer(row, listing, node))
 	}
 
-	own := make([]Agent, 0, len(s.Workspace.Config.Config().Agents))
-	for _, record := range s.Workspace.Config.Config().Agents {
-		own = append(own, Agent{Agent: record})
+	for _, record := range records {
+		listed = append(listed, Agent{Agent: record})
 	}
 
-	return slices.Concat(offers, own)
+	return listed
+}
+
+// makeOffer returns an offered agent with its registry entry and installed
+// version. An installed agent that the Node can run gets the program and
+// arguments that start it.
+func (s *Service) makeOffer(row app.Agent, listing registry, node Node) Agent {
+	var entry registryAgent
+	if position := slices.IndexFunc(listing.Agents, func(candidate registryAgent) bool { return candidate.ID == row.ID }); position >= 0 {
+		entry = listing.Agents[position]
+	}
+
+	agent := Agent{Agent: row, Version: entry.Version, Description: entry.Description}
+	var script string
+	agent.Installed, script = s.findInstalled(row.ID)
+
+	started, _ := s.installs.Load(row.ID)
+	agent.Installing, _ = started.(time.Time)
+
+	if script != "" && node.Path != "" {
+		agent.Program, agent.Args = node.Path, []string{script}
+		if npx := entry.Distribution.Npx; npx != nil {
+			agent.Args = append(agent.Args, npx.Args...)
+		}
+	}
+
+	return agent
 }
 
 // AddAgent adds an agent of the user's own and returns it with its new id. It
@@ -252,8 +251,7 @@ func (s *Service) RemoveAgent(id string) error {
 // DescribeNode returns the Node the agents run on, and the system's own
 // version, which is "" if its Node cannot run.
 func (s *Service) DescribeNode() Node {
-	node := Node{}
-
+	var node Node
 	if path, err := exec.LookPath("node"); err == nil {
 		command := exec.Command(path, "--version")
 		prepareCommand(command)
@@ -295,11 +293,12 @@ func (s *Service) InstallNode() error {
 		return err
 	}
 
-	index := slices.IndexFunc(releases, func(candidate release) bool { return candidate.LTS != false })
-	if index < 0 {
+	position := slices.IndexFunc(releases, func(candidate release) bool { return candidate.LTS != false })
+	if position < 0 {
 		return errors.New("nodejs.org lists no long-term release")
 	}
-	newest := releases[index]
+
+	newest := releases[position]
 
 	system, extension, arch := runtime.GOOS, ".tar.gz", runtime.GOARCH
 	if system == windowsOS {
@@ -337,19 +336,19 @@ func (s *Service) InstallNode() error {
 }
 
 // InstallAgent installs an offered agent with npm and removes its other
-// versions. It returns an error if the registry lacks the agent, no Node is
-// new enough, an install of it already runs, or npm fails.
+// versions.
 func (s *Service) InstallAgent(id string) error {
 	listing, err := s.loadRegistry()
 	if err != nil {
 		return err
 	}
 
-	index := slices.IndexFunc(listing.Agents, func(candidate registryAgent) bool { return candidate.ID == id })
-	if index < 0 || listing.Agents[index].Distribution.Npx == nil {
+	position := slices.IndexFunc(listing.Agents, func(candidate registryAgent) bool { return candidate.ID == id })
+	if position < 0 || listing.Agents[position].Distribution.Npx == nil {
 		return fmt.Errorf("the registry has no agent %s that runs on Node", id)
 	}
-	entry := listing.Agents[index]
+
+	entry := listing.Agents[position]
 
 	node := s.DescribeNode()
 	if node.Path == "" {
@@ -382,18 +381,15 @@ func (s *Service) InstallAgent(id string) error {
 		return fmt.Errorf("npm could not install %s\n%w\n%s", entry.Distribution.Npx.Package, err, output)
 	}
 
-	for _, version := range s.listInstalled(id) {
-		if version != entry.Version {
-			_ = os.RemoveAll(filepath.Join(s.resolveDir(), id+"@"+version))
-		}
-	}
+	// A version that cannot be removed, as while it runs, waits for the next
+	// install.
+	_ = s.removeVersions(id, dir)
 
 	return nil
 }
 
-// UninstallAgent removes every installed version of an offered agent. It
-// returns an error if npm is installing it or a folder cannot be removed, as
-// while the agent runs.
+// UninstallAgent removes every installed version of an offered agent. It fails
+// while the agent runs, since its folder cannot be removed then.
 func (s *Service) UninstallAgent(id string) error {
 	if !slices.ContainsFunc(agents, func(row app.Agent) bool { return row.ID == id }) {
 		return fmt.Errorf("PMT offers no agent %s", id)
@@ -404,27 +400,40 @@ func (s *Service) UninstallAgent(id string) error {
 	}
 	defer application.Get().Event.Emit(EventChanged, id)
 
-	// A version npm left half installed goes too.
+	return s.removeVersions(id, "")
+}
+
+// removeVersions deletes the installed versions of an agent but the one in the
+// kept folder, "" to keep none. A version npm left half installed goes too.
+func (s *Service) removeVersions(id, kept string) error {
 	dirs, _ := filepath.Glob(filepath.Join(s.resolveDir(), id+"@*"))
+	var failure error
 	for _, dir := range dirs {
-		if err := os.RemoveAll(dir); err != nil {
-			return err
+		if dir != kept {
+			failure = errors.Join(failure, os.RemoveAll(dir))
 		}
 	}
 
-	return nil
+	return failure
 }
 
-// findAgent returns the agent with the id if it can start, else an error
-// saying why not.
-func (s *Service) findAgent(id string) (Agent, error) {
-	offered := s.ListAgents()
-
-	index := slices.IndexFunc(offered, func(other Agent) bool { return other.ID == id })
-	if index < 0 {
+// findAgent returns the agent with the id if it can start on the given Node,
+// else an error saying why not. For an offered agent it reads the registry's
+// saved copy, however old, and fetches nothing.
+func (s *Service) findAgent(id string, node Node) (Agent, error) {
+	var agent Agent
+	own := s.Workspace.Config.Config().Agents
+	offer := slices.IndexFunc(agents, func(row app.Agent) bool { return row.ID == id })
+	record := slices.IndexFunc(own, func(other app.Agent) bool { return other.ID == id })
+	switch {
+	case offer >= 0:
+		saved, _ := app.LoadJSON[registry](s.resolveRegistry())
+		agent = s.makeOffer(agents[offer], saved, node)
+	case record >= 0:
+		agent = Agent{Agent: own[record]}
+	default:
 		return Agent{}, fmt.Errorf("PMT has no agent %s", id)
 	}
-	agent := offered[index]
 
 	switch {
 	case agent.Program != "":
@@ -444,7 +453,7 @@ const registryAge = 24 * time.Hour
 // fresh one. It keeps the old copy if the fetch fails, and errors if there is
 // none.
 func (s *Service) loadRegistry() (registry, error) {
-	path := filepath.Join(s.resolveDir(), "registry.json")
+	path := s.resolveRegistry()
 	content, err := os.ReadFile(path)
 	if info, statErr := os.Stat(path); statErr != nil || time.Since(info.ModTime()) > registryAge {
 		if fetched, fetchErr := app.FetchURL(registryURL, fetchTimeout); fetchErr == nil {
@@ -460,20 +469,29 @@ func (s *Service) loadRegistry() (registry, error) {
 	return listing, json.Unmarshal(content, &listing)
 }
 
-func (s *Service) listInstalled(id string) []string {
-	matches, _ := filepath.Glob(filepath.Join(s.resolveDir(), id+"@*"))
+// resolveRegistry returns where the registry's saved copy is kept.
+func (s *Service) resolveRegistry() string {
+	return filepath.Join(s.resolveDir(), "registry.json")
+}
 
-	versions := []string{}
+// findInstalled returns the newest installed version of an agent and the
+// script that starts it. Both are "" if none is installed. A folder whose
+// package declares no one program is no install.
+func (s *Service) findInstalled(id string) (version, script string) {
+	matches, _ := filepath.Glob(filepath.Join(s.resolveDir(), id+"@*"))
 	for _, match := range matches {
-		if _, err := findScript(match); err != nil {
+		program, err := findScript(match)
+		if err != nil {
 			continue
 		}
 
-		_, version, _ := strings.Cut(filepath.Base(match), "@")
-		versions = append(versions, version)
+		_, candidate, _ := strings.Cut(filepath.Base(match), "@")
+		if version == "" || semver.Compare("v"+candidate, "v"+version) > 0 {
+			version, script = candidate, program
+		}
 	}
 
-	return versions
+	return version, script
 }
 
 func (s *Service) resolveDir() string {

@@ -51,8 +51,9 @@ index, the mods in load order and the language.
 - **Texts.** A localization key's text comes in the workspace's language, else the base language, with the message
   the game keeps. A definition's title and description are the texts the game shows it by: the keys it writes, else
   the keys `game.DefinitionTexts` builds from its name.
-- **Other load orders.** `ScanOrder` scans the mods in another order and keeps the result nowhere, for Health's
-  preview of a load order.
+- **Other load orders.** `PreviewOrder` returns the mods' index as another load order would have it, for Health's
+  preview. It is `index.Index.Reorder`: the same files and occurrences mounted in the other order, with no file read
+  again, and it is kept nowhere.
 
 ## Places
 
@@ -95,7 +96,9 @@ being watched.
 
 A `Mod` is the config's record of a mod with its `Descriptor`, its thumbnail, and whether it is broken (its folder is
 missing) or a Workshop mod's copy. The descriptor is the mod's own description: CK3's `.mod` file, or Vic3's and EU5's
-`.metadata/metadata.json`. Writing it back keeps the fields PMT does not model.
+`.metadata/metadata.json`. Writing it back keeps the fields PMT does not model. The thumbnail is the picture the
+descriptor names, else the mod's `thumbnail.*` file (`findThumbnail`): the one rule for the picture the app shows for
+the mod and the one an upload sends.
 
 A mod is the user's own or an external mod: someone else's, which the workspace checks the user's mods against and
 PMT never publishes. `External` is on its record, set by `AddMod` and `SetExternal`; Steam's copy of a Workshop mod

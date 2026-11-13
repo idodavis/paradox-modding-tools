@@ -851,5 +851,5 @@ async function openGraph(model: Model): Promise<void> {
 async function createPath(place: Place, folder: boolean): Promise<void> {
   const title = folder ? "New folder" : "New file";
   const path = await Dialogs.SaveFile({ Title: title, Directory: place.root, ButtonText: "Create" });
-  if (path) await workspaceApi.Create(path, folder);
+  if (path) await (folder ? workspaceApi.CreateFolder(path) : workspaceApi.CreateFile(path));
 }

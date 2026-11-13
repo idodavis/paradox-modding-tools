@@ -2,12 +2,10 @@
 <script setup lang="ts">
 import { useMutation, useQuery } from "@pinia/colada";
 import { Clipboard } from "@wailsio/runtime";
-import { Range } from "monaco-editor/editor/editor.api";
 import { computed } from "vue";
 
 import * as draw from "@services/draw/service";
 import type { Coat, Window } from "@services/draw/models";
-import type { Range as Span } from "@internal/jomini/models";
 import type { Edit } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 
@@ -94,29 +92,21 @@ const { mutate: copy } = useMutation({
   onSuccess: (place) => editor.show(place),
 });
 
-/** findBody finds the script inside the braces of a coat and its range. It returns null for a coat with no braces. */
-function findBody(model: Model, span: Span): { text: string; range: Range } | null {
-  const text = model.model.getValueInRange(span);
-  const open = text.indexOf("{");
-  if (open < 0) return null;
-  const base = model.model.getOffsetAt(Range.getStartPosition(span));
-  const start = model.model.getPositionAt(base + open + 1);
-  const end = model.model.getPositionAt(base + text.lastIndexOf("}"));
-  return { text: text.slice(open + 1, text.lastIndexOf("}")).trim(), range: Range.fromPositions(start, end) };
-}
-
-/** copyScript copies the coat's script to the clipboard. */
+/**
+ * copyScript copies the script inside the coat's braces to the clipboard. A
+ * coat with no braces has none.
+ */
 function copyScript(): void {
-  const body = props.coat && findBody(props.model, props.coat.range);
-  if (body) void Clipboard.SetText(body.text);
+  const body = props.coat?.body;
+  if (body?.startLineNumber) void Clipboard.SetText(props.model.model.getValueInRange(body).trim());
 }
 
 /** pasteScript replaces the coat's script with the one on the clipboard. */
 async function pasteScript(): Promise<void> {
-  const body = props.coat && findBody(props.model, props.coat.range);
-  if (!body || !props.coat) return;
+  const coat = props.coat;
+  if (!coat?.body.startLineNumber) return;
   const text = await Clipboard.Text();
-  edit({ place: props.coat.place, request: () => Promise.resolve([{ range: body.range, text: `\n${text}\n` }]) });
+  edit({ place: coat.place, request: () => Promise.resolve([{ range: coat.body, text: `\n${text}\n` }]) });
 }
 
 /** deleteCoat deletes the coat from the file once the user confirms. */

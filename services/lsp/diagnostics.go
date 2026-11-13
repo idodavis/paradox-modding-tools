@@ -30,7 +30,9 @@ type Level struct {
 	Noun  string `json:"noun"`
 	Nouns string `json:"nouns"`
 
-	// Fix is set where the game loses something, so a mod needs a fix.
+	// Problem is set for the levels that count as problems, and Fix for those
+	// where the game loses something, so a mod needs a fix. Cost says what the
+	// game loses.
 	Problem bool   `json:"problem"`
 	Fix     bool   `json:"fix"`
 	Cost    string `json:"cost"`
@@ -41,7 +43,8 @@ type Code struct {
 	// ID is the code's name in kebab case, such as wrong-scope.
 	ID string `json:"id"`
 
-	// Level and Topic are "" for the game's log.
+	// Question is the Health question the code is asked under. Level and Topic
+	// are "" for the game's log.
 	Question string `json:"question"`
 	Level    string `json:"level"`
 	Topic    string `json:"topic"`
@@ -406,6 +409,7 @@ func DiagnoseFiles(ws *workspace.Session, mods *index.Index, paths []string) [][
 			return nil
 		})
 	}
+
 	_ = group.Wait()
 
 	return diagnostics
@@ -551,7 +555,6 @@ func diagnoseDescriptor(ws *workspace.Session, place workspace.Place, tree *jomi
 	return []Diagnostic{makeDiagnostic(tree, span, "supported-version", facts)}
 }
 
-// toDiagnostics returns the problems a parse found as diagnostics.
 func toDiagnostics(tree *jomini.Tree, problems []jomini.Problem) []Diagnostic {
 	diagnostics := make([]Diagnostic, len(problems))
 	for position, problem := range problems {
@@ -679,6 +682,7 @@ func SplitMessage(template string, facts map[string]string) []Part {
 		pieces = append(pieces, template[last:match[0]], template[match[0]:match[1]])
 		last = match[1]
 	}
+
 	pieces = slices.DeleteFunc(append(pieces, template[last:]), func(piece string) bool { return piece == "" })
 
 	var parts []Part

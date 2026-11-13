@@ -115,8 +115,6 @@ func buildLexicon(ws *workspace.Session, mods *index.Index, id string) ([]Lexico
 	return rows, nil
 }
 
-// listExamples returns the first uses of a name in the index, up to
-// schema.ExampleCount.
 func listExamples(ws *workspace.Session, mods *index.Index, database, name string) []lsp.Site {
 	uses := mods.ListUses(database, name)
 	uses = uses[:min(len(uses), schema.ExampleCount)]
@@ -171,7 +169,8 @@ func makeScripted(ws *workspace.Session, mods *index.Index, class string, refere
 	}
 }
 
-// toExamples turns the schema's examples into sites, counting lines from one.
+// toExamples turns the schema's examples into sites. Their lines count from 0,
+// a site's from 1.
 func toExamples(ws *workspace.Session, mods *index.Index, examples []lang.Example) []lsp.Site {
 	sites := make([]lsp.Site, len(examples))
 	for position, example := range examples {

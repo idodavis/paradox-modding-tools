@@ -114,29 +114,21 @@ func (c *Client) listCategory(category string) ([]string, error) {
 		"cmlimit":     {"500"},
 	}
 	var titles []string
-	err := c.queryAll(params, func(reply answer) {
-		for _, member := range reply.Query.CategoryMembers {
-			titles = append(titles, member.Title)
-		}
-	})
-
-	return titles, err
-}
-
-// queryAll sends a query and follows the wiki's continuation, handing every
-// reply to a function.
-func (c *Client) queryAll(params url.Values, each func(reply answer)) error {
 	for {
 		var reply answer
 		if err := c.fetch(params, &reply); err != nil {
-			return err
+			return nil, err
 		}
 
-		each(reply)
+		for _, member := range reply.Query.CategoryMembers {
+			titles = append(titles, member.Title)
+		}
+
 		if reply.Continue == nil {
-			return nil
+			return titles, nil
 		}
 
+		// A long category comes in parts, and continue asks for the next.
 		for key, value := range reply.Continue {
 			params.Set(key, value)
 		}

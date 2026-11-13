@@ -26,8 +26,8 @@ import (
 type Card struct {
 	Title string `json:"title"`
 
-	// What is what the word is, such as "effect". Class is an operator's
-	// class, "" for any other word.
+	// What is what the word is, such as "effect". Class is a keyword's class,
+	// such as "logical", and "" for any other word.
 	What  string `json:"what"`
 	Class string `json:"class,omitempty"`
 
@@ -150,11 +150,7 @@ func (s *Service) Hover(path string, line, column int) (*Card, error) {
 	}
 
 	card, reference := describeMessage(ws, document, offset)
-	switch {
-	case card == nil || reference.Name == "":
-	case reference.Database == lang.Localization:
-		describeKey(ws, mods, place, card, reference)
-	default:
+	if card != nil && reference.Name != "" {
 		describeDefinitions(card, ws, mods, place, reference)
 	}
 
@@ -189,9 +185,6 @@ func (s *Service) describeHit(ws *workspace.Session, mods *index.Index, place wo
 
 	hitsKey := tree.Statements[cursor.statement].Key.Contains(cursor.offset)
 	switch {
-	case reference.Database == lang.Localization:
-		describeKey(ws, mods, place, card, reference)
-
 	case context.Category == lang.CategoryKeyword && hitsKey:
 		// a keyword the dumps also declare, as NOT, is the language's word
 		// first
@@ -298,8 +291,7 @@ func (s *Service) ListAncestors(path string, line, column int) ([]string, error)
 	return listAncestors(findCursor(document, jomini.ToOffset(tree.Src, tree.Lines, line, column))), nil
 }
 
-// listAncestors returns the key of the definition a cursor is in, then the keys
-// of its blocks around the cursor. It returns nil outside a definition.
+// listAncestors is ListAncestors for a cursor.
 func listAncestors(cursor cursor) []string {
 	var keys []string
 	tree, statement := cursor.tree, cursor.statement
@@ -322,19 +314,19 @@ func listAncestors(cursor cursor) []string {
 	return nil
 }
 
-// describeKey fills a card with a localization key's text and the messages that
-// define it.
-func describeKey(ws *workspace.Session, mods *index.Index, place workspace.Place, card *Card, reference lang.Reference) {
-	text, _, _ := ws.LookupText(mods, reference.Name)
-	sites, winner := listSites(ws, mods, place, reference)
-	card.What, card.Quote, card.Sites = "localization key", text, MakeSites(ws, mods, sites, winner)
-}
-
 // listSites returns the definitions a reference names, the kept ones first, and
 // the winner the game keeps, nil if none.
 func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, reference lang.Reference) ([]index.Site, *index.Winner) {
 	sites := dropTranslations(ws, mods, place, mods.ResolveLocal(reference, place.Position))
-	winner, ok := findKept(ws, mods, reference, place.Position)
+	var winner index.Winner
+	var ok bool
+	switch reference.Database {
+	case lang.Localization:
+		_, winner, ok = ws.LookupText(mods, reference.Name)
+	default:
+		winner, ok = mods.FindKeptLocal(ws.Schema, reference, place.Position)
+	}
+
 	if !ok {
 		return sites, nil
 	}
@@ -351,8 +343,9 @@ func listSites(ws *workspace.Session, mods *index.Index, place workspace.Place, 
 	return slices.Concat(kept, others), &winner
 }
 
-// dropTranslations returns the sites without the messages of other languages
-// than the file's own, else the session's first.
+// dropTranslations keeps the localization sites of one language: the file's
+// own if a message is written in it, else the first of the session's languages
+// that has one. Sites outside localization files stay.
 func dropTranslations(ws *workspace.Session, mods *index.Index, place workspace.Place, sites []index.Site) []index.Site {
 	for _, language := range slices.Concat([]string{loc.FindSuffixLanguage(place.Path)}, ws.Languages()) {
 		hasMessage := slices.ContainsFunc(sites, func(site index.Site) bool {
@@ -368,18 +361,6 @@ func dropTranslations(ws *workspace.Session, mods *index.Index, place workspace.
 	}
 
 	return sites
-}
-
-// findKept returns the winner the game keeps for a reference, or false if none.
-// A position of -1 sees no local definition.
-func findKept(ws *workspace.Session, mods *index.Index, reference lang.Reference, position int32) (index.Winner, bool) {
-	if reference.Database == lang.Localization {
-		_, winner, ok := ws.LookupText(mods, reference.Name)
-
-		return winner, ok
-	}
-
-	return mods.FindKeptLocal(ws.Schema, reference, position)
 }
 
 // describeKeyword fills a card for a keyword, with a random-list branch's
@@ -434,9 +415,14 @@ func describeCommand(card *Card, cursor cursor, span jomini.Span, command *lang.
 		return
 	}
 
+	scopes := make([]string, len(command.Scopes))
+	for position, scope := range command.Scopes {
+		scopes[position] = lang.ToPhrase(scope)
+	}
+
 	class := findClass(command.Database)
 	card.What, card.Lexicon, card.Blurb = class.ID, class.ID, command.Blurb
-	card.add(rowScopes, cmp.Or(describeScopes(command.Scopes), "The game does not say"))
+	card.add(rowScopes, cmp.Or(lang.JoinList(scopes, "or"), "The game does not say"))
 	current := cursor.tree.Statements[cursor.statement]
 	if current.IsBlock() || span.End != current.Key.End {
 		if command.Target != "" {
@@ -449,15 +435,6 @@ func describeCommand(card *Card, cursor cursor, span jomini.Span, command *lang.
 	if !describeTakes(card, cursor.context.Parent.FindArguments(command)) && command.Target != "" {
 		card.add(rowTakes, describeExpected(lang.Expected{Type: lang.ValueTypeTarget, Scope: command.Target}))
 	}
-}
-
-func describeScopes(scopes []string) string {
-	phrases := make([]string, len(scopes))
-	for position, scope := range scopes {
-		phrases[position] = lang.ToPhrase(scope)
-	}
-
-	return strings.Join(phrases, ", ")
 }
 
 // describeScope returns "a landed title" or "an army" for a scope.
@@ -494,9 +471,16 @@ func describeTakes(card *Card, field *lang.Field) bool {
 var returnsLabels = map[lang.Shape]string{lang.ShapeTriggers: "yes or no", lang.ShapeValue: "a number"}
 
 // describeDefinitions fills a card for a name that definitions define, with
-// what the first of them says of itself.
+// what the first of them says of itself. A localization key gets its text.
 func describeDefinitions(card *Card, ws *workspace.Session, mods *index.Index, place workspace.Place, reference lang.Reference) {
 	sites, winner := listSites(ws, mods, place, reference)
+	if reference.Database == lang.Localization {
+		text, _, _ := ws.LookupText(mods, reference.Name)
+		card.What, card.Quote, card.Sites = "localization key", text, MakeSites(ws, mods, sites, winner)
+
+		return
+	}
+
 	entries := listEntries(mods, sites)
 	card.What = lang.DescribeDefinition(reference.Database, false)
 	card.Sites, card.Color = MakeSites(ws, mods, entries, winner), findDefinedColor(ws, mods, winner)
@@ -587,8 +571,7 @@ func describeEntry(card *Card, ws *workspace.Session, mods *index.Index, site in
 
 	card.Comment = strings.Join(lines, "\n")
 	if database := ws.Schema.Databases[mods.ToReference(site).Database]; database != nil && database.Declaration.Parameters {
-		parameters := slices.Sorted(maps.Keys(lang.ListParameters(tree, statement).Children))
-		card.add(rowTakes, strings.Join(parameters, ", "))
+		card.add(rowTakes, strings.Join(listDeclared(lang.ListParameters(tree, statement)), ", "))
 	}
 }
 

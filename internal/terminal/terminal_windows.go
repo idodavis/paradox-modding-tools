@@ -30,9 +30,7 @@ type console struct {
 	process windows.Handle
 }
 
-// ListPrograms returns the shells this system has, PMT's pick first:
-// PowerShell 7, as the PATH or else its install key finds it, then Windows
-// PowerShell, then Git Bash and WSL where they are installed.
+// ListPrograms returns the shells this system has, PMT's pick first.
 func ListPrograms() []Program {
 	var programs []Program
 	if path, ok := findPowerShell7(); ok {
@@ -118,9 +116,8 @@ func hasWSL() bool {
 	return ok
 }
 
-// lookupRegistry returns a string value from the registry: the one of the
-// given name, in the key at the given path below the given key. It returns
-// false if that key cannot be opened or has no string value of that name.
+// lookupRegistry returns a string value of a registry key below the given
+// root. It returns false if the key or the value is missing.
 func lookupRegistry(key registry.Key, path, value string) (string, bool) {
 	subkey, err := registry.OpenKey(key, path, registry.QUERY_VALUE)
 	if err != nil {
@@ -135,9 +132,7 @@ func lookupRegistry(key registry.Key, path, value string) (string, bool) {
 }
 
 // startConsole starts the shell's program under a new pseudo console of the
-// shell's size, with the given environment, and sets the shell's build. The
-// console's code pages are set to UTF-8. It returns an error if any step
-// fails.
+// shell's size, with the given environment, and sets the shell's build.
 func startConsole(shell *Shell, env []string) (*console, error) {
 	var consoleInput, consoleOutput windows.Handle
 	console := &console{}
@@ -177,8 +172,7 @@ func startConsole(shell *Shell, env []string) (*console, error) {
 }
 
 // startProcess starts the shell's program attached to the given pseudo
-// console, with the given environment. It returns the process, or an error
-// if the program cannot be started.
+// console, with the given environment.
 func startProcess(handle windows.Handle, shell *Shell, env []string) (windows.ProcessInformation, error) {
 	var process windows.ProcessInformation
 	attributes, err := windows.NewProcThreadAttributeList(1)

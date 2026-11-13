@@ -18,12 +18,6 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// Update is the result of a check for a newer version of the app.
-type Update struct {
-	Version   string `json:"version"`
-	Available bool   `json:"available"`
-}
-
 // Release is one published version of the app, with its notes in Markdown.
 type Release struct {
 	Version string    `json:"version"`
@@ -32,7 +26,8 @@ type Release struct {
 	Running bool      `json:"running"`
 	Older   bool      `json:"older"`
 
-	// Installable is true when the release is firstInstallable or newer.
+	// Installable is false for a release older than firstInstallable, whose
+	// zip the updater cannot install.
 	Installable bool `json:"installable"`
 }
 
@@ -72,7 +67,7 @@ const (
 )
 
 // Check returns the release to install, or nil if there is none. It keeps its
-// error as the refusal, with GitHub's limit of requests told as errRateLimited.
+// error as the refusal, which says why better than the updater's own error.
 func (r *releaseSource) Check(ctx context.Context, request updater.CheckRequest) (*updater.Release, error) {
 	check := r.Provider.Check
 	if r.version != "" {
@@ -145,32 +140,28 @@ func (s *Service) startUpdater() error {
 	return nil
 }
 
-// CheckUpdate asks GitHub whether a newer version exists. A dev build never
-// asks.
-func (s *Service) CheckUpdate() (Update, error) {
+// CheckUpdate asks GitHub for a newer version and returns it, or "" if there
+// is none.
+func (s *Service) CheckUpdate() (string, error) {
 	s.updating.Lock()
 	defer s.updating.Unlock()
 
-	return s.check()
-}
-
-// check is CheckUpdate for a caller that holds the lock.
-func (s *Service) check() (Update, error) {
-	if s.Build == DevBuild {
-		return Update{}, nil
-	}
-
 	release, err := s.checkRelease()
 	if err != nil || release == nil {
-		return Update{}, err
+		return "", err
 	}
 
-	return Update{Version: release.Version, Available: true}, nil
+	return release.Version, nil
 }
 
-// checkRelease returns the release the source offers, or nil. A failed check
-// returns the source's refusal, which says why.
+// checkRelease returns the release the source offers, or nil. A dev build is
+// no release, so it never asks. A failed check returns the source's refusal,
+// which says why.
 func (s *Service) checkRelease() (*updater.Release, error) {
+	if s.Build == DevBuild {
+		return nil, nil
+	}
+
 	release, err := application.Get().Updater.Check(context.Background())
 	if err != nil && s.source.refusal != nil {
 		return nil, s.source.refusal
@@ -185,12 +176,12 @@ func (s *Service) ApplyUpdate() error {
 	s.updating.Lock()
 	defer s.updating.Unlock()
 
-	update, err := s.check()
+	release, err := s.checkRelease()
 	if err != nil {
 		return err
 	}
 
-	if !update.Available {
+	if release == nil {
 		return errors.New("no update is available")
 	}
 
@@ -221,6 +212,13 @@ func (s *Service) InstallRelease(version string) error {
 	s.source.version = version
 	defer func() { s.source.version = "" }()
 
+	// A check offers no version the user went back from, and that version
+	// may be picked here.
+	pmt := application.Get()
+	skipped := pmt.Updater.SkippedVersion()
+	pmt.Updater.SkipVersion("")
+	defer pmt.Updater.SkipVersion(skipped)
+
 	release, err := s.checkRelease()
 	if err != nil {
 		return err
@@ -230,7 +228,6 @@ func (s *Service) InstallRelease(version string) error {
 		return fmt.Errorf("%s is not offered", version)
 	}
 
-	pmt := application.Get()
 	if err := pmt.Updater.DownloadAndInstall(context.Background()); err != nil {
 		return err
 	}
@@ -299,7 +296,6 @@ func (s *Service) ListReleases() ([]Release, error) {
 // running returns the version running, without a leading v.
 func (s *Service) running() string { return strings.TrimPrefix(s.Build, "v") }
 
-// fetchJSON downloads a web address and decodes the JSON answer.
 func fetchJSON[T any](address string) (T, error) {
 	var value T
 

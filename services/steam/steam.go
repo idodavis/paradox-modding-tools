@@ -34,6 +34,7 @@ package steam
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -44,6 +45,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -111,30 +113,18 @@ func ServePublish(args []string) (exitCode int, served bool) {
 // ServiceStartup deletes, in the background, the copies an upload left in the
 // cache when the app stopped during it.
 func (s *Service) ServiceStartup(context.Context, application.ServiceOptions) error {
+	// The folder is listed now, before an upload of this run can add to it.
 	cacheDir := s.Workspace.Config.Dirs.Cache
-	entries, err := os.ReadDir(cacheDir)
-	if err != nil {
-		return nil
-	}
-
-	stale := []string{}
-	for _, entry := range entries {
-		if isStale(entry.Name()) {
-			stale = append(stale, filepath.Join(cacheDir, entry.Name()))
-		}
-	}
-
+	entries, _ := os.ReadDir(cacheDir)
 	go func() {
-		for _, dir := range stale {
-			_ = removeCacheDir(cacheDir, dir)
+		for _, entry := range entries {
+			if name := entry.Name(); strings.HasPrefix(name, copyPrefix) || strings.HasPrefix(name, picturesPrefix) {
+				_ = removeCacheDir(cacheDir, filepath.Join(cacheDir, name))
+			}
 		}
 	}()
 
 	return nil
-}
-
-func isStale(name string) bool {
-	return strings.HasPrefix(name, copyPrefix) || strings.HasPrefix(name, picturesPrefix)
 }
 
 func (s *Service) findMod(modID string) (*workspace.Session, workspace.Mod, error) {
@@ -151,7 +141,9 @@ func (s *Service) findMod(modID string) (*workspace.Session, workspace.Mod, erro
 	return ws, mod, nil
 }
 
-func toChoiceError(text string, choices []string, kind string) error {
+// checkChoice returns an error naming the choices if a text is not one of
+// them.
+func checkChoice(text string, choices []string, kind string) error {
 	if slices.Contains(choices, text) {
 		return nil
 	}
@@ -159,6 +151,8 @@ func toChoiceError(text string, choices []string, kind string) error {
 	return fmt.Errorf("%q is not a %s: use %s", text, kind, strings.Join(choices, " or "))
 }
 
+// changeListing applies a change to the folder of a mod's listing and tells
+// the page the listing changed.
 func (s *Service) changeListing(modID, key string, change func(dir string) error) error {
 	_, mod, err := s.findMod(modID)
 	if err != nil {
@@ -173,6 +167,7 @@ func (s *Service) changeListing(modID, key string, change func(dir string) error
 	if err := change(dir); err != nil {
 		return err
 	}
+
 	application.Get().Event.Emit(EventListingChanged, modID)
 
 	return nil
@@ -183,7 +178,7 @@ var previewTypes = []string{previewImage, previewVideo}
 // AddPreview adds a picture or a video to a listing's gallery. It returns an
 // error if the type is unknown or the gallery has the preview already.
 func (s *Service) AddPreview(modID, key string, preview Preview) error {
-	if err := toChoiceError(preview.Type, previewTypes, "type of preview"); err != nil {
+	if err := checkChoice(preview.Type, previewTypes, "type of preview"); err != nil {
 		return err
 	}
 
@@ -207,7 +202,7 @@ func (s *Service) writePicture(dir, rel string, content []byte) error {
 		return fmt.Errorf("the listing has %s already", rel)
 	}
 
-	return s.writeFile(target, string(content))
+	return s.Workspace.WriteBytes(target, content)
 }
 
 func (s *Service) addVideo(dir, url string) error {
@@ -226,7 +221,7 @@ func (s *Service) addVideo(dir, url string) error {
 // RemovePreview removes a picture or a video from a listing's gallery. It
 // returns an error if the type is unknown or the gallery lacks the preview.
 func (s *Service) RemovePreview(modID, key string, preview Preview) error {
-	if err := toChoiceError(preview.Type, previewTypes, "type of preview"); err != nil {
+	if err := checkChoice(preview.Type, previewTypes, "type of preview"); err != nil {
 		return err
 	}
 
@@ -256,6 +251,7 @@ func (s *Service) deletePicture(dir, picture string) error {
 	if _, err := os.Stat(picture); err != nil {
 		return err
 	}
+
 	_, err := s.Workspace.Delete(picture)
 
 	return err
@@ -322,6 +318,7 @@ func toLabel(preview Preview) string {
 	if preview.Type == previewVideo {
 		return watchLink + toVideoID(preview.URL)
 	}
+
 	name := filepath.Base(preview.Path)
 
 	return strings.TrimSuffix(name, filepath.Ext(name))
@@ -367,7 +364,7 @@ func (s *Service) DescribeSteam() string {
 // the item's own.
 func (s *Service) Publish(ctx context.Context, modID, key, visibility string) error {
 	if visibility != "" {
-		if err := toChoiceError(visibility, visibilities, "visibility"); err != nil {
+		if err := checkChoice(visibility, visibilities, "visibility"); err != nil {
 			return err
 		}
 	}
@@ -410,14 +407,20 @@ func (s *Service) Publish(ctx context.Context, modID, key, visibility string) er
 	}
 	defer func() { _ = removeCacheDir(cacheDir, params.UploadDir) }()
 
-	titles := s.listModTitles()
 	params.WorkshopID, params.Listing, params.Visibility = listing.WorkshopID, listing, visibility
-	params.ModWorkshopIDs = slices.AppendSeq(make([]string, 0, len(titles)), maps.Keys(titles))
+	params.ModWorkshopIDs = slices.Collect(maps.Keys(s.listModTitles()))
 
+	// The copy prints a new item's id as soon as Steam makes it, then its
+	// progress as JSON.
 	pmt := application.Get()
 	var linkErr error
-	err = StartPublish(ctx, params, func(step Progress) { pmt.Event.Emit(EventProgress, step) }, func(workshopID string) {
-		linkErr = s.LinkItem(modID, key, workshopID)
+	err = startCopy(ctx, publishFlag, params, func(line string) {
+		var step Progress
+		if _, err := strconv.ParseUint(line, 10, 64); err == nil {
+			linkErr = s.LinkItem(modID, key, line)
+		} else if json.Unmarshal([]byte(line), &step) == nil {
+			pmt.Event.Emit(EventProgress, step)
+		}
 	})
 
 	// Steam's item may have changed, so the next comparison asks Steam again.

@@ -34,6 +34,7 @@ func (s *Service) RevertHunks(path string, edits [][]Hunk, isNew bool) error {
 	if err != nil {
 		return err
 	}
+
 	if draft, open := ws.LookupBuffer(path); open && draft != text.Text {
 		return errors.New("it has unsaved text in the editor: save or revert it first")
 	}

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +52,7 @@ const (
 	downloadFlag = "--steam-download"
 )
 
+// copyTurn lets one second copy run at a time.
 var copyTurn sync.Mutex
 
 // copyWork maps each flag to the work a second copy does. The work prints any
@@ -75,19 +75,6 @@ var copyWork = map[string]func(client *Client, params Params) error{
 
 		return nil
 	},
-}
-
-// StartPublish starts a second copy of the app to upload a mod. It reports each
-// step of the upload, and the id of a new item as soon as Steam makes it.
-func StartPublish(ctx context.Context, params Params, progress func(Progress), link func(workshopID string)) error {
-	return startCopy(ctx, publishFlag, params, func(line string) {
-		var step Progress
-		if _, err := strconv.ParseUint(line, 10, 64); err == nil {
-			link(line)
-		} else if json.Unmarshal([]byte(line), &step) == nil {
-			progress(step)
-		}
-	})
 }
 
 // startCopy starts a second copy for one kind of work and hands each line it
@@ -162,7 +149,7 @@ func runCopy(work func(client *Client, params Params) error) int {
 		return toExitCode(fmt.Errorf("the parameters did not arrive: %w", err))
 	}
 
-	client, err := Open(params.LibraryPath, params.AppID)
+	client, err := openLibrary(params.LibraryPath, params.AppID)
 	if err != nil {
 		return toExitCode(err)
 	}
@@ -180,6 +167,7 @@ func publish(client *Client, params Params) error {
 		if created != "" {
 			fmt.Println(created)
 		}
+
 		if err != nil {
 			return err
 		}
@@ -210,7 +198,7 @@ func download(client *Client, params Params) error {
 		return err
 	}
 
-	return SaveSnapshot(dirs.Cache, Snapshot{
+	return app.SaveJSON(resolveSnapshotPath(dirs.Cache, params.WorkshopID), Snapshot{
 		WorkshopID: params.WorkshopID, UpdatedAt: params.UpdatedAt, Dir: folder,
 		Files: buildHashes(source{files: os.DirFS(folder), root: folder}, walked),
 	})

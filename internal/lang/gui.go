@@ -2,18 +2,21 @@
 
 package lang
 
-// WidgetType is how one of the game's built-in widget types places the
+// WidgetType is how one of the game's built-in widget types lays out the
 // widgets inside it and its own text.
 type WidgetType struct {
-	// Holding is how the widget places the widgets inside it: row, column,
-	// flow, grid or scroll. It is "" for a widget that places each one by
-	// its own anchors.
+	// Holding is how it places the widgets inside it: row, column, flow, grid
+	// or scroll. It is "" where each is placed by its own anchors.
 	Holding string `json:"holding,omitempty"`
 
 	// Clips is whether the widget hides what reaches outside it. Fills is
 	// whether it takes all the room of the widget it is in.
 	Clips bool `json:"clips,omitempty"`
 	Fills bool `json:"fills,omitempty"`
+
+	// KeepsSize is whether the widget is as large as it writes, whatever
+	// the widgets inside it take.
+	KeepsSize bool `json:"keepsSize,omitempty"`
 
 	CentersText bool `json:"centersText,omitempty"`
 
@@ -28,36 +31,32 @@ type WidgetType struct {
 // type x = button { } does.
 const GUITypeKey = "type"
 
-// GUIBlockKey is the key that declares a named block, as block "x" { }
-// does. A widget that uses the type or the template the block is in may
-// replace it, with GUIBlockCalls and the same name.
+// GUIBlockKey is the key that declares a named block, as block "x" { }. A
+// widget of the type or template the block is in may replace it with
+// blockoverride and the same name.
 const GUIBlockKey = "block"
 
-// GUIDeclares are the keys written before a block at the top of a GUI file
-// that declare a definition. Its database is named GUIDatabasePrefix and
-// the key, as gui.template. The same keys open a group of definitions, as
-// types x { } does.
+// GUIDeclares are the keys that declare a definition before a block at the
+// top of a GUI file. Its database is GUIDatabasePrefix and the key, as
+// gui.template. The same keys open a group of definitions, as types x { }.
 var GUIDeclares = []string{GUITypeKey, "local_type", "template", "local_template", GUIBlockKey, "layer"}
 
 // GUINameKeyOf holds the keys whose block is a definition wherever it is
-// written. For each it gives the key inside the block whose value is the
-// definition's name: a texticon is named by its icon, a format by its name.
+// written, each with the key inside the block that names it.
 var GUINameKeyOf = map[string]string{"texticon": "icon", "format": "name"}
 
-// GUIWidgetKey is the key whose value names any other block at the top of a
-// file. Where a file has one such block and it writes no name, the block is
-// named after the file.
+// GUIWidgetKey is the key that names any other block at the top of a file.
+// A file's only such block, if it writes no name, is named after the file.
 const GUIWidgetKey = "name"
 
 // GUIDatabasePrefix is what the name of a GUI database starts with. The key
 // that declares the database's definitions follows it.
 const GUIDatabasePrefix = "gui."
 
-// GUIWidgetDatabase is the database of the blocks at the top of a file that
-// no key of GUIDeclares declares. GUIWidgetTypes is the database of the
-// widget types that no file declares: the ones the game draws itself, and
-// the ones the game's files build their own types on. A block's key is
-// looked up there where no file declares a type of its name.
+// GUIWidgetDatabase is the database of the top blocks of a file that no key
+// of GUIDeclares declares. GUIWidgetTypes is the database of the widget
+// types no file declares: the game's built-in ones, and those its files
+// build their types on.
 const (
 	GUIWidgetDatabase = "gui.widget"
 	GUIWidgetTypes    = "gui.widget_type"
@@ -89,9 +88,8 @@ const (
 	GUITextIcons = "gui.texticon"
 )
 
-// GUIEditorFolders are the folders of the files of the game's own GUI
-// editor. Those files call functions that no dump lists, so nothing in them
-// is reported.
+// GUIEditorFolders are the folders of the game's own GUI editor. Its files
+// call functions no dump lists, so nothing in them is reported.
 var GUIEditorFolders = []string{
 	// clausewitz/gui/gui_editor, and EU5's loading_screen stage
 	"gui/gui_editor", "loading_screen/gui/gui_editor",
@@ -101,6 +99,8 @@ var GUIEditorFolders = []string{
 // of their own. Any other type places the widgets inside it by their
 // anchors, and keeps the room of a hidden one.
 var BuiltinWidgets = map[string]WidgetType{
+	"widget":         {KeepsSize: true},
+	"uberwidget":     {KeepsSize: true},
 	"hbox":           {Holding: "row", DropsHidden: true},
 	"uberhbox":       {Holding: "row", DropsHidden: true},
 	"vbox":           {Holding: "column", DropsHidden: true},
@@ -127,8 +127,8 @@ const (
 	GUIFontDatabase = "font.font"
 )
 
-// GUIGetters are how the name of a data function starts when the function
-// only leads to an object, as Get does in GetPlayer.
+// GUIGetters are the words a data function's name starts with when it only
+// leads to an object, as Get in GetPlayer.
 var GUIGetters = []string{"Get", "Access"}
 
 // GUINoTooltip is how a data function's name ends when it does the same as
@@ -147,9 +147,9 @@ var GUIStepDatabases = []string{
 // GUICallTargets gives the databases of the defines.
 const GUIDefineCall = "GetDefine"
 
-// GUICallTargets holds the data functions whose quoted arguments are names.
-// Each has the database of each of its arguments, in order, and "" for an
-// argument that is no name.
+// GUICallTargets holds the data functions whose quoted arguments are names,
+// each with the database of each argument in order, "" for one that is no
+// name.
 var GUICallTargets = map[string][]string{
 	GUIDefineCall: {"defines", "defines.define"},
 	// the dumps' AddLocalizationIf expansion calls it
@@ -162,8 +162,7 @@ var GUICallTargets = map[string][]string{
 	// EU5 customizable_localization.info:25
 	"Custom":    {CustomLocalization},
 	"GetCustom": {CustomLocalization},
-	// CK3's data_types declare Character.Custom2( Arg0, Arg1 ); each of
-	// its 5,455 calls names one by the first
+	// CK3's Character.Custom2(Arg0, Arg1) names one by its first argument
 	"Custom2": {CustomLocalization},
 }
 
@@ -192,8 +191,8 @@ var CoatSlots = []string{
 	"color1", "color2", "color3", "color4", "color5",
 }
 
-// CoatPatternKey is the key of a coat's pattern. The pattern is drawn under
-// every emblem, and has no instances.
+// CoatPatternKey is the key of a coat's pattern, which is drawn under every
+// emblem and has no instances.
 const CoatPatternKey = "pattern"
 
 // CoatTextureKey is the key of an emblem's texture.

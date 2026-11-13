@@ -24,9 +24,9 @@
 // # Stages
 //
 // A game may mount its files below stage folders in each root, as Europa
-// Universalis 5 mounts loading_screen, main_menu and in_game, in that order
-// (debug.log:5372-5394). A stage folder is no part of a file's path for the
-// game, so in_game/common/traits and common/traits are one folder.
+// Universalis 5 mounts loading_screen, main_menu and in_game, in that order.
+// A stage folder is no part of a file's path for the game, so
+// in_game/common/traits and common/traits are one folder.
 //
 // # Mounts
 //
@@ -37,8 +37,7 @@
 //   - Roots mounted later, as a workspace's mods are on its install, load
 //     after the roots mounted before them, whose files keep their positions.
 //   - In a game with stages, a mod's file outside every stage is never
-//     mounted: it is not read and hides no file (EU5 debug.log:80-83, 5392;
-//     the wiki's Mod structure, l.46-48).
+//     mounted: it is not read and hides no file.
 //   - Of the files at one path, the game reads the last, by root in load
 //     order and then by stage, and the others are hidden.
 //   - A mod's replace_path drops the game's files in exactly the folder it
@@ -46,8 +45,7 @@
 //     earlier mod's files there, so those are read, and IsReplacedLater tells
 //     where that is open.
 //   - CompareLoadOrder orders the paths of one folder: its files before its
-//     subfolders', as Vic3's game.log and the EU5 wiki say (no CK3 source
-//     says otherwise), and names byte by byte, with case.
+//     subfolders', and names byte by byte, with case.
 //
 // # Tables
 //
@@ -63,7 +61,8 @@
 // file whole or not at all, through WriteAtomic. A gob cache that is missing
 // or does not decode loads as false, so the caller builds it again.
 //
-// ListRows passes over a row whose first column is empty. Whether the game on
+// Walk passes over a folder below its root that cannot be read. ListRows
+// passes over a row whose first column is empty. Whether the game on
 // Linux mounts a stage folder written in another letter case is not known: no
 // install writes one, so a stage is matched in any case, as on Windows.
 package files
@@ -80,8 +79,7 @@ import (
 	"github.com/charlievieth/fastwalk"
 )
 
-// Workers is how many goroutines a parallel pass runs: every core but two, at
-// least one.
+// Workers is how many goroutines a parallel pass runs.
 var Workers = max(runtime.NumCPU()-2, 1)
 
 // Format is the class of a file.
@@ -121,7 +119,6 @@ const (
 	FormatBinary Format = "binary"
 )
 
-// formats maps an extension to its format.
 var formats = map[string]Format{
 	".txt": FormatScript, ".gui": FormatGUI, ".asset": FormatAsset, ".font": FormatFont, ".gfx": FormatGFX,
 	".dds": FormatImage, ".png": FormatImage, ".tga": FormatImage,
@@ -133,7 +130,8 @@ var formats = map[string]Format{
 	".pdx": FormatBinary, ".ttf": FormatBinary, ".otf": FormatBinary, ".zip": FormatBinary, ".pak": FormatBinary,
 }
 
-// Classify returns the format of a file from its path below its root.
+// Classify returns the format of a file from its path below its root. An
+// extension it does not know is text.
 func Classify(rel string) Format {
 	folder, base := path.Split(strings.ToLower(rel))
 	ext := path.Ext(base)
@@ -161,7 +159,7 @@ func (f Format) IsScript() bool {
 }
 
 // DefaultEncoding returns the encoding a new file of the format is written
-// in: UTF-8 with a byte order mark for script and localization, else UTF-8.
+// in.
 func (f Format) DefaultEncoding() Encoding {
 	if f.IsScript() || f == FormatLocalization {
 		return EncodingUTF8BOM
@@ -170,24 +168,24 @@ func (f Format) DefaultEncoding() Encoding {
 	return EncodingUTF8
 }
 
-// IsText reports whether files of the format are not images or binaries.
+// IsText reports whether files of the format hold text.
 func (f Format) IsText() bool {
 	return !slices.Contains([]Format{FormatImage, FormatWebImage, FormatBinary}, f)
 }
 
-// Root is one folder laid out like the game's own.
+// Root is one folder laid out like the game's own: the game's, a DLC's or a
+// mod's.
 type Root struct {
 	Dir string `json:"dir"`
 
-	// Origin is OriginVanilla for the game's own folders, or the mod's id.
+	// Origin is OriginVanilla for the game's own folders, else the mod's id.
 	Origin string `json:"origin"`
 
-	// Stages are the stage folders the game mounts, in order. They are none
-	// for a game without stages.
+	// Stages are the stage folders the game mounts, in order, and none for a
+	// game without stages.
 	Stages []string `json:"stages"`
 
-	// ReplacePaths are the folders the mod's replace_path names. They are
-	// none for the game's own folders.
+	// ReplacePaths are the folders the mod's replace_path names.
 	ReplacePaths []string `json:"replacePaths"`
 }
 
@@ -198,6 +196,7 @@ const OriginVanilla = "vanilla"
 type File struct {
 	Path string `json:"path"`
 
+	// Key is the path as paths are compared: lower case, with slashes.
 	Key string `json:"key"`
 
 	// Rel is the path below the file's root, with slashes, and Origin is that
@@ -211,8 +210,8 @@ type File struct {
 	Format Format `json:"format"`
 }
 
-// NewFile returns the file at a path below a root. If the path is not below
-// the root, it returns false and the file has no Rel.
+// NewFile returns the file at a path below a root. It returns false, and a
+// file with no Rel, if the path is not below the root.
 func NewFile(root Root, path string) (File, bool) {
 	rel, ok := ToRel(root.Dir, path)
 	stage, _ := SplitStage(rel, root.Stages)
@@ -232,8 +231,8 @@ func SplitStage(rel string, stages []string) (stage, rest string) {
 	return "", rel
 }
 
-// StageRel returns the file's path below its stage, as common/traits/a.txt
-// for in_game/common/traits/a.txt. It is Rel for a file under no stage.
+// StageRel returns the file's path below its stage folder, which is the path
+// the game reads it at. It is Rel for a file under no stage.
 func (f File) StageRel() string {
 	if f.Stage == "" {
 		return f.Rel
@@ -242,19 +241,26 @@ func (f File) StageRel() string {
 	return f.Rel[len(f.Stage)+1:]
 }
 
-// Walk lists every file under a root, sorted by Rel. It skips the folders
-// IsHiddenDir reports and follows links to folders.
+// Walk lists every file under a root, sorted by Rel. It skips hidden folders
+// and follows links to folders. It returns an error only if the root itself
+// cannot be read.
 func Walk(root Root) ([]File, error) {
 	var mu sync.Mutex
 	var list []File
 
 	visitor := func(filePath string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+		file, below := NewFile(root, filePath)
 
-		file, ok := NewFile(root, filePath)
-		if !ok {
+		switch {
+		// A folder below the root that cannot be read is passed over, so one
+		// locked folder does not fail a whole mod.
+		case err != nil && below:
+			return nil
+
+		case err != nil:
+			return err
+
+		case !below:
 			return nil
 		}
 
@@ -291,8 +297,8 @@ func Walk(root Root) ([]File, error) {
 	return list, nil
 }
 
-// IsHiddenDir reports whether a folder name is a dot folder, which Walk skips.
-// .metadata is not, as Vic3 and EU5 keep a mod's descriptor there.
+// IsHiddenDir reports whether a folder name is a dot folder. .metadata is
+// not, as Vic3 and EU5 keep a mod's descriptor there.
 func IsHiddenDir(name string) bool {
 	return strings.HasPrefix(name, ".") && name != ".metadata"
 }
@@ -302,20 +308,18 @@ func IsBinary(bytes []byte) bool {
 	return slices.Contains(bytes[:min(len(bytes), 1024)], 0)
 }
 
-// Ignore is a list of ignore rules with gitignore's meaning. A nil Ignore has
-// no rules.
+// Ignore is a list of ignore rules with gitignore's meaning. A nil Ignore
+// matches nothing.
 type Ignore []pattern
 
 type pattern struct {
 	glob string
 
-	// negates is set for a rule with a leading !.
-	negates bool
-
-	// dirOnly is set for a rule with a trailing slash.
-	dirOnly bool
-
-	// anchored is set for a rule matched against the whole path.
+	// negates is set by a leading !, dirOnly by a trailing slash, and
+	// anchored by a slash anywhere else, which matches the rule against the
+	// whole path and not only the last name.
+	negates  bool
+	dirOnly  bool
 	anchored bool
 }
 
@@ -344,8 +348,8 @@ func ParseIgnore(text string) Ignore {
 	return ignore
 }
 
-// Match reports whether the rules cover a path below the root. A path under a
-// covered folder is covered. The flag says whether the path is a folder.
+// Match reports whether the rules cover a path below the root, given whether
+// it is a folder. A path inside a covered folder is covered.
 func (i Ignore) Match(rel string, dir bool) bool {
 	for folder := path.Dir(rel); folder != "."; folder = path.Dir(folder) {
 		if i.matchRel(folder, true) {

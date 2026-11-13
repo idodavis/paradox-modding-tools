@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -34,10 +35,23 @@ type Page struct {
 
 // Client fetches one game's wiki, rate limited, and caches its pages.
 type Client struct {
-	game    *game.Game
-	api     string
+	game *game.Game
+
+	// origin is the wiki's address, which its API and its links are under.
+	origin  *url.URL
 	limiter *rate.Limiter
 	dir     string
+
+	// mu guards pages and texts.
+	mu sync.Mutex
+
+	// pages holds the cached pages read so far, by title, so that a page's
+	// file is decoded once.
+	pages map[string]Page
+
+	// texts holds the text of the pages searched so far, in lower case, by
+	// title.
+	texts map[string]string
 }
 
 const (
@@ -45,16 +59,14 @@ const (
 	requestsPerSecond = 2
 )
 
-// apiAddress is the address of a game's wiki API, with %s for the game's id.
-const apiAddress = "https://%s.paradoxwikis.com/api.php"
-
-// NewClient returns a client for a game's wiki.
-func NewClient(cacheDir string, row *game.Game) *Client {
+func newClient(cacheDir string, row *game.Game) *Client {
 	return &Client{
 		game:    row,
-		api:     fmt.Sprintf(apiAddress, row.ID),
+		origin:  &url.URL{Scheme: "https", Host: row.ID + ".paradoxwikis.com"},
 		limiter: rate.NewLimiter(requestsPerSecond, 1),
 		dir:     filepath.Join(cacheDir, "wiki", row.ID),
+		pages:   map[string]Page{},
+		texts:   map[string]string{},
 	}
 }
 
@@ -80,34 +92,74 @@ func (c *Client) FetchPage(title string) (Page, error) {
 		return Page{}, fmt.Errorf("wiki page %q: %s", title, response.Error.Info)
 	}
 
-	api, err := url.Parse(c.api)
+	root, err := parseFragment(response.Parse.Text)
 	if err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
 	}
 
-	origin := &url.URL{Scheme: api.Scheme, Host: api.Host}
-	sanitized := Sanitize(response.Parse.Text, origin)
-	root, err := parseFragment(sanitized)
-	if err != nil {
-		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
-	}
-
+	// The facts are read from the sanitized page, so sanitize it first.
+	sanitized := sanitizePage(root, c.origin)
 	page := Page{
-		Title: response.Parse.Title, URL: origin.JoinPath(strings.ReplaceAll(response.Parse.Title, " ", "_")).String(),
+		Title: response.Parse.Title, URL: c.origin.JoinPath(strings.ReplaceAll(response.Parse.Title, " ", "_")).String(),
 		HTML: sanitized, FetchedAt: time.Now(), Modding: hasModding(root), Released: resolveReleased(root),
 	}
 	if err := app.SaveJSON(c.resolvePath(title), page); err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.pages[title] = page
+	delete(c.texts, title)
+
 	return page, nil
 }
 
-// LoadPage returns a cached page, or false if it is not cached.
+// LoadPage returns a cached page, or false if it is not cached. A page's file
+// is decoded once and the page kept in memory.
 func (c *Client) LoadPage(title string) (Page, bool) {
-	page, err := app.LoadJSON[Page](c.resolvePath(title))
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	return page, err == nil && !page.FetchedAt.IsZero()
+	if page, ok := c.pages[title]; ok {
+		return page, true
+	}
+
+	page, err := app.LoadJSON[Page](c.resolvePath(title))
+	if err != nil || page.FetchedAt.IsZero() {
+		return page, false
+	}
+
+	c.pages[title] = page
+
+	return page, true
+}
+
+// loadText returns the text of a cached page in lower case, which is worked
+// out once. It returns false if the page is not cached or its HTML cannot be
+// parsed.
+func (c *Client) loadText(title string) (string, bool) {
+	page, ok := c.LoadPage(title)
+	if !ok {
+		return "", false
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	text, ok := c.texts[title]
+	if !ok {
+		root, err := parseFragment(page.HTML)
+		if err != nil {
+			return "", false
+		}
+
+		text = strings.ToLower(textOf(root))
+		c.texts[title] = text
+	}
+
+	return text, true
 }
 
 // fetch sends a query to the wiki's API and decodes the JSON answer.
@@ -118,7 +170,7 @@ func (c *Client) fetch(params url.Values, target any) error {
 		return err
 	}
 
-	body, err := app.FetchURL(c.api+"?"+params.Encode(), requestTimeout)
+	body, err := app.FetchURL(c.origin.JoinPath("api.php").String()+"?"+params.Encode(), requestTimeout)
 	if err != nil {
 		return err
 	}

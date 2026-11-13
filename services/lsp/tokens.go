@@ -61,10 +61,10 @@ func (s *Service) Tokens(path string, bounds jomini.Range) ([]uint32, error) {
 	return encodeTokens(tree.Src, tree.Lines, listTokens(document, jomini.ToSpan(tree.Src, tree.Lines, bounds), false)), nil
 }
 
-// ColorText returns the tokens of a text outside the editor, such as a snippet
-// on a page, with comments, quotes and operators too. The line is where the
-// text starts in its file, from 1, so it takes that file's colors. Otherwise
-// it is read alone, as the file or, with no path, the given format.
+// ColorText returns the tokens of a text shown outside the editor, such as a
+// snippet on a page. Where its file holds the text at the given line, it takes
+// the file's colors; otherwise it is read alone, as that file or, with no
+// path, in the given format.
 func (s *Service) ColorText(path string, format files.Format, text string, line int) ([]uint32, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -131,10 +131,10 @@ type token struct {
 	category lang.Category
 }
 
-// listTokens returns the tokens of a document that overlap the span. A key or
-// value has the category the walk gave it, else a number, a date or a yes or no
-// is a number and any other key a field. A localization key is a definition. A
-// text outside the editor also gets comments, operators and quoted texts.
+// listTokens returns the tokens of a document that overlap the span. Where the
+// walk gives no category, a number, a date or a yes or no is a number and any
+// other key a field. A text shown outside the editor also gets the comments,
+// operators and quoted texts that Monaco colors itself in the editor.
 func listTokens(document lang.Document, bounds jomini.Span, whole bool) []token {
 	tree := document.Tree
 	var tokens []token
@@ -180,9 +180,8 @@ func listTokens(document lang.Document, bounds jomini.Span, whole bool) []token 
 	return tokens
 }
 
-// classifyKey returns a key's token type: keyword for a list iterator such as
-// every_vassal, which the walk also holds as a command, else the walk's
-// category, "" if it gave none.
+// classifyKey returns a key's token type. A list iterator such as every_vassal
+// is a keyword, though the walk holds it as a command.
 func classifyKey(context *lang.Context) lang.Category {
 	if context.Iterates {
 		return lang.CategoryKeyword

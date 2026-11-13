@@ -60,8 +60,8 @@ type Ref struct {
 	Current bool `json:"current"`
 }
 
-// ReadStatus returns the status of a repository, with each untracked file on
-// its own. It returns git's error if the folder is in no repository.
+// ReadStatus returns the status of a repository, listing each untracked file
+// rather than its folder. It returns git's error outside a repository.
 func (s *Service) ReadStatus(root string) (Status, error) {
 	stdout, err := s.run(root, "status", "--porcelain=v2", "-z", "--branch", "--ignored", "--untracked-files=all")
 	if err != nil {
@@ -118,6 +118,7 @@ func (s *Service) ListRefs(dir string) ([]Ref, error) {
 	return refs, nil
 }
 
+// splitRecords splits git's output into its records, each ended by a NUL.
 func splitRecords(stdout string) []string {
 	records := strings.Split(stdout, "\x00")
 
@@ -144,7 +145,6 @@ func parseHeader(status *Status, record string) {
 // fieldCounts is how many fields come before the path, by a record's letter.
 var fieldCounts = map[byte]int{'1': 8, '2': 9, 'u': 10, '?': 1, '!': 1}
 
-// parseChange returns the change one status record describes.
 func parseChange(record string) Change {
 	fields := strings.SplitN(record, " ", fieldCounts[record[0]]+1)
 	change := Change{Path: fields[len(fields)-1]}

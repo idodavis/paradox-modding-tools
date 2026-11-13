@@ -52,6 +52,7 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
       keys.folders,
       keys.place(path),
       keys.draws,
+      keys.health,
       ...(descriptor ? [keys.workspaces] : []),
       ...useQueryCache()
         .getEntries({ key: keys.gits })

@@ -89,7 +89,7 @@ type tally struct {
 	count int
 	limit int
 
-	// receive is called with one file's hits at a time.
+	// receive is called with one file's hits at a time, under the lock.
 	receive func(Hits)
 }
 
@@ -106,15 +106,13 @@ const maxHits = 10000
 // event. It returns true if it stopped at maxHits, and an error for an empty
 // query or a bad regular expression.
 func (s *Service) SearchText(query Query) (bool, error) {
-	s.setStop(nil)
+	stop := make(chan struct{})
+	s.setStop(stop)
 
 	ws, err := s.Workspace.Session()
 	if err != nil {
 		return false, err
 	}
-
-	stop := make(chan struct{})
-	s.setStop(stop)
 
 	return run(ws, query, stop, &tally{limit: maxHits, receive: func(hits Hits) {
 		application.Get().Event.Emit(EventHits, hits)
@@ -420,13 +418,7 @@ func findSites(source string, expression *regexp.Regexp, wholeWord bool) []lsp.S
 	sites := make([]lsp.Site, 0, len(matches))
 
 	for _, match := range matches {
-		position := lines.ToPosition(match[0])
-		line := lines.LineSpan(position.Line)
-		sites = append(sites, lsp.Site{
-			Line:  position.Line + 1,
-			Range: jomini.ToRange(source, lines, jomini.Span{Start: match[0], End: match[1]}),
-			Text:  source[line.Start:line.End],
-		})
+		sites = append(sites, lsp.LocateSpan(workspace.Place{}, source, lines, jomini.Span{Start: match[0], End: match[1]}))
 	}
 
 	return sites

@@ -10,18 +10,19 @@ export interface Agent {
     "name": string;
 
     /**
-     * Program is the user's own agent, "" for one PMT offers.
+     * Program starts the user's own agent. It is "" for an agent PMT offers.
      */
     "program"?: string;
     "args"?: string[] | null;
 
     /**
-     * Register is how PMT's tools are registered with the agent outside PMT.
+     * Register is the text that registers PMT's tools with the agent outside
+     * PMT.
      */
     "register"?: string;
 
     /**
-     * Files are the agent's instruction files and folders, by name in a mod.
+     * Files are the instruction files and folders the agent reads in a mod.
      */
     "files"?: string[] | null;
 

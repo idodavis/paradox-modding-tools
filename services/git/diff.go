@@ -11,7 +11,7 @@ import (
 )
 
 // LineChange is one run of lines changed from the last commit. A removed run
-// has no line, so it is marked on the line before it.
+// has no line left, so it is marked on the line before it.
 type LineChange struct {
 	// Kind is "added", "changed" or "removed".
 	Kind string `json:"kind"`
@@ -26,10 +26,6 @@ type LineChange struct {
 func (s *Service) DiffFile(path, text string) ([]LineChange, error) {
 	// git reads a path that starts with ./ from the folder it runs in.
 	dir, rel := filepath.Dir(path), "./"+filepath.Base(path)
-	if _, err := s.run(dir, "rev-parse", "--verify", "--quiet", "HEAD:"+rel); err != nil {
-		return nil, err
-	}
-
 	committed, err := s.ReadFile(dir, "HEAD", rel)
 	if err != nil {
 		return nil, err

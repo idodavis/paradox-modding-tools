@@ -52,10 +52,6 @@ type judge struct {
 	// position is the document's file in the index, or -1 if it is not listed.
 	position int32
 
-	// copies holds the document's definitions by database and name. The index
-	// may hold an older, saved copy of the file.
-	copies map[string][]*lang.Copy
-
 	problems []Problem
 }
 
@@ -79,7 +75,6 @@ func (i *Index) ListProblems(
 		return judge.problems
 	}
 
-	judge.buildCopies()
 	tree := document.Tree
 	for position := range document.Contexts {
 		statement, context := int32(position), &document.Contexts[position]
@@ -93,7 +88,7 @@ func (i *Index) ListProblems(
 			judge.judgeDefinition(statement, context.Definition)
 		}
 
-		// a GUI file's text is read as localization is
+		// A GUI file's text is read as localization is.
 		value := tree.Statements[statement].Value
 		if document.File.Format == files.FormatGUI && strings.Contains(tree.Text(value), "[") {
 			judge.judgeCalls(loc.Segments(tree.Unquoted(value), tree.UnquotedSpan(value).Start), context.Datacontext)
@@ -111,20 +106,6 @@ func (i *Index) ListProblems(
 	return judge.problems
 }
 
-func (j *judge) buildCopies() {
-	j.copies = map[string][]*lang.Copy{}
-	for position := range j.document.Contexts {
-		if context := &j.document.Contexts[position]; context.Defines {
-			id := toID(context.Definition)
-			j.copies[id] = append(j.copies[id], context.Definition)
-		}
-	}
-}
-
-func toID(definition *lang.Copy) string {
-	return lang.Reference{Database: definition.Database, Name: definition.Name}.ToID()
-}
-
 func (j *judge) add(code string, span jomini.Span, facts map[string]string) {
 	j.problems = append(j.problems, Problem{Code: code, Span: span, Facts: facts})
 }
@@ -139,9 +120,9 @@ func (j *judge) findKept(index *Index, reference lang.Reference) (Winner, bool) 
 	return index.FindKeptLocal(j.schema, reference, j.position)
 }
 
-// judgeRequired records each key a definition must write and does not. Only a
-// source firm enough to accuse makes a key required, and a key a merged copy
-// writes is not missing.
+// judgeRequired records each key a definition must write and does not. A key
+// counts as required only where its source is firm enough to report it, and
+// a key that a merged copy writes is not missing.
 func (j *judge) judgeRequired(statement int32, context *lang.Context) {
 	definition := context.Definition
 	if !context.Defines || definition.Mode != "" {
@@ -180,7 +161,9 @@ func (j *judge) judgeRequired(statement int32, context *lang.Context) {
 	}
 }
 
-// isWritten reports whether another copy the winner merges writes a key.
+// isWritten reports whether another copy the winner merges writes a key. The
+// document's own copies are read from its tree, since the index may hold an
+// older, saved copy of the file.
 func (j *judge) isWritten(winner Winner, definition *lang.Copy, key string) bool {
 	mergesOwn := false
 	for _, site := range winner.Merged {
@@ -201,15 +184,28 @@ func (j *judge) isWritten(winner Winner, definition *lang.Copy, key string) bool
 		}
 	}
 
-	return mergesOwn && slices.ContainsFunc(j.copies[toID(definition)], func(other *lang.Copy) bool {
-		_, written := j.document.Tree.FindChild(other.Statement, key)
+	if !mergesOwn {
+		return false
+	}
 
-		return other != definition && written
-	})
+	for position := range j.document.Contexts {
+		context := &j.document.Contexts[position]
+		other := context.Definition
+		if !context.Defines || other == definition || other.Database != definition.Database || other.Name != definition.Name {
+			continue
+		}
+
+		if _, written := j.document.Tree.FindChild(other.Statement, key); written {
+			return true
+		}
+	}
+
+	return false
 }
 
 // judgeReferences records each name a statement refers to that nothing
-// defines, except a definition's title key.
+// defines. A definition's title key is left to judgeDefinition, which
+// reports it as a missing message.
 func (j *judge) judgeReferences(context *lang.Context) {
 	if context.Label == lang.TitleKey && context.Parent != nil && context.Parent.Defines {
 		return
@@ -227,23 +223,18 @@ func (j *judge) judgeMissing(references []lang.Reference) {
 			continue
 		}
 
-		var alternatives []lang.Reference
-		var databases []string
-		settled := false
-		for _, other := range references {
-			if !atSpan(other) {
-				continue
-			}
+		alternatives := slices.DeleteFunc(slices.Clone(references[position:]), func(other lang.Reference) bool {
+			return !atSpan(other)
+		})
+		if slices.ContainsFunc(alternatives, func(other lang.Reference) bool { return other.Inferred || j.isKnown(other) }) {
+			continue
+		}
 
-			alternatives = append(alternatives, other)
-			settled = settled || other.Inferred || j.isKnown(other)
+		var databases []string
+		for _, other := range alternatives {
 			if phrase := lang.DescribeDefinition(other.Database, false); !slices.Contains(databases, phrase) {
 				databases = append(databases, phrase)
 			}
-		}
-
-		if settled {
-			continue
 		}
 
 		code := classifyMissing(alternatives)
@@ -286,8 +277,8 @@ func classifyMissing(alternatives []lang.Reference) string {
 
 // isKnown reports whether the game knows a reference's name: one its own
 // files use, a customizable localization the dumps name, or a definition in
-// the document's file, a file the game reads, or one only another mod's file
-// hides.
+// the document's file, in a file the game reads, or in one that only another
+// mod's file hides.
 func (j *judge) isKnown(reference lang.Reference) bool {
 	if reference.Database == lang.CustomLocalization && j.schema.Customs[reference.Name] {
 		return true
@@ -298,19 +289,19 @@ func (j *judge) isKnown(reference lang.Reference) bool {
 			return true
 		}
 
-		return j.index.IsUsedByGame(reference.Database, reference.Name)
+		return j.index.isUsedByGame(reference.Database, reference.Name)
 	}
 
 	sites := j.index.ResolveLocal(reference, j.position)
 	if len(sites) == 0 {
-		return j.index.IsUsedByGame(reference.Database, reference.Name)
+		return j.index.isUsedByGame(reference.Database, reference.Name)
 	}
 
 	return slices.ContainsFunc(sites, func(site Site) bool {
 		file := j.index.File(site)
-		hiding, _, ok := j.index.FindLoaded(file.Rel)
+		loaded, _, ok := j.index.FindLoaded(file.Rel)
 
-		return file.Key == j.document.File.Key || j.index.IsLoaded(site.File) || ok && hiding.Origin != j.document.File.Origin
+		return file.Key == j.document.File.Key || j.index.IsLoaded(site.File) || ok && loaded.Origin != j.document.File.Origin
 	})
 }
 
@@ -362,7 +353,7 @@ func (j *judge) judgeDefinition(statement int32, definition *lang.Copy) {
 		return
 	}
 
-	// a title's message counts only in a file the game reads
+	// A title's message counts only in a file the game reads.
 	key := tree.Unquoted(tree.Statements[title].Value)
 	if _, shown := j.index.FindText(key, j.languages); !shown {
 		missing := lang.DescribeReference(reference)
@@ -406,8 +397,8 @@ func (j *judge) judgeMessages() {
 		j.add(ProblemBOM, jomini.Span{}, map[string]string{})
 	}
 
-	// the index holds keys of the given languages only, so a key named in
-	// another language is not judged
+	// The index holds keys of the given languages only, so a key named in
+	// another language is not judged.
 	held := slices.Contains(j.languages, messages.Language)
 	for position, message := range messages.Messages {
 		references := j.document.MessageContexts[position].References
@@ -421,7 +412,7 @@ func (j *judge) judgeMessages() {
 		j.judgeCalls(message.Segments, "")
 	}
 
-	dialect := j.index.dialect
+	dialect := j.index.dialect()
 	if _, replaces := dialect.FindLocReplacement(file.StageRel(), messages.Language); replaces {
 		return
 	}
@@ -434,11 +425,15 @@ func (j *judge) judgeMessages() {
 	for _, message := range messages.Messages {
 		count := counts[message.Key]
 		for _, site := range j.index.ListMessages(message.Key) {
+			if site.File == j.position || j.index.Language(site) != messages.Language || !j.index.IsLoaded(site.File) {
+				continue
+			}
+
+			// The game's own copy of a key counts only in a game that logs
+			// a mod writing it again.
 			other := j.index.File(site)
 			_, replaces := dialect.FindLocReplacement(other.StageRel(), messages.Language)
-			repeats := other.Origin == file.Origin || other.Origin == files.OriginVanilla && dialect.LogsRepeatedKey
-			if site.File != j.position && repeats && !replaces && j.index.Language(site) == messages.Language &&
-				j.index.IsLoaded(site.File) {
+			if !replaces && (other.Origin == file.Origin || other.Origin == files.OriginVanilla && dialect.LogsRepeatedKey) {
 				count++
 			}
 		}
@@ -453,8 +448,8 @@ func (j *judge) judgeMessages() {
 
 // judgeCalls records each data call with a step unknown after the type
 // before it. A first step in lower case, or one a file saves a scope by, is a
-// saved scope. A step the game's own texts write, or a database a step may
-// name, is no problem.
+// saved scope. A step the game's own texts write, or one that names a
+// definition a step may name, is taken as known.
 func (j *judge) judgeCalls(segments []loc.Segment, datacontext string) {
 	for _, segment := range segments {
 		call := segment.Call

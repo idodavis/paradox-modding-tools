@@ -28,7 +28,9 @@ flowchart TD
   group --> report(["Report"])
 ```
 
-- A preview is a load order the page asks about. It is scanned with `workspace.Session.ScanOrder` and saved nowhere.
+- A preview is a load order the page asks about. It is made with `workspace.Session.PreviewOrder`, which reads no file
+  again, and it is saved nowhere. The editor's problems in it are the ones of the workspace's own order, so a call of a
+  scripted definition that two mods declare is judged as the saved order judges it.
   The report then lists the `Changes` against the workspace's own order: each name or path whose kept copy moves to
   another mod.
 - A report is built once and kept while what it is built from stays: the session, its index and load order, the
@@ -113,7 +115,8 @@ is missing or empty is first made with only its header. `ListScaffolds` gives th
 
 | file | what it holds |
 |---|---|
-| `health.go` | The service, its payload types, `BuildReport` with the grouping, and the page's reads. |
+| `health.go` | The service, its payload types, the page's reads and the translation scaffold. |
+| `report.go` | `BuildReport`: the lists of findings, their grading, and the words, folds, groups and tallies. |
 | `contests.go` | Contests and shared keys: their winners, levels and pairs, and what a preview changes. |
 | `ignored.go` | The ignored pairs and their findings, and the mods the compatibility checks judge. |
 | `errorlog.go` | The game's error log: its rows, their mods, and the watch on it. |

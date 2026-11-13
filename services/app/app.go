@@ -60,8 +60,11 @@ import (
 // Service is the Wails service for the app itself.
 type Service struct {
 	Config *ConfigFile
-	Build  string
 
+	// Build is the app's version, DevBuild for a dev run.
+	Build string
+
+	// mainClosable lets the main window close without asking the page again.
 	mainClosable atomic.Bool
 	source       *releaseSource
 
@@ -69,8 +72,8 @@ type Service struct {
 	updating sync.Mutex
 }
 
-// The events the app sends. Each carries a string, such as the section or the
-// window's name.
+// The events the app sends. Each carries a string: the section of the config
+// written, or the window's name.
 const (
 	EventConfigChanged = "config:changed"
 	EventWindowClosing = "window:closing"
@@ -90,7 +93,7 @@ func init() {
 	application.RegisterEvent[string](EventWindowClosed)
 }
 
-// ServiceStartup sets up the updater, empties the trash and writes the running
+// ServiceStartup starts the updater, empties the trash and writes the running
 // mark.
 func (s *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	if err := s.startUpdater(); err != nil {
@@ -106,7 +109,8 @@ func (s *Service) ServiceStartup(ctx context.Context, options application.Servic
 	return os.WriteFile(mark, []byte(strconv.FormatBool(err == nil)), 0o644)
 }
 
-// ServiceShutdown removes the running mark.
+// ServiceShutdown removes the running mark, so the next run knows this one
+// shut down cleanly.
 func (s *Service) ServiceShutdown() error { return os.Remove(resolveMark(s.Config.Dirs)) }
 
 // OpenConfig finds PMT's folders and loads config.json.
@@ -139,13 +143,13 @@ func OpenLog(config *ConfigFile, version string) (*slog.Logger, error) {
 	return logger, nil
 }
 
-// Version returns the version the build set.
+// Version returns the app's version.
 func (s *Service) Version() string { return s.Build }
 
 const userAgent = "paradox-modding-tools (+https://github.com/idodavis/paradox-modding-tools)"
 
-// FetchURL downloads a web address and returns the body. It returns an error
-// for any answer but 200.
+// FetchURL downloads a web address. Any answer but 200 is an error, and
+// GitHub's limit of requests gets an error of its own that says to wait.
 func FetchURL(address string, timeout time.Duration) ([]byte, error) {
 	request, err := http.NewRequest(http.MethodGet, address, nil)
 	if err != nil {
@@ -177,25 +181,26 @@ func FetchURL(address string, timeout time.Duration) ([]byte, error) {
 // ListSettings returns the catalog of settings.
 func (s *Service) ListSettings() []Setting { return Catalog }
 
-// ReadSettings returns every setting's value by key, using the catalog's
-// default for one never set.
+// ReadSettings returns every setting's value by key, the catalog's default
+// where none is set.
 func (s *Service) ReadSettings(workspaceID string) map[string]string {
+	config := s.Config.Config()
 	values := make(map[string]string, len(Catalog))
 	for _, setting := range Catalog {
-		value, _ := s.Config.LookupSetting(workspaceID, setting.Key)
-		values[setting.Key] = value
+		values[setting.Key] = config.readSetting(workspaceID, setting)
 	}
 
 	return values
 }
 
-// WriteSetting sets one setting, in the workspace's record if it is kept per
-// workspace. It returns an error if the setting or the workspace is unknown.
+// WriteSetting sets one setting, in the workspace's record if the setting is
+// kept per workspace.
 func (s *Service) WriteSetting(workspaceID, key, value string) error {
 	row := slices.IndexFunc(Catalog, func(setting Setting) bool { return setting.Key == key })
 	if row < 0 {
 		return fmt.Errorf("the catalog has no setting %q", key)
 	}
+
 	setting := Catalog[row]
 
 	return s.Config.Update("settings", func(config *Config) error {
@@ -212,6 +217,7 @@ func (s *Service) WriteSetting(workspaceID, key, value string) error {
 		if *values == nil {
 			*values = map[string]string{}
 		}
+
 		(*values)[key] = value
 
 		return nil
@@ -219,7 +225,7 @@ func (s *Service) WriteSetting(workspaceID, key, value string) error {
 }
 
 // CrashedLastRun reports whether the last run ended without a clean shutdown.
-// It is always false in a dev build.
+// A dev build is stopped each time it is rebuilt, so it always reports false.
 func (s *Service) CrashedLastRun() bool {
 	if s.Build == DevBuild {
 		return false
@@ -254,6 +260,7 @@ func (s *Service) BuildDiagnostics() string {
 		// Windows 11 still names itself Windows 10 in the registry.
 		system = fmt.Sprintf("%s %s, %s", cmp.Or(env.OSInfo.Branding, env.OSInfo.Name), env.OSInfo.Version, system)
 	}
+
 	if webview, ok := env.PlatformInfo["WebView2"]; ok {
 		system += fmt.Sprintf(", WebView2 %v", webview)
 	}
@@ -281,8 +288,8 @@ func (s *Service) ShowFolder(path string) error {
 	return application.Get().Env.OpenFileManager(path, !stat.IsDir())
 }
 
-// OpenMainWindow opens the main window as it was last closed. Closing it waits
-// for the page's answer, then saves the window's state and quits the app.
+// OpenMainWindow opens the main window as it was last left. Its close waits
+// for the page's answer, then saves the window's size and quits the app.
 //
 //wails:ignore
 func (s *Service) OpenMainWindow() {
@@ -321,8 +328,9 @@ func (s *Service) OpenMainWindow() {
 	})
 }
 
-// OpenWindow opens a new window on a page of the app. It returns an error if a
-// window of that name is already open.
+// OpenWindow opens a new window on a page of the app. Its first close only
+// sends window:closing, so the page can answer; the next close, or five
+// seconds, closes it.
 func (s *Service) OpenWindow(name, url string) error {
 	pmt := application.Get()
 	if _, open := pmt.Window.Get(name); open {
@@ -331,7 +339,6 @@ func (s *Service) OpenWindow(name, url string) error {
 
 	window := newWindow(application.WebviewWindowOptions{Name: name, URL: url, Width: 1200, Height: 800})
 
-	// The first close waits for the frontend, and the next one goes through.
 	var unhook func()
 	unhook = window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()
@@ -358,8 +365,8 @@ func (s *Service) ShowWindow(name string) error {
 	return nil
 }
 
-// CloseWindow closes a window. One from OpenWindow first sends window:closing,
-// and the main window's close quits the app.
+// CloseWindow closes a window. The main window closes at once and quits the
+// app.
 func (s *Service) CloseWindow(name string) error {
 	window, err := lookupWindow(name)
 	if err != nil {
@@ -369,6 +376,7 @@ func (s *Service) CloseWindow(name string) error {
 	if name == mainWindow {
 		s.mainClosable.Store(true)
 	}
+
 	window.Close()
 
 	return nil

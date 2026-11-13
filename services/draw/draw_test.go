@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
@@ -291,24 +290,54 @@ func openFixture(t *testing.T) (drw *Service, installFile, modDir string) {
 // test if it has none.
 func findWidget(t *testing.T, window Window, name string) Widget {
 	t.Helper()
-	widget, ok := lo.Find(window.Widgets, func(widget Widget) bool { return widget.Name == name })
-	if !ok {
+	position := slices.IndexFunc(window.Widgets, func(widget Widget) bool { return widget.Name == name })
+	if position < 0 {
 		t.Fatalf("window %s has no widget %s", window.Name, name)
 	}
-	return widget
+	return window.Widgets[position]
 }
 
 // listChildNames returns the names of the widgets directly inside a widget, in
 // order.
 func listChildNames(window Window, parent int32) []string {
-	return lo.FilterMap(window.Widgets, func(widget Widget, _ int) (string, bool) {
-		return widget.Name, widget.Parent == parent
-	})
+	var names []string
+	for _, widget := range window.Widgets {
+		if widget.Parent == parent {
+			names = append(names, widget.Name)
+		}
+	}
+	return names
 }
 
 // listNames returns the names of the widgets of a window.
 func listNames(window Window) []string {
-	return lo.Map(window.Widgets, func(widget Widget, _ int) string { return widget.Name })
+	names := make([]string, len(window.Widgets))
+	for position, widget := range window.Widgets {
+		names[position] = widget.Name
+	}
+	return names
+}
+
+// mustResolveCoat resolves a coat with no picks, and fails the test on an
+// error.
+func mustResolveCoat(t *testing.T, drw *Service, path, name string) Coat {
+	t.Helper()
+	coat, err := drw.ResolveCoat(path, name, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return coat
+}
+
+// mustFindChild returns the child of a statement with a key, and fails the
+// test if there is none.
+func mustFindChild(t *testing.T, tree *jomini.Tree, parent int32, key string) int32 {
+	t.Helper()
+	child, ok := tree.FindChild(parent, key)
+	if !ok {
+		t.Fatalf("statement %d has no %s", parent, key)
+	}
+	return child
 }
 
 // makeEditor returns a function that applies the editor's edits to a text and
@@ -331,15 +360,16 @@ func applyEdits(t *testing.T, text string, edits []lsp.Edit, err error) (string,
 		t.Fatal(err)
 	}
 	lines := jomini.NewLines(text)
-	converted := lo.Map(edits, func(edit lsp.Edit, _ int) jomini.Edit {
-		return jomini.Edit{
+	converted := make([]jomini.Edit, len(edits))
+	for position, edit := range edits {
+		converted[position] = jomini.Edit{
 			Span: jomini.Span{
 				Start: jomini.ToOffset(text, lines, edit.Range.StartLine, edit.Range.StartColumn),
 				End:   jomini.ToOffset(text, lines, edit.Range.EndLine, edit.Range.EndColumn),
 			},
 			Text: edit.Text,
 		}
-	})
+	}
 	edited := jomini.ApplyEdits(text, converted)
 	tree := jomini.Parse(edited)
 	if len(tree.Problems) != 0 {
@@ -349,11 +379,14 @@ func applyEdits(t *testing.T, text string, edits []lsp.Edit, err error) (string,
 }
 
 // listKeys returns the keys written directly inside a top-level statement of a
-// text.
-func listKeys(tree *jomini.Tree, name string) []string {
-	return lo.Map(slices.Collect(tree.Children(lo.Must(tree.FindChild(0, name)))), func(child int32, _ int) string {
-		return tree.Text(tree.Statements[child].Key)
-	})
+// text, and fails the test if there is no such statement.
+func listKeys(t *testing.T, tree *jomini.Tree, name string) []string {
+	t.Helper()
+	var keys []string
+	for child := range tree.Children(mustFindChild(t, tree, 0, name)) {
+		keys = append(keys, tree.Text(tree.Statements[child].Key))
+	}
+	return keys
 }
 
 // openCoatFile opens the fixture and returns the service, the path of the mod's
@@ -382,7 +415,12 @@ func TestResolveWindowAppliesTypesTemplatesAndOverrides(t *testing.T) {
 		t.Fatalf("window %s: %d widgets, root %+v", window.Name, len(window.Widgets), window.Widgets[0])
 	}
 	box := window.Widgets[1]
-	inside := lo.FilterMap(window.Widgets, func(widget Widget, _ int) (string, bool) { return widget.Type, widget.Parent == box.ID })
+	var inside []string
+	for _, widget := range window.Widgets {
+		if widget.Parent == box.ID {
+			inside = append(inside, widget.Type)
+		}
+	}
 	if want := []string{typeButton, typeButton, typeLabel, "icon", "vbox", typeWidget, typeWidget}; box.Type != "v_box" ||
 		box.Row.Holding != "column" || !slices.Equal(inside, want) {
 		t.Errorf("box: type %s, holding %s, children %v", box.Type, box.Row.Holding, inside)
@@ -506,9 +544,12 @@ func TestResolveWindowMarksMissingTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	missing := lo.Filter(slices.Collect(window.listProperties(window.Widgets[0])), func(property Property, _ int) bool {
-		return property.Origin == originMissing
-	})
+	var missing []Property
+	for property := range window.listProperties(window.Widgets[0]) {
+		if property.Origin == originMissing {
+			missing = append(missing, property)
+		}
+	}
 	if len(missing) != 1 || missing[0].Key != lang.GUITemplateCalls || missing[0].Value != "d_nowhere" {
 		t.Errorf("missing properties %+v", missing)
 	}
@@ -590,7 +631,11 @@ func TestEvaluateStatesHidesByPick(t *testing.T) {
 		t.Errorf("values %v", states.Values)
 	}
 	names := func(hidden []int32) []string {
-		return lo.Map(hidden, func(id int32, _ int) string { return window.Widgets[id].Name })
+		names := make([]string, len(hidden))
+		for position, id := range hidden {
+			names[position] = window.Widgets[id].Name
+		}
+		return names
 	}
 	want := []string{"d_both", "d_outer", "d_inner", "d_off", "d_parent"}
 	if got := names(states.Hidden); !slices.Equal(got, want) {
@@ -733,17 +778,17 @@ func TestEditPropertiesReplacesOrAddsKey(t *testing.T) {
 		t.Errorf("value replaced in a block on one line: %s", edited)
 	}
 	edit := makeEditor(t, string(coatText))
-	listed := lo.Must(drw.ResolveCoat(coatFile, "d_listed", nil))
+	listed := mustResolveCoat(t, drw, coatFile, "d_listed")
 	_, replaced := edit(drw.EditProperties(coatFile, []Setting{{Block: listed.Range, Key: lang.CoatPatternKey, Value: `"v_pattern.dds"`}}))
-	pattern := replaced.Statements[lo.Must(replaced.FindChild(lo.Must(replaced.FindChild(0, "d_listed")), lang.CoatPatternKey))]
+	pattern := replaced.Statements[mustFindChild(t, replaced, mustFindChild(t, replaced, 0, "d_listed"), lang.CoatPatternKey)]
 	if !pattern.Tag.IsEmpty() || replaced.Text(pattern.Value) != `"v_pattern.dds"` {
 		t.Errorf("a list replaced by a plain value, tag and all: %q", replaced.Text(pattern.Span))
 	}
-	parent := lo.Must(drw.ResolveCoat(coatFile, coatParent, nil))
+	parent := mustResolveCoat(t, drw, coatFile, coatParent)
 	emblem, instance := parent.Layers[1], parent.Layers[1].Instances[0]
 	_, retextured := edit(drw.EditProperties(coatFile, []Setting{{Block: emblem.Range, Key: lang.CoatTextureKey, Value: `"v_textured.dds"`}}))
-	block := lo.Must(retextured.FindChild(lo.Must(retextured.FindChild(0, coatParent)), emblemKey))
-	if got := retextured.Unquoted(retextured.Statements[lo.Must(retextured.FindChild(block, lang.CoatTextureKey))].Value); got != "v_textured.dds" {
+	block := mustFindChild(t, retextured, mustFindChild(t, retextured, 0, coatParent), emblemKey)
+	if got := retextured.Unquoted(retextured.Statements[mustFindChild(t, retextured, block, lang.CoatTextureKey)].Value); got != "v_textured.dds" {
 		t.Errorf("texture after the edit: %s", got)
 	}
 	deeper, _ := edit(drw.EditProperties(coatFile, []Setting{{Block: instance.Range, Key: "depth", Value: "5"}}))
@@ -755,7 +800,7 @@ func TestEditPropertiesReplacesOrAddsKey(t *testing.T) {
 		t.Errorf("a color added to the emblem, in the file's indentation:\n%s", added)
 	}
 	_, colored := edit(drw.EditProperties(coatFile, []Setting{{Block: parent.Range, Key: "color3", Value: `"white"`}}))
-	if _, ok := colored.FindChild(lo.Must(colored.FindChild(0, coatParent)), "color3"); !ok {
+	if _, ok := colored.FindChild(mustFindChild(t, colored, 0, coatParent), "color3"); !ok {
 		t.Error("a color was not added to the coat")
 	}
 	if _, err := drw.EditProperties(coatFile, []Setting{{Block: parent.Layers[0].Range, Key: slotOne, Value: "red"}}); err == nil {
@@ -770,20 +815,20 @@ func TestEditCoatLayers(t *testing.T) {
 	drw, coatFile, text := openCoatFile(t)
 	edit := makeEditor(t, text)
 	_, added := edit(drw.AddLayer(coatFile, coatParent, emblemKey, 1))
-	if got := listKeys(added, coatParent); !slices.Equal(got, []string{lang.CoatPatternKey, emblemKey, slotOne, slotTwo, emblemKey}) {
+	if got := listKeys(t, added, coatParent); !slices.Equal(got, []string{lang.CoatPatternKey, emblemKey, slotOne, slotTwo, emblemKey}) {
 		t.Errorf("keys after adding an emblem: %v", got)
 	}
-	emblem := lo.Must(drw.ResolveCoat(coatFile, coatParent, nil)).Layers[1]
+	emblem := mustResolveCoat(t, drw, coatFile, coatParent).Layers[1]
 	_, removed := edit(drw.RemoveBlock(coatFile, emblem.Range))
-	if got := listKeys(removed, coatParent); !slices.Equal(got, []string{lang.CoatPatternKey, slotOne, slotTwo}) {
+	if got := listKeys(t, removed, coatParent); !slices.Equal(got, []string{lang.CoatPatternKey, slotOne, slotTwo}) {
 		t.Errorf("keys after removing the emblem: %v", got)
 	}
 	_, moved := edit(drw.MoveLayer(coatFile, coatParent, 1, 0))
-	if got := listKeys(moved, coatParent); !slices.Equal(got, []string{emblemKey, lang.CoatPatternKey, slotOne, slotTwo}) {
+	if got := listKeys(t, moved, coatParent); !slices.Equal(got, []string{emblemKey, lang.CoatPatternKey, slotOne, slotTwo}) {
 		t.Errorf("keys after moving the emblem first: %v", got)
 	}
 	_, later := edit(drw.MoveLayer(coatFile, coatParent, 0, 1))
-	if got := listKeys(later, coatParent); !slices.Equal(got, []string{slotOne, slotTwo, emblemKey, lang.CoatPatternKey}) {
+	if got := listKeys(t, later, coatParent); !slices.Equal(got, []string{slotOne, slotTwo, emblemKey, lang.CoatPatternKey}) {
 		t.Errorf("keys after moving the pattern last: %v", got)
 	}
 	for name, err := range map[string]error{
@@ -915,16 +960,24 @@ func (totals *gateTotals) count(ws *workspace.Session, window *Window, path stri
 			totals.missing[label] = append(totals.missing[label], path)
 		case slices.Contains(pictureKeys, property.Key) && !strings.HasPrefix(property.Value, "["):
 			totals.paths++
-			totals.pathsMissing += lo.Ternary(textured, 0, 1)
+			totals.pathsMissing += toCount(!textured)
 		case slices.Contains(pictureKeys, property.Key):
 			totals.calls++
-			totals.callsMissing += lo.Ternary(textured, 0, 1)
+			totals.callsMissing += toCount(!textured)
 		case isLocalized(property.Key) && !strings.Contains(property.Value, "["):
 			_, _, listed := ws.LookupText(mods, property.Value)
 			totals.texts++
-			totals.textsMissing += lo.Ternary(listed, 0, 1)
+			totals.textsMissing += toCount(!listed)
 		}
 	}
+}
+
+// toCount returns 1 for true and 0 for false.
+func toCount(holds bool) int {
+	if holds {
+		return 1
+	}
+	return 0
 }
 
 // log prints the totals, then each missing type or template with the files that
@@ -936,11 +989,10 @@ func (totals *gateTotals) log(t *testing.T, elapsed time.Duration) {
 	t.Logf("texts: %d found, %d not found; paths and icon names: %d found, %d not found; data calls: %d found, %d not found",
 		totals.texts-totals.textsMissing, totals.textsMissing, totals.paths-totals.pathsMissing, totals.pathsMissing,
 		totals.calls-totals.callsMissing, totals.callsMissing)
-	labels := lo.Keys(totals.missing)
-	slices.Sort(labels)
+	labels := slices.Sorted(maps.Keys(totals.missing))
 	t.Logf("%d missing types and templates", len(labels))
 	for _, label := range labels {
-		paths := lo.Uniq(totals.missing[label])
+		paths := slices.Compact(slices.Sorted(slices.Values(totals.missing[label])))
 		t.Logf("missing %s: %d times in %d files: %s", label, len(totals.missing[label]), len(paths), strings.Join(paths, ", "))
 	}
 }
@@ -986,13 +1038,13 @@ func (totals *coatTotals) count(coat Coat) {
 			totals.emblems++
 		}
 		if layer.Role != subKey && layer.Texture != "" {
-			totals.found += lo.Ternary(layer.Path != "", 1, 0)
-			totals.lost += lo.Ternary(layer.Path == "", 1, 0)
+			totals.found += toCount(layer.Path != "")
+			totals.lost += toCount(layer.Path == "")
 		}
-		totals.missing += lo.Ternary(strings.HasPrefix(layer.Texture, missingList), 1, 0)
-		for _, color := range lo.Drop(layer.Colors, 1) {
-			totals.colored += lo.Ternary(color != "", 1, 0)
-			totals.uncolored += lo.Ternary(color == "", 1, 0)
+		totals.missing += toCount(strings.HasPrefix(layer.Texture, missingList))
+		for _, color := range layer.Colors[min(1, len(layer.Colors)):] {
+			totals.colored += toCount(color != "")
+			totals.uncolored += toCount(color == "")
 		}
 	}
 }

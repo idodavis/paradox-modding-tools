@@ -97,7 +97,7 @@ func (s *Service) IsInstalled() bool {
 	return err == nil
 }
 
-// Run runs git in a folder and emits git:changed, also when git failed.
+// Run runs git in a folder and sends git:changed, also when git failed.
 func (s *Service) Run(dir string, args ...string) (string, error) {
 	stdout, err := s.run(dir, args...)
 	application.Get().Event.Emit(EventChanged, dir)
@@ -105,8 +105,8 @@ func (s *Service) Run(dir string, args ...string) (string, error) {
 	return stdout, err
 }
 
-// run is Run without the event. It sends each line of standard error as
-// git:output, and a nonzero exit is an error with that text.
+// run is Run without the event. Each line git writes to standard error is
+// sent as git:output, and a nonzero exit is an error with that text.
 func (s *Service) run(dir string, args ...string) (string, error) {
 	path, err := findGit()
 	if err != nil {
@@ -115,7 +115,6 @@ func (s *Service) run(dir string, args ...string) (string, error) {
 
 	cmd := exec.Command(path, slices.Concat([]string{"-C", dir}, args)...)
 	hideConsole(cmd)
-	// The package reads git's messages, so they are English.
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C", "GIT_OPTIONAL_LOCKS=0")
 
 	var stdout, stderr strings.Builder
@@ -164,8 +163,8 @@ func (s *Service) FindRepository(dir string) (string, bool) {
 	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(root))), true
 }
 
-// ListRepositories returns the repositories of the open workspace's mods,
-// leaving out a broken mod or one in none.
+// ListRepositories returns the repositories the open workspace's mods are in,
+// in load order.
 func (s *Service) ListRepositories() []Repository {
 	var repositories []Repository
 	for _, mod := range s.Workspace.ListMods() {
@@ -218,13 +217,13 @@ func (s *Service) ListRemotes(root string) ([]Remote, error) {
 }
 
 // Discard throws away the working changes of files, and deletes those git does
-// not track.
+// not track. restore knows only tracked files and clean only the others, so
+// both run.
 func (s *Service) Discard(root string, paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
 
-	// restore knows only tracked files, and clean deletes only the others.
 	stdout, err := s.run(root, slices.Concat([]string{"ls-files", "-z", "--"}, paths)...)
 	if err != nil {
 		return err
@@ -245,12 +244,10 @@ func (s *Service) Discard(root string, paths []string) error {
 // markers stay in the files.
 func (s *Service) Merge(root, name string) error {
 	// A conflict exits nonzero too, but says so on standard output.
-	stdout, err := s.run(root, "merge", "--no-edit", name)
+	stdout, err := s.Run(root, "merge", "--no-edit", name)
 	if err != nil && !strings.Contains(stdout, "CONFLICT") {
 		return err
 	}
-
-	application.Get().Event.Emit(EventChanged, root)
 
 	return nil
 }
@@ -263,8 +260,8 @@ func (s *Service) Pull(root, ref string) error {
 	return err
 }
 
-// DeleteBranch deletes a branch. Unless forced, a branch with commits no other
-// branch has gives false and no error.
+// DeleteBranch deletes a branch. Unless forced, git refuses a branch with
+// commits no other branch has, which gives false and no error.
 func (s *Service) DeleteBranch(root, name string, force bool) (bool, error) {
 	flag := "-d"
 	if force {
@@ -290,7 +287,8 @@ func (s *Service) locateChanges(root string, changes []Change) {
 	}
 }
 
-// locate returns the place of each path, empty while no workspace is open.
+// locate returns the place of each path, or empty places while no workspace
+// is open.
 func (s *Service) locate(root string, paths []string) []workspace.Place {
 	places := make([]workspace.Place, len(paths))
 	ws, err := s.Workspace.Session()

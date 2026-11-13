@@ -8,21 +8,22 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/loc"
 )
 
-// GlobalType is the data type on which the first step of a data call is
-// looked up, where no data context is set.
+// GlobalType is the data type a call's first step is looked up on where no
+// data context is set.
 const GlobalType = "Global"
 
 // AnyScopeType is the data type of a scope of any type. Its functions lead to
 // the data type of each scope type.
 const AnyScopeType = "Scope"
 
-// ResolveCallTypes returns the data type each step of a data call returns.
-// A step no dump declares has "".
+// ResolveCallTypes returns the data type each step of a data call returns,
+// "" for a step no dump declares.
 func (s *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []string {
 	_, functions := s.ListCallOwners(call, datacontext)
 	types := make([]string, len(functions))
@@ -33,10 +34,10 @@ func (s *Schema) ResolveCallTypes(call jomini.Call, datacontext string) []string
 	return types
 }
 
-// ListCallOwners returns, for each step of a data call, the data type the
-// step's function belongs to and the function itself. A first step may be
-// the name of a data type, as Character in Character.GetName, and then
-// belongs to that type. A step no dump declares gets "" and ends both lists.
+// ListCallOwners returns, for each step of a data call, the data type its
+// function belongs to and the function. A first step may name a data type,
+// as Character in Character.GetName. A step no dump declares gets "" and
+// ends both lists.
 func (s *Schema) ListCallOwners(call jomini.Call, datacontext string) ([]string, []DataFunction) {
 	var owners []string
 	var functions []DataFunction
@@ -63,7 +64,7 @@ func (s *Schema) ListCallOwners(call jomini.Call, datacontext string) ([]string,
 }
 
 // FindFunction returns the data function one step of a data call calls. It
-// returns false for a step no dump declares, and for a step the call lacks.
+// returns false for a step no dump declares, and for one the call lacks.
 func (s *Schema) FindFunction(call jomini.Call, datacontext string, step int) (DataFunction, bool) {
 	owners, _ := s.ListCallOwners(call, datacontext)
 	if step < 0 || step >= len(owners) || owners[step] == "" {
@@ -79,8 +80,8 @@ func (s *Schema) FindFunction(call jomini.Call, datacontext string, step int) (D
 // type they do not name.
 const dumpUnnamed = "[unregistered]"
 
-// ReturnType returns the data type a function returns. It returns "" where
-// the dumps do not name it.
+// ReturnType returns the data type a function returns, "" where the dumps do
+// not name it.
 func ReturnType(function DataFunction) string {
 	if function.Returns == dumpUnnamed {
 		return ""
@@ -90,9 +91,8 @@ func ReturnType(function DataFunction) string {
 }
 
 // FindUnlisted returns the first step of a data call that no dump declares,
-// and the data type the call had reached before it: the data context's, else
-// the global type. It returns false if every step is declared, or if the
-// dumps do not name the type before the step.
+// and the data type the call had reached before it. It returns false where
+// every step is declared, or the dumps do not name that type.
 func (s *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, string, bool) {
 	owners, functions := s.ListCallOwners(call, datacontext)
 	step := slices.Index(owners, "")
@@ -109,9 +109,9 @@ func (s *Schema) FindUnlisted(call jomini.Call, datacontext string) (int, string
 }
 
 // ResolveMacro replaces the macros a data call starts with by the calls they
-// stand for, with the macro's arguments filled in. A first step that is a
-// function of the data context is no macro and stays. A macro that leads back
-// to itself gives an empty call.
+// stand for, with their arguments filled in. A first step that is a function
+// of the data context is no macro. A macro that leads back to itself gives
+// an empty call.
 func (s *Schema) ResolveMacro(call jomini.Call, datacontext string) jomini.Call {
 	expanded := map[string]bool{}
 	for len(call.Steps) > 0 {
@@ -145,8 +145,8 @@ func (s *Schema) ResolveMacro(call jomini.Call, datacontext string) jomini.Call 
 }
 
 // ResolveDatacontext returns the data type that a GUI block's datacontext
-// call sets for the calls inside the block. It returns "" where the dumps do
-// not say what the call returns.
+// call sets for the calls inside the block, "" where the dumps do not say
+// what the call returns.
 func (s *Schema) ResolveDatacontext(call jomini.Call, datacontext string) string {
 	types := s.ResolveCallTypes(s.ResolveMacro(call, datacontext), datacontext)
 	if len(types) == 0 {
@@ -162,10 +162,10 @@ func (s *Schema) ResolveDatacontext(call jomini.Call, datacontext string) string
 const topScopeType = "TopScope"
 
 // ListCallReferences returns a reference for each quoted argument of a data
-// call, the arguments of calls inside it included. The database an argument
-// names is the one GUICallTargets gives for its place. Without a row there it
-// is the saved scopes for a function of SCOPE that leads to a scope, else the
-// database that the function's return type stands for.
+// call, those of calls inside it included. GUICallTargets gives an
+// argument's database by its place. Without a row it is the saved scopes for
+// a function of SCOPE that leads to a scope, else the database the
+// function's return type stands for.
 func (s *Schema) ListCallReferences(call jomini.Call, datacontext string) []Reference {
 	var references []Reference
 	call = s.ResolveMacro(call, datacontext)
@@ -230,9 +230,9 @@ var textDatabases = map[loc.Markup]string{
 	loc.MarkupFormat: GUITextFormats,
 }
 
-// WalkMessages reads a localization file as the walk reads script. It returns
-// one context for each message: the message's key is the definition, and the
-// names its text writes are the references, those of a data call first.
+// WalkMessages reads a localization file as the walk reads script. Each
+// message gets a context whose definition is its key and whose references
+// are the names its text writes, a data call's first.
 func (s *Schema) WalkMessages(file *loc.File) []Context {
 	contexts := make([]Context, len(file.Messages))
 	for position, message := range file.Messages {
@@ -261,9 +261,8 @@ func (s *Schema) WalkMessages(file *loc.File) []Context {
 const conceptFormat = "E"
 
 // listTextCall returns the references of a data call in a text: those of its
-// arguments, then the game concept it names, if the call is one word with no
-// arguments and the concept format. It returns none if the piece of text is
-// no call.
+// arguments, then the game concept it names where it is one word with no
+// arguments and the concept format.
 func (s *Schema) listTextCall(segment loc.Segment) []Reference {
 	call := segment.Call
 	if call == nil {
@@ -281,9 +280,9 @@ func (s *Schema) listTextCall(segment loc.Segment) []Reference {
 }
 
 // DescribeStep returns one step of a data call in words, followed by its
-// quoted arguments. With dropsGetter the word Get or Access is left off the
-// step's name. A step whose argument is the name of something, as
-// Custom('GetDaughterSon') is, reads as that name: "daughter son".
+// quoted arguments. With dropsGetter, Get or Access is left off the step's
+// name. A step whose argument names something, as Custom('GetDaughterSon'),
+// reads as that name: "daughter son".
 func DescribeStep(step jomini.Step, dropsGetter bool) string {
 	var quoted []string
 	for _, argument := range step.Arguments {
@@ -306,10 +305,11 @@ func DescribeStep(step jomini.Step, dropsGetter bool) string {
 
 // DropGetter returns a function's name without the Get or Access it starts
 // with, as FirstName for GetFirstName. A name with no capital letter after
-// that word, as Getaway, is returned as it is.
+// that word, as Getaway, stays as it is.
 func DropGetter(name string) string {
 	for _, getter := range GUIGetters {
-		if rest, ok := strings.CutPrefix(name, getter); ok && rest != "" && unicode.IsUpper([]rune(rest)[0]) {
+		rest, ok := strings.CutPrefix(name, getter)
+		if first, _ := utf8.DecodeRuneInString(rest); ok && unicode.IsUpper(first) {
 			return rest
 		}
 	}

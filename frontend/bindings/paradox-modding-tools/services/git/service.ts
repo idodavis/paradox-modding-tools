@@ -15,8 +15,8 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * DeleteBranch deletes a branch. Unless forced, a branch with commits no other
- * branch has gives false and no error.
+ * DeleteBranch deletes a branch. Unless forced, git refuses a branch with
+ * commits no other branch has, which gives false and no error.
  */
 export function DeleteBranch(root: string, name: string, force: boolean): $CancellablePromise<boolean> {
     return $Call.ByID(361097653, root, name, force);
@@ -32,7 +32,8 @@ export function DiffFile(path: string, text: string): $CancellablePromise<$model
 
 /**
  * Discard throws away the working changes of files, and deletes those git does
- * not track.
+ * not track. restore knows only tracked files and clean only the others, so
+ * both run.
  */
 export function Discard(root: string, paths: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(1247901612, root, paths);
@@ -85,11 +86,20 @@ export function ListRemotes(root: string): $CancellablePromise<$models.Remote[] 
 }
 
 /**
- * ListRepositories returns the repositories of the open workspace's mods,
- * leaving out a broken mod or one in none.
+ * ListRepositories returns the repositories the open workspace's mods are in,
+ * in load order.
  */
 export function ListRepositories(): $CancellablePromise<$models.Repository[] | null> {
     return $Call.ByID(1749972734);
+}
+
+/**
+ * ListSubjects returns the subjects of the commits that change a folder,
+ * newest first: those since the given time, or every one for the zero time.
+ * It returns an error outside a repository or in one with no commit.
+ */
+export function ListSubjects(dir: string, cutoff: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3319887707, dir, cutoff);
 }
 
 /**
@@ -116,15 +126,15 @@ export function ReadFile(dir: string, revision: string, path: string): $Cancella
 }
 
 /**
- * ReadStatus returns the status of a repository, with each untracked file on
- * its own. It returns git's error if the folder is in no repository.
+ * ReadStatus returns the status of a repository, listing each untracked file
+ * rather than its folder. It returns git's error outside a repository.
  */
 export function ReadStatus(root: string): $CancellablePromise<$models.Status> {
     return $Call.ByID(2197323804, root);
 }
 
 /**
- * Run runs git in a folder and emits git:changed, also when git failed.
+ * Run runs git in a folder and sends git:changed, also when git failed.
  */
 export function Run(dir: string, ...args: string[]): $CancellablePromise<string> {
     return $Call.ByID(2670563755, dir, args);

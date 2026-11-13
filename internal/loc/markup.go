@@ -38,8 +38,8 @@ type Segment struct {
 	Span     jomini.Span `json:"span"`
 	TextSpan jomini.Span `json:"textSpan"`
 
-	// Kind is number or text for a data call whose Text is a sample of its
-	// value. It is "" for any other piece.
+	// Kind is number or text for a data call whose Text was replaced by a
+	// sample of its value, and "" for any other piece.
 	Kind string `json:"kind"`
 
 	// Call is the parsed data call of a call piece. It is nil if the text is
@@ -77,8 +77,8 @@ func Segments(text string, base int) []Segment {
 	return segments
 }
 
-// parseMarkup parses the markup at a text offset, with that inside a format's
-// name, or returns nil if none starts there.
+// parseMarkup parses the markup that starts at an offset, followed by the
+// markup inside a format's name. It returns nil if none starts there.
 func parseMarkup(text string, start, base int) []Segment {
 	var markup Markup
 	var inner string
@@ -226,10 +226,9 @@ func makeText(text string, start, end, base int) Segment {
 	return Segment{Markup: MarkupText, Text: text[start:end], Span: span, TextSpan: span}
 }
 
-// ListNames returns the names a segment writes, each as a segment with its
-// TextSpan. A key and an icon write their own name. A format writes each part
-// that is an identifier, so #bold;italic writes bold and italic. A data call
-// writes the keys in its text. Any other segment gives nil.
+// ListNames returns the names a segment writes, each as a segment of its own:
+// a key's or an icon's name, each name in a format such as #bold;italic, and
+// the keys inside a data call.
 func ListNames(segment Segment) []Segment {
 	switch segment.Markup {
 	case MarkupKey, MarkupIcon:
@@ -259,8 +258,8 @@ func ListNames(segment Segment) []Segment {
 	return nil
 }
 
-// ListMarkupFaults returns a loc-markup problem for each unclosed call and
-// each format ended with #. or #, instead of #!.
+// ListMarkupFaults returns a loc-markup problem for each data call not closed
+// on its line, and each format ended with #. or #, where the game wants #!.
 func ListMarkupFaults(segments []Segment) []jomini.Problem {
 	var faults []jomini.Problem
 
@@ -286,8 +285,8 @@ func ListMarkupFaults(segments []Segment) []jomini.Problem {
 	return faults
 }
 
-// isCallStart reports whether a text starts like a data call: a letter, _, (
-// or [.
+// isCallStart reports whether a text after a [ starts like a data call, so a
+// lone [ in prose is not reported.
 func isCallStart(text string) bool {
 	first, _ := utf8.DecodeRuneInString(text)
 

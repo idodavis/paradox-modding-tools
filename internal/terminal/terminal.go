@@ -151,11 +151,13 @@ type Shell struct {
 	// closed.
 	change chan struct{}
 
-	// ended is set once the output has ended. screen is the screen a window
-	// last kept, without its size, and columns and rows are the terminal's
-	// size.
-	ended   bool
-	screen  Screen
+	// ended is set once the output has ended, and screen is the screen a
+	// window last kept, without its size.
+	ended  bool
+	screen Screen
+
+	// columns and rows are the terminal's size. After Start, like closed, they
+	// change only with both locks held.
 	columns int
 	rows    int
 }
@@ -219,8 +221,7 @@ func ListEnvironment() []Variable {
 }
 
 // Start starts the shell's program in its folder, under a new
-// pseudo-terminal of the given size, and sets Name and Build. It returns an
-// error if the program cannot be started.
+// pseudo-terminal of the given size, and sets Name and Build.
 func (s *Shell) Start(columns, rows int) error {
 	s.Name = strings.TrimSuffix(filepath.Base(s.Program), filepath.Ext(s.Program))
 	s.columns, s.rows = columns, rows
@@ -331,11 +332,9 @@ func (s *Shell) emitChange() {
 	s.change = make(chan struct{})
 }
 
-// Read returns the output the shell has written from the given offset on,
-// and the offset just past it. It waits until there is some. Output that the
-// history no longer holds is skipped. It returns io.EOF once the shell has
-// ended and all of its output is read, and the context's error if the
-// context ends first.
+// Read returns the output from an offset on and the offset just past it,
+// waiting until there is some. Output the history no longer holds is skipped.
+// It returns io.EOF once the shell has ended and its output is all read.
 func (s *Shell) Read(ctx context.Context, offset int64) ([]byte, int64, error) {
 	for {
 		s.outputMu.Lock()
@@ -398,12 +397,8 @@ func (s *Shell) Resize(columns, rows int) error {
 	s.consoleMu.Lock()
 	defer s.consoleMu.Unlock()
 
-	s.outputMu.Lock()
 	unchanged := columns == s.columns && rows == s.rows
-	s.outputMu.Unlock()
-
-	empty := columns < 1 || rows < 1
-	if s.closed || unchanged || empty {
+	if s.closed || unchanged || columns < 1 || rows < 1 {
 		return nil
 	}
 

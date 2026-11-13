@@ -31,26 +31,19 @@ type Note struct {
 
 var errNoListing = errors.New("the wiki's listing has not been fetched yet")
 
-// pageTopics are the terms the games' wikis title their pages with, beside a
-// file format's own name, for the files of a format or under a folder. A row
-// with no format holds for any, and so does one with no folder.
+// pageTopics are the words the games' wikis put in the titles of the pages
+// about a format's files or a folder's, beside the format's own name. A row
+// with no format or no folder holds for any.
 var pageTopics = []struct {
 	Format files.Format
 	Folder string
 	Terms  []string
 }{
-	// CK3's Interface, Vic3's Interface modding and EU5's Interface modding
-	// guide, which also write of gfx/interface
 	{Format: files.FormatGUI, Terms: []string{"interface"}},
 	{Folder: "gfx/interface", Terms: []string{"interface"}},
-	// CK3's 3D models and Vic3's Model modding, which write of .asset files,
-	// meshes and gfx/models
 	{Format: files.FormatAsset, Terms: []string{"model"}},
 	{Folder: "gfx/models", Terms: []string{"model"}},
-	// CK3's Graphical assets and Vic3's Graphical asset modding, which write
-	// of .dds textures
 	{Format: files.FormatImage, Terms: []string{"graphical asset"}},
-	// the three games' Map modding, which write of gfx/map
 	{Folder: "gfx/map", Terms: []string{"map modding"}},
 }
 
@@ -78,10 +71,8 @@ func (s *Service) FindPages(path string) ([]Summary, error) {
 		}
 	}
 
+	// rank orders the titles that belong to the file, and is -1 for the rest.
 	holds := func(title, term string) bool { return term != "" && strings.Contains(title, term) }
-	holdsTopic := func(title string) bool {
-		return slices.ContainsFunc(topics, func(term string) bool { return holds(title, term) })
-	}
 	rank := func(title string) int {
 		title = strings.ToLower(title)
 		switch {
@@ -93,15 +84,16 @@ func (s *Service) FindPages(path string) ([]Summary, error) {
 			return 2
 		case slices.Contains(topics, title):
 			return 3
+		case slices.ContainsFunc(topics, func(term string) bool { return holds(title, term) }):
+			return 4
 		}
 
-		return 4
+		return -1
 	}
 
 	pages := make([]Summary, 0, len(listing.Pages))
 	for _, summary := range listing.Pages {
-		title := strings.ToLower(summary.Title)
-		if holds(title, singular) || holds(title, plural) || holdsTopic(title) {
+		if rank(summary.Title) >= 0 {
 			pages = append(pages, summary)
 		}
 	}
@@ -114,8 +106,7 @@ func (s *Service) FindPages(path string) ([]Summary, error) {
 }
 
 // SearchPages returns the modding pages that hold a text, title matches first.
-// A page that is not cached is searched by title alone. It returns the errors
-// FindPages does.
+// A page that is not cached is searched by its title alone.
 func (s *Service) SearchPages(term string) ([]Summary, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -140,13 +131,7 @@ func (s *Service) SearchPages(term string) ([]Summary, error) {
 	}
 
 	for _, summary := range rest {
-		page, ok := client.LoadPage(summary.Title)
-		if !ok {
-			continue
-		}
-
-		root, err := parseFragment(page.HTML)
-		if err == nil && strings.Contains(strings.ToLower(textOf(root)), term) {
+		if text, ok := client.loadText(summary.Title); ok && strings.Contains(text, term) {
 			pages = append(pages, summary)
 		}
 	}
@@ -158,7 +143,8 @@ var releasePattern = regexp.MustCompile(`released on (?:the )?(\d{4}-\d{2}-\d{2}
 
 const releaseSpan = 2000
 
-// resolveReleased returns the release date a note gives, or "" for none.
+// resolveReleased returns the date a patch note says it was released on, as
+// in "released on 2026-09-30" near the start of its text, or "" for none.
 func resolveReleased(root *html.Node) string {
 	text := textOf(root)
 	match := releasePattern.FindStringSubmatch(text[:min(len(text), releaseSpan)])

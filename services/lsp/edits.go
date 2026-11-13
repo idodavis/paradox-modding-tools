@@ -157,6 +157,7 @@ func (s *Service) buildKeysFix(
 			keys = append(keys, key)
 		}
 	}
+
 	if len(keys) == 0 {
 		return Fix{}, false
 	}
@@ -274,6 +275,8 @@ func buildMissingFix(schema *lang.Schema, cursor cursor, diagnostic Diagnostic) 
 	return "Add " + statement, ToEdits(tree.Src, tree.Lines, []jomini.Edit{insertion})
 }
 
+// hasFolder reports whether a database's entries are written in a folder of
+// files, which a mod can add a file to, rather than in one file.
 func hasFolder(database *lang.Database) bool {
 	return database != nil && database.Declaration.Folder != "" && path.Ext(database.Declaration.Folder) == ""
 }
@@ -390,11 +393,13 @@ func buildNamespace(database *lang.Database, key, source string) string {
 	return lang.EventNamespaceKey + " = " + namespace + "\n\n"
 }
 
-// BuildOverride returns the fix that copies the entry at a line and column
-// into a mod, so the game keeps the copy, or nil if no entry is there. The mod
-// is the one with the given id, else the first other writable mod. It returns
-// an error if the mod has the entry already, the game joins every copy, or no
-// file name makes the copy win; with no id, nil instead.
+// BuildOverride returns the fix that copies the entry at a position into a mod
+// so that the game keeps the copy, or nil if no entry is there. It returns an
+// error if the mod has the entry already, the game joins every copy, or no
+// file name makes the copy win.
+//
+// With no mod id it tries the first other writable mod. The editor then only
+// asks whether an override is possible, so a refusal is nil, not an error.
 func (s *Service) BuildOverride(path string, line, column int, modID string) (fix *Fix, err error) {
 	defer func() {
 		if modID == "" {

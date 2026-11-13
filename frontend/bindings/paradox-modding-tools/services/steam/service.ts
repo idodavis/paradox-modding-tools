@@ -188,10 +188,11 @@ export function ToHTML(bbcode: string): $CancellablePromise<string> {
 }
 
 /**
- * WriteIgnore writes a mod's own exclusions to its .workshop-ignore file.
+ * WriteIgnore writes a mod's own upload exclusions, gitignore patterns, as its
+ * .workshop-ignore file, the one place they are kept.
  */
-export function WriteIgnore(modID: string): $CancellablePromise<void> {
-    return $Call.ByID(346436595, modID);
+export function WriteIgnore(modID: string, text: string): $CancellablePromise<void> {
+    return $Call.ByID(346436595, modID, text);
 }
 
 /**

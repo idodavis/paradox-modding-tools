@@ -19,7 +19,8 @@ func ToKey(path string) string {
 	return strings.ToLower(toSlash(path))
 }
 
-// ToRel returns a path below a root, or false if not under it.
+// ToRel returns a path below a root, with slashes, or false if it is not
+// under the root. The root matches in any letter case.
 func ToRel(root, path string) (string, bool) {
 	key := ToKey(root)
 	if !strings.HasPrefix(ToKey(path), key+"/") {
@@ -102,6 +103,8 @@ func ClassifyMatch(path, query string) int {
 	return -1
 }
 
+// toSlash cleans a path and writes it with forward slashes. A backslash is
+// replaced on Linux too, where filepath.ToSlash keeps it.
 func toSlash(path string) string {
 	return filepath.ToSlash(filepath.Clean(strings.ReplaceAll(path, `\`, "/")))
 }

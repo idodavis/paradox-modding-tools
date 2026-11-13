@@ -69,6 +69,7 @@ type Date struct {
 // NumberKey matches a key written as a number or a date, as in random_list.
 const NumberKey = "<number>"
 
+// precedences holds how tightly each operator of an expression @[…] binds.
 var precedences = map[string]int{"+": 1, "-": 1, "*": 2, "/": 2}
 
 // Classify returns what a text is written as, trying the classes in the

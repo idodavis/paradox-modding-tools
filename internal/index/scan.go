@@ -45,20 +45,17 @@ type collector struct {
 	texts map[int32][2]int32
 }
 
-// contextPool holds lists of contexts for the files being scanned, so that a
-// scan makes one list for each file it reads at once and not one for each
-// file.
+// contextPool reuses the walk's lists of contexts across files, so a scan
+// allocates one per worker and not one per file.
 var contextPool = sync.Pool{New: func() any { return new([]lang.Context) }}
 
-// Scan builds the index of an install's files, in parallel. The mounts are
-// the game's roots, then each DLC's, in load order, with their files as
-// files.Mount lists them. The progress function is called with the name of
-// each stage, and with the percent done during the reading of the files. A
-// stage that reports no progress has the percent -1.
+// Scan builds the index of an install's files, in parallel. The progress
+// function gets each stage's name and its percent done, or -1 for a stage
+// that reports none.
 //
-// A localization file is scanned only in the base language: 2.5 of CK3's 2.8
-// million messages are in the other eight, and a workspace reads one of
-// them at most, which ScanTranslation adds.
+// Localization is scanned in the base language only: most of the game's
+// messages are in the other languages, and a workspace needs at most one of
+// them, which ScanTranslation adds.
 func Scan(schema *lang.Schema, mounts *files.Mounts, progress func(stage string, percent int)) *Index {
 	index := newIndex(schema, nil, mounts)
 	index.Stamp = time.Now().UnixNano()
@@ -80,18 +77,15 @@ func Scan(schema *lang.Schema, mounts *files.Mounts, progress func(stage string,
 	return index
 }
 
-// findLanguage returns the language a localization file's path names: the
-// one its name ends in, else its language folder. It returns "" if the path
-// names none.
+// findLanguage returns the language a localization file's path names, or ""
+// for none.
 func findLanguage(file files.File) string {
 	return cmp.Or(loc.FindSuffixLanguage(file.Path), loc.FindFolderLanguage(file.Path))
 }
 
-// ScanMods builds the index of a workspace's mods on top of the install's,
-// with the mods' roots mounted on the install's. Each root carries the
-// folders its mod's replace_path names. The progress function is called with
-// the percent of the files scanned. It returns an error if a root cannot be
-// walked.
+// ScanMods builds the index of a workspace's mods on top of the install's.
+// The progress function gets the percent of the files scanned. It returns an
+// error if a root cannot be walked.
 func ScanMods(schema *lang.Schema, install *Index, roots []files.Root, progress func(percent int)) (*Index, error) {
 	mounts, err := install.Mount(roots)
 	if err != nil {
@@ -103,24 +97,17 @@ func ScanMods(schema *lang.Schema, install *Index, roots []files.Root, progress 
 
 	index := newIndex(schema, install, mounts)
 	index.unread = unread
-
-	positions := make([]int32, len(mounts.Files)-len(install.Files))
-	for offset := range positions {
-		positions[offset] = int32(len(install.Files) + offset)
-	}
-
-	index.scanFiles(schema, positions, progress)
+	index.scanFiles(schema, index.ListOwnFiles(), progress)
 	index.buildPostings()
 
 	return index, nil
 }
 
-// ScanFiles scans the given changed files again, reading each from disk. A
-// file that no longer exists is dropped with its occurrences. The schema
-// gets the scripted definitions the files declare now once the files are
-// listed or dropped, so that it knows which files the game reads, and
-// before any is scanned. It returns an error, and changes nothing, if any of
-// the files is the install's.
+// ScanFiles scans changed files again from disk, and drops a file that no
+// longer exists. The schema learns the files' scripted definitions after the
+// files are listed, so it knows which ones the game reads, and before any is
+// walked, since the walk types calls by them. It returns an error, and
+// changes nothing, if a file is the install's.
 func (i *Index) ScanFiles(schema *lang.Schema, changed []files.File) error {
 	installFiles := i.countInstallFiles()
 	for _, file := range changed {
@@ -157,7 +144,7 @@ func (i *Index) ScanFiles(schema *lang.Schema, changed []files.File) error {
 		}
 	}
 
-	// which files the game reads changes only when one is listed or dropped
+	// Which files the game reads changes only when one is listed or dropped.
 	if relisted {
 		i.unread = listUnread(i.Mounts)
 	}
@@ -175,9 +162,7 @@ func (i *Index) ScanFiles(schema *lang.Schema, changed []files.File) error {
 	return nil
 }
 
-// listUnread returns the keys of the mounted files the game does not read: a
-// file that another at its path hides, one that a replace_path drops, and
-// one in a folder the game never mounts.
+// listUnread returns the keys of the mounted files the game does not read.
 func listUnread(mounts *files.Mounts) map[string]bool {
 	unread := map[string]bool{}
 	for position, file := range mounts.Files {
@@ -190,8 +175,7 @@ func listUnread(mounts *files.Mounts) map[string]bool {
 }
 
 // Clone returns a copy of an index that ScanFiles can change while the
-// original is still being read. It shares with the original everything
-// ScanFiles does not write.
+// original is still being read.
 func (i *Index) Clone() *Index {
 	next := *i
 	next.Mounts = i.Mounts.Clone()
@@ -203,17 +187,15 @@ func (i *Index) Clone() *Index {
 	return &next
 }
 
-// LoadIndex loads an install's index from its cache file. The cache holds the
-// index's exported fields, so the mounts' and the tables' lookups and the
-// postings are built again. It returns false if the file is missing or cannot
-// be read, or holds no mounts.
+// LoadIndex loads an install's index from its cache file. The cache holds
+// only exported fields, so the lookups and postings are built again. It
+// returns false if the file is missing, cannot be read or holds no mounts.
 func LoadIndex(path string) (*Index, bool) {
 	index, ok := files.LoadGob[*Index](path)
 	if !ok || index.Mounts == nil {
 		return nil, false
 	}
 
-	index.dialect = lang.LookupDialect(index.Game)
 	index.Mounts = files.NewMounts(index.Roots, index.Files)
 	index.buildTables()
 	index.buildPostings()
@@ -232,13 +214,12 @@ func ParseFile(path string) (*jomini.Tree, error) {
 	return jomini.Parse(text.Text), nil
 }
 
-// newIndex returns an index of the given mounts with nothing scanned yet. On
-// an install's index, the mounts start with the install's roots and files,
-// and the index starts with its occurrences, its texts and copies of its
-// tables, so a position and an ordinal mean the same in both.
+// newIndex returns an index of the mounts with nothing scanned yet. Built on
+// an install's index, it starts with the install's occurrences and copies of
+// its tables, so a position and an ordinal mean the same in both.
 func newIndex(schema *lang.Schema, install *Index, mounts *files.Mounts) *Index {
 	index := &Index{
-		Mounts: mounts, Game: schema.Game, install: install, dialect: lang.LookupDialect(schema.Game),
+		Mounts: mounts, Game: schema.Game, install: install,
 		Occurrences: make([][]Occurrence, len(mounts.Files)), Texts: make([][]string, len(mounts.Files)),
 		Unmarked: map[int32]bool{},
 	}
@@ -264,8 +245,8 @@ func newIndex(schema *lang.Schema, install *Index, mounts *files.Mounts) *Index 
 	return index
 }
 
-// buildTables builds each table's lookup of its texts, and puts the empty
-// text at ordinal 0 of a table that has none yet.
+// buildTables builds each table's lookup of its texts. A new table gets the
+// empty text at ordinal 0, which an occurrence reads as none.
 func (i *Index) buildTables() {
 	for _, table := range i.listTables() {
 		table.ordinals = make(map[string]uint32, len(table.Texts))
@@ -286,14 +267,12 @@ func (i *Index) cloneTables(source *Index) {
 	}
 }
 
-// listTables returns the four tables of the index.
 func (i *Index) listTables() []*Table {
 	return []*Table{&i.Databases, &i.Names, &i.Modes, &i.Languages}
 }
 
-// scanFiles builds the occurrences of the files at the given positions, in
-// parallel on files.Workers goroutines. The progress function is called with
-// each whole percent of the files that is done.
+// scanFiles builds the occurrences of the files at the given positions in
+// Files, in parallel. The progress function gets each whole percent done.
 func (i *Index) scanFiles(schema *lang.Schema, positions []int32, progress func(percent int)) {
 	var group errgroup.Group
 	var lock sync.RWMutex
@@ -317,12 +296,11 @@ func (i *Index) scanFiles(schema *lang.Schema, positions []int32, progress func(
 }
 
 // buildFile builds the occurrences of one file, and the texts of a
-// localization file's messages. A format that has no occurrences, and a file
-// that cannot be read, get none.
+// localization file's messages. A file that cannot be read gets none.
 func (i *Index) buildFile(lock *sync.RWMutex, schema *lang.Schema, position int32) {
 	// The file is built against tables of its own so that building takes no
 	// lock; its ordinals move to the index's tables afterwards.
-	tables := &Index{Mounts: i.Mounts, Caseless: i.Caseless, dialect: i.dialect}
+	tables := &Index{Mounts: i.Mounts, Game: i.Game, Caseless: i.Caseless}
 	tables.buildTables()
 	var occurrences []Occurrence
 	var texts []string
@@ -352,8 +330,8 @@ func (i *Index) buildFile(lock *sync.RWMutex, schema *lang.Schema, position int3
 	i.internFile(lock, tables, occurrences)
 }
 
-// readSource returns the text of the file at a position in Files. A file that
-// cannot be read gives "".
+// readSource returns the text of a file, given by its position in Files. A
+// file that cannot be read gives "".
 func (i *Index) readSource(position int32) string {
 	text, _ := files.ReadText(i.Files[position].Path)
 
@@ -379,7 +357,7 @@ func (i *Index) buildMessages(schema *lang.Schema, position int32, source string
 		for _, reference := range context.References {
 			occurrence := i.makeOccurrence(RoleRefers, reference.Database, reference.Name, reference.Span)
 			occurrence.Line = int32(file.Lines.ToPosition(reference.Span.Start).Line)
-			occurrence.Parent, occurrence.Nested, occurrence.Language = parent, true, language
+			occurrence.Parent, occurrence.Language = parent, language
 			occurrences = append(occurrences, occurrence)
 			texts = append(texts, "")
 		}
@@ -388,9 +366,8 @@ func (i *Index) buildMessages(schema *lang.Schema, position int32, source string
 	return occurrences, texts
 }
 
-// buildRows builds the occurrences of a table file: a definition for each
-// row, named by the row's first column. A table whose database's definitions
-// are not its rows has none.
+// buildRows builds a definition for each row of a table file, named by its
+// first column. A table whose database is not defined by its rows has none.
 func (i *Index) buildRows(schema *lang.Schema, position int32, source string) []Occurrence {
 	database, ok := schema.FindDatabase(i.Files[position])
 	if !ok || database.Declaration.DefinedBy != lang.DefinedByColumn {
@@ -410,8 +387,7 @@ func (i *Index) buildRows(schema *lang.Schema, position int32, source string) []
 }
 
 // collect walks a file and returns its occurrences: each statement's
-// definition, then its references, in the tree's order. The file's own
-// context gives one only where the file is one definition.
+// definition, then its references, in the tree's order.
 func (c *collector) collect(tree *jomini.Tree, file files.File) []Occurrence {
 	list := contextPool.Get().(*[]lang.Context)
 	defer contextPool.Put(list)
@@ -427,15 +403,12 @@ func (c *collector) collect(tree *jomini.Tree, file files.File) []Occurrence {
 	return c.occurrences
 }
 
-// collectStatement records the statement's definition and references.
 func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context *lang.Context) {
-	// the file's own statement is inside no definition
+	// The file's own statement is inside no definition.
 	holder := int32(-1)
 	if statement > 0 {
 		holder = c.holders[tree.Statements[statement].Parent]
 	}
-
-	parent, nested := max(holder, 0), holder >= 0
 
 	if definition := context.Definition; context.Defines {
 		occurrence := c.index.makeOccurrence(RoleDefines, definition.Database, definition.Name, definition.Span)
@@ -443,10 +416,8 @@ func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context
 		occurrence.Priority = int16(definition.Priority)
 		occurrence.Local, occurrence.Own = definition.Local, definition.IsOwn()
 		occurrence.Line = int32(tree.Lines.ToPosition(definition.Span.Start).Line)
-		occurrence.Parent, occurrence.Nested = parent, nested
-		occurrence.Statement = definition.Statement
+		occurrence.Parent, occurrence.Statement = holder, definition.Statement
 		holder = int32(len(c.occurrences))
-		parent, nested = holder, true
 		c.occurrences = append(c.occurrences, occurrence)
 
 		title, _ := lang.FindTextKey(tree, statement, lang.TitleKey)
@@ -462,9 +433,9 @@ func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context
 	for _, reference := range context.References {
 		occurrence := c.index.makeOccurrence(RoleRefers, reference.Database, reference.Name, reference.Span)
 		occurrence.Line = int32(tree.Lines.ToPosition(reference.Span.Start).Line)
-		occurrence.Parent, occurrence.Nested, occurrence.Firing = parent, nested, c.isFiring(context, reference)
-		occurrence.Statement = statement
-		if localizes := nested && reference.Database == lang.Localization; localizes {
+		occurrence.Parent, occurrence.Statement = holder, statement
+		occurrence.Firing = c.countFiring(tree, statement, context, reference)
+		if holder >= 0 && reference.Database == lang.Localization {
 			occurrence.Titles, occurrence.Describes = statement == texts[0], statement == texts[1]
 		}
 
@@ -472,17 +443,15 @@ func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context
 	}
 }
 
-// makeOccurrence returns an occurrence of the given role, database and name
-// written at the given span. It sits in no definition and no statement.
 func (i *Index) makeOccurrence(role Role, database, name string, span jomini.Span) Occurrence {
 	return Occurrence{
 		Span: span, Database: uint16(i.Databases.Intern(database)),
-		Name: i.Names.Intern(i.ToCaseless(database, name)), Role: role,
+		Name: i.Names.Intern(i.ToCaseless(database, name)), Role: role, Parent: -1,
 	}
 }
 
-// ToCaseless returns a text as the index stores it for a database: in lower
-// case where the database's names match in any letter case, else as it is.
+// ToCaseless returns a name as the index stores it for a database: in lower
+// case where the database's names match in any letter case.
 func (i *Index) ToCaseless(database, text string) string {
 	if slices.Contains(i.Caseless, database) {
 		return strings.ToLower(text)
@@ -492,8 +461,7 @@ func (i *Index) ToCaseless(database, text string) string {
 }
 
 // internFile moves the ordinals of a file's occurrences from the tables the
-// file was built against to the index's own tables. A file with no
-// occurrences takes no lock.
+// file was built against to the index's own tables.
 func (i *Index) internFile(lock *sync.RWMutex, tables *Index, occurrences []Occurrence) {
 	if len(occurrences) == 0 {
 		return
@@ -514,11 +482,10 @@ func (i *Index) internFile(lock *sync.RWMutex, tables *Index, occurrences []Occu
 }
 
 // internAll returns the ordinal in a table of each of the given texts, adding
-// the ones the table lacks.
+// the ones the table lacks. Most are there already, so only the missing ones
+// take the write lock. An added text is copied, so that it does not keep its
+// file's source alive.
 func internAll(lock *sync.RWMutex, table *Table, texts []string) []uint32 {
-	// Most texts are in the table already, so only the missing ones are added
-	// under the whole lock. An added text is a copy, so that it does not keep
-	// its file's text alive.
 	ordinals := make([]uint32, len(texts))
 	var missing []int
 

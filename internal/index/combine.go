@@ -1,5 +1,6 @@
 // combine.go finds which definition the game keeps when several compete, by
-// the game package's rule, and keeps the answer for each name asked about.
+// the database's lang.Precedence, and keeps the answer for each name asked
+// about.
 
 package index
 
@@ -47,23 +48,22 @@ type Outcome struct {
 	Reason lang.Reason
 }
 
-// decision is what FindKeptLocal keeps for one key of a database: its
-// winner, and whether the game keeps a copy at all.
+// decision is what FindKeptLocal keeps for one name: its winner, and whether
+// the game keeps a copy at all.
 type decision struct {
 	winner Winner
 	kept   bool
 }
 
-// decisionKey is a database and a key in it, by their ordinals.
+// decisionKey is a database and a name in it, by their ordinals.
 type decisionKey struct {
 	database uint16
 	key      uint32
 }
 
-// FindWinner returns the definition the game keeps among the given sites, all
-// definitions of one name, by the database's precedence, with the copies it
-// beats. It returns false if the game keeps none, and every copy is then
-// beaten.
+// FindWinner returns the definition the game keeps among the definitions of
+// one name, with the copies it beats. It returns false if the game keeps
+// none, and every copy is then beaten.
 func (i *Index) FindWinner(sites []Site, precedence lang.Precedence) (Winner, bool) {
 	every := i.listLoadOrder(sites, precedence)
 	winner, ok := i.findMounted(every, precedence)
@@ -72,9 +72,9 @@ func (i *Index) FindWinner(sites []Site, precedence lang.Precedence) (Winner, bo
 	return winner, ok
 }
 
-// findMounted returns the winner among copies in load order, by the files
-// the game mounts and reads: a copy in a file it does not read wins nothing,
-// and changes only why the winner wins.
+// findMounted returns the winner among copies in load order. A copy in a
+// file the game does not read wins nothing, and changes only why the winner
+// wins.
 func (i *Index) findMounted(every []Site, precedence lang.Precedence) (Winner, bool) {
 	ordered := slices.DeleteFunc(slices.Clone(every), func(site Site) bool { return i.IsUnmounted(site.File) })
 	loaded := slices.DeleteFunc(slices.Clone(ordered), func(site Site) bool { return !i.IsLoaded(site.File) })
@@ -96,8 +96,8 @@ func (i *Index) findMounted(every []Site, precedence lang.Precedence) (Winner, b
 }
 
 // listLoadOrder returns sites in the order the game loads their definitions:
-// by their files' load order, or by their files' roots where the precedence
-// says the playset decides, and within one file as written.
+// by path, or by root where the playset decides, and within a file as
+// written.
 func (i *Index) listLoadOrder(sites []Site, precedence lang.Precedence) []Site {
 	return slices.SortedStableFunc(slices.Values(sites), func(first, second Site) int {
 		if precedence.ByPlayset {
@@ -108,9 +108,9 @@ func (i *Index) listLoadOrder(sites []Site, precedence lang.Precedence) []Site {
 	})
 }
 
-// resolveWinner returns the winner among copies in load order, all in files
-// the game reads, as the precedence finds it. It returns false if there are
-// none, or if entry modes find nothing to act on.
+// resolveWinner returns the winner the precedence picks among copies in load
+// order. It returns false if there are none, or if entry modes find nothing
+// to act on.
 func (i *Index) resolveWinner(ordered []Site, precedence lang.Precedence) (Winner, bool) {
 	modes, priorities := make([]string, len(ordered)), make([]int, len(ordered))
 	for position, site := range ordered {
@@ -132,10 +132,9 @@ func (i *Index) resolveWinner(ordered []Site, precedence lang.Precedence) (Winne
 }
 
 // resolveReason returns why a winner wins when some copies lie in files the
-// game does not read: replace, path or the winner's own reason.
+// game does not read: by replace if a copy a replace_path drops would win
+// without it, by path if a shadowed copy would, else its own reason.
 func (i *Index) resolveReason(winner Winner, ordered []Site, precedence lang.Precedence) lang.Reason {
-	// The copies a replace_path drops are put back, to see whether they would
-	// win.
 	copies := slices.DeleteFunc(slices.Clone(ordered), func(site Site) bool {
 		_, ok := i.FindReplacingMod(site.File)
 
@@ -168,34 +167,26 @@ func (i *Index) isReplaceOpen(loaded []Site, winner Winner, precedence lang.Prec
 }
 
 // FindKept returns the definition the game keeps of a name in a database,
-// local ones aside. It returns false if the game keeps none, or the schema
-// has no such database.
+// local definitions aside. It returns false if the game keeps none, or the
+// schema has no such database.
 func (i *Index) FindKept(schema *lang.Schema, reference lang.Reference) (Winner, bool) {
 	return i.FindKeptLocal(schema, reference, -1)
 }
 
 // FindKeptLocal is FindKept for a reference written in a file: that file's
-// local definitions count too, and no other file's. A file the index does
-// not list has the position -1, which counts none.
+// local definitions count too. A file the index does not list has the
+// position -1, which counts none.
 //
-// The answer for a name with several copies, none of them local, is worked
-// out once and kept until the index is scanned again. A lone copy has nothing
-// to decide, so it is not kept.
+// The answer for a name with several copies, none of them local to the
+// file, is worked out once and kept until the next scan.
 func (i *Index) FindKeptLocal(schema *lang.Schema, reference lang.Reference, file int32) (Winner, bool) {
 	database, ok := schema.Databases[reference.Database]
 	if !ok {
 		return Winner{}, false
 	}
 
-	sites := i.listPosting(toRole(database.Name), database.Name, reference.Name)
-	isLocal := func(site Site) bool { return i.Occurrence(site).Local }
-	if slices.ContainsFunc(sites, isLocal) {
-		visible := slices.DeleteFunc(slices.Clone(sites), func(site Site) bool { return isLocal(site) && site.File != file })
-
-		return i.FindWinner(visible, database.Precedence)
-	}
-
-	if len(sites) < 2 {
+	sites := i.listDefining(database.Name, reference.Name, file)
+	if len(sites) < 2 || slices.ContainsFunc(sites, func(site Site) bool { return i.Occurrence(site).Local }) {
 		return i.FindWinner(sites, database.Precedence)
 	}
 
@@ -234,9 +225,8 @@ func (i *Index) ListKept(schema *lang.Schema, database string) []Winner {
 }
 
 // ResolveSite returns what the game does with a copy of a winner's name:
-// whether it keeps the copy, and why. An unsettled winner keeps none. A copy
-// in a file the game does not read is not kept, and files.Mounts.FindHiding
-// says what hides its file.
+// whether it keeps the copy, and why. An unsettled winner keeps none, and a
+// copy in a file the game does not read is never kept.
 func (i *Index) ResolveSite(winner Winner, site Site) Outcome {
 	unsettled := winner.Reason == lang.ReasonUnsettled
 	switch {

@@ -31,8 +31,8 @@ export function ListTasks(): $CancellablePromise<$models.Task[] | null> {
 }
 
 /**
- * ListTools returns PMT's tools with their titles. It returns an error if the
- * tools cannot be listed.
+ * ListTools returns PMT's tools as an agent sees them, by connecting a client
+ * to a server of its own in memory.
  */
 export function ListTools(): $CancellablePromise<$models.Tool[] | null> {
     return $Call.ByID(1999710081);

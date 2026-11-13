@@ -84,11 +84,9 @@ type guideTopic struct {
 }
 
 type renaming struct {
-	Path   string `json:"path" jsonschema:"the file's absolute path"`
-	Line   int    `json:"line" jsonschema:"the line, counted from one"`
-	Column int    `json:"column" jsonschema:"the column, counted from one"`
-	Text   string `json:"text" jsonschema:"the new name"`
-	Token  string `json:"token,omitempty" jsonschema:"the preview's token, which makes the change"`
+	position
+	Text  string `json:"text" jsonschema:"the new name"`
+	Token string `json:"token,omitempty" jsonschema:"the preview's token, which makes the change"`
 }
 
 type entryEdit struct {
@@ -331,7 +329,9 @@ func (s *Service) buildReport(filter findingFilter) (health.Report, error) {
 		return matches
 	}
 
+	// Health keeps the report it built, so the groups are cut on a copy.
 	report.Compatibility.Findings = pick(report.Compatibility.Findings)
+	report.Mods = slices.Clone(report.Mods)
 	for position := range report.Mods {
 		group := &report.Mods[position]
 		group.Findings, group.Languages = pick(group.Findings), pick(group.Languages)

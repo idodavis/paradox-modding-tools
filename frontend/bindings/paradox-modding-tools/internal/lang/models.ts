@@ -16,8 +16,7 @@ export enum Category {
     CategoryNone = "",
 
     /**
-     * CategoryKeyword is a fixed word of the language, such as if, limit or
-     * AND.
+     * CategoryKeyword is a fixed word of the language, such as if or limit.
      */
     CategoryKeyword = "keyword",
 
@@ -27,7 +26,7 @@ export enum Category {
     CategoryCommand = "command",
 
     /**
-     * CategoryLink is a link to a scope, such as root, scope:x or liege.
+     * CategoryLink is a link to a scope, such as root or scope:x.
      */
     CategoryLink = "link",
 
@@ -60,8 +59,8 @@ export enum Category {
     CategoryCall = "call",
 
     /**
-     * CategoryChoice is one of a fixed list of values a key takes, such as an
-     * event's type.
+     * CategoryChoice is one of a fixed list of values, such as an event's
+     * type.
      */
     CategoryChoice = "choice",
 };
@@ -133,8 +132,7 @@ export enum Reason {
 };
 
 /**
- * SourceState says where the data of one source came from and how fresh it
- * is.
+ * SourceState says where one source's data came from and how fresh it is.
  */
 export interface SourceState {
     /**
@@ -149,21 +147,19 @@ export interface SourceState {
     "stale": boolean;
 
     /**
-     * Folders are the folders the files were read from. They are none for
-     * the shipped backup.
+     * Folders are the folders read, none for the shipped backup.
      */
     "folders": string[] | null;
 }
 
 /**
- * WidgetType is how one of the game's built-in widget types places the
+ * WidgetType is how one of the game's built-in widget types lays out the
  * widgets inside it and its own text.
  */
 export interface WidgetType {
     /**
-     * Holding is how the widget places the widgets inside it: row, column,
-     * flow, grid or scroll. It is "" for a widget that places each one by
-     * its own anchors.
+     * Holding is how it places the widgets inside it: row, column, flow, grid
+     * or scroll. It is "" where each is placed by its own anchors.
      */
     "holding"?: string;
 
@@ -173,6 +169,12 @@ export interface WidgetType {
      */
     "clips"?: boolean;
     "fills"?: boolean;
+
+    /**
+     * KeepsSize is whether the widget is as large as it writes, whatever
+     * the widgets inside it take.
+     */
+    "keepsSize"?: boolean;
     "centersText"?: boolean;
 
     /**

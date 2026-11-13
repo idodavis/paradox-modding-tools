@@ -134,8 +134,9 @@ Every finding has a level by how much the game loses. **Critical:** the game los
 how things are.
 
 - **Compatibility** explains how your game picks between two copies, and what the load order can change. Drag the order
-  to preview another one, then save it or drop it. Where another order would fix a clash, **Try this order** previews
-  it. Open a finding to see each copy and put the two side by side. You can ignore the clashes between two mods.
+  to preview another one, then save it or drop it. A preview reads no file again: the problems inside a file stay
+  as the saved order reads them until you save. Where another order would fix a clash, **Try this
+  order** previews it. Open a finding to see each copy and put the two side by side. You can ignore the clashes between two mods.
 - **A mod's view** says which mods it is judged with, counts what it holds and shows how much of its text each language
   covers. **Write the missing keys** adds the keys a language lacks, with the base language's text as the placeholder.
 - **The game log** lists the lines from your mods apart from the game's own. Open it in the IDE, or let it follow the
@@ -160,8 +161,8 @@ them. Every change is saved in the mod's files as you stop typing.
   note from the mod's git history. The rail lists what the upload changes on Steam, and a click shows a change
   beside Steam's copy.
 - **What an upload sends** shows beside Upload: how many files the upload sends and leaves out. Review lists each file
-  left out under the rule that leaves it out, with the mod's own patterns. The Workshop page is kept in the mod's
-  `.workshop` folder, which no upload sends.
+  left out under the rule that leaves it out, with the mod's own patterns, which are kept in the mod's
+  `.workshop-ignore` file. The Workshop page is kept in the mod's `.workshop` folder, which no upload sends.
 - **Compare with Steam** is also in the IDE, for the active file's mod.
 - **Older versions.** A mod can have a separate Workshop item for an older game version.
 - **Paradox Mods** has no way in for tools. Copy the description for it with Export's Copy as BBCode, and paste it in

@@ -24,9 +24,7 @@ type console struct {
 	command *exec.Cmd
 }
 
-// ListPrograms returns the shells this system has, PMT's pick first: the
-// user's shell as $SHELL names it, then each shell /etc/shells lists, then
-// sh. Each is listed once, and only if it exists.
+// ListPrograms returns the shells this system has, PMT's pick first.
 func ListPrograms() []Program {
 	paths := []string{os.Getenv("SHELL")}
 	if text, err := os.ReadFile("/etc/shells"); err == nil {
@@ -62,8 +60,7 @@ func ListPrograms() []Program {
 }
 
 // startConsole starts the shell's program on a new pseudo-terminal of the
-// shell's size, with the given environment. It returns an error if any step
-// fails.
+// shell's size, with the given environment.
 func startConsole(shell *Shell, env []string) (*console, error) {
 	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {

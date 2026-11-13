@@ -31,16 +31,16 @@ export function BuildDiagnostics(): $CancellablePromise<string> {
 }
 
 /**
- * CheckUpdate asks GitHub whether a newer version exists. A dev build never
- * asks.
+ * CheckUpdate asks GitHub for a newer version and returns it, or "" if there
+ * is none.
  */
-export function CheckUpdate(): $CancellablePromise<$models.Update> {
+export function CheckUpdate(): $CancellablePromise<string> {
     return $Call.ByID(622473172);
 }
 
 /**
- * CloseWindow closes a window. One from OpenWindow first sends window:closing,
- * and the main window's close quits the app.
+ * CloseWindow closes a window. The main window closes at once and quits the
+ * app.
  */
 export function CloseWindow(name: string): $CancellablePromise<void> {
     return $Call.ByID(2841874473, name);
@@ -55,7 +55,7 @@ export function ConfigFault(): $CancellablePromise<string> {
 
 /**
  * CrashedLastRun reports whether the last run ended without a clean shutdown.
- * It is always false in a dev build.
+ * A dev build is stopped each time it is rebuilt, so it always reports false.
  */
 export function CrashedLastRun(): $CancellablePromise<boolean> {
     return $Call.ByID(190852328);
@@ -86,16 +86,17 @@ export function ListSettings(): $CancellablePromise<$models.Setting[] | null> {
 }
 
 /**
- * OpenWindow opens a new window on a page of the app. It returns an error if a
- * window of that name is already open.
+ * OpenWindow opens a new window on a page of the app. Its first close only
+ * sends window:closing, so the page can answer; the next close, or five
+ * seconds, closes it.
  */
 export function OpenWindow(name: string, url: string): $CancellablePromise<void> {
     return $Call.ByID(3864730127, name, url);
 }
 
 /**
- * ReadSettings returns every setting's value by key, using the catalog's
- * default for one never set.
+ * ReadSettings returns every setting's value by key, the catalog's default
+ * where none is set.
  */
 export function ReadSettings(workspaceID: string): $CancellablePromise<{ [_ in string]?: string } | null> {
     return $Call.ByID(3577250346, workspaceID);
@@ -117,15 +118,15 @@ export function ShowWindow(name: string): $CancellablePromise<void> {
 }
 
 /**
- * Version returns the version the build set.
+ * Version returns the app's version.
  */
 export function Version(): $CancellablePromise<string> {
     return $Call.ByID(3114737181);
 }
 
 /**
- * WriteSetting sets one setting, in the workspace's record if it is kept per
- * workspace. It returns an error if the setting or the workspace is unknown.
+ * WriteSetting sets one setting, in the workspace's record if the setting is
+ * kept per workspace.
  */
 export function WriteSetting(workspaceID: string, key: string, value: string): $CancellablePromise<void> {
     return $Call.ByID(512932610, workspaceID, key, value);

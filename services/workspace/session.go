@@ -40,9 +40,13 @@ type Session struct {
 	// whole, and a descriptor read again replaces Order whole.
 	Mods  atomic.Pointer[index.Index]
 	Order atomic.Pointer[[]Mod]
+
+	// Edits counts the changes to the editor's open files, so a reader can
+	// tell whether what it made from them is current.
 	Edits atomic.Int64
 
-	// Language is shown beside the base language.
+	// Language is the workspace's language, which texts are looked up in
+	// before the base language.
 	Language string
 
 	// updatedFrom is the install's recorded version, when the open found
@@ -52,11 +56,14 @@ type Session struct {
 	// mu guards the buffers, the documents and the load order.
 	mu sync.RWMutex
 
-	// buffers holds the editor's open files, by the path's key.
+	// buffers holds the editor's open files, and documents the files read
+	// from disk, both by the path's key.
 	buffers   map[string]lang.Document
 	documents *lru.Cache[string, lang.Document]
 	watcher   *Watcher
-	caches    string
+
+	// caches is the folder of the install's caches.
+	caches string
 }
 
 const (
@@ -96,30 +103,30 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 	// Older caches go. One that cannot be deleted now goes at a later open.
 	_ = removeEntries(filepath.Dir(folder), filepath.Base(folder))
 
-	order := make([]Mod, len(record.Mods))
-	modIDs := make([]string, len(record.Mods))
-	for position, mod := range record.Mods {
-		order[position] = readMod(row, mod)
-		modIDs[position] = mod.ID
+	// A mod with no folder is neither scanned nor watched.
+	order, workshop := make([]Mod, len(record.Mods)), row.ListWorkshopRoots()
+	var roots []files.Root
+	var dirs []string
+	for position := range record.Mods {
+		mod := readMod(row, workshop, record.Mods[position])
+		order[position] = mod
+		if !mod.Broken {
+			root := files.Root{Dir: mod.Dir, Origin: mod.ID, Stages: row.Stages, ReplacePaths: mod.Descriptor.ReplacePaths}
+			roots, dirs = append(roots, root), append(dirs, mod.Dir)
+		}
 	}
+
 	ws.Order.Store(&order)
 
 	const stage = "Reading your mods"
 	progress(stage, 0)
 
-	mods, err := ws.ScanOrder(modIDs, func(percent int) { progress(stage, percent) })
+	mods, err := index.ScanMods(ws.Schema, ws.Install, roots, func(percent int) { progress(stage, percent) })
 	if err != nil {
 		return nil, err
 	}
 
 	ws.Mods.Store(mods)
-
-	roots := mods.Roots[len(ws.Install.Roots):]
-	dirs := make([]string, len(roots))
-	for position, root := range roots {
-		dirs[position] = root.Dir
-	}
-
 	ws.watcher, err = startWatcher(dirs, func(changes []FileChange) {
 		// A file that cannot be scanned keeps its old entries.
 		_ = ws.Rescan(changes)
@@ -163,8 +170,7 @@ func findInstall(records app.Config, installID string) (app.Install, *game.Game,
 	return install, row, nil
 }
 
-// resolveCaches returns the folder of an install's caches, new for each
-// install version, dumps and app build.
+// resolveCaches returns the folder of an install's caches.
 func resolveCaches(cacheDir string, row *game.Game, installPath, version, build string) (string, error) {
 	dumpsAt, err := schema.FindDumpsAt(row.FindDumpDirs(installPath))
 	if err != nil {
@@ -274,9 +280,10 @@ func removeEntries(dir, base string) error {
 }
 
 // readMod returns a recorded mod with its descriptor and thumbnail. A missing
-// folder makes it broken, and an unreadable descriptor leaves it empty.
-func readMod(row *game.Game, record app.Mod) Mod {
-	mod := Mod{Workshop: row.IsWorkshopFolder(record.Dir)}.withRecord(record)
+// folder makes it broken, and an unreadable descriptor leaves it empty. A mod
+// under one of the game's Workshop folders is Steam's copy of a Workshop mod.
+func readMod(row *game.Game, roots []string, record app.Mod) Mod {
+	mod := Mod{Workshop: game.IsWorkshopFolder(roots, record.Dir)}.withRecord(record)
 	if files.IsFolder(record.Dir) {
 		mod.Descriptor, _ = ReadDescriptor(row, record.Dir)
 		mod.Thumbnail = findThumbnail(row, record.Dir, mod.Descriptor.Thumbnail)
@@ -287,13 +294,14 @@ func readMod(row *game.Game, record app.Mod) Mod {
 	return mod
 }
 
-// refreshMod reads a mod's descriptor and thumbnail again.
+// refreshMod reads a mod's descriptor and thumbnail again. The caller holds
+// the lock.
 func (s *Session) refreshMod(modID string) {
 	current := *s.Order.Load()
 	order := make([]Mod, len(current))
 	for position, mod := range current {
 		if mod.ID == modID {
-			mod = readMod(s.Game, mod.Mod)
+			mod = readMod(s.Game, s.Game.ListWorkshopRoots(), mod.Mod)
 		}
 
 		order[position] = mod
@@ -302,24 +310,14 @@ func (s *Session) refreshMod(modID string) {
 	s.Order.Store(&order)
 }
 
-// ScanOrder returns an index of the mods scanned in another load order. It
-// fails unless the ids name each mod once.
-func (s *Session) ScanOrder(modIDs []string, progress func(percent int)) (*index.Index, error) {
-	ordered, err := reorderMods(*s.Order.Load(), modIDs, func(mod Mod) string { return mod.ID })
-	if err != nil {
+// PreviewOrder returns the mods' index as another load order would have it,
+// without reading any file again. It fails unless the ids name each mod once.
+func (s *Session) PreviewOrder(modIDs []string) (*index.Index, error) {
+	if _, err := reorderMods(*s.Order.Load(), modIDs, func(mod Mod) string { return mod.ID }); err != nil {
 		return nil, err
 	}
 
-	var roots []files.Root
-	for _, mod := range ordered {
-		if !mod.Broken {
-			roots = append(roots, files.Root{
-				Dir: mod.Dir, Origin: mod.ID, Stages: s.Game.Stages, ReplacePaths: mod.Descriptor.ReplacePaths,
-			})
-		}
-	}
-
-	return index.ScanMods(s.Schema, s.Install, roots, progress)
+	return s.Mods.Load().Reorder(modIDs), nil
 }
 
 // Close stops the watcher and drops the open files' buffers and documents.
@@ -328,7 +326,6 @@ func (s *Session) Close() {
 	// first.
 	if s.watcher != nil {
 		s.watcher.Close()
-		s.watcher = nil
 	}
 
 	s.mu.Lock()
@@ -392,6 +389,7 @@ func (s *Session) LoadDocument(path string) (lang.Document, error) {
 	return s.findDocument(path)
 }
 
+// findDocument is LoadDocument for a caller that holds the lock.
 func (s *Session) findDocument(path string) (lang.Document, error) {
 	key := files.ToKey(path)
 	if document, open := s.buffers[key]; open {
@@ -430,12 +428,15 @@ func (s *Session) SetText(path, text string) {
 	s.Edits.Add(1)
 }
 
-// CloseBuffer drops an open file's buffer.
+// CloseBuffer drops an open file's buffer, and any copy of it that
+// WalkDocument cached, so the file is read from disk again.
 func (s *Session) CloseBuffer(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	delete(s.buffers, files.ToKey(path))
+	key := files.ToKey(path)
+	delete(s.buffers, key)
+	s.documents.Remove(key)
 	s.Edits.Add(1)
 }
 
@@ -528,7 +529,7 @@ func (s *Session) resolveText(mods *index.Index, textKey string, reference lang.
 }
 
 // FindStatement returns the tree of a site's file and the statement that writes
-// it.
+// it. It fails when the file has changed since the index read it.
 func (s *Session) FindStatement(mods *index.Index, site index.Site) (*jomini.Tree, int32, error) {
 	path := mods.File(site).Path
 	tree, err := s.LoadTree(path)
@@ -557,16 +558,16 @@ func (s *Session) Rescan(changes []FileChange) error {
 	var failure error
 	for position, change := range changes {
 		place := s.Locate(mods, change.Path)
-		if descriptor, _ := resolveDescriptor(s.Game, place.Root); place.Root != "" && files.ToKey(descriptor) == place.Key {
+		if descriptor := resolveDescriptor(s.Game, place.Root); place.Root != "" && files.ToKey(descriptor) == place.Key {
 			s.refreshMod(place.Origin)
 			changes[position].Descriptor = true
 		}
 
 		// The index skips dot folders, the watched ones too.
-		isWatched := slices.ContainsFunc(strings.Split(place.Rel, "/"), func(folder string) bool {
+		isHidden := slices.ContainsFunc(strings.Split(place.Rel, "/"), func(folder string) bool {
 			return slices.Contains(watchedFolders, folder)
 		})
-		if place.Root == "" || place.Origin == files.OriginVanilla || isWatched {
+		if place.Root == "" || place.Origin == files.OriginVanilla || isHidden {
 			continue
 		}
 

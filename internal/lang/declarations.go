@@ -60,14 +60,13 @@ type Declaration struct {
 	// the definition's own fields.
 	Shape Shape
 
-	// Target is another database, of which each definition here sets one up
-	// or is named after one, as a title's history is named after the title.
-	// It is "" for a database with no such tie.
+	// Target is the database whose definitions these set up or are named
+	// after, as a title's history is named after its title. It is "" for
+	// none.
 	Target string
 
-	// Mirrors is whether the definitions are named after definitions of
-	// several other databases. FoldsCase is whether a name fits a
-	// definition whatever the case of its letters.
+	// Mirrors is whether the definitions are named after those of several
+	// other databases. FoldsCase is whether names match in any letter case.
 	Mirrors   bool
 	FoldsCase bool
 
@@ -245,12 +244,12 @@ type DatabaseField struct {
 }
 
 // PictureStep is one step of the way from an event to its picture: a key
-// whose value names a definition, in which the next step is read.
+// whose value names a definition, in which the next step is looked up.
 type PictureStep struct {
-	// Key is the way to the key that is read, as keys joined by slashes,
-	// starting in the event or in the definition the step before found.
-	// key[field=value] takes the block of that key in which the given field
-	// has the given value.
+	// Key is the way to the key, as keys joined by slashes, starting in the
+	// event or in the definition the step before found. key[field=value]
+	// takes the block of that key in which the given field has the given
+	// value.
 	Key string
 
 	// Database is the database of the definition the key's value names.
@@ -434,11 +433,10 @@ var unsettledPrecedences = []Precedence{
 // :1-10, and Vic3's own files there.
 var customTextReferences = []KeyReference{{KeyPath: "text/localization_key", Target: Localization}}
 
-// listOnActionReferences returns the keys of an on_action whose values are
-// names of on_actions and of events. randomKey is the key of the on_actions
-// it picks one of by chance, which the games name differently. CK3
-// _on_actions.info:47-80 and Vic3 _on_actions.md:58-90 write events,
-// random_events (a number, then the event) and first_valid; so does EU5.
+// listOnActionReferences returns the keys of an on_action whose values name
+// on_actions and events. randomKey is the key of the on_actions it picks one
+// of by chance, which the games name differently (CK3
+// _on_actions.info:47-80, Vic3 _on_actions.md:58-90).
 func listOnActionReferences(randomKey string) []KeyReference {
 	return []KeyReference{
 		{KeyPath: "on_actions"},
@@ -451,10 +449,9 @@ func listOnActionReferences(randomKey string) []KeyReference {
 	}
 }
 
-// listOnActionFields returns the two lists of an on_action in which each
-// key is a number that is a chance: one of the events, or one of the
-// on_actions, is picked to fire. randomKey is the key of the list of
-// on_actions. _on_actions.info:55-90 (CK3; EU5 and Vic3 alike).
+// listOnActionFields returns the two lists of an on_action whose keys are
+// chances: one event, or one on_action, is picked to fire. randomKey is the
+// key of the list of on_actions (_on_actions.info:55-90).
 func listOnActionFields(randomKey string) []DatabaseField {
 	return []DatabaseField{
 		{KeyPath: "random_events/<number>", Weighted: true, Blurb: randomEventBlurb},
@@ -473,13 +470,13 @@ var Declarations = []Declaration{
 		Precedences: []Precedence{onActionPrecedence},
 		References:  listOnActionReferences("random_on_action"), Fields: listOnActionFields("random_on_action"),
 	},
-	// CK3 events/_events.info:12: scope = scope_type overrides the root scope
-	// of an event. Its copies: events/_events.info:77-83.
+	// scope = <type> sets an event's root scope (CK3 _events.info:12); its
+	// copies: _events.info:77-83
 	{
 		Folder: "events", Games: []string{game.CK3}, Contents: ContentsEvents, RunOrder: ck3EventOrder, RootKey: "scope",
 		Precedences: []Precedence{{Keeps: KeepHighest, PriorityKey: "id_override_priority"}},
-		// CK3 events/_events.info:101,107: a portrait's animation is an
-		// "animation name … See animations.txt"
+		// a portrait's animation names a portrait animation (CK3
+		// _events.info:101,107)
 		References: []KeyReference{
 			{KeyPath: "*_portrait/animation", Target: portraitAnimations},
 			{KeyPath: "*_portrait/triggered_animation/animation", Target: portraitAnimations},
@@ -487,9 +484,8 @@ var Declarations = []Declaration{
 			{KeyPath: "sender/triggered_animation/animation", Target: portraitAnimations},
 		},
 	},
-	// CK3 _messages.info:1, sent by send_interface_message,
-	// send_interface_toast and send_interface_popup (effects.log:9999); Vic3's
-	// post_notification sends one (effects.log:27072)
+	// CK3 _messages.info:1; Vic3's post_notification sends one
+	// (effects.log:27072)
 	{Folder: "common/messages", Games: ck3AndVic3, Contents: ContentsMessages},
 	// _decisions.info:194,200,208
 	{
@@ -506,9 +502,7 @@ var Declarations = []Declaration{
 	},
 	// the DLC subfolder writes the same blocks
 	{Folder: "common/opinion_modifiers", Games: []string{game.CK3}},
-	// CK3 common/epidemics/_epidemics.info:124-128: "holder_event = <event>
-	// # Fired for the player county holder of the province", and the same for
-	// the liege and the realm
+	// an outbreak's notification fires events (CK3 _epidemics.info:124-128)
 	{
 		Folder: "common/epidemics", Games: []string{game.CK3},
 		References: []KeyReference{
@@ -529,8 +523,8 @@ var Declarations = []Declaration{
 		},
 	},
 	{Folder: "gfx/map/map_object_data", Games: ck3AndVic3, DefinedBy: DefinedByNothing},
-	// a date entry's liege names the title above it, as CK3
-	// history/titles/00_other_titles.txt:2525 writes e_hre
+	// a date entry's liege names the title above it (CK3
+	// history/titles/00_other_titles.txt:2525)
 	{
 		Folder: "history/titles", Games: []string{game.CK3}, Target: "landed_titles",
 		References: []KeyReference{{KeyPath: "<number>/liege", Target: "landed_titles"}},
@@ -543,10 +537,9 @@ var Declarations = []Declaration{
 	{Folder: "history/situations", Games: []string{game.CK3}},
 	{Folder: "history/struggles", Games: []string{game.CK3}},
 	{Folder: "history/wars", Games: []string{game.CK3}, DefinedBy: DefinedByNothing},
-	// history/_history.info:3 "All history files have the same format". Its
-	// copies: history/_characters.info:25-31. A date entry changes the
-	// character's own keys, and reads any other key as an effect
-	// (history/_characters.info:65-66,78).
+	// a date entry changes the character's own keys and reads any other key
+	// as an effect (_characters.info:65-66,78); its copies:
+	// _characters.info:25-31
 	{
 		Folder: "history/characters", Games: []string{game.CK3}, Shape: ShapeSetup,
 		Precedences: []Precedence{{
@@ -561,11 +554,9 @@ var Declarations = []Declaration{
 	// _reader_export.info: what the reader loads before all other files
 	{Folder: "reader_export", Games: []string{game.CK3}},
 	{Folder: "map_data/definition.csv", Games: []string{game.CK3}, DefinedBy: DefinedByColumn},
-	// common/province_terrain/_province_terrain.info:3 "This is not a regular
-	// keyed database"
+	// no keyed database (_province_terrain.info:3)
 	{Folder: "common/province_terrain", Games: []string{game.CK3}, DefinedBy: DefinedByNothing},
-	// common/coat_of_arms/dynamic_definitions/_dynamic_definitions.info:1
-	// "Name must match a landed title definition"
+	// each is named after a landed title (_dynamic_definitions.info:1)
 	{Folder: "common/coat_of_arms/dynamic_definitions", Games: []string{game.CK3}, Target: "landed_titles"},
 	// scene_settings_byzantine_1_g1.txt:1-6 writes one setting's fields
 	{Folder: "gfx/court_scene/scene_settings", Games: []string{game.CK3}, DefinedBy: DefinedByFile},
@@ -602,7 +593,7 @@ var Declarations = []Declaration{
 	},
 	// COUNTRIES = { … }: effects
 	{Folder: "common/history", Games: []string{game.Vic3}, DefinedBy: DefinedByNothing, Shape: ShapeEffects},
-	// scripted_tests.md:2 "Every file is a test suite"
+	// every file is a test suite (scripted_tests.md:2)
 	{Folder: "tools/scripted_tests", Games: []string{game.Vic3}, DefinedBy: DefinedByFile},
 	// Vic3 modifier_types.md:1-3,16-17 and EU5 00_modifier_types.txt:1,3
 	{Folder: "common/modifier_type_definitions", Games: vic3AndEU5, Contents: ContentsModifiers},
@@ -634,8 +625,8 @@ var Declarations = []Declaration{
 			{KeyPath: "flag_definition/subject_canton", Target: CoatDatabase},
 		},
 	},
-	// in_game/common/formable_countries/00_formable_countries.txt:18,
-	// tag = SCA: a formable names the country it forms
+	// a formable's tag names the country it forms
+	// (00_formable_countries.txt:18)
 	{Folder: "common/formable_countries", Games: []string{game.EU5}, Aliases: map[string]string{"tag": setupCountries}},
 	{Folder: "gfx/map/map_objects", Games: []string{game.EU5}, DefinedBy: DefinedByNothing},
 	{Folder: "gfx/map/city_data", Games: []string{game.EU5}, NameKey: "name"},
@@ -704,8 +695,7 @@ var Declarations = []Declaration{
 			Blurb: "The weight the AI adds to certain goals, one block for each goal with its type and its bias.",
 		}},
 	},
-	// main_menu/common/modifier_icons: 2,771 definitions, 99.2% named after
-	// modifier types
+	// main_menu/common/modifier_icons: named after modifier types
 	{Folder: "common/modifier_icons", Games: []string{game.EU5}, Mirrors: true},
 	// The type of a customizable localization is the scope its command is
 	// used in: CK3 _custom_loc.info:1-2 and EU5
@@ -729,10 +719,8 @@ var Declarations = []Declaration{
 		Callers: []string{CallEffect}, Shape: ShapeEffects, Parameters: true, Values: []string{"yes"},
 		Precedences: scriptedPrecedences,
 	},
-	// A value block calls them too. A call writes yes, or no to test the
-	// opposite, as CK3
-	// events/activities/chariot_race_activity/chariot_ongoing_events_jp.txt
-	// :189 does.
+	// a value block calls them too, and a call writes yes, or no for the
+	// opposite (CK3 chariot_ongoing_events_jp.txt:189)
 	{
 		Folder: "common/scripted_triggers", DeclaringKeys: []string{"scripted_trigger"},
 		Callers: []string{CallTrigger, CallValue}, Shape: ShapeTriggers, Parameters: true, Values: Bools,
@@ -757,14 +745,9 @@ var Declarations = []Declaration{
 	// cites the three games' docs); the keys the docs write for a rule stay
 	// its fields
 	{Folder: "common/game_rules", Nestings: []Nesting{{Database: "setting"}}},
-	// its subfolders write the same define groups. define:Namespace|Name
-	// reads one (CK3 event_targets.log:109, the Vic3 wiki's Event target
-	// page). A group of defines is opened in several files (CK3
-	// 00_defines.txt:1793 and 00_graphics.txt:1124, Vic3
-	// 00_defines.txt:1382,1749, the EU5 wiki's Defines, l.86). One define,
-	// named NGroup|KEY, keeps the last copy by file name: the CK3 wiki's
-	// Modding page, the EU5 wiki's Defines, l.94, and the Vic3 wiki's Defines
-	// (1.13).
+	// define:Group|Name reads one define (CK3 event_targets.log:109). A
+	// group is opened in several files, so groups merge, and one define
+	// keeps the last copy by file name (the games' wikis, Defines).
 	{
 		Folder: "common/defines", Prefixes: []string{"define", "array_define"}, Separator: "|",
 		Precedences: []Precedence{{Keeps: KeepMerged}},
@@ -788,7 +771,7 @@ var Declarations = []Declaration{
 	},
 	{Folder: "common/achievement_groups.txt", NameKey: "name"},
 	{Folder: "common/coat_of_arms/options", DefinedBy: DefinedByNothing},
-	// the EU5 wiki's Flag modding, l.126
+	// the EU5 wiki's Flag modding
 	{
 		Folder: "common/coat_of_arms/coat_of_arms", WrapperKeys: []string{"template"}, Mirrors: true,
 		Precedences: []Precedence{{Games: []string{game.EU5}, Keeps: KeepLast}},
@@ -802,11 +785,10 @@ var Declarations = []Declaration{
 	},
 	{Folder: "gui/scripted_widgets", DefinedBy: DefinedByNothing},
 	{Folder: "music/music_player_categories", NameKey: "id"},
-	// its blocks are pattern_textures, pattern_layout and variation, each a
-	// database of its own, named by its name key, as CK3 afr.txt:11-12
-	// writes. The game's own files write one name in several files, as CK3
-	// catholic.txt:107 and crusaders.txt:107 write the pattern_textures
-	// catholic_silk_brocade_01, so every copy stays.
+	// pattern_textures, pattern_layout and variation are each a database
+	// named by its name key (CK3 afr.txt:11-12). The game writes one name in
+	// several files (catholic.txt:107, crusaders.txt:107), so every copy
+	// stays.
 	{
 		Folder: "gfx/portraits/accessory_variations", DefinedBy: DefinedByNothing,
 		Nestings: []Nesting{
@@ -829,6 +811,7 @@ var Declarations = []Declaration{
 			{KeyPath: GUITemplateCalls, Target: "gui.template"},
 			{KeyPath: "layer", Target: "gui.layer"},
 			{KeyPath: "texture", Target: File},
+			{KeyPath: "mask", Target: File},
 			{KeyPath: GUIFontKey, Target: GUIFontDatabase},
 			{KeyPath: "text", Target: Localization},
 			{KeyPath: "title", Target: Localization},
@@ -882,10 +865,9 @@ func (d Declaration) Database() string {
 	return ToDatabase(d.Folder)
 }
 
-// Command returns the database of commands that a call of one of the
-// definitions stands beside: the effects where the definition's block holds
-// effects, and the triggers where it holds triggers. It returns "" where
-// the block holds anything else, and where the definitions are not called.
+// Command returns the database of commands a call of the definitions stands
+// beside: effects where their block holds effects, triggers where it holds
+// triggers, else "".
 func (d Declaration) Command() string {
 	switch {
 	case len(d.Callers) == 0:
@@ -904,8 +886,8 @@ func (d Declaration) Command() string {
 var callerShapes = map[string]Shape{CallTrigger: ShapeTriggers, CallEffect: ShapeEffects, CallValue: ShapeValue}
 
 // Proves returns what a block may hold if a key in it calls one of the
-// definitions: triggers where a trigger block calls them, and so on. A
-// call from a GUI key says nothing about a block.
+// definitions, as triggers where a trigger block calls them. A call from a
+// GUI key proves nothing.
 func (d Declaration) Proves() []Shape {
 	var shapes []Shape
 	for _, caller := range d.Callers {
@@ -1020,11 +1002,10 @@ var DefinitionTexts = []TextKeys{
 	{Games: []string{game.Vic3}, Title: "%s_name", Description: "%s_desc", Databases: []string{"proposal_types"}},
 }
 
-// LookupTextKey returns the localization key that holds the title or the
-// description of a definition that names none itself, with %s for the
-// definition's name. key is TitleKey or DescriptionKey. In a database with
-// no row, the title's key is the definition's name. It returns false where
-// the definitions of the database have no description.
+// LookupTextKey returns the localization key of a definition's title or
+// description, with %s for its name, where the definition names none
+// itself. key is TitleKey or DescriptionKey. Without a row the title's key
+// is the name, and there is no description.
 func (d *Dialect) LookupTextKey(database, key string) (string, bool) {
 	for _, row := range DefinitionTexts {
 		if !d.Matches(row.Games) || !slices.Contains(row.Databases, database) {
@@ -1047,9 +1028,9 @@ func (d *Dialect) LookupTextKey(database, key string) (string, bool) {
 // Nestings holds the nestings that are written in the definitions of every
 // database below a folder, and so belong to no one declaration.
 var Nestings = []Nesting{
-	// common/confederation_types/10_house_bloc_types.txt:21-24 switches
-	// parameters on with `name = yes`. CK3 20_doctrines.txt:2066,2079,2102
-	// set coronation_artifact in three doctrines, so every copy stays.
+	// parameters are switched on with name = yes
+	// (10_house_bloc_types.txt:21-24), and one name is set in many
+	// doctrines (20_doctrines.txt:2066), so every copy stays
 	{
 		Games: []string{game.CK3}, Parent: "common", KeyPath: "**/parameters", Database: "parameter", Sets: true,
 		Precedence: Precedence{Keeps: KeepMerged},
@@ -1074,9 +1055,8 @@ func (n Nesting) Label() string {
 }
 
 // ListNestings returns the nestings written in the definitions of a
-// declaration's folder, each with its parent filled in: the ones the
-// declaration lists, then the ones of Nestings whose folder is this one or
-// above it. A declaration with no folder has none.
+// declaration's folder, its own and then those of Nestings above it, each
+// with its parent filled in.
 func (d *Dialect) ListNestings(declaration Declaration) []Nesting {
 	if declaration.Folder == "" {
 		return nil

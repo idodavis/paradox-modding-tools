@@ -21,8 +21,8 @@ export interface Card {
     "title": string;
 
     /**
-     * What is what the word is, such as "effect". Class is an operator's
-     * class, "" for any other word.
+     * What is what the word is, such as "effect". Class is a keyword's class,
+     * such as "logical", and "" for any other word.
      */
     "what": string;
     "class"?: string;
@@ -112,7 +112,8 @@ export interface Code {
     "id": string;
 
     /**
-     * Level and Topic are "" for the game's log.
+     * Question is the Health question the code is asked under. Level and Topic
+     * are "" for the game's log.
      */
     "question": string;
     "level": string;
@@ -170,7 +171,8 @@ export interface Completion {
     "blurb"?: string;
 
     /**
-     * Rank is how often the game writes the candidate there.
+     * Rank sorts the list, the highest first. Most ranks count how often the
+     * game writes the candidate.
      */
     "rank": number;
 
@@ -310,7 +312,9 @@ export interface Level {
     "nouns": string;
 
     /**
-     * Fix is set where the game loses something, so a mod needs a fix.
+     * Problem is set for the levels that count as problems, and Fix for those
+     * where the game loses something, so a mod needs a fix. Cost says what the
+     * game loses.
      */
     "problem": boolean;
     "fix": boolean;

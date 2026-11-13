@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/errgroup"
 
@@ -146,7 +145,10 @@ func openFixture(t *testing.T, gameID string, texts map[string]string) (*Service
 
 // listCodes returns the codes of some diagnostics, sorted.
 func listCodes(diagnostics []Diagnostic) []string {
-	codes := lo.Map(diagnostics, func(diagnostic Diagnostic, _ int) string { return diagnostic.Code })
+	codes := make([]string, len(diagnostics))
+	for position, diagnostic := range diagnostics {
+		codes[position] = diagnostic.Code
+	}
 	slices.Sort(codes)
 	return codes
 }
@@ -161,7 +163,7 @@ func checkCodes(t *testing.T, ide *Service, dir string, want map[string][]string
 			t.Errorf("%s: %v, %v, want %v", rel, got, err, codes)
 		}
 		for _, diagnostic := range diagnostics {
-			if !lo.ContainsBy(Codes, func(row Code) bool { return row.ID == diagnostic.Code }) {
+			if !slices.ContainsFunc(Codes, func(row Code) bool { return row.ID == diagnostic.Code }) {
 				t.Errorf("%s: %s is in no row of Codes", rel, diagnostic.Code)
 			}
 		}
@@ -450,15 +452,20 @@ func TestFormatKeepsLinesAndStaysIdempotent(t *testing.T) {
 
 // toByteEdits converts Monaco edits over a tree's text back to byte edits.
 func toByteEdits(tree *jomini.Tree, edits []Edit) []jomini.Edit {
-	return lo.Map(edits, func(edit Edit, _ int) jomini.Edit {
-		return jomini.Edit{
-			Span: jomini.Span{
-				Start: jomini.ToOffset(tree.Src, tree.Lines, edit.Range.StartLine, edit.Range.StartColumn),
-				End:   jomini.ToOffset(tree.Src, tree.Lines, edit.Range.EndLine, edit.Range.EndColumn),
-			},
-			Text: edit.Text,
-		}
-	})
+	converted := make([]jomini.Edit, len(edits))
+	for position, edit := range edits {
+		converted[position] = jomini.Edit{Span: jomini.ToSpan(tree.Src, tree.Lines, edit.Range), Text: edit.Text}
+	}
+	return converted
+}
+
+// listLabels returns the labels of some candidates, in their order.
+func listLabels(candidates []Completion) []string {
+	labels := make([]string, len(candidates))
+	for position, candidate := range candidates {
+		labels[position] = candidate.Label
+	}
+	return labels
 }
 
 // TestCompleteListsKeysAndValues checks that a key gets the language's
@@ -476,7 +483,7 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, err := artifacts.Complete(things, 2, 24)
-	if labels := lo.Map(paths.Candidates, func(candidate Completion, _ int) string { return candidate.Label }); err != nil ||
+	if labels := listLabels(paths.Candidates); err != nil ||
 		!slices.Contains(labels, "gfx/interface/v_bg.dds") || slices.Contains(labels, "gfx/coat_of_arms/patterns/v_pattern.dds") {
 		t.Errorf("image paths: %v, %v", labels, err)
 	}
@@ -485,7 +492,7 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	choices, _ := ide.Complete(traits, 2, 13)
-	if labels := lo.Map(choices.Candidates, func(candidate Completion, _ int) string { return candidate.Label }); !slices.Equal(labels, []string{"personality", "education"}) &&
+	if labels := listLabels(choices.Candidates); !slices.Equal(labels, []string{"personality", "education"}) &&
 		!slices.Equal(labels, []string{"education", "personality"}) {
 		t.Errorf("choices: %v", labels)
 	}
@@ -495,7 +502,7 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	inline, _ := ide.Complete(traits, 1, 20)
-	if labels := lo.Map(inline.Candidates, func(candidate Completion, _ int) string { return candidate.Label }); len(labels) != 2 {
+	if labels := listLabels(inline.Candidates); len(labels) != 2 {
 		t.Errorf("choices in a block on one line: %v", labels)
 	}
 	events := filepath.Join(dir, "events", "t_events.txt")
@@ -505,7 +512,7 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 	list, err := ide.Complete(events, 4, 3)
 	keys := list.Candidates
 	if err != nil || len(keys) == 0 || keys[0].Category != lang.CategoryKeyword ||
-		!lo.ContainsBy(keys, func(candidate Completion) bool {
+		!slices.ContainsFunc(keys, func(candidate Completion) bool {
 			return candidate.Label == "add_gold" && candidate.Category == lang.CategoryCommand
 		}) {
 		t.Errorf("keys: %d, %v", len(keys), err)

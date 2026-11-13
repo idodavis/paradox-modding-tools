@@ -38,8 +38,8 @@ flowchart TD
 ```
 
 `ListDrawables` lists what a GUI or coat file defines that the view can draw: a window, a type, a template or a coat,
-nested ones included. The entry the view opens on comes first: the one named as the file, else the first window
-(`shownFirst`), else the first type or template that draws something. The rest follow in document order.
+nested ones included. The entry the view opens on comes first: the one named as the file, else the first window, else
+the first type or template that draws something. The rest follow in document order.
 
 `ResolveWindow` resolves one window. A widget's properties come from its type's chain, its templates and its own block,
 and the last written of each key wins, keys matching without regard to case. A labeled block is read as written, or as
@@ -139,9 +139,14 @@ database the pictures and colors of its definition. A list whose item reads no d
 
 A `Group` is one choice the panel lets the user switch: a data call the window's conditions read, a list of pictures, a
 title's tier, or a coat's template list. A pick is the value chosen for a group, by its ID; `*every` stands for every
-value at once and `none` for none. The `evaluator` works out a condition through And, Or, Not and Nor of any number of
-operands. A call that reads the object of a data context is written from the window down to that object, so the same
-call about two objects is two groups.
+value at once and `none` for none. A call that reads the object of a data context is written from the window down to
+that object, so the same call about two objects is two groups.
+
+**Read once.** A property's data call is parsed where the property is first kept (`ledger`, `Window.calls`). As the
+window opens, each widget's `rules` are worked out from those calls: the `condition` it is shown on, the condition
+that draws it down or checked, and each property written as a choice (`selection`). A `condition` is a boolean
+function (And, Or, Not, Nor, of any number of operands) with its operands, or one fact with the group it asks about.
+The groups are the facts of those conditions. `evaluate`, `reveal` and `choose` only walk them.
 
 Each group carries how the panel writes its options (`Captions`): the text of the widget whose press sets an option,
 All or None for `*every` and `none`, else the value as a GUI file writes it. Its `Box` is the box of the States tab it
@@ -207,20 +212,27 @@ language, else the base language, else the font's first group.
 
 `FindPictureFiles` finds the pictures Save as DDS saves for a path: the picture, or the images directly in a folder that
 are not DDS files. Each keeps the settings of the DDS beside it, else of the game's own DDS at the place its DDS will
-have. `WriteDDS` writes each picture beside itself as a DDS in the given DXGI format, with or without mip levels.
+have. It also gives the formats to pick from (`ddsFormats`, and the format of a replaced DDS that is not among them),
+the file name each DDS will have, and the settings to start with: those of the replaced DDS files where every picture
+replaces one and they all agree. `WriteDDS` writes each picture beside itself as a DDS in the given DXGI format, with or
+without mip levels.
 
 ## Files
 
 | file | what it holds |
 |---|---|
-| `gui.go` | The service, the `Window` and its parts, listing what a file draws, resolving a window, property edits. |
+| `window.go` | The service, the `Window` and its parts, listing what a file draws, the opened and kept window, property edits. |
+| `merge.go` | Putting a window together: each widget from its own block, its type chain, its templates and its overrides. |
+| `property.go` | A property's value as the game takes it, the window's ledger, and the texts and textures a widget's values show. |
+| `opening.go` | The states of a widget that run as its window opens, and what they set. |
 | `texts.go` | The text a value in a GUI file shows, and the sample text a data call in it shows. |
-| `states.go` | Groups, picks and the evaluator: which widgets the picks hide and which picks show a hidden widget. |
+| `interpret.go` | The evaluator: a window's data calls as conditions, which widgets the picks hide and which picks show a hidden widget. |
+| `groups.go` | The States panel's groups: their options, captions and boxes, how far each reaches and what each decides. |
 | `choices.go` | The values the picks give properties, the pictures a list may draw, and a data model's rows. |
 | `textures.go` | The library of what definitions show: image files, icons, texture bindings and colors. |
 | `coat.go` | Resolving a coat into layers, and the coat panel's edits and new files. |
 | `fonts.go` | The files of the fonts a window names. |
-| `dds.go` | Save as DDS. |
+| `dds.go` | Save as DDS, and the PNGs the page exports. |
 
 ## Terms
 

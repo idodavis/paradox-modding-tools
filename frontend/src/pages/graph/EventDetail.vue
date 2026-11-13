@@ -14,7 +14,7 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 import ScriptSnippet from "../../ui/ScriptSnippet.vue";
 import SourceLink from "../../ui/SourceLink.vue";
-import ConditionList, { describeStep, groupConditions } from "./ConditionList.vue";
+import ConditionList from "./ConditionList.vue";
 import { listRoute, lookupLook } from "./layout";
 
 // CHIP is the classes of the chip a data call or a key in a text is drawn as.
@@ -79,8 +79,8 @@ const way = computed(() => {
 });
 const wayConditions = computed(() =>
   way.value.map(({ node: stop, edge }) => {
-    const trigger = groupConditions(stop.trigger ?? []);
-    const steps = (edge?.steps ?? []).flatMap(describeStep);
+    const trigger = stop.trigger ?? [];
+    const steps = (edge?.steps ?? []).flatMap((step) => step.conditions ?? []);
     return [
       ...(trigger.length ? [{ text: "when", conditions: trigger, line: 0 }] : []),
       ...(steps.length ? [{ text: "then", conditions: steps, line: 0 }] : []),
@@ -349,7 +349,7 @@ function show(place: Place, line: number): void {
             <p v-if="version.missing" class="text-12 text-warning">Missing in {{ detail.language }}</p>
             <ConditionList
               v-if="version.when?.length"
-              :conditions="[{ text: 'when', conditions: groupConditions(version.when), line: version.line }]"
+              :conditions="[{ text: 'when', conditions: version.when, line: version.line }]"
               class="text-11"
             />
           </li>

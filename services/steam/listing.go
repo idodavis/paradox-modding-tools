@@ -100,8 +100,9 @@ type source struct {
 	files fs.FS
 	root  string
 
-	// descriptor is the Rel path of the descriptor the upload sends in place of
-	// the zip's, or "" for a folder. Its text is text.
+	// descriptor and text are the path and rewritten text of the descriptor an
+	// older listing's upload sends in place of the zip's own. Both are empty
+	// for a folder.
 	descriptor string
 	text       []byte
 
@@ -136,6 +137,8 @@ func (s *Service) ReadListing(modID, key string) (Listing, error) {
 	return listing, err
 }
 
+// findListing returns one of a mod's listings, with the session and the mod.
+// Its tags come back apart from its version tag, and its dependencies by name.
 func (s *Service) findListing(modID, key string) (*workspace.Session, workspace.Mod, Listing, error) {
 	ws, mod, err := s.findMod(modID)
 	if err != nil {
@@ -212,11 +215,12 @@ func loadRecord(mod workspace.Mod, dir, key string) (Listing, error) {
 		Title:            mod.Descriptor.Name,
 		Version:          mod.Descriptor.Version,
 		SupportedVersion: mod.Descriptor.SupportedVersion,
-		Thumbnail:        cmp.Or(mod.Descriptor.Thumbnail, mod.Thumbnail),
+		Thumbnail:        mod.Thumbnail,
 		Tags:             mod.Descriptor.Tags,
 	}), nil
 }
 
+// toRecord keeps only the fields a descriptor or a listing.json holds.
 func toRecord(listing Listing) Listing {
 	return Listing{
 		WorkshopID:       listing.WorkshopID,
@@ -230,7 +234,8 @@ func toRecord(listing Listing) Listing {
 }
 
 func loadPage(dir string, listing Listing) (Listing, error) {
-	texts := map[string]*string{descriptionFile: &listing.Description, changelogFile: &listing.Changelog}
+	var dlc string
+	texts := map[string]*string{descriptionFile: &listing.Description, changelogFile: &listing.Changelog, dlcFile: &dlc}
 	for file, text := range texts {
 		content, err := files.LoadText(files.Join(dir, file))
 		if err != nil {
@@ -240,12 +245,8 @@ func loadPage(dir string, listing Listing) (Listing, error) {
 		*text = content.Text
 	}
 
-	dlc, err := files.LoadText(files.Join(dir, dlcFile))
-	if err != nil {
-		return Listing{}, err
-	}
-
-	listing.DLC = strings.Fields(dlc.Text)
+	var err error
+	listing.DLC = strings.Fields(dlc)
 	listing.Previews, err = listPreviews(dir)
 
 	return listing, err
@@ -299,6 +300,7 @@ func (s *Service) WriteListing(modID, key string, listing Listing) error {
 	if err := s.writeChanges(ws, mod, current, listing); err != nil {
 		return err
 	}
+
 	application.Get().Event.Emit(EventListingChanged, modID)
 
 	return nil
@@ -319,9 +321,10 @@ func (s *Service) writeChanges(ws *workspace.Session, mod workspace.Mod, current
 		}
 
 		thumbnail := filepath.Join(folder, filepath.Base(listing.Thumbnail))
-		if err := s.writeFile(thumbnail, string(content)); err != nil {
+		if err := s.Workspace.WriteBytes(thumbnail, content); err != nil {
 			return err
 		}
+
 		listing.Thumbnail = thumbnail
 	}
 
@@ -350,6 +353,8 @@ func (s *Service) writeChanges(ws *workspace.Session, mod workspace.Mod, current
 	return nil
 }
 
+// writeRecord writes a changed record: an older listing's listing.json, or the
+// mod's descriptor for its own listing.
 func (s *Service) writeRecord(ws *workspace.Session, mod workspace.Mod, current, listing Listing) error {
 	if reflect.DeepEqual(toRecord(listing), toRecord(current)) {
 		return nil
@@ -382,6 +387,7 @@ func (s *Service) writeRecord(ws *workspace.Session, mod workspace.Mod, current,
 	if listing.WorkshopID == current.WorkshopID {
 		return nil
 	}
+
 	mod.WorkshopID = listing.WorkshopID
 
 	return s.Workspace.UpdateMod(ws.ID, mod.Mod)
@@ -465,6 +471,8 @@ func (s *Service) CreateListing(modID, supportedVersion, zipPath string) (Listin
 // listingVersion matches 1.19, 1.19.2 or 1.19.*.
 var listingVersion = regexp.MustCompile(`^\d+\.\d+(\.\d+){0,2}(\.\*)?$`)
 
+// resolveListingVersion returns the key and supported version of a new older
+// listing, as 1.19 and 1.19.* for 1.19. It fails if the mod has that listing.
 func resolveListingVersion(modDir, version string) (key, supported string, err error) {
 	supported = strings.TrimSpace(version)
 	if !listingVersion.MatchString(supported) {
@@ -491,6 +499,7 @@ func (s *Service) createListing(ws *workspace.Session, mod workspace.Mod, listin
 	if err := s.addPreviews(resolveListingDir(mod.Dir, listing.Key), listing.Previews); err != nil {
 		return Listing{}, err
 	}
+
 	application.Get().Event.Emit(EventListingChanged, mod.ID)
 
 	return s.ReadListing(mod.ID, listing.Key)
@@ -567,8 +576,10 @@ func (s *Service) LinkItem(modID, key, item string) error {
 	}
 
 	if current.WorkshopID != workshopID {
-		_ = removeCacheDir(s.Workspace.Config.Dirs.Cache, resolveSnapshotPath(s.Workspace.Config.Dirs.Cache, current.WorkshopID))
+		cacheDir := s.Workspace.Config.Dirs.Cache
+		_ = removeCacheDir(cacheDir, resolveSnapshotPath(cacheDir, current.WorkshopID))
 	}
+
 	application.Get().Event.Emit(EventListingChanged, modID)
 
 	return nil
@@ -661,8 +672,13 @@ func (s *Service) buildExclusions(mod workspace.Mod) ([]exclusion, error) {
 		exclusions = append(exclusions, exclusion{ignore: files.ParseIgnore(rule.Pattern + keepMetadata), reason: rule.Reason})
 	}
 
+	own, err := files.LoadText(files.Join(mod.Dir, ignoreFile))
+	if err != nil {
+		return nil, err
+	}
+
 	return append(exclusions,
-		exclusion{ignore: files.ParseIgnore(mod.Ignore), reason: "One of the mod's own patterns names it."}), nil
+		exclusion{ignore: files.ParseIgnore(own.Text), reason: "One of the mod's own patterns names it."}), nil
 }
 
 func findExclusion(exclusions []exclusion, rel string) (string, bool) {
@@ -783,10 +799,7 @@ func (s source) open(rel string) (io.ReadCloser, error) {
 // loadText reads one of the source's files. A missing file gives empty text and
 // no error, as files.LoadText does.
 func (s source) loadText(rel string) (files.Text, error) {
-	switch {
-	case rel == "":
-		return files.Text{}, nil
-	case s.archive == nil:
+	if s.archive == nil {
 		return files.LoadText(files.Join(s.root, rel))
 	}
 
@@ -877,14 +890,15 @@ func writeArchiveFile(archive *zip.Writer, file files.File) error {
 	return err
 }
 
-// WriteIgnore writes a mod's own exclusions to its .workshop-ignore file.
-func (s *Service) WriteIgnore(modID string) error {
+// WriteIgnore writes a mod's own upload exclusions, gitignore patterns, as its
+// .workshop-ignore file, the one place they are kept.
+func (s *Service) WriteIgnore(modID, text string) error {
 	_, mod, err := s.findMod(modID)
 	if err != nil {
 		return err
 	}
 
-	return s.writeFile(files.Join(mod.Dir, ignoreFile), mod.Ignore)
+	return s.writeFile(files.Join(mod.Dir, ignoreFile), text)
 }
 
 // ReadIgnore returns the text of a mod's .workshop-ignore file, or "" if there

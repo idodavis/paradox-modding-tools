@@ -47,7 +47,7 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the language service. It keeps nothing between calls.
+// Service is the editor's language service.
 type Service struct {
 	Workspace *workspace.Service
 }
@@ -85,14 +85,14 @@ type Site struct {
 	Holder string `json:"holder,omitempty"`
 }
 
-// MakeSite returns the site of an occurrence: its place and line. It reads no
-// file, so the site has no range and no text.
+// MakeSite returns the site of an occurrence without reading its file, so the
+// site has no range and no text.
 func MakeSite(ws *workspace.Session, mods *index.Index, site index.Site) Site {
 	return Site{Place: ws.Locate(mods, mods.File(site).Path), Line: int(mods.Occurrence(site).Line) + 1}
 }
 
-// hidingLabels says why the game does not read a file, naming the mod that
-// hides it at {mod}.
+// hidingLabels says why the game does not read a file. {mod} stands for the
+// mod that hides it.
 var hidingLabels = map[files.Hiding]string{
 	files.HidingShadowed:  "The copy of this file in {mod} replaces it",
 	files.HidingDropped:   "A replace_path in {mod} drops this folder",
@@ -119,8 +119,8 @@ func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Sit
 	return sites
 }
 
-// findHolder returns the name of the definition that holds a definition, where
-// the game keeps every copy of a name. It returns "" for any other.
+// findHolder returns the name of the definition a nested copy is written in,
+// for a database where the game keeps every copy. It returns "" otherwise.
 func findHolder(ws *workspace.Session, mods *index.Index, definition index.Site) string {
 	database := ws.Schema.Databases[mods.ToReference(definition).Database]
 	holder, nested := mods.FindDefinition(definition)
@@ -137,12 +137,19 @@ func LocateSite(ws *workspace.Session, mods *index.Index, handle index.Site) Sit
 	site := MakeSite(ws, mods, handle)
 	span := mods.Occurrence(handle).Span
 	if source, err := ws.LoadSource(site.Place.Path); err == nil && span.End <= len(source) {
-		lines := jomini.NewLines(source)
-		line := lines.LineSpan(lines.ToPosition(span.Start).Line)
-		site.Range, site.Text = jomini.ToRange(source, lines, span), source[line.Start:line.End]
+		site = LocateSpan(site.Place, source, jomini.NewLines(source), span)
 	}
 
 	return site
+}
+
+// LocateSpan returns the site of a span in a file's text, with its range and
+// the text of its line.
+func LocateSpan(place workspace.Place, text string, lines jomini.Lines, span jomini.Span) Site {
+	line := lines.ToPosition(span.Start).Line
+	row := lines.LineSpan(line)
+
+	return Site{Place: place, Line: line + 1, Range: jomini.ToRange(text, lines, span), Text: text[row.Start:row.End]}
 }
 
 // ToEdits converts the engine's edits over a text to the editor's.
@@ -176,8 +183,6 @@ func (s *Service) CloseFile(path string) {
 	}
 }
 
-// loadDocument returns the open session and the document of a file. It returns
-// an error if there is no session or the file cannot be read.
 func (s *Service) loadDocument(path string) (*workspace.Session, lang.Document, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -189,8 +194,8 @@ func (s *Service) loadDocument(path string) (*workspace.Session, lang.Document, 
 	return ws, document, err
 }
 
-// loadTree is loadDocument for a reader that needs no contexts, and returns the
-// file's tree.
+// loadTree is loadDocument without the walk, for an answer that needs only
+// the file's tree.
 func (s *Service) loadTree(path string) (*workspace.Session, *jomini.Tree, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {

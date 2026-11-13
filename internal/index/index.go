@@ -16,8 +16,9 @@
 //
 // # The scan
 //
-//   - A script, GUI, asset, font or GFX file is walked once by schema.Walk,
-//     and each statement's definition and references become occurrences.
+//   - A script, GUI, asset, font or GFX file is walked once by
+//     lang.Schema.Walk, and each statement's definition and references
+//     become occurrences.
 //   - A localization file gives an occurrence for each message, followed by
 //     the names its text refers to. A localization key is defined by its
 //     messages.
@@ -25,9 +26,9 @@
 //     column gives a definition for each row.
 //   - The game's own localization is scanned in the base language only. A
 //     workspace in another language adds that one as a Translation, scanned
-//     once and cached. A mod's files are scanned in every language. A mod's
-//     file in a third language is so not checked against the game's keys in
-//     that language.
+//     once and cached. A mod's files are scanned in every language, so a
+//     mod's file in a third language is not checked against the game's keys
+//     in that language.
 //   - The message the game shows for a key in a language is the one in a
 //     file it reads, and of several, the one in the replace folder that
 //     ranks first.
@@ -44,8 +45,7 @@
 //   - Where the database takes entry modes, the first plain copy stands, and
 //     where it keeps every copy, each later plain copy joins it. The modes act
 //     after every plain copy, kind by kind in the order of lang.EntryModes and
-//     then in load order (the Vic3 and EU5 wikis' Mod compatibility,
-//     Processing order). A mode that replaces takes the standing copy's
+//     then in load order. A mode that replaces takes the standing copy's
 //     place, one that adds joins it, and one with nothing to act on does
 //     nothing unless it creates.
 //   - Where no source says what INJECT: does in a database, a copy that adds
@@ -111,6 +111,7 @@
 package index
 
 import (
+	"slices"
 	"sync"
 
 	"paradox-modding-tools/internal/files"
@@ -133,9 +134,9 @@ const (
 	RoleLocalizes
 )
 
-// Occurrence is the stored form of one definition, reference or message. Its
-// texts are ordinals into the index's tables, so that it is small enough to
-// keep for every file of the game.
+// Occurrence is one definition, reference or message as the index stores it.
+// Its texts are ordinals into the index's tables, so that it is small enough
+// to keep for every file of the game.
 type Occurrence struct {
 	Span jomini.Span
 	Line int32
@@ -146,34 +147,34 @@ type Occurrence struct {
 	Name     uint32
 	Mode     uint8
 
-	// Priority is a definition's override priority, as CK3 writes it. It is
-	// 0 for none.
+	// Priority is a definition's override priority, or 0 for none.
 	Priority int16
 
 	// Language is an ordinal into the index's Languages: the language of the
 	// localization file the occurrence is in.
 	Language uint8
 
-	Role  Role
+	Role Role
+
+	// Local is set for a definition that only its own file can refer to.
 	Local bool
 
-	// Own is set for a definition of its own, as schema.Copy.IsOwn decides
-	// it. A reference has it unset.
+	// Own is set for a definition in its own right, as lang.Copy.IsOwn
+	// decides it: not a second name for one, nor a name only switched on.
 	Own bool
 
-	// Firing is set for a reference that fires the event, on_action or
-	// decision it names.
-	Firing bool
+	// Firing is 0 for a reference that fires nothing. For one that fires the
+	// event, on_action or decision it names, it is one more than the number
+	// of blocks up to the statement that writes the firing: 2 for my_event.1
+	// in trigger_event = { id = my_event.1 }.
+	Firing uint8
 
 	// Titles is set for a reference that is the localization key of its
-	// definition's title, and Describes for the key of its description, as
-	// schema.FindTextKey finds them.
+	// definition's title, and Describes for the key of its description.
 	Titles, Describes bool
 
-	// Nested is set for an occurrence inside a definition, and Parent is that
-	// definition's position among the file's occurrences. Parent is 0 for an
-	// occurrence at the top of its file.
-	Nested bool
+	// Parent is the position among the file's occurrences of the definition
+	// the occurrence sits in, or -1 for one at the top of its file.
 	Parent int32
 
 	// Statement is the statement that writes the occurrence. It is 0, the
@@ -270,10 +271,6 @@ type Index struct {
 	// postings it reads. It is nil for the install's own index.
 	install *Index
 
-	// dialect is the game's dialect, looked up once when the index is made or
-	// loaded.
-	dialect *lang.Dialect
-
 	// unread holds the keys of the files the game does not read, as they
 	// were when a file was last listed or dropped. Only a mods' index has it.
 	unread map[string]bool
@@ -283,14 +280,13 @@ type Index struct {
 	postings map[Posting]map[uint32][]Site
 
 	// winners holds the decisions FindKeptLocal has worked out, by
-	// decisionKey. They hold for this index's files and mods only.
+	// decisionKey. A narrowed or reordered index needs its own.
 	winners *sync.Map
 }
 
-// Narrow returns a copy of a mods' index that answers for the install and the
-// given mods only: the other mods' files, definitions, references and
-// messages are left out of its lookups. It shares everything else with the
-// original but the winners it has worked out, which other mods change.
+// Narrow returns a copy of a mods' index whose lookups answer for the install
+// and the given mods only. It shares the scan with the original but keeps
+// winners of its own, since the other mods change them.
 func (i *Index) Narrow(origins []string) *Index {
 	narrowed := *i
 	narrowed.Mounts = i.Mounts.Narrow(origins)
@@ -298,6 +294,53 @@ func (i *Index) Narrow(origins []string) *Index {
 
 	return &narrowed
 }
+
+// Reorder returns a copy of a mods' index with the mods in another load
+// order, given as their ids, without reading any file again. Which file the
+// game reads and which copy wins are worked out anew. A mod left out of the
+// order keeps no file.
+//
+// The references inside a call of a scripted definition stay as the scan
+// typed them, by the copy the scan's own order kept.
+func (i *Index) Reorder(origins []string) *Index {
+	installFiles, installRoots := int(i.countInstallFiles()), len(i.install.Roots)
+	positions := map[string][]int32{}
+	for _, position := range i.ListOwnFiles() {
+		origin := i.Files[position].Origin
+		positions[origin] = append(positions[origin], position)
+	}
+
+	reordered := *i
+	roots, list := slices.Clone(i.Roots[:installRoots]), slices.Clone(i.Files[:installFiles])
+	reordered.Occurrences, reordered.Texts = slices.Clone(i.Occurrences[:installFiles]), slices.Clone(i.Texts[:installFiles])
+	reordered.Unmarked = map[int32]bool{}
+	for _, origin := range origins {
+		for _, root := range i.Roots[installRoots:] {
+			if root.Origin == origin {
+				roots = append(roots, root)
+			}
+		}
+
+		for _, position := range positions[origin] {
+			if i.Unmarked[position] {
+				reordered.Unmarked[int32(len(list))] = true
+			}
+
+			list = append(list, i.Files[position])
+			reordered.Occurrences = append(reordered.Occurrences, i.Occurrences[position])
+			reordered.Texts = append(reordered.Texts, i.Texts[position])
+		}
+	}
+
+	reordered.Mounts = files.NewMounts(roots, list)
+	reordered.unread = listUnread(reordered.Mounts)
+	reordered.buildPostings()
+
+	return &reordered
+}
+
+// dialect returns the rules of the game's script that differ between games.
+func (i *Index) dialect() *lang.Dialect { return lang.LookupDialect(i.Game) }
 
 // Occurrence returns the occurrence a site points at.
 func (i *Index) Occurrence(site Site) Occurrence {
@@ -307,8 +350,7 @@ func (i *Index) Occurrence(site Site) Occurrence {
 // File returns the file a site is in.
 func (i *Index) File(site Site) files.File { return i.Files[site.File] }
 
-// Language returns the language of the localization file a site is in, for a
-// message and for a use in its text.
+// Language returns the language of the localization file a site is in.
 func (i *Index) Language(site Site) string {
 	return i.Languages.Texts[i.Occurrence(site).Language]
 }
@@ -331,9 +373,8 @@ func (i *Index) FindMode(site Site) (lang.EntryMode, bool) {
 }
 
 // ListOwnFiles returns the positions in Files of the files this index scanned
-// itself, in order: the mods' files for a mods' index, all of them for the
-// install's. It leaves out a file deleted since the scan, and a file of a mod
-// that a narrowed index does not answer for.
+// itself: the mods' files for a mods' index, all of them for the install's.
+// It leaves out deleted files and those a narrowed index does not answer for.
 func (i *Index) ListOwnFiles() []int32 {
 	var positions []int32
 
@@ -346,8 +387,8 @@ func (i *Index) ListOwnFiles() []int32 {
 	return positions
 }
 
-// countInstallFiles returns how many of the files are the install's, so this
-// index's own files begin after them. It is 0 for the install's own index.
+// countInstallFiles returns how many of the files are the install's, which
+// come before this index's own. It is 0 for the install's own index.
 func (i *Index) countInstallFiles() int32 {
 	if i.install == nil {
 		return 0

@@ -51,8 +51,8 @@ type Dialect struct {
 }
 
 // Keyword is a fixed word of the script language, such as if, limit or add.
-// The walk knows it by the block it is written in, before it looks the key
-// up as a name.
+// The walk tries a key as a keyword of its block before it looks it up as a
+// name.
 type Keyword struct {
 	// Key is the keyword in lower case. One that ends in * stands for every
 	// key that starts with it, as every_* does. AnyKey stands for any key
@@ -257,13 +257,12 @@ var dialects = map[string]*Dialect{
 				},
 			},
 		}},
-		// the wiki's Localization page: localization/replace/english takes
-		// precedence over localization/english/replace
+		// the wiki's Localization page: replace/<language> wins over
+		// <language>/replace
 		LocReplaceFolders: []string{"localization/replace/%s", "localization/%s/replace"},
 		// the wiki's Modding page
 		LogsRepeatedKey: true,
-		// effects.log: "execute_decision - Execute the specified decision for
-		// the scoped character"
+		// effects.log: execute_decision
 		DecisionEffects:   []string{"execute_decision"},
 		UndeclaredWidgets: []string{"zoomarea", "text_occluder"},
 		CoatColor:         jomini.ColorForm{Tag: "rgb", Example: []string{"255", "255", "255"}},
@@ -298,8 +297,8 @@ var dialects = map[string]*Dialect{
 			}},
 		}},
 		TakesModes: true,
-		// the wiki's Mod compatibility, l.209, and Localization, l.2, name only
-		// this form
+		// the wiki's Mod compatibility and Localization pages name only this
+		// form
 		LocReplaceFolders: []string{"localization/%s/replace"},
 		// main_menu/common/bookmarks/00_bookmarks.txt:4
 		BookmarkFolder: "common/bookmarks", SetupKey: "setup_folder",
@@ -320,10 +319,9 @@ func (d *Dialect) Matches(games []string) bool {
 	return len(games) == 0 || d != nil && slices.Contains(games, d.ID)
 }
 
-// FindLocReplacement reports whether a localization file of the given
-// language is in one of the game's replace folders. rel is the file's path
-// from its stage folder. It also returns the folder's place among the
-// replace folders, 0 for the one that wins.
+// FindLocReplacement reports whether a localization file of the language,
+// by its path from its stage folder, is in one of the game's replace
+// folders. It also returns the folder's rank, 0 for the one that wins.
 func (d *Dialect) FindLocReplacement(rel, language string) (int, bool) {
 	rank := slices.IndexFunc(d.LocReplaceFolders, func(folder string) bool {
 		return strings.HasPrefix(rel, fmt.Sprintf(folder, language)+"/")
@@ -378,18 +376,16 @@ var Keywords = []Keyword{
 		Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds."},
 	{Key: "trigger_else", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"trigger_if", "trigger_else_if"},
 		Blurb: "Checks what is inside it when every trigger_if before it was skipped."},
-	// Vic3 common/scripted_progress_bars/scripted_progress_bars.md: an else
-	// inside a progress_condition takes over when its limit fails, "chained
-	// as deep as you need", so it is written inside the block, after its
-	// body, and the else of such an else inside it in the same way
+	// an else inside a progress_condition takes over when its limit fails,
+	// and may hold an else of its own (Vic3 scripted_progress_bars.md)
 	{Games: []string{game.Vic3}, Key: "else", Parent: "progress_condition", Class: KeywordClassConditional, Shape: ShapeEnclosing,
 		Recursive: true, Blurb: "Takes over when the limit of the progress condition or the else around it fails."},
 	{Key: "limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
 	{Key: "alternative_limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "A second limit a list falls back to when its limit matches nothing."},
 	{Key: "calc_true_if", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "True when at least amount of the triggers inside it are true."},
 
-	// effects.log and triggers.log of the three games write a switch as
-	// trigger = <a trigger>, a block for each value, and fallback = { }
+	// a switch is trigger = <a trigger>, a block for each value and
+	// fallback = { } (effects.log and triggers.log)
 	{Key: "switch", Class: KeywordClassConditional, Shape: ShapeEnclosing,
 		Blurb: "Reads one trigger and runs the case whose value matches, else the fallback."},
 	{Key: "trigger", Parent: "switch", Class: KeywordClassConditional, Names: DumpTriggers,
@@ -427,8 +423,7 @@ var Keywords = []Keyword{
 	// _script_values.info:48-49
 	{Key: "desc", Holders: []Shape{ShapeValue}, Shape: ShapeDescription, Blurb: descBlurb},
 	{Key: "format", Holders: []Shape{ShapeValue}, Shape: ShapeDescription, Blurb: "The text that lays out this block's line when the value is broken down."},
-	// EU5 in_game/common/international_organizations/hre.txt:897,
-	// "desc_sort_order = -99999 # Make sure we are last"
+	// EU5 in_game/common/international_organizations/hre.txt:897
 	{Key: "desc_sort_order", Holders: []Shape{ShapeValue}, Class: KeywordClassDisplay,
 		Blurb: "Where this block's line sorts when the value is broken down: the lowest comes last."},
 	{Key: "save_temporary_value_as", Holders: []Shape{ShapeValue}, Class: KeywordClassSaving, Shape: ShapeArguments,
@@ -480,11 +475,10 @@ var keywordRows = func() map[string][]Keyword {
 	return rows
 }()
 
-// LookupKeyword returns the keyword that a key is when written in a block
-// of the given shape. parent is the key of that block. Letter case does not
-// matter. A keyword whose block holds script fits only a key written with a
-// block. A row such as every_* is never returned; MatchListIterator finds
-// those. It returns false if the key is no keyword there.
+// LookupKeyword returns the keyword a key is, in any letter case, when
+// written in a block of the given shape and parent key. A keyword whose
+// block holds script fits only a key written with a block. Rows such as
+// every_* are left to MatchListIterator.
 func (d *Dialect) LookupKeyword(shape Shape, parent, key string, block bool) (Keyword, bool) {
 	parent, key = strings.ToLower(parent), strings.ToLower(key)
 	candidates := []string{key, AnyKey}
@@ -506,9 +500,8 @@ func (d *Dialect) LookupKeyword(shape Shape, parent, key string, block bool) (Ke
 }
 
 // ListKeywords returns the keywords that may be written in a block of the
-// given shape, in the order of Keywords. parent is the key of that block.
-// The rows that stand for many keys, as every_* and any key do, are left
-// out.
+// given shape and parent key, in the order of Keywords. Rows that stand for
+// many keys, as every_* does, are left out.
 func (d *Dialect) ListKeywords(shape Shape, parent string) []Keyword {
 	parent = strings.ToLower(parent)
 
@@ -531,8 +524,8 @@ var scriptShapes = []Shape{
 }
 
 // fitsKeyword reports whether a row holds for the game and may be written
-// in a block of the given shape. parent is the key of that block, in lower
-// case. block says the key is written with a block and not with a value.
+// in a block of the given shape and lower-case parent key, with a block or
+// with a value as block says.
 func (d *Dialect) fitsKeyword(row Keyword, shape Shape, parent string, block bool) bool {
 	if !d.Matches(row.Games) {
 		return false

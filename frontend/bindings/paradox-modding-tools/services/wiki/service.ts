@@ -69,8 +69,7 @@ export function Refresh(): $CancellablePromise<void> {
 
 /**
  * SearchPages returns the modding pages that hold a text, title matches first.
- * A page that is not cached is searched by title alone. It returns the errors
- * FindPages does.
+ * A page that is not cached is searched by its title alone.
  */
 export function SearchPages(term: string): $CancellablePromise<$models.Summary[] | null> {
     return $Call.ByID(217338472, term);

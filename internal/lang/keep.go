@@ -237,11 +237,10 @@ var EntryModes = []EntryMode{
 // KeepsEvery reports whether the game merges every copy of a name.
 func (p Precedence) KeepsEvery() bool { return p.Keeps == KeepMerged }
 
-// FindWinner returns the copy the game keeps among the copies of one name.
-// The copies are given in the order the game loads them, each by the entry
-// mode it is written with ("" for none) and by its override priority. Every
-// copy must be in a file the game reads. It returns false if there are no
-// copies, or if every copy has an entry mode with nothing to act on.
+// FindWinner returns the copy the game keeps among the copies of one name,
+// given in load order by their entry modes ("" for none) and override
+// priorities. Every copy must be in a file the game reads. It returns false
+// where there is none, or every copy's entry mode has nothing to act on.
 func (p Precedence) FindWinner(modes []string, priorities []int) (Winner, bool) {
 	last := len(modes) - 1
 	firstMode := slices.IndexFunc(modes, func(mode string) bool { return mode != "" })
@@ -342,8 +341,8 @@ func (p Precedence) findModeWinner(modes []string) (Winner, bool) {
 }
 
 // listModeOrder returns the copies in the order the game applies them: plain
-// copies in load order, then each entry mode's copies in the order of
-// EntryModes. A copy written with a mode no game uses is left out.
+// copies first, then each entry mode's in the order of EntryModes. A copy
+// with a mode no game uses is left out.
 func listModeOrder(modes []string) []int {
 	var order []int
 	for position, mode := range modes {
@@ -389,15 +388,7 @@ func listPositions(count int) []int {
 func (p Precedence) findHighest(priorities []int) Winner {
 	highest := slices.Max(priorities)
 	winner := Winner{Copy: slices.Index(priorities, highest), Reason: ReasonPriority}
-
-	ties := 0
-	for _, priority := range priorities {
-		if priority == highest {
-			ties++
-		}
-	}
-
-	if ties > 1 {
+	if slices.Contains(priorities[winner.Copy+1:], highest) {
 		winner.Reason, winner.Cause = ReasonUnsettled, CausePriority
 	}
 
@@ -409,15 +400,12 @@ func (p Precedence) findHighest(priorities []int) Winner {
 }
 
 // FolderPrecedences holds how definitions combine in every database below a
-// folder, or named by a pattern, where a database's declaration states
-// nothing. The first row that holds wins. The Vic3 row cites the wiki's Mod
-// compatibility page (1.13), and the EU5 rows the same page by line.
+// folder, or named by a pattern, where its declaration states nothing. The
+// first row that holds wins.
 var FolderPrecedences = []FolderPrecedence{
-	// dated history entries stack (CK3 _history.info:3-13), as
-	// 01_admin_titles_tgp.txt:6339,6435 write c_nf_wang_738b_7 twice
+	// dated history entries stack (CK3 _history.info:3-13)
 	{Databases: []string{"history/*"}, Games: []string{game.CK3}, Keeps: KeepMerged},
-	// the EU5 wiki's Setup modding, l.10: its managers are additive; Mod
-	// structure, l.78
+	// the EU5 wiki's Setup modding: its managers are additive
 	{Databases: []string{"setup/*"}, Games: []string{game.EU5}, Keeps: KeepMerged},
 	// the Vic3 wiki's list of folders: the first plain copy stays
 	{
@@ -460,15 +448,14 @@ var FolderPrecedences = []FolderPrecedence{
 			"notifications", "sound/persistent_objects",
 		},
 	},
-	// the EU5 wiki's Mod structure, l.78: modes work in the vast majority of
-	// common's subfolders. Its exceptions, on_action and defines, hold their
-	// own.
+	// the EU5 wiki's Mod structure: modes work in most of common's
+	// subfolders, and on_action and defines have rows of their own
 	{Folders: []string{"common"}, Games: []string{game.EU5}, Keeps: KeepFirst, Modes: ModePlaceEntry},
 }
 
-// LookupPrecedence returns how the definitions of a database combine: the
-// first row of its declaration that holds for the game, else the first folder
-// rule that holds. Where nothing holds, the last copy by file name wins.
+// LookupPrecedence returns how the definitions of a database combine: its
+// declaration's first row for the game, else the first folder rule that
+// holds, else the last copy by file name wins.
 func (d *Dialect) LookupPrecedence(declaration Declaration, database string) Precedence {
 	for _, row := range declaration.Precedences {
 		if d.Matches(row.Games) {
@@ -485,9 +472,8 @@ func (d *Dialect) LookupPrecedence(declaration Declaration, database string) Pre
 	return Precedence{Keeps: KeepLast}
 }
 
-// holds reports whether the rule holds for a database: its name fits one of
-// the rule's patterns, or its folder is one of the rule's folders or below
-// one. A database with no folder, as a nested one, is tried by name only.
+// holds reports whether the rule holds for a database, by its name or its
+// folder. A database with no folder, as a nested one, is tried by name only.
 func (f FolderPrecedence) holds(database, folder string) bool {
 	isNamed := slices.ContainsFunc(f.Databases, func(pattern string) bool {
 		ok, _ := path.Match(pattern, database)
@@ -564,9 +550,9 @@ func (p Precedence) describeModes() string {
 	return sentence + ", or INJECT: to add to it."
 }
 
-// SplitMode splits an entry mode off a key as written: REPLACE:x gives the
-// mode REPLACE and the name x. A key with no entry mode gives "" and the key
-// itself, and so does every key in a game that takes no modes.
+// SplitMode splits an entry mode off a key: REPLACE:x gives REPLACE and x. A
+// key with no entry mode, or any key in a game that takes none, gives "" and
+// the key.
 func (d *Dialect) SplitMode(key string) (mode, name string) {
 	prefix, rest, cut := strings.Cut(key, ":")
 	if _, ok := LookupEntryMode(prefix); cut && d.TakesModes && ok {

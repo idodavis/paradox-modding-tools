@@ -90,17 +90,18 @@ func (s *Service) serve(conn *application.StreamConn) {
 	}
 }
 
-// startProgram starts an agent's program in a folder. It returns an error if
-// the agent cannot start.
+// startProgram starts an agent's program in a folder. It fetches nothing, so a
+// chat never waits on the network to start.
 func (s *Service) startProgram(id, folder string) (*program, error) {
-	agent, err := s.findAgent(id)
+	node := s.DescribeNode()
+	agent, err := s.findAgent(id, node)
 	if err != nil {
 		return nil, err
 	}
 
 	command := exec.Command(agent.Program, agent.Args...)
 	command.Dir = folder
-	if node := s.DescribeNode(); node.Path != "" {
+	if node.Path != "" {
 		command.Env = addToPath(os.Environ(), filepath.Dir(node.Path))
 	}
 	prepareCommand(command)
@@ -149,6 +150,9 @@ func sendLines(conn *application.StreamConn, output io.Reader) {
 	}
 }
 
+// logLines writes each line of an agent's error output to PMT's log. A line
+// over one megabyte ends the logging, and the rest is read and dropped, so
+// that the agent never waits on a full pipe.
 func logLines(id string, stderr io.Reader) {
 	scanner := bufio.NewScanner(stderr)
 	scanner.Buffer(nil, 1<<20)
@@ -156,4 +160,6 @@ func logLines(id string, stderr io.Reader) {
 	for scanner.Scan() {
 		application.Get().Logger.Info(scanner.Text(), "agent", id)
 	}
+
+	_, _ = io.Copy(io.Discard, stderr)
 }

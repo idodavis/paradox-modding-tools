@@ -1,6 +1,5 @@
-// lookup.go answers the index's questions about names: where a reference is
-// defined and used, what a database holds, which definition a site sits in
-// and which file a texture's path names.
+// lookup.go answers questions about names: where a reference is defined and
+// used, what a database holds, and which file a texture's path names.
 
 package index
 
@@ -19,25 +18,18 @@ import (
 // definitions in every database that defines its name. The result is empty if
 // the name is undefined.
 func (i *Index) Resolve(reference lang.Reference) []Site {
-	return i.listResolved(reference, func(Site) bool { return false })
+	return i.ResolveLocal(reference, -1)
 }
 
-// ResolveLocal is Resolve for a reference written in the file at a position
-// in Files: that file's local definitions count too. A file the index does
-// not list has the position -1, which counts none.
+// ResolveLocal is Resolve for a reference written in a file, given by its
+// position in Files: that file's local definitions count too. A file the
+// index does not list has the position -1, which counts none.
 func (i *Index) ResolveLocal(reference lang.Reference, file int32) []Site {
-	return i.listResolved(reference, func(site Site) bool { return site.File == file })
-}
-
-// listResolved returns the definitions that a reference names, as Resolve
-// orders them. A local definition counts only if the given test accepts its
-// site.
-func (i *Index) listResolved(reference lang.Reference, isVisible func(Site) bool) []Site {
 	var sites []Site
 
 	if reference.Database != "" {
 		for _, callee := range ListCallees(reference) {
-			sites = append(sites, i.listDefining(callee.Database, callee.Name, isVisible)...)
+			sites = append(sites, i.listDefining(callee.Database, callee.Name, file)...)
 		}
 
 		return sites
@@ -47,7 +39,7 @@ func (i *Index) listResolved(reference lang.Reference, isVisible func(Site) bool
 	slices.Sort(databases)
 
 	for _, database := range databases {
-		sites = append(sites, i.listDefining(database, reference.Name, isVisible)...)
+		sites = append(sites, i.listDefining(database, reference.Name, file)...)
 	}
 
 	return sites
@@ -104,16 +96,10 @@ func (i *Index) CountUses(database, name string) int {
 	return len(i.listPosting(RoleRefers, database, name))
 }
 
-// IsUsedByGame reports whether the game's own files refer to a name in a
-// database. For a database whose definitions script calls, the calls that
-// may be to any callable database count too.
-func (i *Index) IsUsedByGame(database, name string) bool {
-	// The game's own files are the install's, whose postings answer without
-	// a list of every use being built.
-	install := cmp.Or(i.install, i)
-
-	return len(install.listPosting(RoleRefers, database, name)) > 0 ||
-		slices.Contains(lang.Called, database) && len(install.listPosting(RoleRefers, lang.AnyCall, name)) > 0
+// isUsedByGame reports whether the game's own files, which are the install's,
+// refer to a name in a database.
+func (i *Index) isUsedByGame(database, name string) bool {
+	return len(cmp.Or(i.install, i).ListUses(database, name)) > 0
 }
 
 // ListDefinitions returns every definition in a database, in load order. The
@@ -146,14 +132,11 @@ func (i *Index) ListMessages(key string) []Site {
 	return i.listPosting(RoleLocalizes, lang.Localization, key)
 }
 
-// ListKeys returns up to the given limit of the localization keys that
-// contain the given text, in any case, and have a loaded message in one of
-// the given languages. A key that is the text itself comes first, then the
-// keys that
-// start with the text, then the ones that only contain it. Each key comes
-// once, and within each of the two the keys come in the order the index
-// first met them. It also reports whether the list is cut: it holds as many
-// keys as the limit allows, so more may match.
+// ListKeys returns up to a limit of the localization keys that contain a
+// text, in any case, and have a message the game reads in one of the given
+// languages. The text itself comes first, then the keys that start with it,
+// then those that only contain it. It also reports whether the list is full,
+// so more keys may match.
 func (i *Index) ListKeys(languages []string, text string, limit int) ([]string, bool) {
 	databaseOrdinal, ok := i.Databases.Lookup(lang.Localization)
 	if !ok {
@@ -205,10 +188,10 @@ func (i *Index) ListKeys(languages []string, text string, limit int) ([]string, 
 
 // ListNamed returns the sites of the occurrences with the given role whose
 // name the given function ranks 0 or higher, the lowest rank first. Within a
-// rank this index's own files come before the install's, each in load order.
-// It reads the postings, so it looks at each name once and at no reference.
+// rank this index's own files come before the install's. It ranks each name
+// once, from the postings.
 func (i *Index) ListNamed(role Role, rank func(name string) int) []Site {
-	// order is 0 for a site of this index's own files and 1 for the install's
+	// order is 0 for a site in this index's own files and 1 for the install's.
 	type match struct {
 		site        Site
 		rank, order int
@@ -256,9 +239,9 @@ func (i *Index) ListNamed(role Role, rank func(name string) int) []Site {
 // FindDefinition returns the definition that a site sits inside. It returns
 // false if the site is at the top of its file.
 func (i *Index) FindDefinition(site Site) (Site, bool) {
-	occurrence := i.Occurrence(site)
+	parent := i.Occurrence(site).Parent
 
-	return Site{File: site.File, Occurrence: occurrence.Parent}, occurrence.Nested
+	return Site{File: site.File, Occurrence: parent}, parent >= 0
 }
 
 // ToReference returns the database and the name that one occurrence is
@@ -306,12 +289,12 @@ func (i *Index) ResolveTexture(rel string) (string, bool) {
 	})
 }
 
-// listDefining returns the sites that define a name in a database. A local
-// definition counts only if the given test accepts its site. A key of the
-// localization database is defined by its messages.
-func (i *Index) listDefining(database, name string, isVisible func(Site) bool) []Site {
-	return slices.DeleteFunc(slices.Clone(i.listPosting(toRole(database), database, name)), func(site Site) bool {
-		return i.Occurrence(site).Local && !isVisible(site)
+// listDefining returns the sites that define a name in a database, in load
+// order. A local definition counts only in the given file, and none counts
+// for the file -1. A localization key is defined by its messages.
+func (i *Index) listDefining(database, name string, file int32) []Site {
+	return without(i.listPosting(toRole(database), database, name), func(site Site) bool {
+		return i.Occurrence(site).Local && site.File != file
 	})
 }
 
@@ -362,27 +345,29 @@ func (i *Index) listKey(posting Posting, name uint32) []Site {
 }
 
 // narrowSites returns the given sites that are in files the index answers
-// for. A list it answers for whole is returned as it is.
+// for.
 func (i *Index) narrowSites(sites []Site) []Site {
-	outside := func(site Site) bool { return !i.Covers(site.File) }
-	if !slices.ContainsFunc(sites, outside) {
+	return without(sites, func(site Site) bool { return !i.Covers(site.File) })
+}
+
+// without returns the sites the test does not match. It returns the list
+// itself where none match, so a posting is copied only when it changes.
+func without(sites []Site, test func(Site) bool) []Site {
+	if !slices.ContainsFunc(sites, test) {
 		return sites
 	}
 
-	return slices.DeleteFunc(slices.Clone(sites), outside)
+	return slices.DeleteFunc(slices.Clone(sites), test)
 }
 
-// compareSites orders two sites by their files' positions, then by their
-// places in a file.
 func compareSites(first, second Site) int {
 	return cmp.Or(cmp.Compare(first.File, second.File), cmp.Compare(first.Occurrence, second.Occurrence))
 }
 
 // buildPostings fills the postings from the occurrences after a scan or a
-// load, and drops the winners worked out before it.
+// load, and drops the winners worked out before it. Only the index's own
+// files are posted, since a lookup reads the install's postings as well.
 func (i *Index) buildPostings() {
-	// Only the index's own files are posted, since a lookup reads the
-	// install's postings as well.
 	i.postings = map[Posting]map[uint32][]Site{}
 	i.winners = &sync.Map{}
 

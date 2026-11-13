@@ -122,8 +122,7 @@ type Language struct {
 	Base bool `json:"base"`
 }
 
-// BaseLanguage is the language that every other language's coverage is
-// measured against.
+// BaseLanguage is the language every other language is measured against.
 const BaseLanguage = "english"
 
 // languageSuffix matches a name ending in _l_<language>.yml, in any case.
@@ -206,8 +205,8 @@ func parseHeader(line string) (string, bool) {
 	return language, true
 }
 
-// skip returns the offset of the first rune from an offset on that the test
-// rejects, or the line's length.
+// skip returns the offset of the first rune at or after an offset that the
+// test rejects, or the line's length.
 func skip(line string, offset int, accept func(rune) bool) int {
 	return len(line) - len(strings.TrimLeftFunc(line[offset:], accept))
 }
@@ -364,7 +363,8 @@ func EncodeAddition(text string, messages []Message) string {
 	return ending + EncodeMessages(messages, ending)
 }
 
-// ToLanguageKey returns l_english for english.
+// ToLanguageKey returns the key a language's header writes, as l_english for
+// english.
 func ToLanguageKey(language string) string {
 	return "l_" + language
 }

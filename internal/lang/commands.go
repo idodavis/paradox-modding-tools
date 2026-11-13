@@ -13,12 +13,11 @@ import (
 
 // ChainLink is one link of a chain, as father is in root.father.
 type ChainLink struct {
-	// Definition is the link as the dumps declare it. It is nil for a link
-	// the dumps do not declare.
+	// Definition is nil for a link the dumps do not declare.
 	Definition *Definition
 
-	// Scope is the type of the scope the chain has reached after the link. It
-	// is "" where that is not known.
+	// Scope is the scope type the chain has reached after the link, "" where
+	// it is not known.
 	Scope string
 }
 
@@ -29,8 +28,8 @@ var CommandDatabases = []string{DumpEffects, DumpTriggers, DumpLinks}
 // NoScope holds the words the dumps write where a command has no scope.
 var NoScope = []string{"none", "all", "none/any"}
 
-// LookupDefinition returns the definition a database has for a key, as
-// written or else in lower case. It returns nil if there is none.
+// LookupDefinition returns a database's definition for a key, as written or
+// else in lower case.
 func (s *Schema) LookupDefinition(database, key string) *Definition {
 	owner := s.Databases[database]
 	if owner == nil {
@@ -40,8 +39,7 @@ func (s *Schema) LookupDefinition(database, key string) *Definition {
 	return cmp.Or(owner.Definitions[key], owner.Definitions[strings.ToLower(key)])
 }
 
-// ListKeys returns the keys of a database's definitions, sorted. It returns
-// none for a database the schema does not have.
+// ListKeys returns the sorted keys of a database's definitions.
 func (s *Schema) ListKeys(database string) []string {
 	owner := s.Databases[database]
 	if owner == nil {
@@ -52,7 +50,7 @@ func (s *Schema) ListKeys(database string) []string {
 }
 
 // FindCommand returns the effect, the trigger or the link a key names, the
-// first of them that has it. It returns nil if none has.
+// first of them that has it.
 func (s *Schema) FindCommand(key string) *Definition {
 	for _, database := range CommandDatabases {
 		if definition := s.LookupDefinition(database, key); definition != nil {
@@ -63,16 +61,14 @@ func (s *Schema) FindCommand(key string) *Definition {
 	return nil
 }
 
-// DeclaresModifier reports whether the dumps list a modifier of the given
-// key.
+// DeclaresModifier reports whether the dumps list a modifier of the key.
 func (s *Schema) DeclaresModifier(key string) bool {
 	return s.Databases[DumpModifiers].Definitions[key] != nil
 }
 
 // FindKeyCall reads a key written with an argument in parentheses, as
-// squared_distance(root) is. It returns the parts of the key and the command
-// it calls. The key's text starts at the given offset of its file. It returns
-// false for a key written any other way, and for one that calls no command.
+// squared_distance(root), and returns its parts and the command it calls.
+// The key's text starts at the given offset of its file.
 func (s *Schema) FindKeyCall(key string, start int) (jomini.Step, *Definition, bool) {
 	step, ok := jomini.ParseParenthesized(key, start)
 	if !ok {
@@ -92,9 +88,8 @@ func (s *Schema) findStatementCall(tree *jomini.Tree, statement int32) (jomini.S
 	return s.FindKeyCall(tree.Text(span), span.Start)
 }
 
-// FindCallee returns the name a statement's key calls. For a key with an
-// argument in parentheses it is the command, as aptitude in aptitude(x). For
-// any other key it is the key itself.
+// FindCallee returns the name a statement's key calls: the command of a key
+// with an argument in parentheses, as aptitude in aptitude(x), else the key.
 func (s *Schema) FindCallee(tree *jomini.Tree, statement int32) string {
 	if step, _, ok := s.findStatementCall(tree, statement); ok {
 		return step.Text
@@ -103,9 +98,9 @@ func (s *Schema) FindCallee(tree *jomini.Tree, statement int32) string {
 	return tree.Unquoted(tree.Statements[statement].Key)
 }
 
-// findStar returns the part of a key, in lower case, that fills the star of
-// a key such as has_relation_*. It returns false if the key does not fit
-// around the star, or if what would fill the star is empty or holds a dot.
+// findStar returns the part of a lower-case key that fills the star of a key
+// such as has_relation_*. It returns false where the key does not fit around
+// the star, or the filling is empty or holds a dot.
 func (d *Definition) findStar(key string) (start, end int, fits bool) {
 	prefix, suffix, _ := strings.Cut(d.Key, "*")
 	start, end = len(prefix), len(key)-len(suffix)
@@ -116,9 +111,8 @@ func (d *Definition) findStar(key string) (start, end int, fits bool) {
 
 // findPatterns returns the star keys of a database that a key fits, as
 // has_relation_* for has_relation_rival. A key the dumps declare has them
-// listed. For any other key they are the ones whose star is filled by the
-// fewest letters, and if several keys tie, those of the first key. It returns
-// none if the key fits no star key.
+// listed. For any other key they are the ones whose star the fewest letters
+// fill, ties going to the first key.
 func (s *Schema) findPatterns(database, key string) []*Definition {
 	owner := s.Databases[database]
 	key = strings.ToLower(key)
@@ -138,7 +132,7 @@ func (s *Schema) findPatterns(database, key string) []*Definition {
 		case !fits:
 		case end-start < shortest:
 			best, shortest = []*Definition{pattern}, end-start
-		case end-start == shortest && pattern.Key == best[0].Key:
+		case end-start == shortest && len(best) > 0 && pattern.Key == best[0].Key:
 			best = append(best, pattern)
 		}
 	}
@@ -147,9 +141,8 @@ func (s *Schema) findPatterns(database, key string) []*Definition {
 }
 
 // LookupLink returns the link the dumps declare for a key. With prefixed it
-// is the link written with a name after a colon. The dumps list some links
-// both ways, as culture:norse and root.culture, each with its own scopes. It
-// returns nil if there is none.
+// is the link written with a name after a colon: the dumps list some links
+// both ways, as culture:norse and root.culture, each with its own scopes.
 func (s *Schema) LookupLink(key string, prefixed bool) *Definition {
 	if prefixed {
 		key += ":"
@@ -159,9 +152,8 @@ func (s *Schema) LookupLink(key string, prefixed bool) *Definition {
 }
 
 // FindLink returns the link a key or a value starts with, as root in
-// root.father. A link written with a name after a colon, as scope:target, is
-// found by the word before the colon. A wild card is a link only when written
-// that way. It returns nil if the text starts with no link.
+// root.father. A link with a name after a colon, as scope:target, is found by
+// the word before the colon, and a wild card is a link only when written so.
 func (s *Schema) FindLink(text string) *Definition {
 	head := jomini.FirstLink(text, 0)
 	if !head.Prefix.IsEmpty() {
@@ -188,17 +180,19 @@ func (s *Schema) FindLink(text string) *Definition {
 // IsLink reports whether a key or a value starts with a link.
 func (s *Schema) IsLink(text string) bool { return s.FindLink(text) != nil }
 
-// isChain reports whether every part of a dotted text is a link, as in
-// owner.ruler and not in war.0051.start.
+// isChain reports whether a text is a chain whose every part is a link, as
+// owner.ruler is and war.0051.start is not.
 func (s *Schema) isChain(text string) bool {
-	return !slices.ContainsFunc(jomini.Links(text, 0), func(link jomini.Link) bool {
+	links := jomini.Links(text, 0)
+
+	return len(links) > 0 && !slices.ContainsFunc(links, func(link jomini.Link) bool {
 		return s.FindLink(text[link.Span.Start:link.Span.End]) == nil
 	})
 }
 
 // LookupPrefix returns the database of the names written after a link's
-// colon, as the saved scopes for scope:x. The database is "" where it is not
-// known. It returns false if the word is no link that takes a name.
+// colon, as the saved scopes for scope:x, "" where it is not known. It
+// returns false for a word that is no link taking a name.
 func (s *Schema) LookupPrefix(prefix string) (string, bool) {
 	link := s.LookupLink(prefix, true)
 	if link == nil {
@@ -213,10 +207,9 @@ func (s *Schema) LookupPrefix(prefix string) (string, bool) {
 }
 
 // ResolveChain follows a chain of links, as root.father.culture, written in
-// the block of the given statement. It returns each link with the type of the
-// scope the chain has reached after it. A saved scope, as scope:x, has the
-// type it was saved with. Once a link cannot be followed, the scope after it
-// and after every later link is "".
+// the given statement's block, and returns each link with the scope type
+// reached after it. A saved scope has the type it was saved with. Once a link
+// cannot be followed, every later scope is "".
 func (s *Schema) ResolveChain(text string, holder *Context, saved []Saved) []ChainLink {
 	links := jomini.Links(text, 0)
 	chain := make([]ChainLink, len(links))
@@ -260,8 +253,8 @@ func (s *Schema) ResolveChain(text string, holder *Context, saved []Saved) []Cha
 	return chain
 }
 
-// findSavedType returns the type of the scope last saved under a name. It
-// returns "" if none was saved under it, or its type is not known.
+// findSavedType returns the type of the scope last saved under a name, ""
+// where none was or its type is not known.
 func findSavedType(saved []Saved, label string) string {
 	for _, scope := range slices.Backward(saved) {
 		if scope.Name == label {
@@ -272,10 +265,9 @@ func findSavedType(saved []Saved, label string) string {
 	return ""
 }
 
-// ResolveTarget returns the type of the scope a link leads to when written in
-// a scope of the given type. It returns "" for a nil link, for a wild card,
-// for a link that leads to no scope and for one that may not be written
-// there. Where the given type is "", the link is taken to be allowed.
+// ResolveTarget returns the scope type a link leads to from a scope of the
+// given type. It returns "" for a nil link, a wild card, a link to no scope
+// and one not allowed there. An unknown scope, "", is taken as allowed.
 func (d *Definition) ResolveTarget(scope string) string {
 	if d == nil || d.Wild || scope != "" && len(d.Scopes) > 0 && !slices.Contains(d.Scopes, scope) {
 		return ""
@@ -284,8 +276,8 @@ func (d *Definition) ResolveTarget(scope string) string {
 	return d.Target
 }
 
-// IsScope reports whether a word names a scope type that script runs in, as
-// character does. The words the dumps write for none, such as none, do not.
+// IsScope reports whether a word names a scope type that script runs in. The
+// words the dumps write for no scope, such as none, do not.
 func (s *Schema) IsScope(scope string) bool {
 	definition := s.LookupDefinition(DumpTypes, scope)
 

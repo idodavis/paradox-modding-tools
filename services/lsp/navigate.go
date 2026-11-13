@@ -44,8 +44,8 @@ type WorkspaceSymbol struct {
 	Site     Site   `json:"site"`
 }
 
-// Definition returns where the name at a position is defined, the game's
-// definition first, or the image an image path names. It returns an empty list
+// Definition returns where the name at a position is defined, the copy the
+// game keeps first, or the image an image path names. It returns an empty list
 // for no name.
 func (s *Service) Definition(path string, line, column int) ([]Site, error) {
 	ws, document, err := s.loadDocument(path)
@@ -172,9 +172,7 @@ func listBufferSites(ws *workspace.Session, mods *index.Index, path string, refe
 	place, tree := ws.Locate(mods, path), document.Tree
 	located := make([]Site, len(spans))
 	for position, span := range spans {
-		line := tree.Lines.ToPosition(span.Start).Line
-		row := tree.Lines.LineSpan(line)
-		located[position] = Site{Place: place, Line: line + 1, Range: jomini.ToRange(tree.Src, tree.Lines, span), Text: tree.Src[row.Start:row.End]}
+		located[position] = LocateSpan(place, tree.Src, tree.Lines, span)
 	}
 
 	return located
@@ -344,10 +342,9 @@ func makeSymbol(tree *jomini.Tree, reference lang.Reference, span jomini.Span, t
 	}
 }
 
-// FindSymbols returns up to the given number of definitions, or localization
-// keys if the second argument is true, whose names contain the query: the query
-// itself first, then names starting with it, then the rest, the mods' files
-// before the game's. It returns an empty list for no query.
+// FindSymbols returns up to the given number of definitions, or of
+// localization keys, whose names contain the query, the best match first and
+// the mods' before the game's. It returns an empty list for no query.
 func (s *Service) FindSymbols(query string, localization bool, limit int) ([]WorkspaceSymbol, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {

@@ -16,7 +16,7 @@ import (
 	"paradox-modding-tools/internal/files"
 )
 
-// A Watcher watches folders for files that change or are deleted.
+// Watcher watches folders for files that change or are deleted.
 type Watcher struct {
 	notifier *fsnotify.Watcher
 
@@ -48,8 +48,8 @@ func startWatcher(dirs []string, change func(changes []FileChange)) (*Watcher, e
 	return watcher, nil
 }
 
-// addFolders makes a notifier watch a folder and the folders under it that
-// isWatched accepts.
+// addFolders watches a folder and the folders under it, all but the dot
+// folders the watcher skips.
 func addFolders(notifier *fsnotify.Watcher, dir string) error {
 	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 		switch {
@@ -69,10 +69,12 @@ func isWatched(folder string) bool {
 	return !files.IsHiddenDir(folder) || slices.Contains(watchedFolders, folder)
 }
 
+// run gathers the notifier's events and reports their files together, 200 ms
+// after the first event of a burst.
 func (w *Watcher) run(change func(changes []FileChange)) {
 	defer close(w.done)
 
-	// batch fires when a burst of events ends, and is nil while none is pending.
+	// batch is nil while no event is pending.
 	pending := map[string]bool{}
 	var batch <-chan time.Time
 	for {
@@ -81,6 +83,7 @@ func (w *Watcher) run(change func(changes []FileChange)) {
 			if !ok {
 				return
 			}
+
 			if event.Op == fsnotify.Chmod || (files.IsFolder(event.Name) && !isWatched(filepath.Base(event.Name))) {
 				continue
 			}
@@ -120,21 +123,16 @@ func (w *Watcher) Close() {
 	<-w.done
 }
 
-// Move runs a move of a file or a folder with the folders it moves unwatched. A
-// nil watcher only runs the move.
-func (w *Watcher) Move(source string, move func() error) error {
-	if w == nil {
-		return move()
-	}
-
-	// Windows refuses to move a folder while a folder inside it is watched.
+// Move moves a file or a folder with the folders it moves unwatched, since
+// Windows refuses to move a folder while a folder inside it is watched.
+func (w *Watcher) Move(source, target string) error {
 	for _, dir := range w.notifier.WatchList() {
 		if files.ToKey(dir) == files.ToKey(source) || files.IsUnder(source, dir) {
 			_ = w.notifier.Remove(dir)
 		}
 	}
 
-	err := move()
+	err := move(source, target)
 	if err != nil {
 		_ = addFolders(w.notifier, source)
 	}

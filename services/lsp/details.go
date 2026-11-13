@@ -5,14 +5,12 @@ package lsp
 
 import (
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/lang"
-	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -55,14 +53,6 @@ type Signature struct {
 	Active *int `json:"active,omitempty"`
 }
 
-// A hintList collects the hints of a file.
-type hintList struct {
-	ws       *workspace.Session
-	mods     *index.Index
-	calendar app.Calendar
-	hints    []Hint
-}
-
 // ListFolds returns the blocks of a file that span more than one line.
 func (s *Service) ListFolds(path string) ([]Fold, error) {
 	_, tree, err := s.loadTree(path)
@@ -87,34 +77,31 @@ func (s *Service) ListHints(path string) ([]Hint, error) {
 
 	mods := ws.Mods.Load()
 	mod, _ := s.Workspace.LookupMod(ws.Locate(mods, path).Origin)
-	hints := &hintList{ws: ws, mods: mods, calendar: mod.Calendar, hints: []Hint{}}
+	tree, hints := document.Tree, []Hint{}
 	for position := range document.Contexts {
-		hints.addStatement(document.Tree, int32(position), &document.Contexts[position])
-	}
+		statement, context := int32(position), &document.Contexts[position]
+		for _, reference := range context.References {
+			if reference.Database != lang.Localization {
+				continue
+			}
 
-	return hints.hints, nil
-}
+			end := reference.Span.End
+			if strings.HasPrefix(tree.Src[end:], `"`) {
+				end++
+			}
 
-// addStatement adds the hints of a statement's localization keys and date.
-func (h *hintList) addStatement(tree *jomini.Tree, statement int32, context *lang.Context) {
-	for _, reference := range context.References {
-		if reference.Database != lang.Localization {
-			continue
+			if text := describeText(ws, mods, reference.Name); text != "" {
+				hints = append(hints, makeHint(tree, end, HintText, text))
+			}
 		}
 
-		end := reference.Span.End
-		if strings.HasPrefix(tree.Src[end:], `"`) {
-			end++
-		}
-
-		if text := h.describeText(reference.Name); text != "" {
-			h.add(tree, end, HintText, text)
+		if date, ok := findDate(tree, statement, context); ok {
+			end := tree.Statements[statement].Value.End
+			hints = append(hints, makeHint(tree, end, HintDate, describeDate(mod.Calendar, date)))
 		}
 	}
 
-	if date, ok := findDate(tree, statement, context); ok {
-		h.add(tree, tree.Statements[statement].Value.End, HintDate, describeDate(h.calendar, date))
-	}
+	return hints, nil
 }
 
 // hintTextLength is how many characters of a text a hint shows.
@@ -122,10 +109,10 @@ const hintTextLength = 60
 
 // describeText returns a key's text in quotes, cut at hintTextLength, "no text
 // yet" if no language has it, or "" if only other languages write it.
-func (h *hintList) describeText(key string) string {
-	text, _, ok := h.ws.LookupText(h.mods, key)
+func describeText(ws *workspace.Session, mods *index.Index, key string) string {
+	text, _, ok := ws.LookupText(mods, key)
 	if !ok {
-		if slices.ContainsFunc(h.mods.ListMessages(key), func(site index.Site) bool { return h.mods.IsLoaded(site.File) }) {
+		if slices.ContainsFunc(mods.ListMessages(key), func(site index.Site) bool { return mods.IsLoaded(site.File) }) {
 			return ""
 		}
 
@@ -139,9 +126,10 @@ func (h *hintList) describeText(key string) string {
 	return `"` + text + `"`
 }
 
-func (h *hintList) add(tree *jomini.Tree, offset int, kind, text string) {
+func makeHint(tree *jomini.Tree, offset int, kind, text string) Hint {
 	point := jomini.ToRange(tree.Src, tree.Lines, jomini.Span{Start: offset, End: offset})
-	h.hints = append(h.hints, Hint{Line: point.StartLine, Column: point.StartColumn, Text: text, Kind: kind})
+
+	return Hint{Line: point.StartLine, Column: point.StartColumn, Text: text, Kind: kind}
 }
 
 // ListColorSites returns every color written in a file.
@@ -200,12 +188,7 @@ func (s *Service) Signature(path string, line, column int) (*Signature, error) {
 		return nil, nil
 	}
 
-	parameters := []string{}
-	for _, parameter := range slices.Sorted(maps.Keys(callee.Children)) {
-		if !strings.HasPrefix(parameter, "<") {
-			parameters = append(parameters, parameter)
-		}
-	}
+	parameters := listDeclared(callee)
 
 	var active *int
 	for child := range tree.Children(call) {

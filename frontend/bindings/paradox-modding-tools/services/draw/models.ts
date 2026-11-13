@@ -18,37 +18,31 @@ import * as texture$0 from "../../internal/texture/models.js";
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Blend is a texture channel that weights a blend toward a color.
+ * Blend is a texture channel that weights a blend toward a CSS color.
  */
 export interface Blend {
-    /**
-     * the channel that weights the blend
-     */
     "channel": string;
-
-    /**
-     * the color blended in, as CSS
-     */
     "color": string;
 }
 
 /**
- * A Box is one of the boxes the States tab sorts a window's groups into: the window's own, what an object has, an
- * object's, or the rows of a list.
+ * Box is one of the boxes the States tab sorts a window's groups into.
  */
 export interface Box {
     "id": string;
     "title": string;
-    "icon": string;
 
     /**
-     * "rows" with a control each, "chips", or "window" for the window's own groups
+     * Kind is "window" for the window's own groups, "has" for what an object
+     * has, "object" for an object's, and "item" for a list's rows. The page
+     * draws each kind its own way.
      */
-    "look": string;
+    "kind": string;
 }
 
 /**
- * A Choice is the value the picks give one property of a widget, with the text, image file or CSS color it leads to.
+ * Choice is the value the picks give one property of a widget, with the
+ * text, image file or CSS color it leads to.
  */
 export interface Choice {
     "key": string;
@@ -59,7 +53,7 @@ export interface Choice {
 }
 
 /**
- * A Coat is a coat of arms resolved for drawing, as its layers.
+ * Coat is a coat of arms resolved for drawing, as its layers.
  */
 export interface Coat {
     "name": string;
@@ -68,27 +62,30 @@ export interface Coat {
     "place": workspace$0.Place;
 
     /**
-     * the width of its field in pixels; 0 for a sub-coat or where the game gives none
+     * Body is the range inside the coat's braces, zero for a sub-coat and for
+     * a coat written as another's name.
      */
-    "width": number;
+    "body": jomini$0.Range;
 
     /**
-     * the height of its field in pixels; 0 for a sub-coat or where the game gives none
+     * Width and Height are its field's size in pixels, 0 for a sub-coat or
+     * where the game gives none.
      */
+    "width": number;
     "height": number;
 
     /**
-     * nil where the game shades no coat
+     * Shading is nil where the game shades no coat.
      */
     "shading": Shading | null;
 
     /**
-     * the pattern's color regions, each one an emblem can show in
+     * Regions are the pattern's color regions an emblem can show in.
      */
     "regions": number[] | null;
 
     /**
-     * the keys that write the color slots, slot 1 first
+     * Slots are the keys of the color slots, slot 1 first.
      */
     "slots": string[] | null;
 }
@@ -98,18 +95,18 @@ export interface Coat {
  */
 export interface CoatStrength {
     /**
-     * Channel is the channel: r, g or b.
+     * Channel is r, g or b.
      */
     "channel": string;
 
     /**
-     * Strength is how much of the channel is taken. 0 takes none.
+     * Strength is how much of the channel is taken; 0 takes none.
      */
     "strength": number;
 }
 
 /**
- * A DDS is one DDS file whose settings a picture keeps: where it is and what its header says.
+ * DDS is a DDS file whose settings a picture keeps.
  */
 export interface DDS {
     "place": workspace$0.Place;
@@ -117,237 +114,237 @@ export interface DDS {
 }
 
 /**
- * A Font is one style of a font a window's texts are written in, with the file the game reads it from.
+ * DDSFormat is one pixel format a picture can be saved in.
+ */
+export interface DDSFormat {
+    "dxgi": number;
+    "label": string;
+    "description": string;
+}
+
+/**
+ * Font is one style of a font a window's texts are written in, with the file
+ * the game loads it from.
  */
 export interface Font {
     "name": string;
 
     /**
-     * the style's words: regular, bold, italic or bold|italic
+     * Style is the style in the font file's words, such as bold|italic.
      */
     "style": string;
     "path": string;
 }
 
 /**
- * A Group is one choice the page lets the user switch: a data call a window's conditions read, or a template list a
- * coat's value is drawn from.
+ * Group is one thing the page lets the user switch: a data call that a
+ * window's conditions ask about, or a list a coat's value is drawn from.
  */
 export interface Group {
     /**
-     * the group's call; a call that reads the object of a data context is written from the window down to that object, so the same call about two objects is two groups
+     * ID is the group's call as text. A call about the object of a data
+     * context is written from the window down to that object, so the same
+     * call about two objects is two groups.
      */
     "id": string;
 
     /**
-     * the kind of object it asks about, such as Character or Relation; Game for a call of one step, Pictures for a list of pictures, and "" for a coat's list
+     * Subject is the kind of object the group asks about, such as Character.
+     * It is Game for a call of one step, Pictures for a list of pictures, and
+     * "" for a coat's list.
      */
     "subject"?: string;
 
     /**
-     * the key that picks its object out of its kind, such as a relation's lover
+     * Key picks the group's object out of its kind, as lover picks a
+     * relation.
      */
     "key"?: string;
 
     /**
-     * what it asks, in words
+     * Label is what the group asks, in words.
      */
     "label": string;
 
     /**
-     * it asks whether an object further on than its subject exists
+     * Exists is whether the group asks if an object beyond its subject
+     * exists.
      */
     "exists"?: boolean;
 
     /**
-     * the values it can take: the values the window asks of it, then every value at once where it has none or several, then none
+     * Options are the values the window asks of the group, then every value
+     * at once where it asks none or several, then none.
      */
     "options": string[] | null;
 
     /**
-     * by option, how the panel writes it
+     * Captions is how the panel writes each option.
      */
     "captions"?: { [_ in string]?: string } | null;
 
     /**
-     * the box of the States tab that it starts in
+     * Box is the box of the States tab the group starts in.
      */
     "box": Box;
 
     /**
-     * the option a coat's list draws now; empty in a window's group, whose value is in States.Values
+     * Picked is the option a coat's list draws now. A window's groups keep
+     * their values in States.Values instead.
      */
     "picked"?: string;
 
     /**
-     * a press of a widget of the window sets it
+     * Clickable is whether a press of one of the window's widgets sets the
+     * group.
      */
     "clickable"?: boolean;
 
     /**
-     * how many widgets that draw something it shows or hides
+     * Reach is how many drawing widgets the group shows or hides.
      */
     "reach"?: number;
 
     /**
-     * the data model item whose rows alone read it; 0 for the window
+     * Item is the data model item whose rows alone ask about the group, 0 for
+     * the window.
      */
     "item"?: number;
 
     /**
-     * the widgets whose own condition reads it
+     * Readers are the widgets whose own condition asks about the group.
      */
     "readers"?: number[] | null;
 
     /**
-     * where the pictures it picks among are listed, for a group of a picture binding; nil otherwise
+     * Pictures is the list a group of a picture binding picks among, nil for
+     * any other group.
      */
     "pictures"?: PictureList | null;
 }
 
 /**
- * An Image is one image file the panel offers, with its label.
+ * Image is one image file the panel offers, with its label.
  */
 export interface Image {
     "label": string;
-
-    /**
-     * where the image file is
-     */
     "place": workspace$0.Place;
 }
 
 /**
- * An Instance is one placement of a layer on the field. Values the file does
- * not set take the game's defaults.
+ * Instance is one placement of a layer on the field. A value the file does
+ * not set takes the game's default.
  */
 export interface Instance {
     "position": number[];
     "scale": number[];
 
     /**
-     * in degrees, clockwise
+     * Rotation is in degrees, clockwise.
      */
     "rotation": number;
     "depth": number;
 
     /**
-     * its place among every instance of its coat in the order they draw, from 0
+     * Rank is the instance's place, from 0, among all of its coat's instances
+     * in the order they draw.
      */
     "rank": number;
     "range": jomini$0.Range;
 }
 
 /**
- * A Layer is one layer of a coat: the pattern, an emblem or a sub-coat.
+ * Layer is one layer of a coat: the pattern, an emblem or a sub-coat.
  */
 export interface Layer {
     /**
-     * the key as written: "pattern", "colored_emblem", "textured_emblem" or "sub"
+     * Role is the layer's key in lower case: "pattern", "colored_emblem",
+     * "textured_emblem" or "sub".
      */
     "role": string;
 
     /**
-     * as written; "missing:x" when `list "x"` names a list that does not exist
+     * Texture is as written, or "missing:x" where `list "x"` names a list
+     * that does not exist. Path is its image file.
      */
     "texture": string;
-
-    /**
-     * the image file for the texture
-     */
     "path": string;
 
     /**
-     * the layer is an emblem, colored or textured
+     * Emblem is set for a colored or textured emblem.
      */
     "emblem": boolean;
 
     /**
-     * the parent coat that writes the layer; "" for the coat's own
+     * Writer is the parent coat that writes the layer, "" for the coat's own.
      */
     "writer": string;
 
     /**
-     * the image file of the pattern whose regions an emblem shows in
+     * Mask is the image file of the pattern whose regions an emblem shows
+     * in. MaskRange is where the emblem writes its mask, zero for nowhere.
      */
     "mask": string;
-
-    /**
-     * where the emblem's mask is written; zero where it writes none
-     */
     "maskRange": jomini$0.Range;
 
     /**
-     * the pattern's color regions an emblem shows in; none means all of them
+     * Regions are the pattern's color regions an emblem shows in, none
+     * meaning all. MaskChannels holds the pattern channel of each, none
+     * without a mask.
      */
     "regions": number[] | null;
-
-    /**
-     * the pattern channel of each of those regions; none without a mask
-     */
     "maskChannels": string[] | null;
 
     /**
-     * CSS colors, the fallback first and then one for each slot of the game
+     * Colors holds CSS colors, the fallback first, then one per slot.
+     * ColorNames holds the named color of each, "" for one written as
+     * numbers.
      */
     "colors": string[] | null;
-
-    /**
-     * the named color of each of those, "" for one written as numbers
-     */
     "colorNames": string[] | null;
 
     /**
-     * how the game colors its texture; nil where it keeps its pixels
+     * Recolor is nil where the texture keeps its pixels.
      */
     "recolor": Recolor | null;
 
     /**
-     * the template lists its values are drawn from, each with its options
+     * Lists are the template lists the layer's values are drawn from.
      */
     "lists": Group[] | null;
 
     /**
-     * how the panel edits each key the layer's role may write, by key
+     * Inputs says, by key, how the panel edits each key the layer's role may
+     * write.
      */
     "inputs": { [_ in string]?: string } | null;
 
     /**
-     * in the order written; each one's Rank says when the coat draws it
+     * Instances are in the order written; each one's Rank says when it
+     * draws.
      */
     "instances": Instance[] | null;
     "sub"?: Coat | null;
     "range": jomini$0.Range;
-
-    /**
-     * the file the layer is written in
-     */
     "place": workspace$0.Place;
 }
 
 /**
- * A Missing is one type or template that a widget of a window uses and no file
- * defines.
+ * Missing is a type or a template that a widget uses and no file defines.
  */
 export interface Missing {
-    /**
-     * the widget that uses it
-     */
     "widget": number;
 
     /**
-     * the key that uses it and its name, such as "using button_sort"
+     * Text is the key and the name, such as "using button_sort". Detail is
+     * the widget's name, else its type.
      */
     "text": string;
-
-    /**
-     * the widget's name, else its type
-     */
     "detail": string;
 }
 
 /**
- * A NamedColor is one of the game's named colors, for the color picker.
+ * NamedColor is one of the game's named colors, for the color picker.
  */
 export interface NamedColor {
     "name": string;
@@ -355,24 +352,23 @@ export interface NamedColor {
 }
 
 /**
- * An Overlay is one texture laid over a widget's own, as a modify_texture block
- * writes it.
+ * Overlay is a texture laid over a widget's own by a modify_texture block.
  */
 export interface Overlay {
     /**
-     * the image file for its texture; "" if there is none
+     * Path is the texture's image file, "" if none is found.
      */
     "path": string;
 
     /**
-     * the positions of its properties among its window's properties
+     * Properties are positions in the window's Properties.
      */
     "properties": number[] | null;
 }
 
 /**
- * A Picture is one picture a picture binding may draw, labeled by its file or its definition. Picking it sets its file,
- * or its definition's name.
+ * Picture is one picture a picture binding may draw. Picking it sets Value,
+ * its file or its definition's name.
  */
 export interface Picture {
     "label": string;
@@ -381,128 +377,157 @@ export interface Picture {
 }
 
 /**
- * A PictureFiles is the pictures Save as DDS saves, with the DDS whose settings each keeps, by the picture's path.
+ * PictureFiles is the pictures Save as DDS saves, with what it offers for
+ * them.
  */
 export interface PictureFiles {
     "pictures": workspace$0.Place[] | null;
+
+    /**
+     * Names holds the file name each picture's DDS gets, in the order of
+     * Pictures.
+     */
+    "names": string[] | null;
+
+    /**
+     * References holds, by picture path, the DDS whose settings the picture
+     * keeps.
+     */
     "references": { [_ in string]?: DDS } | null;
+
+    /**
+     * Formats are the formats offered, then the format of each replaced DDS
+     * that is not among them.
+     */
+    "formats": DDSFormat[] | null;
+
+    /**
+     * Format and Mipmaps are the settings to start with: those of the DDS
+     * files the pictures replace where every picture replaces one and they
+     * agree, else the first format without mip levels. Matched is how many
+     * DDS files they came from, 0 for none.
+     */
+    "format": number;
+    "mipmaps": boolean;
+    "matched": number;
 }
 
 /**
- * A PictureList says where the pictures a picture binding may draw are listed. With a Name it lists the images one
- * definition writes. With no Name it lists what the binding shows of each definition of a database.
+ * PictureList says where the pictures are that a picture binding may draw.
+ * With a Name it lists the images one definition names; without, what the
+ * binding shows of each definition of a database.
  */
 export interface PictureList {
     /**
-     * the key of the property whose binding draws them
+     * Key is the property whose binding draws the pictures.
      */
     "key": string;
     "database": string;
     "name": string;
 
     /**
-     * the kind of object the binding reads, as its data type or its words; "" for none
+     * Type is the kind of object the binding asks about, as its data type or
+     * in words, "" for none.
      */
     "type": string;
 
     /**
-     * the field it reads of one; "" for none
+     * Field is the field the binding takes of the object, and Argument the
+     * argument it passes as written. Either is "" for none.
      */
     "field": string;
-
-    /**
-     * the argument it passes, as written; "" for none
-     */
     "argument": string;
 
     /**
-     * for a kind whose objects are the subfolders of its icon folder rather than definitions, that folder; each subfolder holds the object's images, named by the argument
+     * Folder is the icon folder of a kind whose objects are its subfolders
+     * rather than definitions. Each subfolder holds an object's images, named
+     * as the argument is.
      */
     "folder": string;
 
     /**
-     * what it draws with nothing picked: a definition's or a folder's name, or a file
+     * Shown is what the binding draws with nothing picked: a definition's or
+     * a folder's name, or a file.
      */
     "shown": string;
 }
 
 /**
- * A Property is one property of a widget, with the place where it is written.
- * That place can be a template or the widget's type instead of the widget
- * itself.
+ * Property is one property of a widget, with the place it is written, which
+ * may be a template or the widget's type rather than the widget itself.
  */
 export interface Property {
     "key": string;
 
     /**
-     * what the game reads: a constant, an expression or a GetDefine call is worked out, also inside a block
+     * Value is what the game reads: a constant, an expression or a GetDefine
+     * call is replaced by its value.
      */
     "value": string;
     "range": jomini$0.Range;
 
     /**
-     * the position of the file it is written in among its window's places
+     * Place is the position of the property's file among the window's places.
      */
     "place": number;
 
     /**
-     * "widget", "template" or "type"; "missing" if no file defines the source
+     * Origin is "widget", "template" or "type", or "missing" for a type or a
+     * template that no file defines.
      */
     "origin": string;
 
     /**
-     * the type or template whose block it is written in; "" for no such block
+     * Writer is the type or template whose block holds the property, "" for
+     * the widget's own. Source says the same in words.
      */
     "writer": string;
-
-    /**
-     * where it comes from, in words
-     */
     "source": string;
 }
 
 /**
- * A Recolor is how the game colors the texture of a layer, with the layer's
- * colors as CSS.
+ * Recolor is how the game colors a layer's texture, with the layer's colors
+ * as CSS.
  */
 export interface Recolor {
     /**
-     * the color it starts from
+     * Start is the color it starts from, and Blends the blends toward a
+     * color, in order.
      */
     "start": string;
-
-    /**
-     * the blends toward a color, in order
-     */
     "blends": Blend[] | null;
 
     /**
-     * the channel overlaid on the result
+     * Overlay is the channel overlaid on the result.
      */
     "overlay": CoatStrength;
 
     /**
-     * the channel that is its alpha; "" means the blends' own
+     * Alpha is the channel that is its alpha, "" for the blends' own.
      */
     "alpha": string;
 }
 
 /**
- * A Row is one row a data model's list draws for one definition of the database its widgets read, with the values the
- * definition gives the properties of the widgets in the row, by widget.
+ * Row is one row a data model's list draws, for one definition of the
+ * database its widgets ask about.
  */
 export interface Row {
     "definition": string;
+
+    /**
+     * Choices holds, by widget of the row, the values the definition gives
+     * its properties.
+     */
     "choices": { [_ in `${number}`]?: Choice[] | null } | null;
 }
 
 /**
- * A Setting is one property to set in a block: the key and the value to write
- * for it.
+ * Setting is one property to set in a block.
  */
 export interface Setting {
     /**
-     * starts where the block does
+     * Block is where the block starts.
      */
     "block": jomini$0.Range;
     "key": string;
@@ -510,22 +535,16 @@ export interface Setting {
 }
 
 /**
- * A Shading is the texture that shades the cloth of a coat.
+ * Shading is the texture that shades the cloth of a coat.
  */
 export interface Shading {
-    /**
-     * the image file of the texture
-     */
     "path": string;
 
     /**
-     * the channel overlaid on each coat and sub
+     * Overlay is the channel overlaid on each coat and sub, and Grain the
+     * channel laid times a factor over each emblem's alpha.
      */
     "overlay": CoatStrength;
-
-    /**
-     * the channel times a factor over each emblem's alpha
-     */
     "grain": CoatStrength;
 }
 
@@ -534,116 +553,111 @@ export interface Shading {
  */
 export interface States {
     /**
-     * by group, the value each of the window's groups is at
+     * Values holds the value each group is at.
      */
     "values": { [_ in string]?: string } | null;
 
     /**
-     * the IDs of the widgets that the values hide
+     * Hidden lists the widgets the values hide.
      */
     "hidden": number[] | null;
 
     /**
-     * by group, the widgets under no hidden widget whose own condition its value decides
+     * Applies holds, by group, the shown widgets whose own condition or
+     * choices the group's value decides.
      */
     "applies": { [_ in string]?: number[] | null } | null;
 
     /**
-     * by widget, the values the groups give its properties
+     * Choices holds, by widget, the values the groups give its properties.
      */
     "choices": { [_ in `${number}`]?: Choice[] | null } | null;
 }
 
 /**
- * A Widget is one element of a resolved window, with everything needed to draw
- * it. The page lays it out.
+ * Widget is one element of a resolved window, with everything the page needs
+ * to draw it.
  */
 export interface Widget {
     "id": number;
 
     /**
-     * the widget that holds it; the window's own widget is 0, and so is its parent
+     * Parent is the widget that holds it. The window's own widget is 0, and
+     * is its own parent.
      */
     "parent": number;
     "name": string;
     "type": string;
 
     /**
-     * the game's row for its type
+     * Row is the game's row for its built-in type.
      */
     "row": lang$0.WidgetType;
 
     /**
-     * the engine's type its type comes down to, such as widget, hbox or icon
+     * Builtin is the built-in type its type chain ends in, such as hbox.
      */
     "builtin": string;
 
     /**
-     * a file defines its type, which can then be opened; a built-in type is not defined
+     * TypeDefined is whether a file defines its type, so it can be opened.
      */
     "typeDefined": boolean;
 
     /**
-     * the key of the slot it fills, such as scrollbar_vertical; "" for none
+     * Slot is the slot key it fills, such as scrollbar_vertical, and Role is
+     * what that slot is to its holder. Both are "" for a plain child.
      */
     "slot": string;
-
-    /**
-     * the slot it fills in its holder, or "" for a plain child
-     */
     "role": string;
 
     /**
-     * it is an item of a data model
+     * Item is whether it is drawn once per item of a data model.
      */
     "item": boolean;
 
     /**
-     * the positions of its properties among its window's properties, the last written of each key
+     * Properties are positions in the window's Properties, one per key.
      */
     "properties": number[] | null;
 
     /**
-     * by property key, the plain text and the data calls of each text it shows
+     * Texts, Textures and Colors hold, by property key, what a property
+     * shows: its text with its data calls, its image file, and the color of
+     * the definition its binding names.
      */
     "texts": { [_ in string]?: loc$0.Segment[] | null } | null;
-
-    /**
-     * by property key; the image file for the property's path
-     */
     "textures": { [_ in string]?: string } | null;
-
-    /**
-     * by property key, the CSS color that a binding of a definition's color leads to
-     */
     "colors": { [_ in string]?: string } | null;
 
     /**
-     * the shape among the page's placeholders that it draws where its picture has no file; "" for a widget with a picture, a background or no picture
+     * Placeholder is the page's shape drawn where its picture has no file, ""
+     * where none is drawn.
      */
     "placeholder": string;
 
     /**
-     * where the pictures are listed that its picture binding may draw, where no file is found for the binding as written; it draws the first of them; nil means no list
+     * Pictures lists the pictures its binding may draw where the binding as
+     * written names none; the widget draws the first. It is nil otherwise.
      */
     "pictures"?: PictureList | null;
 
     /**
-     * the positions of the textures laid over its own among its window's overlays
+     * Overlays are positions in the window's Overlays.
      */
     "overlays": number[] | null;
     "range": jomini$0.Range;
 
     /**
-     * the position of the file it is written in among its window's places
+     * Place is the position of its file among the window's places.
      */
     "place": number;
 }
 
 /**
- * A Window is one GUI window resolved for drawing. Its widgets are in document
- * order, and its holders are the game windows that contain it, outermost first,
- * each its own widget alone.
+ * Window is one GUI window resolved for drawing. Its widgets are in the order
+ * written. Holders are the game windows it is laid out in, outermost first,
+ * each as its root widget alone.
  */
 export interface Window {
     "name": string;
@@ -651,52 +665,45 @@ export interface Window {
     "holders": Widget[] | null;
 
     /**
-     * the places of the files that its widgets and holders are written in, each once
+     * Places are the files its widgets and holders are written in, each once.
      */
     "places": workspace$0.Place[] | null;
 
     /**
-     * every style of the fonts its widgets name
+     * Fonts are every style of the fonts its widgets name.
      */
     "fonts": Font[] | null;
 
     /**
-     * by the item of a data model, the rows its list draws; an item whose widgets read no database is left out
+     * Rows holds the rows each data model's list draws, by the model's item.
+     * An item that reads no database is left out.
      */
     "rows": { [_ in `${number}`]?: Row[] | null } | null;
 
     /**
-     * by widget, the conditions it is shown on, as written; a widget shown on none is left out
+     * Conditions holds the condition each widget is shown on, as written. A
+     * widget always shown is left out.
      */
     "conditions": { [_ in `${number}`]?: string[] | null } | null;
-
-    /**
-     * the types and templates its widgets use that no file defines
-     */
     "missing": Missing[] | null;
 
     /**
-     * what the panel lets the user switch: the groups its widgets' conditions read, its lists of pictures, then its tiers; the value each is at is in States.Values
+     * Groups are what the States panel can switch: the groups the conditions
+     * ask about, then the picture lists, then the tiers.
      */
     "groups": Group[] | null;
 
     /**
-     * the font of a text that sets none; "" if the game sets none
+     * TextFont and TextSize are what a text that sets neither is drawn in, ""
+     * where the game sets none.
      */
     "textFont": string;
-
-    /**
-     * the size of a text that sets none; "" if the game sets none
-     */
     "textSize": string;
 
     /**
-     * the properties of its widgets, its holders and their overlays, each once
+     * Properties and Overlays are shared by the widgets, the holders and the
+     * overlays, which point into them, so each is sent once.
      */
     "properties": Property[] | null;
-
-    /**
-     * the textures laid over its widgets' own, each once
-     */
     "overlays": Overlay[] | null;
 }

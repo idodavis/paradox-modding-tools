@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
@@ -265,9 +264,12 @@ func TestBuildGraphMergesDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	targets := lo.FilterMap(graph.Edges, func(edge Edge, _ int) (string, bool) {
-		return edge.To, edge.From == "on_action:on_birth"
-	})
+	var targets []string
+	for _, edge := range graph.Edges {
+		if edge.From == "on_action:on_birth" {
+			targets = append(targets, edge.To)
+		}
+	}
 	slices.Sort(targets)
 	if want := []string{eventD2, "events:v.1", "events:v.2"}; !slices.Equal(targets, want) {
 		t.Errorf("on_birth fires %v, want %v", targets, want)
@@ -279,7 +281,10 @@ func TestBuildGraphMergesDefinitions(t *testing.T) {
 func TestBuildGraphSkipsReplacedFirer(t *testing.T) {
 	gph := openService(t, "ck3", resolveFixture(t, "ck3"), createMod(t, modC, modCFiles))
 	graph := buildGraph(t, gph, "events:v.2", gph.Defaults())
-	ids := lo.Map(graph.Nodes, func(node Node, _ int) string { return node.ID })
+	var ids []string
+	for _, node := range graph.Nodes {
+		ids = append(ids, node.ID)
+	}
 	if !slices.Contains(ids, "events:vc.1") || slices.Contains(ids, "events:v.1") {
 		t.Errorf("the nodes around v.2: %v", ids)
 	}
@@ -360,8 +365,17 @@ func TestBuildGraphOnInstalls(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				delays := lo.CountBy(graph.Edges, func(edge Edge) bool { return edge.Delay != "" })
-				titles := lo.CountBy(graph.Nodes, func(node Node) bool { return node.Title != "" })
+				delays, titles := 0, 0
+				for _, edge := range graph.Edges {
+					if edge.Delay != "" {
+						delays++
+					}
+				}
+				for _, node := range graph.Nodes {
+					if node.Title != "" {
+						titles++
+					}
+				}
 				t.Logf("%s: %d nodes, %d edges, %d with a delay, %d with a title, truncated %v, %s", root,
 					len(graph.Nodes), len(graph.Edges), delays, titles, graph.Truncated, time.Since(started).Round(time.Millisecond))
 				logDetails(t, gph, root, graph)
@@ -387,17 +401,20 @@ func checkBirth(t *testing.T, gph *Service, filter Filter) {
 	root := findNode(graph, "events:birth.0001")
 	fires := buildDetail(t, gph, "events:birth.0001").Node.Fires
 	findFire := func(to string) Edge {
-		edge, _ := lo.Find(fires, func(edge Edge) bool { return edge.To == to })
-		return edge
+		if position := slices.IndexFunc(fires, func(edge Edge) bool { return edge.To == to }); position >= 0 {
+			return fires[position]
+		}
+		return Edge{}
 	}
 	if steps := findFire("events:birth.1001").Steps; !slices.ContainsFunc(steps, func(step Step) bool {
 		return step.Kind == kindWeight && step.Weight == "95"
 	}) {
 		t.Errorf("the steps to birth.1001: %+v", steps)
 	}
-	steps := lo.Map(findFire("events:birth.1010").Steps, func(step Step, _ int) string {
-		return step.Key + " " + step.Kind
-	})
+	var steps []string
+	for _, step := range findFire("events:birth.1010").Steps {
+		steps = append(steps, step.Key+" "+step.Kind)
+	}
 	want := []string{"scope:child.dynasty scope", "if branch", "random_player list"}
 	if !slices.Equal(steps[max(len(steps)-3, 0):], want) {
 		t.Errorf("the steps to birth.1010: %v, want them to end in %v", steps, want)
@@ -433,8 +450,12 @@ func logDetails(t *testing.T, gph *Service, root string, graph Graph) {
 		if err != nil {
 			t.Fatalf("detail of %s: %v", node.ID, err)
 		}
-		texts += lo.Ternary(findDescription(detail) != "", 1, 0)
-		backgrounds += lo.Ternary(detail.Node.Background != "", 1, 0)
+		if findDescription(detail) != "" {
+			texts++
+		}
+		if detail.Node.Background != "" {
+			backgrounds++
+		}
 		if node.Display == displayWindow && detail.Node.Background == "" {
 			t.Logf("%s shows no background", node.ID)
 		}
@@ -465,20 +486,28 @@ func buildDetail(t *testing.T, gph *Service, id string) Detail {
 
 // findDescription returns the text of a detail's first description, or "" if it writes none.
 func findDescription(detail Detail) string {
-	section, _ := lo.Find(detail.Sections, func(section Section) bool { return section.Key == lang.DescriptionKey })
-	return lo.FirstOr(section.Texts, Version{}).Text
+	position := slices.IndexFunc(detail.Sections, func(section Section) bool { return section.Key == lang.DescriptionKey })
+	if position < 0 || len(detail.Sections[position].Texts) == 0 {
+		return ""
+	}
+	return detail.Sections[position].Texts[0].Text
 }
 
 // findNode returns the node of a graph with the given id, or an empty node if the graph has none.
 func findNode(graph Graph, id string) Node {
-	node, _ := lo.Find(graph.Nodes, func(node Node) bool { return node.ID == id })
-	return node
+	if position := slices.IndexFunc(graph.Nodes, func(node Node) bool { return node.ID == id }); position >= 0 {
+		return graph.Nodes[position]
+	}
+	return Node{}
 }
 
 // hasEdges reports whether a list holds exactly the wanted edges, in any order.
 func hasEdges(got, want []Edge) bool {
 	keys := func(edges []Edge) []string {
-		list := lo.Map(edges, func(edge Edge, _ int) string { return toKey(edge) })
+		var list []string
+		for _, edge := range edges {
+			list = append(list, toKey(edge))
+		}
 		slices.Sort(list)
 		return list
 	}

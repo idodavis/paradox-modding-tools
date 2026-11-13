@@ -6,50 +6,43 @@
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * A Change is one name whose kept copy moves to another mod in a previewed load
- * order.
+ * Change is one name whose kept copy moves to another mod in a previewed
+ * load order.
  */
 export interface Change {
     /**
-     * what the database calls a definition
+     * Database is what the database calls a definition.
      */
     "database": string;
     "name": string;
 
     /**
-     * the mod whose copy the workspace's order keeps
+     * Before and After are the mods whose copy the workspace's order and the
+     * previewed order keep.
      */
     "before": string;
-
-    /**
-     * the mod whose copy the previewed order keeps
-     */
     "after": string;
 }
 
 /**
- * A Check is one kind of finding at one level, and how many findings it has.
+ * Check is one kind of finding at one level, and how many findings it has.
  */
 export interface Check {
     /**
-     * an lsp.Codes id
+     * Code is an lsp.Codes id, and Label the code's title.
      */
     "code": string;
-
-    /**
-     * the code's title
-     */
     "label": string;
     "level": string;
 
     /**
-     * the findings it has, the ones folded into others included
+     * Count includes the findings folded into others.
      */
     "count": number;
 }
 
 /**
- * A Compared is the texts of two statements, as the two sides of a compare.
+ * Compared is the texts of two statements, as the two sides of a compare.
  */
 export interface Compared {
     "left": string;
@@ -57,284 +50,291 @@ export interface Compared {
 }
 
 /**
- * A Finding is one problem, or one fact about the mods.
+ * Finding is one problem, or one fact about the mods.
  */
 export interface Finding {
     /**
-     * an lsp.Codes id
+     * Code is an lsp.Codes id. Label and Topic are the code's title and topic.
      */
     "code": string;
+    "label": string;
+    "topic": string;
 
     /**
-     * the code's question, or compatibility where another mod is concerned
+     * Question is the code's question, or compatibility where another mod is
+     * concerned.
      */
     "question": string;
 
     /**
-     * the code's level, or a contest's own
+     * Level is the code's level, or a contest's own.
      */
     "level": string;
 
     /**
-     * the code's title
-     */
-    "label": string;
-
-    /**
-     * the code's topic
-     */
-    "topic": string;
-
-    /**
-     * the code's template filled with the facts, or a log row's line
+     * Message is the code's template filled with the facts, or a log row's
+     * line.
      */
     "message": lsp$0.Part[] | null;
 
     /**
-     * the line under its name in a list
+     * Brief is the line under the finding's name in a list.
      */
     "brief"?: lsp$0.Part[] | null;
 
     /**
-     * its place, such as a.txt:12, or what a log row names
+     * Detail is the finding's place, such as a.txt:12, or what a log row
+     * names.
      */
     "detail": string;
 
     /**
-     * why the winner's copy wins, or why a log row is a mod's
+     * Why says why the winner's copy wins, or why a log row is a mod's.
      */
     "why"?: lsp$0.Part[] | null;
     "name": string;
 
     /**
-     * what the database calls a definition
+     * Database is what the database calls a definition.
      */
     "database": string;
 
     /**
-     * the mod the finding is about; "" for the game's own log row
+     * Origin is the mod the finding is about, "" for the game's own log row.
      */
     "origin": string;
 
     /**
-     * the mods it concerns, in load order
+     * Mods are the mods the finding concerns, in load order.
      */
     "mods": string[] | null;
     "facts": { [_ in string]?: string } | null;
     "sites": lsp$0.Site[] | null;
 
     /**
-     * the names the replaced sites define that the kept file does not
+     * Removed are the names the replaced sites define that the kept file
+     * does not.
      */
     "removed"?: string[] | null;
 
     /**
-     * the removed names that the files the game reads still use, the most used first
+     * Uses are the removed names the files the game reads still use, the
+     * most used first.
      */
     "uses"?: Use[] | null;
 
     /**
-     * where the workspace defines the name, in a mod the finding's mod does not depend on
+     * Defined are where the workspace defines the name, in a mod the
+     * finding's mod does not depend on.
      */
     "defined"?: lsp$0.Site[] | null;
 
     /**
-     * one of the editor's own diagnostics, which the editor shows itself
+     * Diagnosed is set for one of the editor's own diagnostics, which the
+     * editor shows itself.
      */
     "diagnosed": boolean;
 
     /**
-     * the kept statement and the ones it replaces can be shown side by side
+     * Comparable is set where the kept statement and those it replaces can
+     * be shown side by side.
      */
     "comparable": boolean;
 
     /**
-     * a load order that fixes a contest
+     * Order is a load order that fixes a contest.
      */
     "order"?: string[] | null;
 
     /**
-     * how many findings or game log lines the row stands for: 1 unless a report folded findings into it or the log repeated the line
+     * Count is how many findings or log lines the row stands for: 1 unless
+     * others were folded into it.
      */
     "count": number;
 
     /**
-     * the sites of the findings a report folded into this one
+     * Repeats are the sites of the findings folded into this one.
      */
     "repeats"?: lsp$0.Site[] | null;
 
     /**
-     * each two workspace mods the finding sets against each other, in load order, which can be ignored
+     * Pairs are each two workspace mods the finding sets against each other,
+     * in load order. A pair can be ignored.
      */
     "pairs": string[][] | null;
 }
 
 /**
- * A GameLog is what the game's last run wrote to its error log, folded into
+ * GameLog is what the game's last run wrote to its error log, folded into
  * rows.
  */
 export interface GameLog {
     "findings": Finding[] | null;
 
     /**
-     * the log file's full path
+     * Path is the log file's full path.
      */
     "path": string;
 
     /**
-     * when the game last wrote it, or zero if there is no log
+     * WrittenAt is when the game last wrote the log, zero if there is none.
      */
     "writtenAt": string;
 
     /**
-     * the workspace's mods the run that wrote the log did not read, by id; their rows stay the game's
+     * Unloaded are the workspace's mods the run did not read. Their rows
+     * stay the game's.
      */
     "unloaded": string[] | null;
 
     /**
-     * by mod id, the folder of another copy of a workspace mod that the run read in its place
+     * Copies holds the folder of another copy of a workspace mod that the
+     * run read in its place, by mod id.
      */
     "copies": { [_ in string]?: string } | null;
 }
 
 /**
- * A Group is the findings of the workspace's compatibility or of one mod,
+ * Group is the findings of the workspace's compatibility or of one mod,
  * folded, counted and sorted.
  */
 export interface Group {
     /**
-     * by level, with every level in it
+     * Counts holds the count of every level, by level.
      */
     "counts": { [_ in string]?: number } | null;
 
     /**
-     * each level's count as a phrase, such as 235 critical problems, by level; a level with no finding has none
+     * Phrases holds each count in words, such as "235 critical problems", by
+     * level. A level with no finding has none.
      */
     "phrases": { [_ in string]?: string } | null;
 
     /**
-     * the worst level that has a finding, or "" if none has
+     * Worst is the worst level that has a finding, "" if none has.
      */
     "worst": string;
 
     /**
-     * the mod's id, or "" for the workspace's compatibility
+     * Mod is the mod's id, "" for the workspace's compatibility.
      */
     "mod": string;
 
     /**
-     * sorted by level, the worst first, then by check, the one with the most findings first, then by weight; a mod's leave out its coverage
+     * Findings are sorted worst level first, then by check, the largest
+     * first, then by weight. A mod's leave out its coverage.
      */
     "findings": Finding[] | null;
 
     /**
-     * the mod's coverage findings, one for each language beside the base one
+     * Languages are the mod's coverage findings, one for each language
+     * beside the base one.
      */
     "languages": Finding[] | null;
 
     /**
-     * in the order of the findings
+     * Checks are in the order of the findings.
      */
     "checks": Check[] | null;
 }
 
 /**
- * An Overview is what one mod holds, counted, and the mods it is judged with.
+ * Overview is what one mod holds, counted, and the mods it is judged with.
  */
 export interface Overview {
     "mod": string;
 
     /**
-     * definitions, by what a database calls them
+     * Counts holds the definitions, by what their database calls them.
      */
     "counts": { [_ in string]?: number } | null;
     "files": number;
     "messages": number;
 
     /**
-     * the ids of the mods this mod's own problems are judged with: the mods it depends on, directly or not
+     * Judged are the mods this mod's own problems are judged with: its
+     * dependencies, direct or not.
      */
     "judged": string[] | null;
 }
 
 /**
- * A Report is the findings for one load order, grouped and counted, and what
+ * Report is the findings for one load order, grouped and counted, and what
  * that order changes.
  */
 export interface Report {
     /**
-     * by level, with every level in it
+     * Counts holds the count of every level, by level.
      */
     "counts": { [_ in string]?: number } | null;
 
     /**
-     * each level's count as a phrase, such as 235 critical problems, by level; a level with no finding has none
+     * Phrases holds each count in words, such as "235 critical problems", by
+     * level. A level with no finding has none.
      */
     "phrases": { [_ in string]?: string } | null;
 
     /**
-     * the worst level that has a finding, or "" if none has
+     * Worst is the worst level that has a finding, "" if none has.
      */
     "worst": string;
     "compatibility": Group;
 
     /**
-     * in load order
+     * Mods is in load order.
      */
     "mods": Group[] | null;
 
     /**
-     * the findings of the user's own mods together, external mods' left out
+     * Own counts the findings of the user's own mods, external ones left out.
      */
     "own": Tally;
     "checkedAt": string;
 
     /**
-     * none for the workspace's own order
+     * Changes is empty for the workspace's own order.
      */
     "changes": Change[] | null;
 }
 
 /**
- * A Snippet is the code around one finding site.
+ * Snippet is the code around one finding site.
  */
 export interface Snippet {
     "text": string;
 
     /**
-     * the line it begins at, counted from one
+     * Line is the line the snippet begins at, and Last the last line of the
+     * site's own code, both counting from one.
      */
     "line": number;
-
-    /**
-     * the last line of the site's own code, counted from one
-     */
     "last": number;
 }
 
 /**
- * A Tally is how many findings there are of each level.
+ * Tally is how many findings there are of each level.
  */
 export interface Tally {
     /**
-     * by level, with every level in it
+     * Counts holds the count of every level, by level.
      */
     "counts": { [_ in string]?: number } | null;
 
     /**
-     * each level's count as a phrase, such as 235 critical problems, by level; a level with no finding has none
+     * Phrases holds each count in words, such as "235 critical problems", by
+     * level. A level with no finding has none.
      */
     "phrases": { [_ in string]?: string } | null;
 
     /**
-     * the worst level that has a finding, or "" if none has
+     * Worst is the worst level that has a finding, "" if none has.
      */
     "worst": string;
 }
 
 /**
- * A Use is one name a finding is about, with how often the files the game reads
- * use it and where they first do.
+ * Use is one name a finding is about, with how often the files the game
+ * reads use it and where they first do.
  */
 export interface Use {
     "name": string;

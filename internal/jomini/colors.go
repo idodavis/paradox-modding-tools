@@ -33,7 +33,8 @@ type Color struct {
 // TagHSV360 is the tag of a hue out of 360, saturation and value out of 100.
 const TagHSV360 = "hsv360"
 
-// Colors lists the color tags, one row each.
+// Colors lists the color tags script writes, one row each. A block with no
+// tag reads as rgb.
 var Colors = []Color{
 	{Tag: "rgb"},
 	{Tag: ""},
@@ -54,8 +55,8 @@ type RGBA struct {
 type ColorForm struct {
 	Tag string
 
-	// Example is an example block's parts, giving the scale and whether it
-	// has an alpha.
+	// Example is the parts of a sample block, which give the scale and
+	// whether the color has an alpha.
 	Example []string
 }
 
@@ -229,7 +230,7 @@ func findScale(row Color, numbers []float64) float64 {
 	return 255
 }
 
-// hsvToRGB converts hue, saturation and value to RGB.
+// hsvToRGB converts hue, saturation and value, each from 0 to 1, to RGB.
 func hsvToRGB(hue, saturation, value float64) (red, green, blue float64) {
 	sector, fraction := int(hue*6)%6, hue*6-float64(int(hue*6))
 	bottom, falling, rising := value*(1-saturation), value*(1-fraction*saturation), value*(1-(1-fraction)*saturation)
@@ -250,7 +251,6 @@ func hsvToRGB(hue, saturation, value float64) (red, green, blue float64) {
 	return value, bottom, falling
 }
 
-// rgbToHSV converts RGB to hue, saturation and value.
 func rgbToHSV(red, green, blue float64) (hue, saturation, value float64) {
 	value = max(red, green, blue)
 	chroma := value - min(red, green, blue)

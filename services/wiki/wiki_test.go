@@ -78,8 +78,8 @@ func keepPage(t *testing.T, client *Client, html, title string) {
 	}
 }
 
-// TestSanitizeKeepsAndDropsElements checks what Sanitize keeps and drops from a
-// page of every kind of element.
+// TestSanitizeKeepsAndDropsElements checks what sanitizePage keeps and drops
+// from a page of every kind of element.
 func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 	input := `<script>alert(1)</script><style>p{}</style><noscript>none</noscript><nav>menu</nav>` +
 		`<div class="navbox"><p>navigation</p></div><div id="toc"><ul><li>contents</li></ul></div><!-- comment -->` +
@@ -104,8 +104,12 @@ func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 		`<table><thead><tr><th>head</th></tr></thead><tbody><tr><td colspan="2">cell</td></tr></tbody></table>` +
 		`<details><summary>Table, 3 rows</summary><table><tbody><tr><td>1</td></tr><tr><td>2</td></tr>` +
 		`<tr><td>3</td></tr></tbody></table></details><pre>code block</pre><span>wrapped</span><h2>Last</h2><p>kept</p>`
-	if got := Sanitize(input, &url.URL{Scheme: "http", Host: "wiki.test"}); got != want {
-		t.Errorf("Sanitize =\n%s\nwant\n%s", got, want)
+	root, err := parseFragment(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sanitizePage(root, &url.URL{Scheme: "http", Host: "wiki.test"}); got != want {
+		t.Errorf("sanitizePage =\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -210,8 +214,12 @@ func TestClientRefreshesFromServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(t.TempDir(), &game.Game{ID: "test"})
-	client.api = server.URL + "/api.php"
+	client := newClient(t.TempDir(), &game.Game{ID: "test"})
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.origin = origin
 	client.limiter = rate.NewLimiter(rate.Inf, 1)
 	keepPage(t, client, "<p>kept</p>", "Traits")
 	var lastDone, lastTotal int
@@ -341,7 +349,7 @@ func TestRefreshInstalls(t *testing.T) {
 			if os.Getenv(variable) == "" {
 				t.Skipf("%s is not set", variable)
 			}
-			client := NewClient(t.TempDir(), game.LookupGame(gameID))
+			client := newClient(t.TempDir(), game.LookupGame(gameID))
 			pages := 0
 			start := time.Now()
 			if err := client.Refresh(func(done, _ int) { pages = done }); err != nil {

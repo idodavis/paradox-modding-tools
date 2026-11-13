@@ -15,34 +15,33 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * BuildDetail returns the detail of the node with the given id. It returns an
- * error if no workspace is open, the game keeps no definition of the node or
- * its file cannot be read.
+ * BuildDetail returns the detail of a node. It returns an error if no
+ * workspace is open, the game keeps no definition of the node, or its file
+ * cannot be read.
  */
 export function BuildDetail(id: string): $CancellablePromise<$models.Detail> {
     return $Call.ByID(2519543259, id);
 }
 
 /**
- * BuildGraph builds the graph of what the root fires and what fires it, under
- * the given filter. It returns an error if the game keeps no definition of the
- * root.
+ * BuildGraph builds the graph of what the root fires and what fires it. It
+ * returns an error if the game keeps no definition of the root.
  */
 export function BuildGraph(root: string, filter: $models.Filter): $CancellablePromise<$models.Graph> {
     return $Call.ByID(2455070978, root, filter);
 }
 
 /**
- * Defaults returns the filter for a new graph. It returns an empty filter if no
- * workspace is open.
+ * Defaults returns the filter for a new graph: every kind and origin drawn,
+ * every fold closed. It returns an empty filter if no workspace is open.
  */
 export function Defaults(): $CancellablePromise<$models.Filter> {
     return $Call.ByID(3340937252);
 }
 
 /**
- * FindRoots returns up to the given limit of nodes whose name holds the query,
- * best first. It returns nil if no workspace is open.
+ * FindRoots returns the kept nodes whose name holds the query, the best
+ * match first, up to a limit. It returns nil if no workspace is open.
  */
 export function FindRoots(query: string, limit: number): $CancellablePromise<$models.Node[] | null> {
     return $Call.ByID(455229330, query, limit);

@@ -23,6 +23,10 @@ export enum Encoding {
  */
 export interface File {
     "path": string;
+
+    /**
+     * Key is the path as paths are compared: lower case, with slashes.
+     */
     "key": string;
 
     /**

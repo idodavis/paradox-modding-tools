@@ -136,8 +136,7 @@ func (s *Service) CompareUpload(modID, key string) (Comparison, error) {
 	answer := s.resolveAnswer(ws, listing.WorkshopID)
 	comparison.Steam, comparison.Reason, comparison.CheckedAt = answer.Steam, answer.Reason, answer.CheckedAt
 	if answer.Steam != nil {
-		titles := s.listModTitles()
-		modIDs := slices.AppendSeq(make([]string, 0, len(titles)), maps.Keys(titles))
+		modIDs := slices.Collect(maps.Keys(s.listModTitles()))
 		comparison.Page = comparePage(listing, *answer.Steam, modIDs, sync.OnceValue(s.listSteamNames))
 	}
 
@@ -146,6 +145,7 @@ func (s *Service) CompareUpload(modID, key string) (Comparison, error) {
 			return Comparison{}, err
 		}
 	}
+
 	comparison.Status = toStatus(comparison)
 
 	return comparison, nil
@@ -207,8 +207,9 @@ func (s *Service) resolveAnswer(ws *workspace.Session, workshopID string) Compar
 	}
 
 	shared, _, _ := s.flight.Do(workshopID, func() (any, error) { return s.fetchAnswer(ws, workshopID), nil })
+	answer, _ = shared.(Comparison)
 
-	return shared.(Comparison)
+	return answer
 }
 
 // fetchAnswer asks Steam about a Workshop item and keeps the answer. A failure
@@ -251,7 +252,7 @@ func (s *Service) removeAnswer(workshopID string) {
 }
 
 func refreshSnapshot(cacheDir string, params Params) error {
-	if snapshot, ok := LoadSnapshot(cacheDir, params.WorkshopID); ok && snapshot.UpdatedAt.Equal(params.UpdatedAt) {
+	if snapshot, ok := lookupSnapshot(cacheDir, params.WorkshopID); ok && snapshot.UpdatedAt.Equal(params.UpdatedAt) {
 		return nil
 	}
 
@@ -439,17 +440,10 @@ func (s *Service) compareFiles(
 		}
 
 		if files.Classify(rel).IsText() {
-			steamFile, uploadRel := "", ""
-			if theirs {
-				steamFile = files.Join(snapshot.Dir, rel)
-			}
-			if ours {
-				uploadRel = rel
-			}
-
-			counts := s.countChange(steamFile, last, src, uploadRel, hash)
+			counts := s.countChange(files.Join(snapshot.Dir, rel), last, src, rel, hash)
 			difference.Gained, difference.Lost = counts.Gained, counts.Lost
 		}
+
 		differences = append(differences, difference)
 	}
 
@@ -497,7 +491,7 @@ func (s *Service) buildUploadHashes(src source, list []files.File) map[string]st
 }
 
 // countChange returns how many lines a file gains and loses from Steam's copy
-// to the upload's. A side without the file has "" for its path and hash.
+// to the upload's. A side without the file reads as empty, with the hash "".
 func (s *Service) countChange(steamFile, steamHash string, src source, rel, hash string) Difference {
 	key := steamHash + " " + hash
 	s.mu.Lock()
@@ -508,7 +502,14 @@ func (s *Service) countChange(steamFile, steamHash string, src source, rel, hash
 	}
 
 	steamText, _ := files.LoadText(steamFile)
-	text, _ := src.loadText(rel)
+
+	// A file left out of the upload counts as empty, even while it is still
+	// on disk.
+	var text files.Text
+	if hash != "" {
+		text, _ = src.loadText(rel)
+	}
+
 	counts.Gained, counts.Lost = countLines(steamText.Text, text.Text)
 
 	s.mu.Lock()
@@ -536,7 +537,7 @@ func toStatus(comparison Comparison) string {
 // if its folder is gone. It returns an error if PMT has no snapshot.
 func (s *Service) loadSnapshot(ws *workspace.Session, workshopID string) (Snapshot, error) {
 	cacheDir := s.Workspace.Config.Dirs.Cache
-	snapshot, ok := LoadSnapshot(cacheDir, workshopID)
+	snapshot, ok := lookupSnapshot(cacheDir, workshopID)
 	if !ok {
 		return Snapshot{}, errors.New("PMT has not read the item's files from Steam: check again to download them")
 	}
@@ -554,22 +555,18 @@ func (s *Service) loadSnapshot(ws *workspace.Session, workshopID string) (Snapsh
 	if err := startCopy(context.Background(), downloadFlag, params, nil); err != nil {
 		return Snapshot{}, err
 	}
-	snapshot, _ = LoadSnapshot(cacheDir, workshopID)
+
+	snapshot, _ = lookupSnapshot(cacheDir, workshopID)
 
 	return snapshot, nil
 }
 
-// LoadSnapshot loads the snapshot saved for an item. It returns false if there
-// is none or the id is empty.
-func LoadSnapshot(cacheDir, workshopID string) (Snapshot, bool) {
+// lookupSnapshot returns the snapshot saved for an item, or false if there is
+// none or the id is empty.
+func lookupSnapshot(cacheDir, workshopID string) (Snapshot, bool) {
 	snapshot, err := app.LoadJSON[Snapshot](resolveSnapshotPath(cacheDir, workshopID))
 
 	return snapshot, err == nil && workshopID != "" && snapshot.WorkshopID == workshopID
-}
-
-// SaveSnapshot saves a snapshot.
-func SaveSnapshot(cacheDir string, snapshot Snapshot) error {
-	return app.SaveJSON(resolveSnapshotPath(cacheDir, snapshot.WorkshopID), snapshot)
 }
 
 func resolveSnapshotPath(cacheDir, workshopID string) string {

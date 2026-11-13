@@ -3,10 +3,7 @@
 package graph
 
 import (
-	"slices"
 	"strings"
-
-	"github.com/samber/lo"
 
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
@@ -14,36 +11,50 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Condition is one statement of a block of triggers in words, with the
-// statements of its block under it.
+// Condition is one statement of a block of triggers in words, with the
+// statements of its own block under it.
 type Condition struct {
-	Subject    string      `json:"subject,omitempty"`    // what it is about, as written, read first: a key that names a scope, or the value of a keyword that reads its value first; "" for any other
-	Text       string      `json:"text,omitempty"`       // the key and its operator in words, such as "has trait"
-	Value      string      `json:"value,omitempty"`      // the value as written; "" for a block, a yes, a no or a subject
-	Title      string      `json:"title,omitempty"`      // the in-game name of what its value names, or its subject where that is its value; "" for none
-	Negated    bool        `json:"negated,omitempty"`    // it must be false
-	Line       int         `json:"line"`                 // counted from one
-	Conditions []Condition `json:"conditions,omitempty"` // the statements of its block, in the order written
+	// Subject is what the condition is about, said first: a key that leads
+	// to a scope, or the value of a key such as exists. It is "" otherwise.
+	Subject string `json:"subject,omitempty"`
+
+	// Text is the key and its operator in words, such as "has trait".
+	Text string `json:"text,omitempty"`
+
+	// Value is the value as written. It is "" for a block, a yes or a no,
+	// and a value that became the subject.
+	Value string `json:"value,omitempty"`
+
+	// Title is the in-game name of what the value names, "" for none.
+	Title string `json:"title,omitempty"`
+
+	// Negated is set where the condition must be false.
+	Negated bool `json:"negated,omitempty"`
+
+	// Line counts from one. It is 0 for a heading the page adds.
+	Line int `json:"line"`
+
+	// Conditions are the statements of its block, in the order written.
+	Conditions []Condition `json:"conditions,omitempty"`
 }
 
-// A phrase is how a condition reads one key in English.
+// phrase is how a condition says one key in English.
 type phrase struct {
-	// Says is the key in words, with a * for the rest of a prefix key. It is
-	// "" for the key as written.
+	// Says is the key in words, with a * for the rest of a key that starts
+	// with a list's word. It is "" for a key said in its own words.
 	Says string
 
-	// ValueFirst is whether its value is read first, as in "X exists".
-	// Negates is whether it is true when what is inside it is false. Covers
-	// is whether its own text is shown in place of the conditions inside it.
+	// ValueFirst says the value first, as in "X exists". Negates is set for
+	// a key that holds when what is inside it does not. Covers shows the
+	// key's own text in place of the conditions inside it.
 	ValueFirst, Negates, Covers bool
 }
 
-// notAll is how a condition reads a keyword that is true unless everything
-// inside it is true.
+// notAll says a key that fails only when everything inside it holds.
 const notAll = "not all of"
 
-// phrases holds how a condition reads each key that does not read as its own
-// words, by the key in lower case.
+// phrases holds the words of each key that has its own, by the key in lower
+// case.
 var phrases = map[string]phrase{
 	"and": {Says: "all of"}, "or": {Says: "any of"},
 	"not": {Says: notAll, Negates: true}, "nor": {Says: "none of", Negates: true},
@@ -55,21 +66,20 @@ var phrases = map[string]phrase{
 	"exists": {ValueFirst: true},
 }
 
-// anyPrefix is how the key of a trigger over a list starts, and anyPhrase how
-// a condition reads such a key.
+// anyPrefix starts the key of a trigger over a list, such as any_child, and
+// anyPhrase says such a key.
 const anyPrefix = "any_"
 
 var anyPhrase = phrase{Says: "any * where"}
 
-// operatorSays is how a condition reads each operator between a key and a
-// value.
+// operatorSays holds the words of each operator between a key and a value.
 var operatorSays = map[string]string{
 	"=": "is", "==": "is", "!=": "is not", ">": "more than", ">=": "at least", "<": "less than", "<=": "at most",
 	"?=": "is, if it exists",
 }
 
-// findPhrase returns how a condition reads a key, and the rest of the key
-// where it opens with the prefix of a trigger over a list.
+// findPhrase returns how a condition says a key. For a trigger over a list
+// it also returns the key without its any_.
 func findPhrase(key string) (phrase, string) {
 	lower := strings.ToLower(key)
 	if entry, ok := phrases[lower]; ok {
@@ -83,29 +93,56 @@ func findPhrase(key string) (phrase, string) {
 	return phrase{}, ""
 }
 
-// findCondition returns the limit of a block in words, else its trigger. It
-// returns nil if it holds neither.
+// findCondition returns a block's limit in words, else its trigger, as the
+// page lists it. It returns nil if the block holds neither.
 func findCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Condition {
 	for _, key := range []string{lang.LimitKey, lang.TriggerKey} {
 		if child, ok := tree.FindChild(statement, key); ok && tree.Statements[child].IsBlock() {
-			return listConditions(ws, mods, tree, child)
+			return groupConditions(listConditions(ws, mods, tree, child))
 		}
 	}
+
 	return nil
 }
 
-// listConditions returns the statements of a block of triggers in words, in the
-// order written.
+// groupConditions puts a trigger's negated conditions under "must be
+// false", no longer marked negated, and the rest under "must be true". With
+// none negated, the conditions are returned as they are.
+func groupConditions(conditions []Condition) []Condition {
+	var holding, failing []Condition
+	for _, condition := range conditions {
+		if condition.Negated {
+			condition.Negated = false
+			failing = append(failing, condition)
+		} else {
+			holding = append(holding, condition)
+		}
+	}
+
+	if len(failing) == 0 {
+		return conditions
+	}
+
+	grouped := []Condition{}
+	if len(holding) > 0 {
+		grouped = append(grouped, Condition{Text: "must be true", Conditions: holding})
+	}
+
+	return append(grouped, Condition{Text: "must be false", Conditions: failing})
+}
+
 func listConditions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, block int32) []Condition {
-	return lo.Map(slices.Collect(tree.Children(block)), func(child int32, _ int) Condition {
-		return makeCondition(ws, mods, tree, child)
-	})
+	conditions := []Condition{}
+	for child := range tree.Children(block) {
+		conditions = append(conditions, makeCondition(ws, mods, tree, child))
+	}
+
+	return conditions
 }
 
 // makeCondition returns one statement of a block of triggers in words. A
-// value of one prefixed link, as title:k_france, also has the in-game name of
-// the definition it names, if the game keeps one. A block holds its
-// statements, and one that only wraps one of them folds into it.
+// value such as title:k_france also gets the in-game name of what it names,
+// and a block that only wraps one condition is folded into it.
 func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Condition {
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)
@@ -114,14 +151,19 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	switch {
 	case keyword.Covers:
 		condition.Text, condition.Value = describeCover(ws, mods, tree, statement)
+
 		return condition
+
 	case keyword.Says != "":
 		condition.Text = strings.Replace(keyword.Says, "*", toWords(rest), 1)
+
 	case ws.Schema.IsLink(key) || current.KeyClass == jomini.ClassParameter:
 		condition.Subject = key
+
 	default:
 		condition.Text = toWords(key)
 	}
+
 	operator := describeOperator(tree.Text(current.Op), current.IsBlock(), condition.Subject != "")
 	condition.Text = strings.TrimSpace(condition.Text + " " + operator)
 	if condition.Subject == "" && operator == "" {
@@ -132,6 +174,7 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 			condition.Negated, condition.Value = true, ""
 		}
 	}
+
 	links := jomini.Links(condition.Value, 0)
 	link := links[0]
 	prefix, label := condition.Value[link.Prefix.Start:link.Prefix.End], condition.Value[link.Name.Start:link.Name.End]
@@ -140,55 +183,65 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 			condition.Title = toTitle(ws, mods, ws.LookupDefinitionText(mods, winner.Site, lang.TitleKey))
 		}
 	}
+
 	if keyword.ValueFirst {
 		condition.Subject, condition.Value = condition.Value, ""
 	}
+
 	if current.IsBlock() {
 		condition.Conditions = listConditions(ws, mods, tree, statement)
 	}
+
 	return foldCondition(condition, keyword)
 }
 
-// foldCondition folds a block that only wraps one condition into it: a negation
-// makes it negated, and a scope becomes its subject.
+// foldCondition folds a block that wraps one condition into it: a negating
+// key negates the condition, and a key that leads to a scope becomes its
+// subject.
 func foldCondition(condition Condition, keyword phrase) Condition {
 	if len(condition.Conditions) != 1 {
 		return condition
 	}
+
 	inner := condition.Conditions[0]
 	switch {
 	case keyword.Negates:
 		inner.Negated = !inner.Negated
+
 		return inner
+
 	case condition.Subject != "" && condition.Text == "" && inner.Subject == "" && inner.Conditions == nil:
 		inner.Subject = condition.Subject
+
 		return inner
 	}
+
 	return condition
 }
 
-// describeCover returns the text a statement shows in place of the conditions
-// it holds. If no message has the key it names, it returns the statement's own
-// key in words and that key.
+// describeCover returns the text a statement such as custom_tooltip shows in
+// place of its conditions. If no message has its key, it returns the
+// statement's key in words, with the key it names as the value.
 func describeCover(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (string, string) {
 	key := tree.Unquoted(tree.Statements[statement].Value)
 	if label, ok := tree.FindChildValue(statement, lang.LabelKey); ok {
 		key = label
 	}
+
 	text, _, ok := ws.LookupText(mods, key)
 	if !ok {
 		return toWords(tree.Text(tree.Statements[statement].Key)), key
 	}
+
 	return toTitle(ws, mods, text), ""
 }
 
-// toWords returns a key as words, each underscore a space.
 func toWords(key string) string {
 	return strings.ReplaceAll(key, "_", " ")
 }
 
-// describeOperator returns the words an operator reads after a key. An = reads
-// nothing where the key's words already say what it checks.
+// describeOperator returns the words an operator is said with after a key.
+// An = says nothing where the key's words already say what is checked.
 func describeOperator(operator string, isBlock, isScope bool) string {
 	switch {
 	case operator == "=" && (isBlock || !isScope):
@@ -196,5 +249,6 @@ func describeOperator(operator string, isBlock, isScope bool) string {
 	case operator == "?=" && isBlock:
 		return "if it exists"
 	}
+
 	return operatorSays[operator]
 }

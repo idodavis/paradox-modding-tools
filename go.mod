@@ -11,7 +11,6 @@ require (
 	github.com/kaiser-chris/dds-go v1.0.0
 	github.com/kaiser-chris/pdx-asset-go v0.7.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/samber/lo v1.53.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/wailsapp/wails/v3 v3.1.0
 	golang.org/x/mod v0.42.0

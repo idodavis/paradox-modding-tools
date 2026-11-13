@@ -176,6 +176,7 @@ flowchart LR
 | `pmt.log` | The user cache folder: `%LocalAppData%\paradox-modding-tools` on Windows, `~/.cache/paradox-modding-tools` on Linux |
 | The caches (schemas, indexes, wiki pages, Steam snapshots, the agents' installs) and the trash | `cache/` in that same folder. Reset data empties it. |
 | A mod's Workshop listing | The mod's own `.workshop` folder |
+| A mod's own upload patterns | The mod's own `.workshop-ignore` file |
 
 ## One request: a hover
 

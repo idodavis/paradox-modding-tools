@@ -9,133 +9,131 @@ import * as loc$0 from "../../internal/loc/models.js";
 import * as lsp$0 from "../lsp/models.js";
 
 /**
- * A Condition is one statement of a block of triggers in words, with the
- * statements of its block under it.
+ * Condition is one statement of a block of triggers in words, with the
+ * statements of its own block under it.
  */
 export interface Condition {
     /**
-     * what it is about, as written, read first: a key that names a scope, or the value of a keyword that reads its value first; "" for any other
+     * Subject is what the condition is about, said first: a key that leads
+     * to a scope, or the value of a key such as exists. It is "" otherwise.
      */
     "subject"?: string;
 
     /**
-     * the key and its operator in words, such as "has trait"
+     * Text is the key and its operator in words, such as "has trait".
      */
     "text"?: string;
 
     /**
-     * the value as written; "" for a block, a yes, a no or a subject
+     * Value is the value as written. It is "" for a block, a yes or a no,
+     * and a value that became the subject.
      */
     "value"?: string;
 
     /**
-     * the in-game name of what its value names, or its subject where that is its value; "" for none
+     * Title is the in-game name of what the value names, "" for none.
      */
     "title"?: string;
 
     /**
-     * it must be false
+     * Negated is set where the condition must be false.
      */
     "negated"?: boolean;
 
     /**
-     * counted from one
+     * Line counts from one. It is 0 for a heading the page adds.
      */
     "line": number;
 
     /**
-     * the statements of its block, in the order written
+     * Conditions are the statements of its block, in the order written.
      */
     "conditions"?: Condition[] | null;
 }
 
 /**
- * A Detail is what the page shows about one node: its texts, its keys, its
+ * Detail is what the page shows about one node: its texts, its keys, its
  * firings and the game rules it reads.
  */
 export interface Detail {
     /**
-     * its Fires are every firing it makes
+     * Node is the node, with every firing it makes as its Fires.
      */
     "node": Node;
 
     /**
-     * the workspace's language, or the base language if it has none
+     * Language is the workspace's language, else the base language.
      */
     "language": string;
 
     /**
-     * the definition as written
+     * Source is the definition as written.
      */
     "source": string;
 
     /**
-     * the keys at the top of the definition, except its options
+     * Sections are the keys at the top of the definition but its option
+     * blocks, which are Options.
      */
     "sections": Section[] | null;
-
-    /**
-     * the definition's option blocks
-     */
     "options": Section[] | null;
     "firedBy": Edge[] | null;
 
     /**
-     * the node at the other end of each of its firings, by its id
+     * Linked holds the node at the other end of each firing, by id.
      */
     "linked": { [_ in string]?: Node } | null;
 
     /**
-     * the game rules the definition reads
+     * Rules are the game rules the definition reads.
      */
     "rules": Rule[] | null;
 
     /**
-     * the copy of its name that the definition hides; nil for none
+     * Copy is the copy of its name the definition hides, nil for none.
      */
     "copy"?: Node | null;
 }
 
 /**
- * An Edge is one firing, from a firer to what it fires.
+ * Edge is one firing, from the node that fires to the node it fires.
  */
 export interface Edge {
     "from": string;
     "to": string;
 
     /**
-     * the delay in words, such as 7 days or 10–30 days; "" for none
+     * Delay is the delay in words, such as "10–30 days", "" for none.
      */
     "delay"?: string;
 
     /**
-     * the blocks it is written inside, from the top of its definition
+     * Steps are the blocks the firing is written inside, from the top of
+     * its definition.
      */
     "steps"?: Step[] | null;
 
     /**
-     * the key of the statement that writes it, such as trigger_event
+     * Effect is the key of the statement that writes the firing, such as
+     * trigger_event, and Title the title that statement gives it.
      */
     "effect"?: string;
-
-    /**
-     * the title that statement gives it, each data call in words
-     */
     "title"?: string;
 
     /**
-     * the scripted effects passed through, when they are not drawn as nodes
+     * Via are the scripted effects the firing passes through that are not
+     * drawn as nodes.
      */
     "via"?: string[] | null;
 
     /**
-     * where the firing is written
+     * Site is where the firing is written.
      */
     "site": lsp$0.Site;
 }
 
 /**
- * A Filter says what the graph shows and how far it reaches from its root.
+ * Filter says what the graph shows and how far it goes from its root.
  */
 export interface Filter {
     "databases": string[] | null;
@@ -149,7 +147,8 @@ export interface Filter {
 }
 
 /**
- * A Graph is the event graph from one root. It has no coordinates.
+ * Graph is the event graph from one root. It has no coordinates: the page
+ * lays it out.
  */
 export interface Graph {
     "root": string;
@@ -157,219 +156,210 @@ export interface Graph {
     "edges": Edge[] | null;
 
     /**
-     * the limit cut it
+     * Truncated is set when the limit cut the graph. Total is how many nodes
+     * were found before it did.
      */
     "truncated": boolean;
-
-    /**
-     * how many nodes the reach found before the limit cut it
-     */
     "total": number;
 }
 
 /**
- * A Node is one entry of the event graph, or a fold standing for the rest of a
- * node's firings.
+ * Node is one entry of the event graph, or a fold that stands for the rest
+ * of a node's firings.
  */
 export interface Node {
     /**
-     * database:name; more:<id> or more-in:<id> for a fold
+     * ID is database:name. A fold's is more:<id> or more-in:<id>.
      */
     "id": string;
     "database": string;
     "name": string;
 
     /**
-     * what a definition of its database is called, such as "scripted effect"
+     * What is what its database calls a definition, such as "scripted
+     * effect".
      */
     "what": string;
 
     /**
-     * its localized title, each data call in words; "" if it has none
+     * Title is its localized title, "" if it has none.
      */
     "title": string;
 
     /**
-     * how the player sees an event or a message: window, hidden or message; "" for any other entry
+     * Display is window, hidden or message for an event or a message, else "".
      */
     "display"?: string;
 
     /**
-     * the path of an event's picture; "" if none is found
+     * Background is the path of an event's picture, "" if none is found.
      */
     "background"?: string;
 
     /**
-     * its own trigger in words; nil for none, for a fold, and outside a graph and a detail
+     * Trigger is its own trigger in words. It is set only in a graph and a
+     * detail.
      */
     "trigger"?: Condition[] | null;
 
     /**
-     * the comment lines just above its definition, joined by newlines
+     * Comment is the comment lines just above its definition.
      */
     "comment"?: string;
 
     /**
-     * an on_action the game calls from its own code
+     * Hardcoded is set for an on_action the game fires from its own code.
      */
     "hardcoded"?: boolean;
 
     /**
-     * the origin of the latest-loaded copy of its name that its definition hides; "" for none
+     * CopyOrigin is the origin of the copy its definition hides, "" for none.
      */
     "copyOrigin"?: string;
     "site": lsp$0.Site;
 
     /**
-     * its distance from the root, negative for a firer
+     * Step is its distance from the root, negative for a node that fires
+     * the root.
      */
     "step": number;
 
     /**
-     * the drawn node one step nearer the root; "" for the root
+     * Parent is the drawn node one step nearer the root, "" for the root.
      */
     "parent": string;
 
     /**
-     * the firings a fold stands for; 0 for a definition
+     * Count is how many firings a fold stands for, 0 for a definition.
      */
     "count": number;
 
     /**
-     * the depth stopped at it, and it links further to a next step
+     * Deep is set where the depth stopped at a node that leads further.
      */
     "deep": boolean;
 
     /**
-     * a firer the backward reach found through a node the root itself fires: it fires the root only round a loop of the root's own chain
+     * Looped is set for a firer of the root that the backward walk found
+     * through a node the root itself fires.
      */
     "looped"?: boolean;
 
     /**
-     * every firing it makes, in the order written; nil outside a detail
+     * Fires is every firing it makes, in the order written. It is set only
+     * in a detail.
      */
     "fires"?: Edge[] | null;
 }
 
 /**
- * A Rule is one game rule a definition reads, with its settings.
+ * Rule is one game rule a definition reads, with its settings.
  */
 export interface Rule {
     /**
-     * the rule's name
+     * ID is the rule's name.
      */
     "id": string;
     "options": RuleOption[] | null;
 }
 
 /**
- * A RuleOption is one setting of a game rule.
+ * RuleOption is one setting of a game rule.
  */
 export interface RuleOption {
     "key": string;
 
     /**
-     * its localized name; "" if it has none
+     * Text and Description are the setting's localized name and
+     * description, "" where it has none.
      */
     "text": string;
-
-    /**
-     * its localized description; "" if it has none
-     */
     "description": string;
     "default"?: boolean;
 }
 
 /**
- * A Section is one key at the top of a definition, as the page shows it.
+ * Section is one key at the top of a definition.
  */
 export interface Section {
     "key": string;
 
     /**
-     * a scalar as written; "" for a block
+     * Value is a plain value as written, "" for a block.
      */
     "value": string;
 
     /**
-     * counted from one
+     * Line counts from one.
      */
     "line": number;
 
     /**
-     * a block's own limit, else its trigger, in words
+     * When is a block's own limit, else its trigger, in words.
      */
     "when"?: Condition[] | null;
     "texts"?: Version[] | null;
 }
 
 /**
- * A Step is one block a firing is written inside, as the page shows it.
+ * Step is one block a firing is written inside.
  */
 export interface Step {
     /**
-     * as written, such as if, random_list or scope:child.dynasty
+     * Key is the block's key as written, such as if or scope:child.dynasty.
+     * A weighted branch has the key of the list it is in.
      */
     "key": string;
 
     /**
-     * branch, weight, list, scope, option or block
+     * Kind is branch, weight, list, scope, option or block.
      */
     "kind": string;
 
     /**
-     * a weighted branch's number as written
+     * Weight is a weighted branch's number, as written.
      */
     "weight"?: string;
 
     /**
-     * the blocks in a weighted branch that change its weight
-     */
-    "modifiers"?: number;
-
-    /**
-     * its limit, else its trigger, in words
-     */
-    "when"?: Condition[] | null;
-
-    /**
-     * an option's name in words; "" for the other kinds
-     */
-    "title"?: string;
-
-    /**
-     * counted from one
+     * Line counts from one.
      */
     "line": number;
+
+    /**
+     * Conditions is the step in words as the page lists it: the kind of
+     * block, then the conditions it runs on. A plain block has none.
+     */
+    "conditions"?: Condition[] | null;
 }
 
 /**
- * A Version is one text a key can show, with the trigger that decides it.
+ * Version is one text a key can show, with the trigger that decides it.
  */
 export interface Version {
     /**
-     * its localization key
+     * Key is the text's localization key.
      */
     "key": string;
     "text": string;
 
     /**
-     * the text's pieces, each data call in words
+     * Segments are the pieces of the text, each data call in words.
      */
     "segments": loc$0.Segment[] | null;
 
     /**
-     * the detail's language has no message with its key
+     * Missing is set where the detail's language has no message for the key.
      */
     "missing"?: boolean;
 
     /**
-     * its trigger in words; nil if it always can
+     * When is the text's trigger in words, nil for a text that always shows.
      */
     "when"?: Condition[] | null;
 
     /**
-     * counted from one
+     * Line counts from one.
      */
     "line": number;
 }

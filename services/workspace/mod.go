@@ -60,7 +60,9 @@ type Mod struct {
 
 	// Thumbnail is the full path of the picture shown for the mod, "" if none.
 	Thumbnail string `json:"thumbnail"`
-	Workshop  bool   `json:"workshop"`
+
+	// Workshop is true for Steam's copy of a Workshop mod, which is read only.
+	Workshop bool `json:"workshop"`
 }
 
 // ModFolder is the folder a new mod would be made in, or why it cannot be
@@ -73,7 +75,7 @@ type ModFolder struct {
 
 // ReadDescriptor reads the descriptor of the mod in a folder.
 func ReadDescriptor(row *game.Game, dir string) (Descriptor, error) {
-	file, _ := resolveDescriptor(row, dir)
+	file := resolveDescriptor(row, dir)
 	text, err := files.ReadText(file)
 	if err != nil {
 		return Descriptor{}, err
@@ -103,8 +105,9 @@ func ParseDescriptor(file, text string) (Descriptor, error) {
 
 const thumbnailName = "thumbnail"
 
-// findThumbnail returns the full path of a mod's thumbnail file, else of the
-// picture its descriptor names, else "".
+// findThumbnail returns the picture shown for a mod and sent with its upload:
+// the one its descriptor names, else its thumbnail file, else "". A picture
+// that is not there is passed over.
 func findThumbnail(row *game.Game, dir, picture string) string {
 	folders := []string{row.ThumbnailDir, ""}
 	if row.ThumbnailDir == "" {
@@ -118,7 +121,7 @@ func findThumbnail(row *game.Game, dir, picture string) string {
 		}
 	}
 
-	for _, file := range append(candidates, picture) {
+	for _, file := range append([]string{picture}, candidates...) {
 		if _, err := os.Stat(file); file != "" && err == nil {
 			return file
 		}
@@ -130,7 +133,7 @@ func findThumbnail(row *game.Game, dir, picture string) string {
 // WriteDescriptor writes a mod's descriptor in its game's format, making the
 // file if it is missing. Fields a Descriptor does not model keep their values.
 func WriteDescriptor(row *game.Game, dir string, descriptor Descriptor) error {
-	file, _ := resolveDescriptor(row, dir)
+	file := resolveDescriptor(row, dir)
 	existing, err := files.LoadText(file)
 	if err != nil {
 		return err
@@ -169,6 +172,7 @@ func (s *Session) WriteDescriptor(modID string, descriptor Descriptor) error {
 	if !ok {
 		return fmt.Errorf("the mod %s is not in the open workspace", modID)
 	}
+
 	if err := WriteDescriptor(s.Game, mod.Dir, descriptor); err != nil {
 		return err
 	}
@@ -256,12 +260,13 @@ func (s *Service) AddMod(workspaceID, dir string, external bool) (Mod, error) {
 	if err != nil {
 		return Mod{}, err
 	}
+
 	if err = checkModFolder(row, install, dir); err != nil {
 		return Mod{}, err
 	}
 
 	record := app.Mod{ID: rand.Text(), Dir: dir, External: external}
-	err = s.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+	err = s.UpdateRecord(workspaceID, func(workspace *app.Workspace) error {
 		if slices.ContainsFunc(workspace.Mods, func(mod app.Mod) bool { return files.ToKey(mod.Dir) == files.ToKey(dir) }) {
 			return fmt.Errorf("%s is a mod of the workspace already", dir)
 		}
@@ -275,11 +280,11 @@ func (s *Service) AddMod(workspaceID, dir string, external bool) (Mod, error) {
 		return Mod{}, err
 	}
 
-	return readMod(row, record), nil
+	return readMod(row, row.ListWorkshopRoots(), record), nil
 }
 
-// ListMods returns the open workspace's mods in load order, with their records
-// as config.json holds them now.
+// ListMods returns the open workspace's mods in load order. Their records are
+// read from config.json, which may hold changes the session has not opened.
 //
 //wails:ignore
 func (s *Service) ListMods() []Mod {
@@ -377,7 +382,7 @@ func resolveModDir(row *game.Game, install app.Install, dir string) string {
 
 // RemoveMod takes a mod out of a workspace. Its folder stays.
 func (s *Service) RemoveMod(workspaceID, modID string) error {
-	return s.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+	return s.UpdateRecord(workspaceID, func(workspace *app.Workspace) error {
 		workspace.Mods = slices.DeleteFunc(workspace.Mods, func(mod app.Mod) bool { return mod.ID == modID })
 
 		return nil
@@ -387,7 +392,7 @@ func (s *Service) RemoveMod(workspaceID, modID string) error {
 // ReorderMods sets a workspace's load order. It fails unless the ids name each
 // mod once.
 func (s *Service) ReorderMods(workspaceID string, modIDs []string) error {
-	return s.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+	return s.UpdateRecord(workspaceID, func(workspace *app.Workspace) error {
 		ordered, err := reorderMods(workspace.Mods, modIDs, func(mod app.Mod) string { return mod.ID })
 		if err == nil {
 			workspace.Mods = ordered
@@ -422,7 +427,7 @@ func reorderMods[T any](mods []T, modIDs []string, id func(mod T) string) ([]T, 
 // ResetColors gives each mod the color slot of its place in the load order and
 // clears the game's color.
 func (s *Service) ResetColors(workspaceID string) error {
-	return s.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+	return s.UpdateRecord(workspaceID, func(workspace *app.Workspace) error {
 		workspace.GameColor = ""
 		for position := range workspace.Mods {
 			workspace.Mods[position].Color = makeSlot(position)
@@ -440,10 +445,10 @@ func (s *Service) ListWorkshopMods(installID string) ([]Mod, error) {
 		return nil, err
 	}
 
-	dirs := row.ListWorkshopFolders()
+	dirs, roots := row.ListWorkshopFolders(), row.ListWorkshopRoots()
 	mods := make([]Mod, len(dirs))
 	for position, dir := range dirs {
-		mods[position] = readMod(row, app.Mod{Dir: dir})
+		mods[position] = readMod(row, roots, app.Mod{Dir: dir})
 	}
 
 	slices.SortFunc(mods, func(mod, other Mod) int {
@@ -461,12 +466,12 @@ func (s *Service) SetExternal(workspaceID, modID string, external bool) error {
 		return err
 	}
 
-	return s.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+	return s.UpdateRecord(workspaceID, func(workspace *app.Workspace) error {
 		position := slices.IndexFunc(workspace.Mods, func(mod app.Mod) bool { return mod.ID == modID })
 		switch {
 		case position < 0:
 			return fmt.Errorf("the workspace has no mod %s", modID)
-		case row.IsWorkshopFolder(workspace.Mods[position].Dir):
+		case game.IsWorkshopFolder(row.ListWorkshopRoots(), workspace.Mods[position].Dir):
 			return errors.New("steam's copy of a Workshop mod is always an external mod")
 		}
 
@@ -478,7 +483,7 @@ func (s *Service) SetExternal(workspaceID, modID string, external bool) error {
 
 // UpdateMod replaces a mod's record.
 func (s *Service) UpdateMod(workspaceID string, mod app.Mod) error {
-	return s.updateWorkspace(workspaceID, func(workspace *app.Workspace) error {
+	return s.UpdateRecord(workspaceID, func(workspace *app.Workspace) error {
 		if position := slices.IndexFunc(workspace.Mods, func(other app.Mod) bool { return other.ID == mod.ID }); position >= 0 {
 			workspace.Mods[position] = mod
 		}
@@ -494,9 +499,11 @@ func createModFolder(row *game.Game, dir, launcherDir, name, version string) (st
 	if err != nil {
 		return "", err
 	}
+
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
+
 	if err := os.Mkdir(folder, 0o755); err != nil {
 		return "", err
 	}
@@ -511,7 +518,8 @@ func createModFolder(row *game.Game, dir, launcherDir, name, version string) (st
 	if err := WriteDescriptor(row, folder, descriptor); err != nil {
 		return "", err
 	}
-	if _, metadata := resolveDescriptor(row, folder); metadata {
+
+	if isMetadata(row.ModDescriptor) {
 		return folder, nil
 	}
 
@@ -578,9 +586,9 @@ func toSupportedVersion(version string) string {
 }
 
 // MatchVersion reports whether a mod made for a supported version runs on a
-// game version. It matches part by part, as EU5's and Vic3's logs show, and a *
-// matches the rest. The second result is false where no source shows how the
-// games match, such as a * inside a part or a build id.
+// game version. It compares part by part, and a * matches the rest. judged is
+// false where it is not known how the games compare, such as for a * inside a
+// part or a build id.
 func MatchVersion(supported, version string) (matches, judged bool) {
 	wanted, actual := strings.Split(supported, "."), strings.Split(version, ".")
 	notNumber := func(part string) bool { return jomini.Classify(part) != jomini.ClassNumber }
@@ -631,11 +639,7 @@ func checkModFolder(row *game.Game, install app.Install, dir string) error {
 	return nil
 }
 
-// resolveDescriptor returns the path of a mod's descriptor and whether it is
-// metadata.json rather than script.
-func resolveDescriptor(row *game.Game, dir string) (file string, metadata bool) {
-	return files.Join(dir, row.ModDescriptor), isMetadata(row.ModDescriptor)
-}
+func resolveDescriptor(row *game.Game, dir string) string { return files.Join(dir, row.ModDescriptor) }
 
 func isMetadata(file string) bool {
 	return path.Ext(file) == ".json"
@@ -718,6 +722,8 @@ func decodeDescriptorMetadata(text string) (Descriptor, error) {
 	return descriptor, nil
 }
 
+// scriptKeys are the keys encodeDescriptorScript writes itself. It keeps the
+// existing file's other statements as they are.
 var scriptKeys = []string{
 	"name", "version", "supported_version", "picture", "remote_file_id", "replace_path", "tags",
 }
@@ -778,20 +784,13 @@ func encodeDescriptorMetadata(existing string, descriptor Descriptor) (string, e
 		custom = map[string]any{}
 	}
 
-	replacePaths, tags := descriptor.ReplacePaths, descriptor.Tags
-	if replacePaths == nil {
-		replacePaths = []string{}
-	}
-	if tags == nil {
-		tags = []string{}
-	}
-
-	custom["replace_paths"] = replacePaths
+	// The appends write an empty list as [], not null.
+	custom["replace_paths"] = append([]string{}, descriptor.ReplacePaths...)
 	fields["game_custom_data"] = custom
 	fields["name"] = descriptor.Name
 	fields["version"] = descriptor.Version
 	fields["supported_game_version"] = descriptor.SupportedVersion
-	fields["tags"] = tags
+	fields["tags"] = append([]string{}, descriptor.Tags...)
 
 	if descriptor.Thumbnail != "" {
 		fields["picture"] = descriptor.Thumbnail

@@ -301,8 +301,8 @@ func (s *Service) ResolveAccess() Access {
 // ListTasks returns the starter tasks.
 func (s *Service) ListTasks() []Task { return Tasks }
 
-// ListTools returns PMT's tools with their titles. It returns an error if the
-// tools cannot be listed.
+// ListTools returns PMT's tools as an agent sees them, by connecting a client
+// to a server of its own in memory.
 func (s *Service) ListTools() ([]Tool, error) {
 	ctx := context.Background()
 	serverEnd, clientEnd := sdk.NewInMemoryTransports()

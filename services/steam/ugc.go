@@ -219,9 +219,10 @@ var optionalBindings = map[string]any{
 	"SteamAPI_ISteamUGC_GetQueryUGCChildren": &api.getChildren,
 }
 
-// Open loads Steam's library and starts it for a game. It returns an error if
-// the library does not load or lacks a function, or Steam is not signed in.
-func Open(libraryPath string, appID int) (*Client, error) {
+// openLibrary loads Steam's library and starts it for a game. It returns an
+// error if the library does not load or lacks a function, or Steam is not
+// signed in.
+func openLibrary(libraryPath string, appID int) (*Client, error) {
 	handle, err := loadLibrary(libraryPath)
 	if err != nil {
 		return nil, fmt.Errorf("steam's library %s did not load: %w", libraryPath, err)
@@ -253,6 +254,7 @@ func lookupFunction(handle uintptr, name string, function any) error {
 	if err != nil {
 		return fmt.Errorf("steam's library has no %s: %w", name, err)
 	}
+
 	purego.RegisterFunc(function, symbol)
 
 	return nil
@@ -399,7 +401,8 @@ func (c *Client) fetchFolder(workshopID string, updatedAt time.Time) (string, er
 	}
 
 	folder := make([]byte, 1024)
-	for deadline := time.Now().Add(downloadTimeout); time.Now().Before(deadline); time.Sleep(pollInterval) {
+	deadline := time.Now().Add(downloadTimeout)
+	for time.Now().Before(deadline) {
 		api.runCallbacks()
 
 		var size uint64
@@ -407,6 +410,8 @@ func (c *Client) fetchFolder(workshopID string, updatedAt time.Time) (string, er
 		if api.getInstall(c.ugc, id, &size, &folder[0], uint32(len(folder)), &stamp) && int64(stamp) >= updatedAt.Unix() {
 			return toText(folder), nil
 		}
+
+		time.Sleep(pollInterval)
 	}
 
 	return "", errors.New("steam did not finish downloading the item")
@@ -462,6 +467,7 @@ func (c *Client) Submit(workshopID string, params Params, progress func(Progress
 	if err != nil {
 		return err
 	}
+
 	progress(Progress{Stage: stagePreparing})
 
 	// Steam may not answer a query for an item it just made.
@@ -516,6 +522,7 @@ func (c *Client) Submit(workshopID string, params Params, progress func(Progress
 	if err != nil {
 		return err
 	}
+
 	progress(Progress{Stage: stageDone, Done: int64(total), Total: int64(total)})
 
 	return nil
@@ -553,18 +560,7 @@ func (c *Client) setDependencies(id uint64, listing Listing, details Details, mo
 // diffTags returns the tags an upload adds and removes. Tags that differ only
 // in case are the same, because Steam keeps a tag in the case it has.
 func diffTags(sent, steam []string) (added, removed []string) {
-	missing := func(tags, others []string) []string {
-		result := []string{}
-		for _, tag := range tags {
-			if !slices.ContainsFunc(others, func(one string) bool { return strings.EqualFold(one, tag) }) {
-				result = append(result, tag)
-			}
-		}
-
-		return result
-	}
-
-	return missing(sent, steam), missing(steam, sent)
+	return listMissing(sent, steam, strings.EqualFold), listMissing(steam, sent, strings.EqualFold)
 }
 
 // diffDLC returns the DLCs an upload adds and removes. It removes none if Steam
@@ -606,20 +602,21 @@ func diffLabels(previews, steam []Preview) (added, removed []string) {
 // diffLists returns the entries only the first list has, and those only the
 // second has.
 func diffLists(first, second []string) (added, removed []string) {
-	added, removed = []string{}, []string{}
-	for _, entry := range first {
-		if !slices.Contains(second, entry) {
-			added = append(added, entry)
+	same := func(entry, other string) bool { return entry == other }
+
+	return listMissing(first, second, same), listMissing(second, first, same)
+}
+
+// listMissing returns the entries that have no equal among the others.
+func listMissing(entries, others []string, equal func(entry, other string) bool) []string {
+	missing := []string{}
+	for _, entry := range entries {
+		if !slices.ContainsFunc(others, func(other string) bool { return equal(entry, other) }) {
+			missing = append(missing, entry)
 		}
 	}
 
-	for _, entry := range second {
-		if !slices.Contains(first, entry) {
-			removed = append(removed, entry)
-		}
-	}
-
-	return added, removed
+	return missing
 }
 
 func (c *Client) applyChanges(ids []string, change func(id uint64) uint64, callbackID, size int32) error {
@@ -743,10 +740,12 @@ func (c *Client) fetchResult(call uint64, callbackID, size int32, poll func()) (
 		if completed {
 			break
 		}
+
 		api.runCallbacks()
 		if poll != nil {
 			poll()
 		}
+
 		time.Sleep(pollInterval)
 	}
 
@@ -759,6 +758,8 @@ func (c *Client) fetchResult(call uint64, callbackID, size int32, poll func()) (
 	return result, nil
 }
 
+// fetchOK is fetchResult for a result that starts with Steam's result code,
+// and fails unless the code says the call worked.
 func (c *Client) fetchOK(call uint64, callbackID, size int32, poll func()) ([]byte, error) {
 	result, err := c.fetchResult(call, callbackID, size, poll)
 	if err != nil {

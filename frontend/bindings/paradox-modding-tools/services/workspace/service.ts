@@ -137,9 +137,8 @@ export function DetectInstalls(gameID: string): $CancellablePromise<game$0.Detec
 }
 
 /**
- * KeepFile ends a file's review and leaves the file as the agent wrote it. A
- * file with no review is left alone. It returns an error if no workspace is
- * open.
+ * KeepFile ends a file's review and leaves the file as it is on disk. A file
+ * with no review is left alone. It returns an error if no workspace is open.
  */
 export function KeepFile(path: string): $CancellablePromise<void> {
     return $Call.ByID(3303006498, path);

@@ -216,9 +216,9 @@ func (s *Service) ListRemotes(root string) ([]Remote, error) {
 	return remotes, nil
 }
 
-// Discard throws away the working changes of files, and deletes those git does
-// not track. restore knows only tracked files and clean only the others, so
-// both run.
+// Discard throws away the working changes of files, deletes those git does
+// not track, and ends the review of an agent's edits to each. restore knows
+// only tracked files and clean only the others, so both run.
 func (s *Service) Discard(root string, paths []string) error {
 	if len(paths) == 0 {
 		return nil
@@ -235,9 +235,19 @@ func (s *Service) Discard(root string, paths []string) error {
 		}
 	}
 
-	_, err = s.Run(root, slices.Concat([]string{"clean", "-f", "--"}, paths)...)
+	if _, err := s.Run(root, slices.Concat([]string{"clean", "-f", "--"}, paths)...); err != nil {
+		return err
+	}
 
-	return err
+	for _, path := range paths {
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+
+		_ = s.Workspace.KeepFile(path)
+	}
+
+	return nil
 }
 
 // Merge merges a branch into the current one. A conflict is no error: its

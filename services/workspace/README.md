@@ -74,8 +74,10 @@ place, and the page shows its fields as they are. The game's own files and a Wor
   replaces it, which is how the page keeps one change. `KeepFile` ends a review and leaves the file as it is.
   `UndoFile` writes the baseline back, or moves a file the agent created to the trash, and ends the review. It refuses
   while the editor holds unsaved text for the file.
-- A review ends on `KeepFile`, on `UndoFile`, on `SetBaseline` with the file's text on disk, and when the watcher
-  reports the file with a text on disk equal to its baseline (a file the agent created: when it is deleted). The
+- A review ends on `KeepFile` (which Source control's Discard calls for each file it discards), on `UndoFile`, on
+  `SetBaseline` with the file's text on disk, and when the watcher
+  reports the file with lines on disk equal to its baseline's, whatever their line endings (a file the agent created:
+  when it is deleted). The counts compare lines the same way. The
   reviews live in the session, so closing the workspace drops them and leaves the files as the agent wrote them.
 - `ServeHTTP` serves files to the page at `/files`. A DDS or TGA is decoded to PNG first, since the browser cannot
   show it.

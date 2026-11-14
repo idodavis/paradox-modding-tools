@@ -61,12 +61,17 @@ const recent = computed(() =>
     .slice(0, 8),
 );
 
-/** The session menu. */
+/**
+ * The session menu: the workspace's sessions with each agent, the shown
+ * session's agent first.
+ */
 const menu = computed(() => {
   const shown = session.value;
-  const own = agent.listRecords().filter((record) => record.agent === shown?.agent.id);
-  const listed = own.filter((record) => !record.isArchived);
-  const archived = own.filter((record) => record.isArchived);
+  const records = agent.listRecords();
+  const archived = records.filter((record) => record.isArchived);
+  const agents = [...agent.ready].sort(
+    (first, second) => Number(second.id === shown?.agent.id) - Number(first.id === shown?.agent.id),
+  );
   const toItem = (record: SessionRecord) => {
     const title = describeTitle(record);
     const isUntitled = !title || title === "New session";
@@ -77,10 +82,14 @@ const menu = computed(() => {
       onSelect: () => agent.open(record),
     };
   };
+  const groups = agents.flatMap((row) => {
+    const listed = records.filter((record) => record.agent === row.id && !record.isArchived);
+    return listed.length
+      ? [[{ type: "label" as const, label: `Sessions with ${row.name}` }, ...listed.map(toItem)]]
+      : [];
+  });
   return [
-    shown && listed.length
-      ? [{ type: "label" as const, label: `Sessions with ${shown.agent.name}` }, ...listed.map(toItem)]
-      : [],
+    ...groups,
     [
       ...(archived.length
         ? [{ label: `Archived (${archived.length})`, icon: "i-lucide-archive", children: archived.map(toItem) }]

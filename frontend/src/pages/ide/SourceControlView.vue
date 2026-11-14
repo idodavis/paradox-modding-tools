@@ -103,8 +103,11 @@ watch(dir, () => {
 });
 
 const rows = computed(() => buildGraph(commits.value ?? []));
-const laneCount = computed(
-  () => Math.max(0, ...rows.value.flatMap((row) => [row.lane, ...row.through, ...row.joins, ...row.merges])) + 1,
+const graphWidth = computed(
+  () =>
+    LANE_WIDTH *
+      (Math.max(0, ...rows.value.flatMap((row) => [row.lane, ...row.through, ...row.joins, ...row.merges])) + 1) +
+    4,
 );
 const entries = computed<Entry[]>(() =>
   rows.value.flatMap((row) => [
@@ -173,13 +176,19 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
       </div>
     </DefineBare>
     <DefineLane v-slot="{ entry }">
-      <svg :width="LANE_WIDTH * laneCount + 4" :height="ROW_HEIGHT" class="shrink-0" aria-hidden="true">
+      <svg
+        :viewBox="`0 0 ${graphWidth} ${ROW_HEIGHT}`"
+        :style="{ width: `${graphWidth / 16}rem` }"
+        class="h-7 shrink-0 overflow-visible"
+        aria-hidden="true"
+      >
         <path
           v-for="(line, index) in entry.paths"
           :key="index"
           :d="line.path"
           :stroke="laneColor(line.lane)"
           stroke-width="1.5"
+          stroke-linecap="square"
           fill="none"
         />
         <circle

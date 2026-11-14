@@ -125,7 +125,9 @@ func (s *Service) ListReviews() []Review {
 	for position, review := range listed {
 		text, _ := files.ReadText(review.path)
 		reviews[position] = Review{Place: ws.Locate(mods, review.path)}
-		reviews[position].Added, reviews[position].Removed = files.CountLines(review.baseline, text.Text)
+		reviews[position].Added, reviews[position].Removed = files.CountLines(
+			unifyEndings(review.baseline), unifyEndings(text.Text),
+		)
 	}
 
 	return reviews
@@ -174,9 +176,8 @@ func (s *Service) SetBaseline(path, text string) error {
 	return nil
 }
 
-// KeepFile ends a file's review and leaves the file as the agent wrote it. A
-// file with no review is left alone. It returns an error if no workspace is
-// open.
+// KeepFile ends a file's review and leaves the file as it is on disk. A file
+// with no review is left alone. It returns an error if no workspace is open.
 func (s *Service) KeepFile(path string) error {
 	ws, err := s.Session()
 	if err != nil {
@@ -227,16 +228,22 @@ func (s *Service) UndoFile(path string) error {
 	return nil
 }
 
-// isSettled reports whether the review is over: the file's text on disk is
-// the baseline, or the agent created the file and it is gone. A file that
-// cannot be read for another reason is not settled.
+// isSettled reports whether the review is over: the file's lines on disk are
+// the baseline's, whatever their line endings, or the agent created the file
+// and it is gone. A file that cannot be read for another reason is not
+// settled.
 func (f fileReview) isSettled() bool {
 	text, err := files.ReadText(f.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return f.isNew
 	}
 
-	return err == nil && text.Text == f.baseline
+	return err == nil && unifyEndings(text.Text) == unifyEndings(f.baseline)
+}
+
+// unifyEndings returns a text with each line ending as \n.
+func unifyEndings(text string) string {
+	return strings.ReplaceAll(text, "\r\n", "\n")
 }
 
 // findReview returns a file's review. It returns an error if the file has
@@ -294,7 +301,7 @@ func (s *Session) settleReviews(changes []FileChange) {
 func revertEdits(text string, edits [][]Hunk) ([]string, error) {
 	var lines []string
 	if text != "" {
-		lines = strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+		lines = strings.Split(unifyEndings(text), "\n")
 	}
 
 	var err error

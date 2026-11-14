@@ -32,9 +32,9 @@ export function DiffFile(path: string, text: string): $CancellablePromise<$model
 }
 
 /**
- * Discard throws away the working changes of files, and deletes those git does
- * not track. restore knows only tracked files and clean only the others, so
- * both run.
+ * Discard throws away the working changes of files, deletes those git does
+ * not track, and ends the review of an agent's edits to each. restore knows
+ * only tracked files and clean only the others, so both run.
  */
 export function Discard(root: string, paths: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(1247901612, root, paths);

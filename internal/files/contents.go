@@ -1,4 +1,5 @@
-// contents.go reads and writes text, gob caches, table rows and zips.
+// contents.go reads and writes text, gob caches, table rows and zips, and
+// counts the lines a change of text adds and removes.
 
 package files
 
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/sergi/go-diff/diffmatchpatch"
 	"golang.org/x/text/encoding/charmap"
 )
 
@@ -256,6 +258,24 @@ func ListRows(text string) []Row {
 	}
 
 	return rows
+}
+
+// CountLines returns how many lines a change from one text to another adds and
+// removes.
+func CountLines(before, after string) (added, removed int) {
+	// go-diff's line mode turns each line into one rune.
+	diff := diffmatchpatch.New()
+	first, second, _ := diff.DiffLinesToRunes(before, after)
+	for _, piece := range diff.DiffMainRunes(first, second, false) {
+		switch piece.Type {
+		case diffmatchpatch.DiffInsert:
+			added += utf8.RuneCountInString(piece.Text)
+		case diffmatchpatch.DiffDelete:
+			removed += utf8.RuneCountInString(piece.Text)
+		}
+	}
+
+	return added, removed
 }
 
 // Unzip writes a zip's files into a folder, without their shared top folder,

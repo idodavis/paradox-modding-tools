@@ -112,9 +112,9 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 		databases = append(databases, keyword.Names)
 	}
 
-	place, folder, hasPlace := w.findPlace(context, statement, level, text)
+	place, hasPlace := w.findPlace(context, statement, level, text)
 	if hasPlace {
-		databases = append(databases, place)
+		databases = append(databases, place.Target)
 	}
 
 	// a value with a space is literal text, since a message key has none
@@ -143,8 +143,8 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 		name := text
 
 		switch {
-		case database == place && folder != "" && !strings.Contains(text, "/"):
-			name = folder + "/" + text
+		case database == place.Target && place.Folder != "" && !strings.Contains(text, "/"):
+			name = place.Folder + "/" + text
 		case database == claim && context.Field.Value.Value.Stem != "":
 			name = fmt.Sprintf(context.Field.Value.Value.Stem, text)
 		}
@@ -155,6 +155,7 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 		references = append(references, Reference{
 			Database: database, Name: name, Span: span,
 			Inferred: position == 0 && isInferred || owner != nil && owner.Declaration.AllowsUndefined,
+			Literal:  database == place.Target && place.Literal,
 		})
 	}
 
@@ -267,17 +268,18 @@ func (w *walker) listClaimed(context *Context, text string, command *Definition)
 	return claim, databases
 }
 
-// findPlace returns the database a value names because of where it is
-// written, and the folder of a file it names without one. It returns false
-// where the place names no database.
-func (w *walker) findPlace(context *Context, statement int32, level int, text string) (string, string, bool) {
+// findPlace returns the row of the database a value names because of where
+// it is written: its target, the folder of a file it names without one, and
+// whether the game shows it as written. It returns false where the place
+// names no database.
+func (w *walker) findPlace(context *Context, statement int32, level int, text string) (KeyReference, bool) {
 	key, keys := w.frames[level].label, w.frames[level].path
 
 	// a GUI file's widgets name definitions by one key at any depth
 	if widgets := w.schema.Databases[GUIWidgetDatabase]; w.file.Format == files.FormatGUI && widgets != nil {
 		for _, row := range widgets.Declaration.References {
 			if key == row.KeyPath {
-				return row.Target, row.Folder, true
+				return row, true
 			}
 		}
 	}
@@ -286,7 +288,9 @@ func (w *walker) findPlace(context *Context, statement int32, level int, text st
 	if database != nil {
 		for _, row := range database.Declaration.References {
 			if jomini.MatchKeyPath(row.KeyPath, keys) {
-				return cmp.Or(row.Target, database.Name), row.Folder, true
+				row.Target = cmp.Or(row.Target, database.Name)
+
+				return row, true
 			}
 		}
 	}
@@ -294,16 +298,18 @@ func (w *walker) findPlace(context *Context, statement int32, level int, text st
 	// a value with a slash is a file's path, which Vic3's video step also
 	// takes (events/brazil/amazonas.txt:15)
 	if picture, ok := w.findPictureDatabase(context.Database, keys); ok && !strings.Contains(text, "/") {
-		return picture, "", true
+		return KeyReference{Target: picture}, true
 	}
 
 	if database != nil && (!context.Defines || !context.Definition.Alias) {
 		if target, isAlias := database.Declaration.Aliases[key]; isAlias {
-			return cmp.Or(target, database.Name), "", true
+			return KeyReference{Target: cmp.Or(target, database.Name)}, true
 		}
 	}
 
-	return w.findCoatDatabase(statement, level, text)
+	coat, folder, ok := w.findCoatDatabase(statement, level, text)
+
+	return KeyReference{Target: coat, Folder: folder}, ok
 }
 
 // findPictureDatabase returns the database a value names as one step from

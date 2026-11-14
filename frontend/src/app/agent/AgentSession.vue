@@ -9,17 +9,20 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, refDebounced, useTimeoutFn } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
-import { uniqBy } from "es-toolkit";
+import { sumBy, uniqBy } from "es-toolkit";
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 
 import type { Place } from "@services/workspace/models";
-import { fileSearchQuery } from "../queries";
-import { toPmtTool, useAgentStore, type Entry, type Session } from "../stores/agent";
-import { useToolViewStore } from "../stores/toolView";
-import AgentLink from "./AgentLink.vue";
-import AgentSignIn from "./AgentSignIn.vue";
+import { plural } from "../../lib/format";
+import { fileSearchQuery } from "../../queries";
+import { toPmtTool, useAgentStore, type Entry, type Session } from "../../stores/agent";
+import { listChanges, type FileEdit } from "../../stores/edits";
+import { useToolViewStore } from "../../stores/toolView";
+import AgentLink from "../../ui/AgentLink.vue";
+import AgentSignIn from "../../ui/AgentSignIn.vue";
+import LineCounts from "../../ui/LineCounts.vue";
+import { TABLES } from "../../ui/RichEditor.vue";
 import AgentUsage from "./AgentUsage.vue";
-import { TABLES } from "./RichEditor.vue";
 
 /** A Tool is a tool call's title as the transcript shows it. */
 type Tool = { text: string; suffix: string };
@@ -87,6 +90,8 @@ const SELECT_UI = {
 
 const agent = useAgentStore();
 const [DefineTool, ShowTool] = createReusableTemplate<{ entry: Entry; tool?: Tool }>();
+const [DefineChange, ShowChange] = createReusableTemplate<{ change: FileEdit }>();
+const [DefineChanges, ShowChanges] = createReusableTemplate<{ changes: FileEdit[] }>();
 const toolView = useToolViewStore();
 const box = useTemplateRef("box");
 const text = shallowRef("");
@@ -111,6 +116,10 @@ const messages = computed(() =>
     else list.push({ id: entry.id, role: entry.kind === "user" ? "user" : "assistant", parts: [part] });
     return list;
   }, []),
+);
+// The files each message's tool calls changed, by the message's id.
+const changed = computed(
+  () => new Map(messages.value.map((message) => [message.id, listChanges(message.parts.map(({ entry }) => entry))])),
 );
 const frame = computed(() => (narrow ? FRAMES.narrow : FRAMES.wide));
 // A resumed session's replay arrives while it starts, so the chat follows it as it follows a reply.
@@ -323,28 +332,47 @@ function stripControls(output: string): string {
               :key="terminal"
               class="max-h-60 overflow-auto rounded-sm bg-(--bg-0) px-2 py-1.5 font-mono text-11 leading-4.5 text-toned"
               >{{ stripControls(session.terminals[terminal] ?? "") }}</pre>
-            <div v-for="change in entry.edits" :key="change.path" class="flex flex-col gap-0.5">
-              <span class="flex items-center gap-2">
-                <span class="truncate font-mono text-11">{{ change.label }}</span>
-                <template v-if="change.patch">
-                  <span class="text-11 text-success">+{{ change.added }}</span>
-                  <span class="text-11 text-error">−{{ change.removed }}</span>
-                </template>
-                <UButton
-                  :label="agent.findReview(change.path) ? 'Review' : 'Open'"
-                  icon="i-lucide-git-compare"
-                  variant="ghost"
-                  size="xs"
-                  @click="agent.showFile(change.path)"
-                />
-              </span>
-              <span v-if="change.reviewError" class="text-11 text-error">
-                This change can't be reviewed in the editor: {{ change.reviewError }}
-              </span>
-            </div>
+            <ShowChange v-for="change in entry.edits" :key="change.path" :change="change" />
           </div>
         </UChatTool>
       </DefineTool>
+      <DefineChange v-slot="{ change }">
+        <div class="flex flex-col gap-0.5">
+          <span class="flex items-center gap-2">
+            <span class="truncate font-mono text-11">{{ change.label }}</span>
+            <LineCounts v-if="change.patch" :added="change.added" :removed="change.removed" />
+            <UButton
+              :label="agent.findReview(change.path) ? 'Review' : 'Open'"
+              icon="i-lucide-git-compare"
+              variant="ghost"
+              size="xs"
+              @click="agent.showFile(change.path)"
+            />
+          </span>
+          <span v-if="change.reviewError" class="text-11 text-error">
+            This change can't be reviewed in the editor: {{ change.reviewError }}
+          </span>
+        </div>
+      </DefineChange>
+      <DefineChanges v-slot="{ changes }">
+        <UCollapsible class="max-w-180 rounded-md border border-default">
+          <template #default="{ open }">
+            <div class="flex h-7 cursor-pointer items-center gap-2 px-2.5 text-12 hover:bg-elevated">
+              <UIcon :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5 text-dimmed" />
+              <span class="grow">{{ plural(changes.length, "file") }} changed</span>
+              <LineCounts
+                :added="sumBy(changes, (change) => change.added)"
+                :removed="sumBy(changes, (change) => change.removed)"
+              />
+            </div>
+          </template>
+          <template #content>
+            <div class="flex flex-col gap-1 px-2.5 pb-2 ps-8">
+              <ShowChange v-for="change in changes" :key="change.path" :change="change" />
+            </div>
+          </template>
+        </UCollapsible>
+      </DefineChanges>
 
       <div v-if="session.state === 'starting'" class="flex items-center gap-2 text-12 text-dimmed">
         <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />{{ session.agent.name }} is starting…
@@ -480,6 +508,7 @@ function stripControls(output: string): string {
               </template>
             </template>
           </template>
+          <ShowChanges v-if="changed.get(message.id)?.length" :changes="changed.get(message.id) ?? []" />
         </template>
         <template #actions="{ message }">
           <UButton

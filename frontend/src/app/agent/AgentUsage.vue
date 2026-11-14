@@ -6,8 +6,8 @@
 import { createReusableTemplate } from "@vueuse/core";
 import { computed, shallowRef } from "vue";
 
-import { describeCost, describeCount } from "../lib/format";
-import { describeLimit, useAgentStore, type Session } from "../stores/agent";
+import { describeCost, describeCount } from "../../lib/format";
+import { describeLimit, useAgentStore, type Session } from "../../stores/agent";
 
 /** An Action is a button of the panel: it sends one of the agent's commands. */
 type Action = { command: string; label: string; icon: string };

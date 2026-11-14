@@ -13,14 +13,13 @@ import { computed, markRaw, reactive, shallowRef } from "vue";
 
 import type { Agent } from "@services/agent/models";
 import type { Tool } from "@services/mcp/models";
-import type { Place } from "@services/workspace/models";
-import * as workspaceApi from "@services/workspace/service";
+import type { Place, Review } from "@services/workspace/models";
 import { confirm } from "../lib/feedback";
 import { describeError, describeTime, plural } from "../lib/format";
 import { openStream, type Start } from "../lib/stream";
 import { accessQuery, agentsQuery, loadQuery, placeQuery, reviewsQuery, toolsQuery } from "../queries";
 import { useEditorStore } from "./editor";
-import { fileLabel, listLatestEdits, toEdits, trackEdits, type DiffContent, type FileEdit } from "./edits";
+import { fileLabel, toEdits, trackEdits, type DiffContent, type FileEdit } from "./edits";
 import { useSettingsStore } from "./settings";
 import { useToolViewStore } from "./toolView";
 import { useWindowsStore, WINDOW_QUERY } from "./windows";
@@ -224,15 +223,6 @@ export const V1_INITIALIZE = {
   },
 } satisfies v1.InitializeRequest;
 
-/**
- * RESOLUTIONS holds the Go call that ends a file's review for each way to end
- * it, and the verb of the toast that says why the call failed.
- */
-const RESOLUTIONS = {
-  keep: { end: workspaceApi.KeepFile, verb: "keep" },
-  undo: { end: workspaceApi.UndoFile, verb: "undo" },
-};
-
 export const useAgentStore = defineStore("agent", () => {
   const toast = useToast();
   const editor = useEditorStore();
@@ -252,7 +242,10 @@ export const useAgentStore = defineStore("agent", () => {
   // The options the user last picked for each agent, by agent and by option.
   const lastOptions = useLocalStorage<Record<string, Record<string, string | boolean>>>(OPTIONS, {});
   const activeKey = shallowRef("");
-  const isPaneOpen = shallowRef(false);
+  // Whether the agent pane is open. It stays so across a reload.
+  const isPaneOpen = useLocalStorage("pmt.agent.paneOpen", false);
+  // The workspaces whose latest session this window has resumed.
+  const resumed = new Set<string>();
   // Follow the agent: whether to open the files the agent's tool calls name.
   const follow = useLocalStorage("pmt.agent.follow", true);
   let count = 0;
@@ -260,7 +253,9 @@ export const useAgentStore = defineStore("agent", () => {
   const isPromptWanted = shallowRef(false);
 
   const active = computed(() => sessions.find((session) => session.key === activeKey.value));
-  const ready = computed(() => (agents.value ?? []).filter((row) => row.program));
+  // The agents a chat can start with, which leaves out the one that completes
+  // code.
+  const ready = computed(() => (agents.value ?? []).filter((row) => row.program && !row.completion));
   const current = computed(
     () => active.value?.agent ?? ready.value.find((row) => row.id === lastAgent.value) ?? ready.value[0],
   );
@@ -269,14 +264,7 @@ export const useAgentStore = defineStore("agent", () => {
     session.entries.some((entry) => entry.kind === "permission" || entry.kind === "link");
 
   /** findReview returns a file's place while it is under review. */
-  const findReview = (path: string): Place | undefined => reviews.value?.find((place) => place.path === path);
-
-  /**
-   * listReviewed lists the places of the files a session edited that are
-   * under review, in the order the session first edited them.
-   */
-  const listReviewed = (session: Session): Place[] =>
-    listLatestEdits(session).flatMap((edit) => findReview(edit.path) ?? []);
+  const findReview = (path: string): Review | undefined => reviews.value?.find((place) => place.path === path);
 
   const status = computed(() => {
     const session = active.value;
@@ -288,7 +276,7 @@ export const useAgentStore = defineStore("agent", () => {
     if (session.state === "running") return `${name} is working: ${describeTitle(session)}`;
     if (session.state === "sign-in") return `${name} needs you to sign in`;
     if (session.state === "starting") return `${name} is starting`;
-    const fileCount = listReviewed(session).length;
+    const fileCount = reviews.value?.length ?? 0;
 
     return fileCount ? `${name} is done: ${plural(fileCount, "file")} to review` : "";
   });
@@ -368,7 +356,7 @@ export const useAgentStore = defineStore("agent", () => {
 
   /** openDialect opens a stream to a session's agent and wraps it for the SDK. */
   async function openDialect(session: Session): Promise<{ start: Start; dialect: Dialect }> {
-    const opened = openStream(session.agent, editor.activeFile()?.path ?? "", false, () => {
+    const opened = openStream(session.agent, editor.activeFile()?.path ?? "", () => {
       if (links.get(session.key) === link) session.state = "ended";
     });
     const answers: Answers = new Map();
@@ -623,19 +611,25 @@ export const useAgentStore = defineStore("agent", () => {
     // A resumed session replays its old calls while it starts. Their edits
     // are old, so they start no review.
     if (entry.status === "completed" && !wasDone && session.state !== "starting") startReviews(entry.edits);
-    if (follow.value && locations[0])
-      void toolView.followFile(locations[0].path, locations[0].line ?? 1, entry.type === "edit" ? "edit" : "agent");
+    if (follow.value && locations[0]) void toolView.followFile(locations[0].path, locations[0].line ?? 1);
   }
 
   /**
    * startReviews sends Go each file the given edits changed, so that Go can
-   * start the file's review. A file Go cannot review says why on its edits.
+   * start the file's review. A review that starts shows the agent pane once;
+   * a file already under review leaves the pane as the user left it. A file
+   * Go cannot review says why on its edits.
    */
   function startReviews(edits: FileEdit[]): void {
-    for (const fileEdits of Object.values(groupBy(edits, (edit) => edit.path))) {
-      trackEdits(fileEdits).catch((error: unknown) => {
-        fileEdits.forEach((edit) => (edit.reviewError = describeError(error)));
-      });
+    for (const [path, fileEdits] of Object.entries(groupBy(edits, (edit) => edit.path))) {
+      const isReviewed = !!findReview(path);
+      trackEdits(fileEdits)
+        .then(() => {
+          if (!isReviewed) showPane();
+        })
+        .catch((error: unknown) => {
+          fileEdits.forEach((edit) => (edit.reviewError = describeError(error)));
+        });
     }
   }
 
@@ -848,6 +842,24 @@ export const useAgentStore = defineStore("agent", () => {
     else start(record.agent, record.resumable ? record : undefined);
   };
 
+  /**
+   * resumeLatest resumes the active workspace's latest session the first time
+   * the pane shows in that workspace. It does nothing if that session is
+   * archived or cannot be resumed, its agent is not ready, or a session shows
+   * already.
+   */
+  const resumeLatest = async (): Promise<void> => {
+    const id = workspace.activeId();
+    if (!id || resumed.has(id)) return;
+
+    resumed.add(id);
+    await until(() => !!agents.value).toBe(true);
+    const latest = listRecords().find((record) => !record.isArchived);
+    if (!latest?.resumable || active.value || !ready.value.some((row) => row.id === latest.agent)) return;
+
+    open(latest);
+  };
+
   /** archive moves a session into its agent's archived sessions, or back out of them. */
   const archive = (record: SessionRecord, isArchived: boolean): void => {
     records.value = records.value.map((other) => (other.id === record.id ? { ...other, isArchived } : other));
@@ -884,49 +896,12 @@ export const useAgentStore = defineStore("agent", () => {
   };
 
   /**
-   * endReviews ends the review of each given file. Keep leaves a file as the
-   * agent wrote it, and undo gives back its text from before. A toast says why
-   * one cannot.
-   */
-  const endReviews = async (places: Place[], resolution: keyof typeof RESOLUTIONS): Promise<void> => {
-    const { end, verb } = RESOLUTIONS[resolution];
-
-    for (const place of places) {
-      try {
-        await end(place.path);
-      } catch (error) {
-        const title = `Could not ${verb} the edits to ${place.name}`;
-        toast.add({ title, description: describeError(error), color: "error" });
-      }
-    }
-  };
-
-  /**
-   * undoAllReviews asks first, then undoes the edits to every file a session
-   * edited that is still under review.
-   */
-  const undoAllReviews = async (session: Session): Promise<void> => {
-    const places = listReviewed(session);
-    if (!places.length) return;
-
-    const confirmed = await confirm.open({
-      title: "Undo all edits?",
-      body:
-        `${session.agent.name}'s edits to ${plural(places.length, "file")} still under review are taken back, ` +
-        "and a file it created goes to the trash.",
-      confirm: "Undo all edits",
-      destructive: true,
-    });
-    if (confirmed === true) await endReviews(places, "undo");
-  };
-
-  /**
-   * showFile opens a file in the editor. It does nothing if the workspace has
-   * no such file.
+   * showFile shows a file in a preview tab. It does nothing if the workspace
+   * has no such file.
    */
   const showFile = async (path: string): Promise<void> => {
     const place = await loadQuery(placeQuery(path)).catch(() => undefined);
-    if (place) editor.show(place);
+    if (place) editor.show(place, undefined, "changes");
   };
 
   /** popOut opens the agent pane in a window of its own, which takes over the session shown here. */
@@ -983,13 +958,12 @@ export const useAgentStore = defineStore("agent", () => {
     isWaiting,
     start,
     open,
+    resumeLatest,
     archive,
     rename,
     deleteSession,
+    reviews,
     findReview,
-    listReviewed,
-    endReviews,
-    undoAllReviews,
     showFile,
     prompt,
     configure,

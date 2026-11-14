@@ -3,7 +3,10 @@ import { useResizeObserver } from "@vueuse/core";
 import { onActivated, type ShallowRef } from "vue";
 
 /** A Splitter is a USplitter's template ref. Its element is always there, though its type leaves it out. */
-type Splitter = { $el?: HTMLElement; panelsRef: ({ resize(size: number): void } | null | undefined)[] };
+type Splitter = {
+  $el?: HTMLElement;
+  panelsRef: ({ resize(size: number): void; isCollapsed: boolean } | null | undefined)[];
+};
 
 /**
  * useKeptPixelSize keeps the size of the given pane of a splitter while its page is hidden. It returns the function
@@ -33,8 +36,9 @@ export function useKeptPixelSize(splitter: Readonly<ShallowRef<Splitter | null>>
 
 /**
  * useSavedPixelSize saves the size of the given pane of a splitter under the given key, and keeps it while its page
- * is hidden. It returns the size the pane takes when it appears, the saved one or else the given size, and the
- * function for the splitter's layout event while the pane is shown.
+ * is hidden. The size is saved when the user lets go of the splitter's handle, unless the pane is collapsed. It
+ * returns the size the pane takes when it appears, the saved one or else the given size, the function for the
+ * splitter's layout event while the pane is shown, and the one for its dragging event.
  */
 export function useSavedPixelSize(
   splitter: Readonly<ShallowRef<Splitter | null>>,
@@ -43,12 +47,17 @@ export function useSavedPixelSize(
   size: number,
 ) {
   const keepSize = useKeptPixelSize(splitter, pane);
+  let kept = 0;
   return {
     // Read from storage, not a ref, so dragging the pane does not change the panes.
     size: () => Number(localStorage.getItem(key)) || size,
     keep: (sizes: number[]) => {
-      const paneSize = sizes[pane];
-      if (keepSize(sizes) && paneSize) localStorage.setItem(key, String(Math.round(paneSize)));
+      if (keepSize(sizes)) kept = sizes[pane] ?? 0;
+    },
+    save: (_handle: number, isDragging: boolean) => {
+      if (!isDragging && kept && !splitter.value?.panelsRef[pane]?.isCollapsed) {
+        localStorage.setItem(key, String(Math.round(kept)));
+      }
     },
   };
 }

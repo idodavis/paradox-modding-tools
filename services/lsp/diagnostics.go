@@ -82,8 +82,9 @@ type Part struct {
 type Diagnostic struct {
 	Code string `json:"code"`
 
-	// Level is the code's. Message is the code's template filled with the
-	// facts, as plain text.
+	// Label and Level are the code's, Label as Settings names the check.
+	// Message is the code's template filled with the facts, as plain text.
+	Label   string            `json:"label"`
 	Level   string            `json:"level"`
 	Message string            `json:"message"`
 	Range   jomini.Range      `json:"range"`
@@ -202,6 +203,12 @@ var Codes = []Code{
 		Advice: "Add the key and its text to your mod's localization file, or fix the spelling here. " +
 			"If another mod defines it, list that mod as a dependency.",
 		Elsewhere: elsewhereMessage},
+	{ID: index.ProblemLiteral, Question: QuestionHealth, Level: LevelInfo, Topic: "localization",
+		Label:       "Text with no localization key",
+		Description: "A GUI text that no localization key has as its name, which the game shows as written.",
+		Message:     "No localization key {name} exists, so the game shows this text as written.",
+		Advice:      "If you meant a localization key, add it to your mod's localization file or fix the spelling here.",
+		Elsewhere:   elsewhereMessage},
 	{ID: index.ProblemMarkup, Question: QuestionHealth, Level: LevelWarning, Topic: "localization",
 		Label:       "Unknown text markup",
 		Description: "Text markup in a localization text that the game does not read.",
@@ -344,7 +351,7 @@ var Topics = []Topic{
 }
 
 // keyFacts holds the fact that names the key, for each code of a missing text.
-var keyFacts = map[string]string{index.ProblemTitle: "key", index.ProblemLocKey: "name"}
+var keyFacts = map[string]string{index.ProblemTitle: "key", index.ProblemLocKey: "name", index.ProblemLiteral: "name"}
 
 // Diagnose returns the problems of a file, without the checks the user turned
 // off.
@@ -629,12 +636,12 @@ func describeExpected(expected lang.Expected) string {
 	return valueDescriptions[expected.Type]
 }
 
-// describeDiagnostics fills in each level and message.
+// describeDiagnostics fills in each label, level and message.
 func describeDiagnostics(diagnostics []Diagnostic) []Diagnostic {
 	for position := range diagnostics {
 		diagnostic := &diagnostics[position]
 		code := LookupCode(diagnostic.Code)
-		diagnostic.Level = code.Level
+		diagnostic.Label, diagnostic.Level = code.Label, code.Level
 		diagnostic.Message = JoinParts(SplitMessage(code.Template(diagnostic.Facts), diagnostic.Facts))
 	}
 

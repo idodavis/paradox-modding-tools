@@ -63,10 +63,12 @@ Go carries. [The editor](#the-editor) holds the review of an agent's edits and t
   window's first open file while an installed agent offers completion and the setting is on, and holds whether the
   agent is ready, needs the user to sign in, or failed, which Settings shows.
 - `lib/stream.ts`: opens the stream to an agent's program, which the chats and the completion connection both use.
-- `ui/AgentSession.vue`: one chat, with its prompt box.
-- `ui/AgentSignIn.vue`: the ways to sign in to an agent, a button each.
+- `app/agent/AgentPane.vue`: the pane, with its sessions menu and the files under review.
+- `app/agent/AgentSession.vue`: one chat, with its prompt box.
+- `app/agent/AgentUsage.vue`: the ring in the prompt box and its panel of the context window and the plan's usage.
+- `ui/AgentSignIn.vue`: the ways to sign in to an agent, a button each, which the pane and Settings show.
 - `ui/AgentLink.vue`: a link an agent asks to open, with its host marked, and the choice to open or decline it.
-- `ui/AgentUsage.vue`: the ring in the prompt box and its panel of the context window and the plan's usage.
+- `ui/LineCounts.vue`: the lines a change adds and removes, in the pane, the chat and the editor.
 
 ## Pages and commands
 

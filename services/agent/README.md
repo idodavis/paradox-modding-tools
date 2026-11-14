@@ -43,17 +43,16 @@ Copilot's chat. The server's row, `copilot-language-server`, is Copilot's tab co
 no code names Copilot:
 
 - its npm package, `Package`, its script within the package, `Script`, and its arguments, `Args` (`--acp`);
-- `Completion`, which says it answers tab completion only, so it never starts for a chat;
-- `CompletionEnv`, the environment it starts with for completion (`GITHUB_COPILOT_ACP_USE_CLI=0`, so it starts no
-  CLI);
+- `Completion`, which says it answers tab completion only, so the pane never offers it for a chat;
+- `Env`, the environment it starts with (`GITHUB_COPILOT_ACP_USE_CLI=0`, so it starts no CLI);
 - `Chat`, the CLI's row, which only makes Settings draw the two rows as one Copilot card with two parts, each
   installed and uninstalled on its own. The other fields are the table's and are not sent to the page.
 
 The user's own agents are kept in `config.json` as the `agents` section: a name, a program and its arguments.
 `ListAgents` returns both kinds. An agent PMT offers also gets the version and description of the registry, or of npm
 for a row with a `Package`, its register command with PMT's address and token filled in, and, once it is installed and
-a Node is new enough, the program and arguments that start it for a chat: the package's script run by Node, with the
-arguments the registry or the row gives. The server's row gets none, so the pane lists one Copilot.
+a Node is new enough, the program and arguments that start it: the package's script run by Node, with the arguments
+the registry or the row gives. The pane leaves out the server's row, so it lists one Copilot.
 
 ## Installing
 
@@ -73,9 +72,9 @@ Everything is kept under `agents/` in PMT's cache folder, so Reset data removes 
   that copy: the newest long-term release from nodejs.org, checked against the sums nodejs.org publishes. It is a zip
   on Windows and a gzipped tar on Linux.
 - **Uninstalling** an agent (`UninstallAgent`) deletes every `<id>@<version>/` it has. Windows refuses to delete a
-  running program's files, so Go first ends the agent's programs for tab completion, in every window, and waits for
-  each to exit. It refuses while a chat runs on the agent, and Settings offers it only while none of the window's own
-  sessions runs. The service keeps every running program, by agent and by kind, for this.
+  running program's files, so Go first ends the programs of an agent that completes code, in every window, and waits
+  for each to exit. It refuses while a chat runs on the agent, and Settings offers it only while none of the window's
+  own sessions runs. The service keeps every running program, by agent, for this.
 - **One install per agent at a time.** Two npm runs in one folder delete each other's files, so a second is refused.
   `ListAgents` gives a running install's start time as `Installing`, and `agent:changed` marks its start and end.
 
@@ -85,14 +84,13 @@ program.
 ## The stream
 
 Each chat opens the Wails stream `agent`. No port is opened. The window's first message names the agent and the active
-file, and may carry `completion`: the page opens that stream once for each window that shows an editor, for tab
-completion. Go starts the program in the folder of the mod that holds that file, else the first mod whose folder
-exists, else the home folder (`workspace.ResolveFolder`, the same rule the Terminal uses), then answers with a
-`Start`: that folder and the workspace's other mod folders, or the error that kept the agent from starting.
+file. Tab completion opens the same stream, naming the server's row, once for each window that shows an editor. Go
+starts the program in the folder of the mod that holds that file, else the first mod whose folder exists, else the
+home folder (`workspace.ResolveFolder`, the same rule the Terminal uses), then answers with a `Start`: that folder and
+the workspace's other mod folders, or the error that kept the agent from starting.
 
-With `completion`, Go starts the row's program for tab completion instead: the same script, which needs only that row
-installed, with the row's completion environment. Without it, Go starts the program for a chat. Either way the
-program's environment is the PMT process's, with the Node first on its PATH and the row's variables after it.
+The program's environment is the PMT process's, with the Node first on its PATH and the row's `Env` after it. A row
+with its own package starts without npm's answer, so no start waits on the network.
 
 After that each message is one JSON-RPC message. The page's go to the agent's input as one line, and each line the agent
 writes comes back as one message. What it writes to its error output goes to PMT's log under its id.
@@ -119,7 +117,6 @@ program and everything it started, and the program's own end closes the stream.
 - **Agent**: one agent as Settings and the assistant pane list it: its record, with what the registry or npm and PMT's
   folder say of it.
 - **Chat**: the id of the row that chats for an agent. Settings draws the two as one agent; each starts on its own.
-- **Completion**: whether an agent answers tab completion only. The opening's `completion` asks for that program of
-  the agent instead of its chat program, which such an agent has none of.
+- **Completion**: whether an agent answers tab completion only. The pane never offers it for a chat.
 - **Node**: the Node that PMT's agents run on, and the system's own version.
 - **Start**: Go's first message on an agent's stream, the folder the agent started in or the error.

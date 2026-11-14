@@ -64,7 +64,7 @@ Measured on the three installs, over the roots `Game.ListInstallRoots` gives:
 |---|---|
 | `files.go` | The package doc, formats and how a file gets one, roots and files, stages, the walk, and ignore rules. |
 | `mounts.go` | The mounts: the files of a list of roots, which one the game reads at a path, why it does not read another (`Hiding`), and their load order. |
-| `contents.go` | Text and its encodings, atomic writes, gob caches, a table's rows and unzipping. |
+| `contents.go` | Text and its encodings, atomic writes, gob caches, a table's rows, unzipping, and the lines a change of text adds and removes. |
 | `paths.go` | Keys, relative paths and slugs, and whether a path is a file or a folder. |
 
 ## Terms

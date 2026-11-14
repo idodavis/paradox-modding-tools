@@ -199,10 +199,12 @@ export function ListReadyInstalls(): $CancellablePromise<string[] | null> {
 }
 
 /**
- * ListReviews returns the places of the files under review, sorted by path.
- * It returns none while no workspace is open.
+ * ListReviews returns the files under review, sorted by path, each with the
+ * lines it adds and removes against its baseline. A file that is gone counts
+ * as removing all its baseline's lines. It returns none while no workspace is
+ * open.
  */
-export function ListReviews(): $CancellablePromise<$models.Place[] | null> {
+export function ListReviews(): $CancellablePromise<$models.Review[] | null> {
     return $Call.ByID(3970524062);
 }
 

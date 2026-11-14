@@ -31,9 +31,14 @@ function writeLog(error: unknown, source: string): void {
   void logError(failure.message, "source", source, "stack", failure.stack ?? "");
 }
 
-/** isCancelled reports whether an error is the user cancelling a system dialog, which is neither shown nor logged. */
+/**
+ * isCancelled reports whether an error is a cancel, which is neither shown nor logged: the user cancelling a system
+ * dialog, or Monaco's "Canceled", which its tab-completion indicator leaves unhandled when a suggestion changes.
+ */
 function isCancelled(error: unknown): boolean {
-  return String((error as { message?: unknown } | null | undefined)?.message).includes("cancelled by user");
+  const failure = error as { name?: unknown; message?: unknown } | null | undefined;
+
+  return failure?.name === "Canceled" || String(failure?.message).includes("cancelled by user");
 }
 
 window.addEventListener("error", (event) => {

@@ -219,6 +219,10 @@ type KeyReference struct {
 	// Folder is the folder of a file that a value names with no folder of
 	// its own. It is "" where the values are no such files.
 	Folder string
+
+	// Literal is whether the game shows a value as written where nothing
+	// defines its name, as a GUI text = "Hello" shows Hello.
+	Literal bool
 }
 
 // DatabaseField is one key inside the definitions of a database, with what
@@ -813,8 +817,8 @@ var Declarations = []Declaration{
 			{KeyPath: "texture", Target: File},
 			{KeyPath: "mask", Target: File},
 			{KeyPath: GUIFontKey, Target: GUIFontDatabase},
-			{KeyPath: "text", Target: Localization},
-			{KeyPath: "title", Target: Localization},
+			{KeyPath: "text", Target: Localization, Literal: true},
+			{KeyPath: "title", Target: Localization, Literal: true},
 		},
 	},
 	// a text names a format or an icon in any case

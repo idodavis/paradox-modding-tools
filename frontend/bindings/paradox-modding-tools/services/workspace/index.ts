@@ -15,6 +15,7 @@ export type {
     Mod,
     ModFolder,
     Place,
+    Review,
     Scanning,
     State,
     Workspace

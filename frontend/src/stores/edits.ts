@@ -2,8 +2,11 @@
  * An agent's edits to files: the changes its tool calls report, and the review
  * Go starts from them.
  */
+import type { Place } from "@services/workspace/models";
 import * as workspaceApi from "@services/workspace/service";
-import type { Session } from "./agent";
+import { confirm } from "../lib/feedback";
+import { plural } from "../lib/format";
+import type { Entry } from "./agent";
 
 /** A FileEdit is the change one tool call makes to one file. */
 export type FileEdit = {
@@ -30,16 +33,6 @@ export type DiffContent = {
   patch?: { text: string } | null;
 };
 
-/** listEdits lists every change a session's tool calls made, the earliest first. */
-export function listEdits(session: Session): FileEdit[] {
-  return session.entries.flatMap((entry) => (entry.kind === "tool" ? entry.edits : []));
-}
-
-/** listLatestEdits lists the files a session's tool calls changed, each once, by its latest change. */
-export function listLatestEdits(session: Session): FileEdit[] {
-  return [...new Map(listEdits(session).map((change) => [change.path, change])).values()];
-}
-
 /**
  * trackEdits has Go start the review of a file, given the edits one tool call
  * made to it. It rejects with Go's error.
@@ -47,6 +40,39 @@ export function listLatestEdits(session: Session): FileEdit[] {
 export function trackEdits(edits: FileEdit[]): Promise<void> {
   const hunks = edits.map((edit) => edit.hunks);
   return workspaceApi.TrackEdits(edits[0]?.path ?? "", hunks, !!edits[0]?.isNew);
+}
+
+/**
+ * listChanges returns the files the given entries' tool calls changed, each
+ * once, with the lines all its changes add and remove.
+ */
+export function listChanges(entries: Entry[]): FileEdit[] {
+  const changes = new Map<string, FileEdit>();
+  for (const edit of entries.flatMap((entry) => (entry.kind === "tool" ? entry.edits : []))) {
+    const known = changes.get(edit.path);
+    const sum = known && { added: known.added + edit.added, removed: known.removed + edit.removed };
+    changes.set(edit.path, known ? { ...known, ...sum } : edit);
+  }
+
+  return [...changes.values()];
+}
+
+/**
+ * confirmUndo asks whether to undo the agents' edits to the given files under
+ * review, and reports whether the user said yes.
+ */
+export async function confirmUndo(places: Place[]): Promise<boolean> {
+  const subject = places.length === 1 ? (places[0]?.rel ?? "") : plural(places.length, "file");
+  const answer = await confirm.open({
+    title: "Undo the agent's changes?",
+    body:
+      `The edits to ${subject} are taken back, except for the changes you kept. ` +
+      "A file an agent created goes to PMT's trash.",
+    confirm: "Undo all",
+    destructive: true,
+  });
+
+  return answer === true;
 }
 
 /** fileLabel returns a file's name without its folders. */

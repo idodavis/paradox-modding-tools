@@ -18,9 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
-	"github.com/sergi/go-diff/diffmatchpatch"
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/internal/files"
@@ -283,7 +281,7 @@ func comparePage(listing Listing, details Details, modIDs []string, names func()
 
 	before, after := toPlainText(details.Description), toPlainText(listing.Description)
 	if listing.Description != "" && before != after {
-		gained, lost := countLines(toParagraphs(before), toParagraphs(after))
+		gained, lost := files.CountLines(toParagraphs(before), toParagraphs(after))
 		differences = append(differences, Difference{
 			Field: "description", Status: changeChanged, Before: before, After: after, Gained: gained, Lost: lost,
 		})
@@ -376,24 +374,6 @@ func toParagraphs(text string) string {
 	}
 
 	return strings.Join(paragraphs, "\n")
-}
-
-// countLines returns how many lines a change from one text to another adds and
-// removes.
-func countLines(before, after string) (gained, lost int) {
-	// go-diff's line mode turns each line into one rune.
-	diff := diffmatchpatch.New()
-	first, second, _ := diff.DiffLinesToRunes(before, after)
-	for _, piece := range diff.DiffMainRunes(first, second, false) {
-		switch piece.Type {
-		case diffmatchpatch.DiffInsert:
-			gained += utf8.RuneCountInString(piece.Text)
-		case diffmatchpatch.DiffDelete:
-			lost += utf8.RuneCountInString(piece.Text)
-		}
-	}
-
-	return gained, lost
 }
 
 // compareFiles lists what an upload changes in its item's files. It returns an
@@ -510,7 +490,7 @@ func (s *Service) countChange(steamFile, steamHash string, src source, rel, hash
 		text, _ = src.loadText(rel)
 	}
 
-	counts.Gained, counts.Lost = countLines(steamText.Text, text.Text)
+	counts.Gained, counts.Lost = files.CountLines(steamText.Text, text.Text)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

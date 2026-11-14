@@ -60,7 +60,7 @@ const tint = computed(() => {
   <div class="flex w-max max-w-198 flex-col divide-y divide-default overflow-hidden">
     <div v-if="problems.length" class="flex flex-col py-1" :class="card && 'border-b border-accented'">
       <div v-for="(problem, index) in problems" :key="index" class="flex flex-col">
-        <ProblemRow dense plain :level="problem.level" :message="problem.message" :detail="problem.code" mono>
+        <ProblemRow dense plain :level="problem.level" :message="problem.message" :detail="problem.label">
           <template #trailing>
             <span class="shrink-0 font-mono text-11 text-dimmed"
               >{{ problem.range.startLineNumber }}:{{ problem.range.startColumn }}</span

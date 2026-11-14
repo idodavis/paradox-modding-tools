@@ -58,10 +58,11 @@ export type Layout = { rows: { columns: Group[] }[] };
 type SavedLayout = { layout: Layout; active: string; paths: Record<string, string> };
 
 /**
- * A Source is what showed a place: the explorer, Source control's lists, the Search view, a jump, the history, or
- * Follow the agent.
+ * A Source is what showed a place: the explorer, a list of changed files
+ * (Source control's, or the files under review), the Search view, a jump,
+ * the history, or Follow the agent.
  */
-export type Source = "explorer" | "changes" | "search" | "navigate" | "history" | "agent" | "edit";
+export type Source = "explorer" | "changes" | "search" | "navigate" | "history" | "agent";
 
 /** A Visit is one place the user was in: a file and a caret position in it. */
 type Visit = { place: Place; position: IPosition };
@@ -81,7 +82,6 @@ const SOURCES: Record<Source, { preview?: true; record?: false; follow?: true }>
   navigate: {},
   history: { record: false },
   agent: { preview: true, follow: true },
-  edit: { follow: true },
 };
 
 export const useEditorStore = defineStore("editor", () => {

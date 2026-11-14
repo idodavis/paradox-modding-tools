@@ -18,12 +18,10 @@ import (
 const streamName = "agent"
 
 // opening is a window's first message on the stream: the agent to start and
-// the active file, which may be "". Completion starts the agent for tab
-// completion instead of a chat.
+// the active file, which may be "".
 type opening struct {
-	Agent      string `json:"agent"`
-	Path       string `json:"path"`
-	Completion bool   `json:"completion"`
+	Agent string `json:"agent"`
+	Path  string `json:"path"`
 }
 
 // Start is Go's first message on the stream: the folder the agent started in
@@ -43,10 +41,8 @@ type program struct {
 	stderr  io.ReadCloser
 	group   group
 
-	// agent is the agent the program runs, for a chat or, with completion,
-	// for tab completion.
-	agent      Agent
-	completion bool
+	// agent is the agent the program runs.
+	agent Agent
 
 	// ended makes end run once, since both the stream and an uninstall may
 	// end the program.
@@ -70,7 +66,7 @@ func (s *Service) serve(conn *application.StreamConn) {
 	}
 
 	folder, origin := s.Workspace.ResolveFolder(first.Path)
-	running, err := s.startProgram(first.Agent, folder, first.Completion)
+	running, err := s.startProgram(first.Agent, folder)
 	if err != nil {
 		_ = conn.SendJSON(Start{Error: err.Error()})
 
@@ -109,17 +105,11 @@ func (s *Service) serve(conn *application.StreamConn) {
 	}
 }
 
-// startProgram starts an agent's program in a folder, for tab completion if
-// completion is true, else for a chat. It fetches nothing, so a chat never
-// waits on the network to start.
-func (s *Service) startProgram(id, folder string, completion bool) (*program, error) {
+// startProgram starts an agent's program in a folder. It fetches nothing, so
+// an agent never waits on the network to start.
+func (s *Service) startProgram(id, folder string) (*program, error) {
 	node := s.DescribeNode()
-	find := s.findAgent
-	if completion {
-		find = s.findCompletion
-	}
-
-	agent, err := find(id, node)
+	agent, err := s.findAgent(id, node)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +123,7 @@ func (s *Service) startProgram(id, folder string, completion bool) (*program, er
 	command.Env = append(command.Env, agent.Env...)
 	prepareCommand(command)
 
-	running := &program{command: command, agent: agent, completion: completion}
+	running := &program{command: command, agent: agent}
 	if running.input, err = command.StdinPipe(); err != nil {
 		return nil, err
 	}
@@ -159,12 +149,11 @@ func (p *program) end() {
 	})
 }
 
-// listPrograms returns the running programs of an agent, those for tab
-// completion if completion is true, else those for a chat.
-func (s *Service) listPrograms(id string, completion bool) []*program {
+// listPrograms returns the running programs of an agent.
+func (s *Service) listPrograms(id string) []*program {
 	var running []*program
 	s.programs.Range(func(key, _ any) bool {
-		if candidate := key.(*program); candidate.agent.ID == id && candidate.completion == completion {
+		if candidate := key.(*program); candidate.agent.ID == id {
 			running = append(running, candidate)
 		}
 

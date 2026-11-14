@@ -124,9 +124,9 @@ type Agent struct {
 	Package string `json:"-"`
 	Script  string `json:"-"`
 
-	// CompletionEnv is the environment variable the agent starts with for
-	// tab completion.
-	CompletionEnv string `json:"-"`
+	// Env holds the environment variables an offered agent starts with beyond
+	// PMT's own and Node on the PATH.
+	Env []string `json:"-"`
 }
 
 // Window is how the main window was left.

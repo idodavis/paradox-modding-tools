@@ -274,6 +274,7 @@ function openRow(finding: Finding): void {
       :items="panes"
       class="min-h-0 grow"
       @layout="panes.length === 2 && railWidth.keep($event)"
+      @dragging="railWidth.save"
     >
       <template #rail>
         <nav class="flex min-w-0 grow flex-col gap-0.5 overflow-y-auto border-e border-default bg-muted p-2">

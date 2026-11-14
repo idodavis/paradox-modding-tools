@@ -1,18 +1,24 @@
 <!-- The agent pane, docked beside the workspace pages or in a window of its own. -->
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
-import { useQuery } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { until, useEventBus } from "@vueuse/core";
-import { computed, nextTick, shallowRef, useTemplateRef } from "vue";
+import { sumBy } from "es-toolkit";
+import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
 
 import type { Task } from "@services/mcp/models";
-import { abbreviate, describeAge, plural } from "../lib/format";
-import { agentsQuery } from "../queries";
-import { describeTitle, useAgentStore, type SessionRecord } from "../stores/agent";
-import { useCompletionStore } from "../stores/completion";
-import { useToolViewStore } from "../stores/toolView";
-import { COMMAND_BUS, THIS_WINDOW } from "../stores/windows";
-import AgentSession from "../ui/AgentSession.vue";
+import type { Place } from "@services/workspace/models";
+import * as workspaceApi from "@services/workspace/service";
+import { abbreviate, describeAge, plural } from "../../lib/format";
+import { agentsQuery } from "../../queries";
+import { describeTitle, useAgentStore, type SessionRecord } from "../../stores/agent";
+import { useCompletionStore } from "../../stores/completion";
+import { confirmUndo } from "../../stores/edits";
+import { useToolViewStore } from "../../stores/toolView";
+import { COMMAND_BUS, THIS_WINDOW } from "../../stores/windows";
+import { useWorkspaceStore } from "../../stores/workspace";
+import LineCounts from "../../ui/LineCounts.vue";
+import AgentSession from "./AgentSession.vue";
 
 const IS_WINDOW = THIS_WINDOW === "agent";
 
@@ -20,6 +26,7 @@ const agent = useAgentStore();
 const completion = useCompletionStore();
 const commandBus = useEventBus(COMMAND_BUS);
 const toolView = useToolViewStore();
+const workspace = useWorkspaceStore();
 const { data: agents } = useQuery(agentsQuery);
 const field = useTemplateRef("field");
 const isFullscreen = shallowRef(false);
@@ -27,7 +34,22 @@ const draft = shallowRef<string | null>(null);
 
 const session = computed(() => agent.active);
 const lacksCompletion = computed(() => !!agents.value && !agents.value.some((row) => row.completion && row.installed));
-const reviewed = computed(() => (session.value ? agent.listReviewed(session.value) : []));
+const reviewed = computed(() => agent.reviews ?? []);
+watch(
+  () => workspace.activeId(),
+  () => void agent.resumeLatest(),
+  { immediate: true },
+);
+// Keep leaves files as the agents wrote them; Undo asks first, then takes the
+// edits back.
+const { mutate: keep } = useMutation({
+  mutation: (places: Place[]) => Promise.all(places.map((place) => workspaceApi.KeepFile(place.path))),
+});
+const { mutate: undo } = useMutation({
+  mutation: async (places: Place[]) => {
+    if (await confirmUndo(places)) await Promise.all(places.map((place) => workspaceApi.UndoFile(place.path)));
+  },
+});
 const recent = computed(() =>
   agent
     .listRecords()
@@ -175,54 +197,6 @@ async function runTask(task: Task): Promise<void> {
       </template>
       <span v-else class="ps-1 text-13 font-semibold">Agent</span>
       <span class="grow" />
-      <UPopover v-if="session && reviewed.length" :content="{ align: 'end' }">
-        <UButton
-          :label="`${plural(reviewed.length, 'file')} to review`"
-          icon="i-lucide-file-pen"
-          variant="ghost"
-          size="xs"
-        />
-        <template #content>
-          <div class="flex w-80 flex-col gap-1.5 p-3">
-            <span class="text-11 font-semibold text-dimmed">Files to review</span>
-            <span v-for="place in reviewed" :key="place.key" class="flex items-center gap-1">
-              <span class="grow truncate font-mono text-11" :title="place.path">{{ place.name }}</span>
-              <UButton
-                label="Keep"
-                icon="i-lucide-check"
-                variant="ghost"
-                size="xs"
-                @click="agent.endReviews([place], 'keep')"
-              />
-              <UButton
-                label="Undo"
-                icon="i-lucide-undo-2"
-                color="error"
-                variant="ghost"
-                size="xs"
-                @click="agent.endReviews([place], 'undo')"
-              />
-            </span>
-            <div class="mt-1 flex gap-1.5">
-              <UButton
-                label="Keep all"
-                icon="i-lucide-check-check"
-                variant="soft"
-                size="sm"
-                @click="agent.endReviews(reviewed, 'keep')"
-              />
-              <UButton
-                label="Undo all"
-                icon="i-lucide-undo-2"
-                color="error"
-                variant="soft"
-                size="sm"
-                @click="agent.undoAllReviews(session)"
-              />
-            </div>
-          </div>
-        </template>
-      </UPopover>
       <UTooltip v-if="session" text="New session">
         <UButton
           icon="i-lucide-plus"
@@ -267,6 +241,61 @@ async function runTask(task: Task): Promise<void> {
         </UTooltip>
       </template>
     </div>
+
+    <!-- The files under review, from every session. Its buttons keep their
+         click to themselves, so the list does not open or close too. -->
+    <UCollapsible v-if="reviewed.length" class="shrink-0 border-b border-default">
+      <template #default="{ open }">
+        <div class="flex h-8 cursor-pointer items-center gap-1.5 ps-2.5 pe-1.5 hover:bg-elevated">
+          <UIcon :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5 text-dimmed" />
+          <span class="grow text-12 font-medium">{{ plural(reviewed.length, "file") }} to review</span>
+          <LineCounts
+            :added="sumBy(reviewed, (review) => review.added)"
+            :removed="sumBy(reviewed, (review) => review.removed)"
+          />
+          <UButton
+            label="Keep all"
+            icon="i-lucide-check-check"
+            variant="ghost"
+            size="xs"
+            @click.stop="keep(reviewed)"
+          />
+          <UButton
+            label="Undo all"
+            icon="i-lucide-undo-2"
+            color="error"
+            variant="ghost"
+            size="xs"
+            @click.stop="undo(reviewed)"
+          />
+        </div>
+      </template>
+      <template #content>
+        <div class="flex max-h-48 flex-col overflow-y-auto pb-1">
+          <span v-for="place in reviewed" :key="place.key" class="flex items-center gap-1 ps-7.5 pe-1.5">
+            <button
+              type="button"
+              class="min-w-0 grow truncate text-start font-mono text-11 hover:underline"
+              :title="place.rel"
+              @click="agent.showFile(place.path)"
+            >
+              {{ place.name }}
+            </button>
+            <LineCounts :added="place.added" :removed="place.removed" />
+            <UButton icon="i-lucide-check" variant="ghost" size="xs" square aria-label="Keep" @click="keep([place])" />
+            <UButton
+              icon="i-lucide-undo-2"
+              color="error"
+              variant="ghost"
+              size="xs"
+              square
+              aria-label="Undo"
+              @click="undo([place])"
+            />
+          </span>
+        </div>
+      </template>
+    </UCollapsible>
 
     <AgentSession v-if="session && !isFullscreen" :key="session.key" :session="session" :narrow="!IS_WINDOW" />
     <div v-else-if="!session" class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3.5 py-4">

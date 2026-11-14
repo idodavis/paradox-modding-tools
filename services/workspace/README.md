@@ -69,7 +69,8 @@ place, and the page shows its fields as they are. The game's own files and a Wor
 - `TrackEdits` starts the review of a file a coding agent edits, once. The review's baseline is the file's text on
   disk with the agent's edits undone, in the file's own line endings. A file the agent created that is not on disk
   yet has the baseline "". It is refused if an edit's lines are not in the file once.
-- `ListReviews` lists the places of the files under review. `Baseline` returns a file's baseline, and `SetBaseline`
+- `ListReviews` lists the files under review, each a `Review`: its place and the lines its text adds and removes
+  against its baseline (`files.CountLines`). `Baseline` returns a file's baseline, and `SetBaseline`
   replaces it, which is how the page keeps one change. `KeepFile` ends a review and leaves the file as it is.
   `UndoFile` writes the baseline back, or moves a file the agent created to the trash, and ends the review. It refuses
   while the editor holds unsaved text for the file.
@@ -145,7 +146,7 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 | `install:scanned` | the install's id | an install's scan finished |
 | `fs:changed` | a `FileChange` | a file of the open workspace changed on disk, and the index has it |
 | `game:exited` | whether the dumps are fresher | the launched game exited |
-| `review:changed` | the file's path | a file's review started, its baseline changed or the review ended |
+| `review:changed` | the file's path | a file's review started, its baseline or its text on disk changed, or the review ended |
 
 ## Terms
 

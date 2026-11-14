@@ -22,15 +22,14 @@ a 👍, or open a feature request.
 ### Editing
 
 - **Game-update patching:** after a patch, open a mod's copy of a changed game file and carry your changes forward.
-- **Deeper EU5 support**, and more languages in hover cards without a full rescan.
 
 ### The Visual view and events
 
 - **Play in the Visual view:** click a window as in the game, so its tabs, buttons and panels change what is shown.
 - **Preview values:** a binding such as `[Character.GetName]` shows text or a number you give it, or one read from a
   save game.
-- **An event simulator** that steps through an event, its options and what each one fires.
 - **An event's own window in the Event Graph**, drawn the way the game draws it.
+- **Building Chain Graph**: Using the Event Graph page as abase, showing building chains for games like EU5 visually. Showing the building chain and production methods over time all in a visual dagre graph like events.
 
 - **Event Graph lenses**, each a toggle on the same graph: the problems in a chain (a firing that names nothing, a
   link a replaced file breaks, an event nothing fires, a loop), what your mod adds, overrides and cuts against the
@@ -43,14 +42,9 @@ a 👍, or open a feature request.
 - **A field written twice where the game takes one**, such as two `title`s in one event, once a source says which
   fields take a single value.
 - **More of the game's logs:** read its other log files, with the mods most likely at fault.
-- **Workshop import:** bring a whole listing made outside PMT into your mod in one step.
 
 ### Beyond the app
-
-- **A command line tool** that checks a mod from a terminal or a build script, as Health would.
 - **An LSP server**, so other editors get PMT's hover, completion, definitions and checks.
-- **IDE bridges** for Claude Code and Copilot CLI, sharing the editor's selection live, once those connections are
-  documented.
 
 ## Long Term
 

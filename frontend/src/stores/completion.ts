@@ -114,7 +114,7 @@ export const useCompletionStore = defineStore("completion", () => {
    */
   async function begin(agent: Agent, path: string): Promise<void> {
     state.value = "starting";
-    const agentStream = openStream(agent, path, true, () => {
+    const agentStream = openStream(agent, path, () => {
       if (channel === agentStream) fail(`${agent.name} stopped`);
     });
     channel = agentStream;

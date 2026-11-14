@@ -131,7 +131,8 @@ database is known, holds no names made as the script runs, and the claim that ma
 game's files alone (`lang`'s `judge` gives the one verdict). A name the game's own
 files use is never dangling, unless every definition of it lies in a file the game does not read. A key is unknown, or
 a value of the wrong type, only where a source that can accuse describes the block and the game's own files never
-write otherwise.
+write otherwise. A name the walk marks `Literal`, a GUI widget's `text` or `title`, is shown as written when no key
+has it, so it is only a note (`literal-text`), never an unknown key.
 
 **A name others share is judged by what the game keeps** (`index.FindWinner`):
 

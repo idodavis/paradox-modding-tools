@@ -108,6 +108,10 @@ type Reference struct {
 	// only the game's own files suggest it, or its database needs no
 	// definition.
 	Inferred bool `json:"inferred,omitempty"`
+
+	// Literal is whether the game shows the name as written when nothing
+	// defines it.
+	Literal bool `json:"literal,omitempty"`
 }
 
 // ToID returns the reference's database, a colon and its name.

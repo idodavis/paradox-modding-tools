@@ -207,6 +207,70 @@ export interface Place {
 }
 
 /**
+ * A Review is a file under review as the page lists it.
+ */
+export interface Review {
+    "path": string;
+
+    /**
+     * Key is the path as paths are compared: lower case, with slashes.
+     */
+    "key": string;
+
+    /**
+     * Rel is the path below the file's root, with slashes, and Origin is that
+     * root's.
+     */
+    "rel": string;
+    "origin": string;
+
+    /**
+     * Stage is the stage folder Rel opens with, or "" for none.
+     */
+    "stage": string;
+    "format": files$0.Format;
+    "name": string;
+
+    /**
+     * Folder is "" for a file at its root.
+     */
+    "folder": string;
+    "root": string;
+    "database": string;
+    "readOnly": boolean;
+    "isDir": boolean;
+
+    /**
+     * Drawable is true for a file the Visual view draws.
+     */
+    "drawable": boolean;
+
+    /**
+     * Readme is the path of the readme of the file's database, "" if none.
+     */
+    "readme": string;
+
+    /**
+     * Language is the editor language, plain text for a format with none.
+     */
+    "language": string;
+
+    /**
+     * Hiding is why the game does not read the file, "" for a file it reads.
+     * Hider is the id of the mod that hides it, "" where no mod does.
+     */
+    "hiding": files$0.Hiding;
+    "hider": string;
+
+    /**
+     * Added and Removed count the lines the file's text adds and removes
+     * against its baseline.
+     */
+    "added": number;
+    "removed": number;
+}
+
+/**
  * Scanning is how far an install's scan has come.
  */
 export interface Scanning {

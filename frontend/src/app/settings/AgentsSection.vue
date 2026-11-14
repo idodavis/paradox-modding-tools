@@ -86,12 +86,9 @@ const refresh = () => cache.invalidateQueries({ key: keys.agents });
 const {
   mutate: install,
   isLoading: installing,
-  variables: requested,
+  variables: installed,
   error: installError,
-} = useMutation({
-  mutation: (id: string) => agentApi.InstallAgent(id),
-  onSettled: refresh,
-});
+} = useMutation({ mutation: (id: string) => agentApi.InstallAgent(id), onSettled: refresh });
 const installFailure = computed(() => (installError.value ? splitError(installError.value) : undefined));
 const {
   mutate: installNode,
@@ -179,7 +176,7 @@ function isRunning(row: Agent): boolean {
 
 /** isInstalling reports whether npm is installing an agent, as Go's list says or this view just asked. */
 function isInstalling(row: Agent): boolean {
-  return !!parseTime(row.installing) || (installing.value && requested.value === row.id);
+  return !!parseTime(row.installing) || (installing.value && installed.value === row.id);
 }
 
 /** mask returns a register text with the token shown as dots. */
@@ -284,7 +281,7 @@ function quote(path: string): string {
         />
       </template>
       <UAlert
-        v-if="installFailure && parts.some((part) => requested === part.row.id)"
+        v-if="installFailure && parts.some((part) => installed === part.row.id)"
         color="error"
         variant="subtle"
         icon="i-lucide-circle-x"

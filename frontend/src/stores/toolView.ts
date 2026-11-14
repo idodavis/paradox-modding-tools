@@ -65,10 +65,10 @@ export const useToolViewStore = defineStore("toolView", () => {
   };
 
   /** followFile shows a file an agent's tool call names, at the given line, without changing the chip or the focus. */
-  async function followFile(path: string, line: number, source: "agent" | "edit"): Promise<void> {
+  async function followFile(path: string, line: number): Promise<void> {
     const place = await loadQuery(placeQuery(path)).catch(() => undefined);
     if (!place?.root) return;
-    editor.show(place, { lineNumber: line, column: 1 }, source);
+    editor.show(place, { lineNumber: line, column: 1 }, "agent");
   }
 
   /** show brings to the front what an agent asked to show. */

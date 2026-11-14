@@ -67,10 +67,10 @@ export function RemoveAgent(id: string): $CancellablePromise<void> {
 }
 
 /**
- * UninstallAgent removes every installed version of an offered agent. It first
- * ends the agent's completion programs in every window, and waits for them,
- * since a running program's folder cannot be removed. It fails while a chat
- * with the agent runs.
+ * UninstallAgent removes every installed version of an offered agent. An agent
+ * that completes code is ended first in every window, and waited for, since a
+ * running program's folder cannot be removed. It fails while a chat with the
+ * agent runs.
  */
 export function UninstallAgent(id: string): $CancellablePromise<void> {
     return $Call.ByID(2219574446, id);

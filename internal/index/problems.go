@@ -28,6 +28,7 @@ type Problem struct {
 const (
 	ProblemUnresolved = "unresolved-reference"
 	ProblemLocKey     = "unknown-loc-key"
+	ProblemLiteral    = "literal-text"
 	ProblemMarkup     = "loc-markup"
 	ProblemDuplicate  = "duplicate-message"
 	ProblemRequired   = "missing-key"
@@ -253,15 +254,18 @@ func (j *judge) judgeMissing(references []lang.Reference) {
 }
 
 // classifyMissing returns the code for a name nothing defines: the one kind
-// all its alternatives share, else an unresolved reference.
+// all its alternatives share, else an unresolved reference. A name the game
+// shows as written is literal text.
 func classifyMissing(alternatives []lang.Reference) string {
 	code := ""
 	for position, reference := range alternatives {
 		kind := ProblemUnresolved
-		switch reference.Database {
-		case lang.Localization:
+		switch {
+		case reference.Literal:
+			kind = ProblemLiteral
+		case reference.Database == lang.Localization:
 			kind = ProblemLocKey
-		case lang.GUITextIcons, lang.GUITextFormats:
+		case reference.Database == lang.GUITextIcons, reference.Database == lang.GUITextFormats:
 			kind = ProblemMarkup
 		}
 

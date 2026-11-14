@@ -12,6 +12,7 @@ import { findCommand } from "../commands";
 import { TOOL_CHOICES } from "../pages";
 import { describeDumps, matchQuery } from "../../lib/format";
 import {
+  codesQuery,
   environmentQuery,
   languagesQuery,
   ownListingsQuery,
@@ -191,6 +192,7 @@ const highlighted = shallowRef("");
 const { data: state } = useQuery(stateQuery);
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: catalog } = useQuery(settingsCatalogQuery);
+const { data: codes } = useQuery(codesQuery);
 
 // The command's target is a setting's key, else a section.
 commandBus.on((command, target) => {
@@ -244,6 +246,7 @@ const sections = computed(() => {
       search.value,
       item.label,
       ...(catalog.value ?? []).filter((row) => row.section === item.value).map((row) => `${row.label} ${row.words}`),
+      ...(item.value === "checks" ? (codes.value ?? []).map((code) => `${code.label} ${code.id}`) : []),
     );
   return shownGroups.value
     .map((group) => ({ ...group, sections: group.sections.filter(matches) }))
@@ -471,7 +474,7 @@ async function remove(): Promise<void> {
                 @click="resetSection(String(item.value))"
               />
             </template>
-            <SettingsSection :section="String(item.value)" :highlight="highlighted" />
+            <SettingsSection :section="String(item.value)" :highlight="highlighted" :search="search" />
           </Page>
         </template>
 

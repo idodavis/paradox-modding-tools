@@ -12,6 +12,7 @@ import { useQuery } from "@pinia/colada";
 import { range } from "es-toolkit";
 
 import { TOOL_CHOICES } from "../app/pages";
+import { matchQuery } from "../lib/format";
 import { codesQuery, settingsCatalogQuery, topicsQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import ValueField from "./ValueField.vue";
@@ -22,7 +23,12 @@ const CONTROLS = ["switch", "choice", "number", "port", "text"] as const;
 // agent may use without asking as a list.
 const DRAWN_APART = ["appearance.theme", "appearance.simple", "agents.allowed"];
 
-const { section, highlight = "", keys = [] } = defineProps<{ section: string; highlight?: string; keys?: string[] }>();
+const {
+  section,
+  highlight = "",
+  keys = [],
+  search = "",
+} = defineProps<{ section: string; highlight?: string; keys?: string[]; search?: string }>();
 
 const settings = useSettingsStore();
 const { data: catalog } = useQuery(settingsCatalogQuery);
@@ -34,12 +40,14 @@ const rows = computed(() =>
   ),
 );
 const off = computed(() => settings.value("ide.checks").split(",").filter(Boolean));
-/** The checks' switches, grouped by topic. */
+/** The checks' switches that the search finds by name or id, grouped by topic. */
 const groups = computed(() =>
-  (topics.value ?? []).map((topic) => ({
-    title: topic.label,
-    codes: (codes.value ?? []).filter((code) => code.topic === topic.id),
-  })),
+  (topics.value ?? [])
+    .map((topic) => ({
+      title: topic.label,
+      codes: (codes.value ?? []).filter((code) => code.topic === topic.id && matchQuery(search, code.label, code.id)),
+    }))
+    .filter((group) => group.codes.length),
 );
 
 /** markRow returns the attributes of a setting's row: the id Settings scrolls to, and any highlight. */

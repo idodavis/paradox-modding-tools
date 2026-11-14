@@ -21,11 +21,13 @@ import {
   findOverride,
   overrideEntry,
 } from "../../app/commands";
-import { copiesQuery, fileQuery, folderQuery, loadQuery, outlineQuery, reviewsQuery } from "../../queries";
+import { copiesQuery, fileQuery, folderQuery, loadQuery, outlineQuery } from "../../queries";
+import { useAgentStore } from "../../stores/agent";
 import { canSplit, useEditorStore, type Group, type Side, type Tab } from "../../stores/editor";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
+import LineCounts from "../../ui/LineCounts.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import RichEditor from "../../ui/RichEditor.vue";
 import CodeEditor from "./CodeEditor.vue";
@@ -34,7 +36,7 @@ import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
 import StartPage from "./StartPage.vue";
 import { applyEdits, findModel, save, setText, type Model } from "./editor/models";
-import { findFileReview, goToChange, isReviewed, keepFile, locateChange, undoFile } from "./editor/review";
+import { findFileReview, goToChange, keepFile, locateChange, undoFile } from "./editor/review";
 import { findIcon, VIEWS } from "./editor/tabs";
 
 const { group, active } = defineProps<{ group: Group; active: boolean }>();
@@ -61,6 +63,7 @@ const REVEAL = findCommand("explorer.reveal");
 const CREATE = findCommand("mod.create");
 const SAVE_ALL = findCommand("editor.saveAll");
 
+const agent = useAgentStore();
 const editor = useEditorStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
@@ -87,8 +90,7 @@ const rows = computed(() => group.tabs.map(describe));
 const code = useTemplateRef("code");
 
 // The bar over a file whose agent's edits are under review.
-const { data: reviewed } = useQuery(reviewsQuery);
-const isUnderReview = computed(() => !!model.value && isReviewed(reviewed.value, model.value.place));
+const review = computed(() => model.value && agent.findReview(model.value.place.path));
 const changes = computed(() => (model.value ? findFileReview(model.value)?.changes : undefined));
 const reviewStatus = computed(() => {
   if (!model.value || !changes.value) return "The agent's changes";
@@ -783,11 +785,12 @@ const actions = computed<DropdownMenuItem[]>(() => [
           </template>
           <template v-else>
             <div
-              v-if="isUnderReview"
+              v-if="review"
               class="flex h-8 shrink-0 items-center gap-2 border-b border-default bg-elevated ps-3.5 pe-2.5 text-12 whitespace-nowrap"
             >
               <UIcon name="i-lucide-git-compare" class="size-3.5 shrink-0 text-primary" />
               <span class="tabular-nums">{{ reviewStatus }}</span>
+              <LineCounts :added="review.added" :removed="review.removed" />
               <UFieldGroup size="xs">
                 <UButton
                   icon="i-lucide-chevron-up"

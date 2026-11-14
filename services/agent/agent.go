@@ -23,8 +23,8 @@
 //     version, without the package's optional parts, which are builds and
 //     runtimes PMT does not run. npm's answer is saved and fetched like the
 //     registry.
-//   - A row that answers tab completion starts only for completion, with its
-//     own environment, never for a chat. Its Chat names the row that chats
+//   - A row that answers tab completion starts with its own environment, and
+//     the pane never offers it for a chat. Its Chat names the row that chats
 //     for it, and Settings draws the two as one agent.
 //   - Uninstalling an agent ends its completion programs in every window
 //     first, so that its folder can go, and refuses while a chat with it runs.
@@ -109,10 +109,6 @@ type Agent struct {
 
 	// Installing is the zero time if no install runs.
 	Installing time.Time `json:"installing"`
-
-	// Env holds the environment variables the program starts with beyond
-	// PMT's own and Node on the PATH. It is empty for a chat.
-	Env []string `json:"-"`
 }
 
 // Node is the Node that PMT's agents run on.
@@ -164,7 +160,7 @@ var agents = []app.Agent{
 		Files:    []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github"}},
 	{ID: "copilot-language-server", Name: "GitHub Copilot", Chat: "github-copilot-cli", Completion: true,
 		Package: "@github/copilot-language-server", Script: "dist/language-server.js", Args: []string{"--acp"},
-		CompletionEnv: "GITHUB_COPILOT_ACP_USE_CLI=0"},
+		Env: []string{"GITHUB_COPILOT_ACP_USE_CLI=0"}},
 	{ID: "codex-acp", Name: "Codex",
 		Register: "[mcp_servers.pmt]\nurl = \"{url}\"\nhttp_headers = { Authorization = \"Bearer {token}\" }",
 		Files:    []string{"AGENTS.md", "AGENTS.override.md", ".codex"}},
@@ -219,7 +215,7 @@ func (s *Service) ListAgents() []Agent {
 
 // makeOffer returns an offered agent with its registry entry and installed
 // version. An installed agent that the Node can run gets the program and
-// arguments that start it for a chat, unless it answers tab completion only.
+// arguments that start it.
 func (s *Service) makeOffer(row app.Agent, entry registryAgent, node Node) Agent {
 	agent := Agent{Agent: row, Version: entry.Version, Description: entry.Description}
 	var script string
@@ -228,8 +224,8 @@ func (s *Service) makeOffer(row app.Agent, entry registryAgent, node Node) Agent
 	started, _ := s.installs.Load(row.ID)
 	agent.Installing, _ = started.(time.Time)
 
-	if script != "" && node.Path != "" && !row.Completion {
-		agent.Program, agent.Args = node.Path, []string{script}
+	if script != "" && node.Path != "" {
+		agent.Program, agent.Args = node.Path, append([]string{script}, row.Args...)
 		if npx := entry.Distribution.Npx; npx != nil {
 			agent.Args = append(agent.Args, npx.Args...)
 		}
@@ -409,10 +405,10 @@ func (s *Service) InstallAgent(id string) error {
 	return nil
 }
 
-// UninstallAgent removes every installed version of an offered agent. It first
-// ends the agent's completion programs in every window, and waits for them,
-// since a running program's folder cannot be removed. It fails while a chat
-// with the agent runs.
+// UninstallAgent removes every installed version of an offered agent. An agent
+// that completes code is ended first in every window, and waited for, since a
+// running program's folder cannot be removed. It fails while a chat with the
+// agent runs.
 func (s *Service) UninstallAgent(id string) error {
 	if !slices.ContainsFunc(agents, func(row app.Agent) bool { return row.ID == id }) {
 		return fmt.Errorf("PMT offers no agent %s", id)
@@ -422,11 +418,12 @@ func (s *Service) UninstallAgent(id string) error {
 		return fmt.Errorf("npm is installing %s", id)
 	}
 
-	if chats := s.listPrograms(id, false); len(chats) > 0 {
-		return fmt.Errorf("PMT cannot uninstall %s until you close the sessions with it", chats[0].agent.Name)
+	programs := s.listPrograms(id)
+	if len(programs) > 0 && !programs[0].agent.Completion {
+		return fmt.Errorf("PMT cannot uninstall %s until you close the sessions with it", programs[0].agent.Name)
 	}
 
-	for _, running := range s.listPrograms(id, true) {
+	for _, running := range programs {
 		running.end()
 	}
 	defer application.Get().Event.Emit(EventChanged, id)
@@ -450,7 +447,8 @@ func (s *Service) removeVersions(id, kept string) error {
 
 // findAgent returns the agent with the id if it can start on the given Node,
 // else an error saying why not. For an offered agent it reads the registry's
-// saved copy, however old, and fetches nothing.
+// saved copy, however old, and fetches nothing. An agent that names its own
+// package starts without npm's answer, which would be fetched.
 func (s *Service) findAgent(id string, node Node) (Agent, error) {
 	var agent Agent
 	own := s.Workspace.Config.Config().Agents
@@ -458,8 +456,12 @@ func (s *Service) findAgent(id string, node Node) (Agent, error) {
 	record := slices.IndexFunc(own, func(other app.Agent) bool { return other.ID == id })
 	switch {
 	case offer >= 0:
-		saved, _ := app.LoadJSON[registry](s.resolveRegistry())
-		entry, _ := s.loadEntry(agents[offer], saved)
+		var entry registryAgent
+		if agents[offer].Package == "" {
+			saved, _ := app.LoadJSON[registry](s.resolveRegistry())
+			entry, _ = s.loadEntry(agents[offer], saved)
+		}
+
 		agent = s.makeOffer(agents[offer], entry, node)
 	case record >= 0:
 		agent = Agent{Agent: own[record]}
@@ -475,32 +477,6 @@ func (s *Service) findAgent(id string, node Node) (Agent, error) {
 	}
 
 	return Agent{}, fmt.Errorf("%s needs Node %s or newer", agent.Name, minNode)
-}
-
-// findCompletion returns the agent with the id as it starts for tab
-// completion on the given Node, with its own environment. It needs only the
-// agent itself installed. It returns an error if the agent answers no tab
-// completion, is not installed, or the Node is "".
-func (s *Service) findCompletion(id string, node Node) (Agent, error) {
-	offer := slices.IndexFunc(agents, func(row app.Agent) bool { return row.ID == id && row.Completion })
-	if offer < 0 {
-		return Agent{}, fmt.Errorf("PMT has no agent %s that completes code", id)
-	}
-
-	row := agents[offer]
-	agent := Agent{Agent: row, Env: []string{row.CompletionEnv}}
-	var script string
-	agent.Installed, script = s.findInstalled(row)
-	switch {
-	case agent.Installed == "":
-		return Agent{}, fmt.Errorf("%s is not installed", row.Name)
-	case node.Path == "":
-		return Agent{}, fmt.Errorf("%s needs Node %s or newer", row.Name, minNode)
-	}
-
-	agent.Program, agent.Args = node.Path, append([]string{script}, row.Args...)
-
-	return agent, nil
 }
 
 // The registry and npm's answer for a package's latest version. npmURL is

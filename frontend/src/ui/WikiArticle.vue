@@ -142,6 +142,7 @@ function follow(event: MouseEvent): void {
       :items="panes"
       class="min-h-0 flex-1 border-t border-default"
       @layout="panes.length === 2 && tocWidth.keep($event)"
+      @dragging="tocWidth.save"
     >
       <template #toc>
         <nav

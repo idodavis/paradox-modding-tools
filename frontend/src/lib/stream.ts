@@ -25,11 +25,10 @@ export type AgentStream = {
 
 /**
  * openStream opens a stream to an agent's program and sends the opening: the
- * agent, and the file whose mod's folder the program starts in. With
- * isCompletion, Go starts the program for tab completion instead of a chat.
- * onEnd is called once if the stream ends after Go's Start.
+ * agent, and the file whose mod's folder the program starts in. onEnd is
+ * called once if the stream ends after Go's Start.
  */
-export function openStream(agent: Agent, path: string, isCompletion: boolean, onEnd: () => void): AgentStream {
+export function openStream(agent: Agent, path: string, onEnd: () => void): AgentStream {
   const socket = JSONStream("agent");
   let controller!: ReadableStreamDefaultController<v2.AnyMessage>;
   // The SDK cancels the stream it reads when its connection closes, and the
@@ -43,7 +42,7 @@ export function openStream(agent: Agent, path: string, isCompletion: boolean, on
 
   const started = new Promise<Start>((resolve, reject) => {
     let first: Start | null = null;
-    socket.onopen = () => socket.send({ agent: agent.id, path, completion: isCompletion });
+    socket.onopen = () => socket.send({ agent: agent.id, path });
     socket.onmessage = (event) => {
       if (first) {
         if (!isCancelled) controller.enqueue(event.data as v2.AnyMessage);

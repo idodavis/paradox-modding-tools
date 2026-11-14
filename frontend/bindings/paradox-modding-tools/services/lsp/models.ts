@@ -207,9 +207,10 @@ export interface Diagnostic {
     "code": string;
 
     /**
-     * Level is the code's. Message is the code's template filled with the
-     * facts, as plain text.
+     * Label and Level are the code's, Label as Settings names the check.
+     * Message is the code's template filled with the facts, as plain text.
      */
+    "label": string;
     "level": string;
     "message": string;
     "range": jomini$0.Range;

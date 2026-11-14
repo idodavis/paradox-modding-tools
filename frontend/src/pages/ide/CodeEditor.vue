@@ -25,15 +25,7 @@ import {
   findOverride,
   overrideEntry,
 } from "../../app/commands";
-import {
-  baselineQuery,
-  copiesQuery,
-  detailQuery,
-  loadQuery,
-  reportQuery,
-  reviewsQuery,
-  wikiPagesQuery,
-} from "../../queries";
+import { baselineQuery, copiesQuery, detailQuery, loadQuery, reportQuery, wikiPagesQuery } from "../../queries";
 import { useAgentStore } from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
@@ -47,15 +39,7 @@ import { attachHover } from "./editor/hover";
 import type { Model } from "./editor/models";
 import { editorOptions } from "./editor/monaco";
 import { SHOW_DETAILS } from "./editor/providers";
-import {
-  attachReview,
-  closeReview,
-  followBaseline,
-  isReviewed,
-  keepChange,
-  undoChange,
-  type LineChange,
-} from "./editor/review";
+import { attachReview, closeReview, followBaseline, keepChange, undoChange, type LineChange } from "./editor/review";
 
 const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
@@ -142,8 +126,7 @@ const hasFinding = computed(() =>
   ),
 );
 
-const { data: reviewed } = useQuery(reviewsQuery);
-const isUnderReview = computed(() => isReviewed(reviewed.value, model.place));
+const isUnderReview = computed(() => !!agent.findReview(model.place.path));
 const { data: baseline } = useQuery(() => ({
   ...baselineQuery(model.place.path),
   enabled: isUnderReview.value,

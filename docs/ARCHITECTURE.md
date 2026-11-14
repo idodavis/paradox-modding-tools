@@ -235,7 +235,7 @@ read that section refresh. Each package README lists the events its service send
 | Source control | `SourceControlView.vue`, `stores/git.ts` | git | |
 | Wiki pane | `pages/ide/WikiPane.vue` | wiki | |
 | Terminal | `pages/ide/terminal`, `stores/terminal.ts` | terminal | terminal |
-| Assistant | `app/AgentPane.vue`, `ui/AgentSession.vue`, `stores/agent.ts` | agent, mcp | |
+| Assistant | `app/agent/`, `stores/agent.ts` | agent, mcp | |
 | Event Graph | `pages/graph` | graph | index, lang |
 | Health | `pages/health` | health | index, lang, loc |
 | Patch Notes | `pages/notes` | wiki | |

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"slices"
 	"strings"
 
@@ -22,6 +23,16 @@ type Hunk struct {
 	// it.
 	Before []string `json:"before"`
 	After  []string `json:"after"`
+}
+
+// A Review is a file under review as the page lists it.
+type Review struct {
+	Place
+
+	// Added and Removed count the lines the file's text adds and removes
+	// against its baseline.
+	Added   int `json:"added"`
+	Removed int `json:"removed"`
 }
 
 // A fileReview is one file's baseline: its text from before the agent's
@@ -93,30 +104,31 @@ func (s *Service) TrackEdits(path string, edits [][]Hunk, isNew bool) error {
 	return nil
 }
 
-// ListReviews returns the places of the files under review, sorted by path.
-// It returns none while no workspace is open.
-func (s *Service) ListReviews() []Place {
+// ListReviews returns the files under review, sorted by path, each with the
+// lines it adds and removes against its baseline. A file that is gone counts
+// as removing all its baseline's lines. It returns none while no workspace is
+// open.
+func (s *Service) ListReviews() []Review {
 	ws, err := s.Session()
 	if err != nil {
 		return nil
 	}
 
 	ws.reviewsMu.Lock()
-	paths := make([]string, 0, len(ws.reviews))
-	for _, review := range ws.reviews {
-		paths = append(paths, review.path)
-	}
+	listed := slices.Collect(maps.Values(ws.reviews))
 	ws.reviewsMu.Unlock()
 
-	slices.Sort(paths)
+	slices.SortFunc(listed, func(first, second fileReview) int { return strings.Compare(first.path, second.path) })
 
 	mods := ws.Mods.Load()
-	places := make([]Place, len(paths))
-	for position, path := range paths {
-		places[position] = ws.Locate(mods, path)
+	reviews := make([]Review, len(listed))
+	for position, review := range listed {
+		text, _ := files.ReadText(review.path)
+		reviews[position] = Review{Place: ws.Locate(mods, review.path)}
+		reviews[position].Added, reviews[position].Removed = files.CountLines(review.baseline, text.Text)
 	}
 
-	return places
+	return reviews
 }
 
 // Baseline returns a file's baseline. It returns an error if no workspace is
@@ -256,14 +268,23 @@ func (s *Session) endReview(path string) {
 	}
 }
 
-// settleReviews ends the review of each changed file that is settled. The
+// settleReviews ends the review of each changed file that is settled, and
+// sends review:changed for one that is not, since its counts changed. The
 // watcher's changes include every write PMT makes.
 func (s *Session) settleReviews(changes []FileChange) {
 	for _, change := range changes {
 		review, err := s.findReview(change.Path)
-		if err == nil && review.isSettled() {
-			s.endReview(change.Path)
+		if err != nil {
+			continue
 		}
+
+		if review.isSettled() {
+			s.endReview(change.Path)
+
+			continue
+		}
+
+		application.Get().Event.Emit(EventReviewChanged, change.Path)
 	}
 }
 

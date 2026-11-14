@@ -8,9 +8,9 @@ import * as monaco from "monaco-editor/editor/editor.api";
 import type { Edit } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import * as workspace from "@services/workspace/service";
-import { confirm } from "../../../lib/feedback";
 import { loadQuery, reviewsQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
+import { confirmUndo } from "../../../stores/edits";
 import { applyEdits, save, type Model } from "./models";
 
 /**
@@ -65,11 +65,6 @@ const WAIT = 500;
 
 const reviews = shallowReactive(new Map<string, FileReview>());
 
-/** isReviewed reports whether a place is one of the places under review. */
-export function isReviewed(places: Place[] | null | undefined, place: Place): boolean {
-  return !!places?.some((candidate) => candidate.key === place.key);
-}
-
 /** findFileReview returns a file's review in this window, if it has one. */
 export function findFileReview(model: Model): FileReview | undefined {
   return reviews.get(model.uri);
@@ -94,9 +89,11 @@ export function attachReview(
   const bars: Toolbar[] = [];
   let isRevealing = revealFirst;
   const layout = (): void => placeToolbars(codeEditor, bars);
+  const release = model.model.onWillDispose(() => diff.setModel(null));
   diff.setModel({ original: review.original, modified: model.model });
 
   const subscriptions = [
+    release,
     diff.onDidUpdateDiff(() => {
       review.changes = diff.getLineChanges() ?? [];
       review.isFresh = true;
@@ -194,13 +191,7 @@ export async function keepFile(model: Model): Promise<void> {
  * nothing if the user says no.
  */
 export async function undoFile(model: Model): Promise<void> {
-  const isConfirmed = await confirm.open({
-    title: "Undo the agent's changes?",
-    body: `${model.place.rel} goes back to its text from before the agent's edits, except for the changes you kept. If the agent created the file, it goes to PMT's trash.`,
-    confirm: "Undo all",
-    destructive: true,
-  });
-  if (isConfirmed === true) await settle(model, true, () => workspace.UndoFile(model.place.path));
+  if (await confirmUndo([model.place])) await settle(model, true, () => workspace.UndoFile(model.place.path));
 }
 
 /**
@@ -255,7 +246,7 @@ async function dropChange(model: Model, change: LineChange, run: (review: FileRe
 async function settle(model: Model, isLast: boolean, run: () => Promise<void>): Promise<void> {
   const next = isLast ? findNext(model.place, await loadQuery(reviewsQuery)) : undefined;
   await run();
-  if (next) useEditorStore().show(next);
+  if (next) useEditorStore().show(next, undefined, "changes");
 }
 
 /**
@@ -287,7 +278,7 @@ function startReview(model: Model, baseline: string): FileReview {
     redoVersions: new Set(),
     listeners: [
       model.model.onDidChangeContent((event) => mirror(model, review, event)),
-      model.model.onWillDispose(() => closeReview(model)),
+      model.model.onWillDispose(() => queueMicrotask(() => closeReview(model))),
     ],
   });
   reviews.set(model.uri, review);

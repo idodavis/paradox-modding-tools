@@ -36,7 +36,8 @@ export function DescribeNode(): $CancellablePromise<$models.Node> {
 
 /**
  * InstallAgent installs an offered agent with npm and removes its other
- * versions.
+ * versions. A row that names its own package is installed without the
+ * package's optional parts.
  */
 export function InstallAgent(id: string): $CancellablePromise<void> {
     return $Call.ByID(244046317, id);
@@ -66,8 +67,10 @@ export function RemoveAgent(id: string): $CancellablePromise<void> {
 }
 
 /**
- * UninstallAgent removes every installed version of an offered agent. It fails
- * while the agent runs, since its folder cannot be removed then.
+ * UninstallAgent removes every installed version of an offered agent. It first
+ * ends the agent's completion programs in every window, and waits for them,
+ * since a running program's folder cannot be removed. It fails while a chat
+ * with the agent runs.
  */
 export function UninstallAgent(id: string): $CancellablePromise<void> {
     return $Call.ByID(2219574446, id);

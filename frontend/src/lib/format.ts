@@ -1,4 +1,5 @@
 /** The sentences and numbers the UI writes from facts. A name or a description from Go is shown as it is. */
+import type { Cost } from "@agentclientprotocol/sdk/experimental/v2";
 import { formatTimeAgo, type UseTimeAgoMessages } from "@vueuse/core";
 import { groupBy, mapValues, sumBy } from "es-toolkit";
 
@@ -33,6 +34,17 @@ const AGO: UseTimeAgoMessages = {
 /** describeCount returns a count as the user reads it, such as "8" or "1,350". */
 export function describeCount(count: number): string {
   return NUMBERS.format(count);
+}
+
+/**
+ * describeCost returns an agent's cost as the user reads it, such as "$0.42".
+ * A currency that is not a three-letter ISO code, such as "credits", follows
+ * the amount as given.
+ */
+export function describeCost(cost: Cost): string {
+  if (!/^[A-Za-z]{3}$/.test(cost.currency)) return `${describeCount(cost.amount)} ${cost.currency}`;
+
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: cost.currency }).format(cost.amount);
 }
 
 /** plural returns a count with its noun, such as "1 file" or "1,350 files". Without a plural form it adds an s. */

@@ -50,6 +50,7 @@ const KINDS = {
   draws: ["draw"],
   gits: ["git"],
   releases: ["release"],
+  reviews: ["review"],
 } as const;
 
 /** keys holds the query keys that events and mutations refresh. A kind's plural covers the whole kind. */
@@ -72,6 +73,7 @@ export const keys = {
   ownListings: [...KINDS.releases, "own"] as const,
   gitStatus: (dir: string) => [...KINDS.gits, dir, GIT_STATUS] as const,
   release: (modId: string) => [...KINDS.releases, modId] as const,
+  baseline: (path: string) => [...KINDS.reviews, "baseline", path] as const,
   lsp: ["lsp"] as const,
   search: ["search"] as const,
   shells: ["terminal", "shells"] as const,
@@ -144,6 +146,22 @@ export const folderQuery = defineQueryOptions((dir: string) => ({
   key: keys.folder(dir),
   query: () => workspace.ListFolder(dir),
 }));
+
+/** reviewsQuery lists the places of the files under review. */
+export const reviewsQuery = defineQueryOptions({
+  key: [...keys.reviews, "list"],
+  query: () => workspace.ListReviews(),
+});
+
+/**
+ * baselineQuery reads a file's baseline: its text before the agent's edits
+ * that are not kept yet.
+ */
+export const baselineQuery = defineQueryOptions((path: string) => ({
+  key: keys.baseline(path),
+  query: () => workspace.Baseline(path),
+}));
+
 export const rootsQuery = defineQueryOptions({ key: keys.roots, query: () => workspace.ListRoots() });
 export const placeQuery = defineQueryOptions((path: string) => ({
   key: keys.place(path),

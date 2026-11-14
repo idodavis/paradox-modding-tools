@@ -1,4 +1,8 @@
-<!-- A Monaco editor over one Model, with the hover card, merge conflict links and a context menu. -->
+<!--
+  A Monaco editor over one Model, with the hover card, merge conflict links and
+  a context menu. While an agent's edits to the file are under review it is the
+  diff editor, with Keep and Undo over each change.
+-->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -21,12 +25,21 @@ import {
   findOverride,
   overrideEntry,
 } from "../../app/commands";
-import { copiesQuery, detailQuery, loadQuery, reportQuery, wikiPagesQuery } from "../../queries";
+import {
+  baselineQuery,
+  copiesQuery,
+  detailQuery,
+  loadQuery,
+  reportQuery,
+  reviewsQuery,
+  wikiPagesQuery,
+} from "../../queries";
 import { useAgentStore } from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
 import { COMMAND_BUS, useWindowsStore, type WikiLookup } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import { DIFF_OPTIONS } from "../../ui/CompareView.vue";
 import HoverCard from "../../ui/HoverCard.vue";
 import { markChanges } from "./editor/changes";
 import { decorate } from "./editor/conflicts";
@@ -34,6 +47,15 @@ import { attachHover } from "./editor/hover";
 import type { Model } from "./editor/models";
 import { editorOptions } from "./editor/monaco";
 import { SHOW_DETAILS } from "./editor/providers";
+import {
+  attachReview,
+  closeReview,
+  followBaseline,
+  isReviewed,
+  keepChange,
+  undoChange,
+  type LineChange,
+} from "./editor/review";
 
 const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
@@ -56,6 +78,7 @@ const workspace = useWorkspaceStore();
 const commandBus = useEventBus(COMMAND_BUS);
 const host = useTemplateRef("host");
 const view = shallowRef<editor.IStandaloneCodeEditor>();
+const diff = shallowRef<editor.IStandaloneDiffEditor>();
 const hovering = shallowRef<ReturnType<typeof attachHover>>();
 const anchor = { getBoundingClientRect: () => hovering.value?.hover.value?.anchor ?? new DOMRect() };
 let stopChanges = () => {};
@@ -119,14 +142,66 @@ const hasFinding = computed(() =>
   ),
 );
 
+const { data: reviewed } = useQuery(reviewsQuery);
+const isUnderReview = computed(() => isReviewed(reviewed.value, model.place));
+const { data: baseline } = useQuery(() => ({
+  ...baselineQuery(model.place.path),
+  enabled: isUnderReview.value,
+}));
+// The baseline of the file while its review is on show, else undefined.
+const reviewBaseline = computed(() => (isUnderReview.value ? baseline.value : undefined));
+const reviewing = shallowRef<ReturnType<typeof attachReview>>();
+// The focus goes back to the editor, so that no key presses the next
+// change's button.
+const { mutate: keep } = useMutation({
+  mutation: (change: LineChange) => keepChange(model, change),
+  onSettled: () => view.value?.focus(),
+});
+const { mutate: undo } = useMutation({
+  mutation: (change: LineChange) => undoChange(model, change),
+  onSettled: () => view.value?.focus(),
+});
+// Whether the first change is still to be shown: the file was opened under
+// review, at its start, with no range asked.
+let isRevealing = false;
+
 onMounted(() => {
+  const isAsked = active && !!editorStore.findRequest(model.place.key);
+  isRevealing = isUnderReview.value && !isAsked && model.caret.line === 1 && model.caret.column === 1;
+  build();
+});
+onBeforeUnmount(teardown);
+
+/**
+ * build makes the editor of the file: the diff editor while its review is on
+ * show, else the plain editor.
+ */
+function build(): void {
   if (!host.value) return;
-  const codeEditor = editor.create(host.value, {
+
+  const options = {
     ...editorOptions(),
-    model: model.model,
     readOnly: model.place.readOnly,
     readOnlyMessage: { value: describeReadOnly(model.place) },
-  });
+  };
+  const text = reviewBaseline.value;
+  let codeEditor: editor.IStandaloneCodeEditor;
+  if (text === undefined) {
+    if (!isUnderReview.value) closeReview(model);
+    codeEditor = editor.create(host.value, { ...options, model: model.model });
+  } else {
+    diff.value = editor.createDiffEditor(host.value, {
+      ...options,
+      ...DIFF_OPTIONS,
+      renderSideBySide: false,
+      renderMarginRevertIcon: false,
+      hideUnchangedRegions: { enabled: false },
+    });
+    reviewing.value = attachReview(diff.value, model, text, isRevealing);
+    isRevealing = false;
+    codeEditor = diff.value.getModifiedEditor();
+  }
+
   const caret = { lineNumber: model.caret.line, column: model.caret.column };
   codeEditor.setPosition(caret);
   codeEditor.revealPositionInCenterIfOutsideViewport(caret);
@@ -153,14 +228,30 @@ onMounted(() => {
   view.value = codeEditor;
   decorate(model);
   stopChanges = markChanges(codeEditor, model);
-});
-onBeforeUnmount(() => {
+}
+
+/** teardown takes everything off the editor and disposes it. */
+function teardown(): void {
   hovering.value?.detach();
   stopChanges();
-  view.value?.dispose();
-});
+  reviewing.value?.detach();
+  reviewing.value = undefined;
+  (diff.value ?? view.value)?.dispose();
+  diff.value = undefined;
+  view.value = undefined;
+}
 
-watch(editorOptions, (options) => view.value?.updateOptions(options));
+// The editor turns into the other kind as the review starts or ends. The caret
+// is kept in the model.
+watch(
+  () => reviewBaseline.value !== undefined,
+  () => {
+    teardown();
+    build();
+  },
+);
+watch(reviewBaseline, (text) => text !== undefined && followBaseline(model, text));
+watch(editorOptions, (options) => (diff.value ?? view.value)?.updateOptions(options));
 // A range requested when the file was shown is selected once, in the active group's editor. The editor takes focus
 // unless Follow the agent opened the file, so the focus stays where the user is typing.
 watch(
@@ -318,6 +409,29 @@ const menu = computed(() => groups.value.filter((group) => group.length));
   >
     <div class="flex min-h-0 flex-1">
       <div ref="host" class="min-w-0 flex-1 border-s-12 border-(--bg-0)" />
+      <!--
+        Each change's toolbar is a widget of the editor. These buttons fill it.
+      -->
+      <Teleport v-for="bar in reviewing?.toolbars.value" :key="bar.id" :to="bar.node">
+        <div class="flex overflow-hidden rounded-md border border-default bg-elevated shadow-sm">
+          <UButton
+            label="Keep"
+            icon="i-lucide-check"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            @click="keep(bar.change)"
+          />
+          <UButton
+            label="Undo"
+            icon="i-lucide-undo-2"
+            size="xs"
+            color="error"
+            variant="ghost"
+            @click="undo(bar.change)"
+          />
+        </div>
+      </Teleport>
       <UPopover
         :open="!!hovering?.hover.value"
         :reference="anchor"

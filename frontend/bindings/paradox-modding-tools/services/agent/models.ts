@@ -27,6 +27,18 @@ export interface Agent {
     "files"?: string[] | null;
 
     /**
+     * Chat is the id of the row that chats for this one, so Settings draws
+     * the two as one agent; "" if there is none. Each row starts on its own.
+     */
+    "chat"?: string;
+
+    /**
+     * Completion reports whether the agent answers tab completion in the
+     * editor. Such an agent starts only for completion, never for a chat.
+     */
+    "completion"?: boolean;
+
+    /**
      * Version is "" for the user's own agents.
      */
     "version": string;

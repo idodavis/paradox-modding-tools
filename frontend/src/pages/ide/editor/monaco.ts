@@ -143,7 +143,8 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
     autoClosingBrackets: settings.isOn("ide.closeBrackets") ? "languageDefined" : "never",
     autoClosingQuotes: settings.isOn("ide.closeBrackets") ? "languageDefined" : "never",
     quickSuggestions: settings.isOn("ide.complete") ? { other: true, comments: false, strings: true } : false,
-    inlineSuggest: { enabled: settings.isOn("ide.predict") },
+    // PMT's predicted text and Copilot's suggestions each check their own.
+    inlineSuggest: { enabled: settings.isOn("ide.predict") || settings.isOn("agents.completion") },
     parameterHints: { enabled: settings.isOn("ide.signature") },
     minimap: { enabled: settings.isOn("ide.minimap") },
     folding: settings.isOn("ide.folding"),

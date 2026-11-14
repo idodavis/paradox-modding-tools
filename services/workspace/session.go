@@ -64,6 +64,11 @@ type Session struct {
 
 	// caches is the folder of the install's caches.
 	caches string
+
+	// reviews holds the files under review, by the path's key. It has a lock
+	// of its own, so that no long work holds mu while the editor writes.
+	reviews   map[string]fileReview
+	reviewsMu sync.Mutex
 }
 
 const (
@@ -95,6 +100,7 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 	ws := &Session{
 		ID: workspaceID, Game: row, InstallPath: install.Path, Language: record.Language,
 		buffers: map[string]lang.Document{}, documents: documents, caches: folder,
+		reviews: map[string]fileReview{},
 	}
 	if err := ws.loadInstall(install.Path, version, progress); err != nil {
 		return nil, err
@@ -130,6 +136,7 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 	ws.watcher, err = startWatcher(dirs, func(changes []FileChange) {
 		// A file that cannot be scanned keeps its old entries.
 		_ = ws.Rescan(changes)
+		ws.settleReviews(changes)
 		change(changes)
 	})
 	if err != nil {
@@ -320,7 +327,8 @@ func (s *Session) PreviewOrder(modIDs []string) (*index.Index, error) {
 	return s.Mods.Load().Reorder(modIDs), nil
 }
 
-// Close stops the watcher and drops the open files' buffers and documents.
+// Close stops the watcher and drops the open files' buffers and documents,
+// and the reviews. The files stay as the agent wrote them.
 func (s *Session) Close() {
 	// The watcher may be inside a rescan that waits for the lock, so it stops
 	// first.
@@ -333,6 +341,11 @@ func (s *Session) Close() {
 
 	clear(s.buffers)
 	s.documents.Purge()
+
+	s.reviewsMu.Lock()
+	defer s.reviewsMu.Unlock()
+
+	clear(s.reviews)
 }
 
 // WalkText parses a file's text and walks it.

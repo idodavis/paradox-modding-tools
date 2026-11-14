@@ -21,7 +21,7 @@ import {
   findOverride,
   overrideEntry,
 } from "../../app/commands";
-import { copiesQuery, fileQuery, folderQuery, loadQuery, outlineQuery } from "../../queries";
+import { copiesQuery, fileQuery, folderQuery, loadQuery, outlineQuery, reviewsQuery } from "../../queries";
 import { canSplit, useEditorStore, type Group, type Side, type Tab } from "../../stores/editor";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
@@ -34,6 +34,7 @@ import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
 import StartPage from "./StartPage.vue";
 import { applyEdits, findModel, save, setText, type Model } from "./editor/models";
+import { findFileReview, goToChange, isReviewed, keepFile, locateChange, undoFile } from "./editor/review";
 import { findIcon, VIEWS } from "./editor/tabs";
 
 const { group, active } = defineProps<{ group: Group; active: boolean }>();
@@ -83,6 +84,18 @@ const isRendered = computed(() => isMarkdown.value && editor.viewOf(activeTab.va
 const markdownBar = useTemplateRef<HTMLElement>("markdownBar");
 const isTopRight = computed(() => THIS_WINDOW === "main" && editor.layout().rows[0]?.columns.at(-1)?.id === group.id);
 const rows = computed(() => group.tabs.map(describe));
+const code = useTemplateRef("code");
+
+// The bar over a file whose agent's edits are under review.
+const { data: reviewed } = useQuery(reviewsQuery);
+const isUnderReview = computed(() => !!model.value && isReviewed(reviewed.value, model.value.place));
+const changes = computed(() => (model.value ? findFileReview(model.value)?.changes : undefined));
+const reviewStatus = computed(() => {
+  if (!model.value || !changes.value) return "The agent's changes";
+  if (!changes.value.length) return "No changes left";
+
+  return `Change ${Math.max(locateChange(model.value, changes.value), 0) + 1} of ${changes.value.length}`;
+});
 
 // The keys around the caret, and the fix that overrides the entry it is in.
 const { mutate: locateCaret, data: located } = useMutation({
@@ -156,6 +169,8 @@ watchDebounced(
 // A tab drag ends with a drop or a drag end that reaches the window wherever it lands.
 useEventListener(window, ["drop", "dragend"], endDrag);
 const { mutate: saveModel } = useMutation({ mutation: save });
+const { mutate: keepAll } = useMutation({ mutation: keepFile });
+const { mutate: undoAll } = useMutation({ mutation: undoFile });
 const comparing = shallowRef(false);
 
 /** saveMine saves a model's text over the disk's text, and closes the compare. */
@@ -766,7 +781,51 @@ const actions = computed<DropdownMenuItem[]>(() => [
               @update:model-value="writeMarkdown(model, $event)"
             />
           </template>
-          <CodeEditor v-else :key="place.key" :model="model" :active="active" />
+          <template v-else>
+            <div
+              v-if="isUnderReview"
+              class="flex h-8 shrink-0 items-center gap-2 border-b border-default bg-elevated ps-3.5 pe-2.5 text-12 whitespace-nowrap"
+            >
+              <UIcon name="i-lucide-git-compare" class="size-3.5 shrink-0 text-primary" />
+              <span class="tabular-nums">{{ reviewStatus }}</span>
+              <UFieldGroup size="xs">
+                <UButton
+                  icon="i-lucide-chevron-up"
+                  color="neutral"
+                  variant="subtle"
+                  :disabled="!changes?.length"
+                  aria-label="Previous change"
+                  @click="goToChange(code?.view, model, -1)"
+                />
+                <UButton
+                  icon="i-lucide-chevron-down"
+                  color="neutral"
+                  variant="subtle"
+                  :disabled="!changes?.length"
+                  aria-label="Next change"
+                  @click="goToChange(code?.view, model, 1)"
+                />
+              </UFieldGroup>
+              <span class="grow" />
+              <UButton
+                label="Keep all"
+                icon="i-lucide-check-check"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                @click="keepAll(model)"
+              />
+              <UButton
+                label="Undo all"
+                icon="i-lucide-undo-2"
+                size="xs"
+                color="error"
+                variant="soft"
+                @click="undoAll(model)"
+              />
+            </div>
+            <CodeEditor ref="code" :key="place.key" :model="model" :active="active" />
+          </template>
         </template>
         <p v-else-if="isUnshown" class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
           PMT can't show this file.

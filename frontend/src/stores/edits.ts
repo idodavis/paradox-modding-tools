@@ -1,4 +1,7 @@
-/** An agent's edits to files: the changes its tool calls report, and the undo that takes them back. */
+/**
+ * An agent's edits to files: the changes its tool calls report, and the review
+ * Go starts from them.
+ */
 import * as workspaceApi from "@services/workspace/service";
 import type { Session } from "./agent";
 
@@ -6,14 +9,13 @@ import type { Session } from "./agent";
 export type FileEdit = {
   path: string;
   label: string;
-  before: string | null;
-  after: string | null;
   patch: string;
   added: number;
   removed: number;
   hunks: Hunk[];
   isNew: boolean; // the change creates the file
-  isUndone: boolean;
+  /** reviewError is why Go could not start the file's review; "" if it did. */
+  reviewError: string;
 };
 
 /** A Hunk is one run of a change, with its lines before and after. */
@@ -38,10 +40,13 @@ export function listLatestEdits(session: Session): FileEdit[] {
   return [...new Map(listEdits(session).map((change) => [change.path, change])).values()];
 }
 
-/** undoFile gives a file back the text it had before the given edits, through Go. It rejects with Go's error. */
-export function undoFile(edits: FileEdit[]): Promise<void> {
+/**
+ * trackEdits has Go start the review of a file, given the edits one tool call
+ * made to it. It rejects with Go's error.
+ */
+export function trackEdits(edits: FileEdit[]): Promise<void> {
   const hunks = edits.map((edit) => edit.hunks);
-  return workspaceApi.RevertHunks(edits[0]?.path ?? "", hunks, !!edits[0]?.isNew);
+  return workspaceApi.TrackEdits(edits[0]?.path ?? "", hunks, !!edits[0]?.isNew);
 }
 
 /** fileLabel returns a file's name without its folders. */
@@ -56,48 +61,85 @@ export function toEdits(diff: DiffContent): FileEdit[] {
       {
         path: diff.path,
         label: fileLabel(diff.path),
-        before: diff.oldText ?? null,
-        after: diff.newText ?? null,
         patch: "",
         added: 0,
         removed: 0,
         hunks: [{ before: splitLines(diff.oldText ?? ""), after: splitLines(diff.newText ?? "") }],
         isNew: !diff.oldText,
-        isUndone: false,
+        reviewError: "",
       },
     ];
   }
   const patch = diff.patch?.text ?? "";
   return (diff.changes ?? []).map((change) => {
-    const lines = splitPatch(patch, fileLabel(change.path));
+    const lines = splitPatch(patch, change.path);
     return {
       path: change.path,
       label: fileLabel(change.path),
-      before: null,
-      after: null,
       patch,
       added: lines.filter((line) => line.startsWith("+")).length,
       removed: lines.filter((line) => line.startsWith("-")).length,
       hunks: toHunks(lines),
       isNew: change.operation === "add",
-      isUndone: false,
+      reviewError: "",
     };
   });
 }
 
-/** splitPatch returns the lines of one file's part of a unified patch, or none if no part matches the label. */
-function splitPatch(patch: string, label: string): string[] {
+/**
+ * splitPatch returns the lines of one file's part of a unified patch, or none
+ * if no part names the file. A part names it by its whole path, or by its
+ * name under git's a/ and b/ folders.
+ */
+function splitPatch(patch: string, path: string): string[] {
   const parts = patch.split(/^(?=--- )/m);
-  const filePart = parts.find((part) =>
-    part
-      .split("\n")
-      .find((line) => line.startsWith("+++ "))
-      ?.trimEnd()
-      .endsWith(label),
-  );
+  const filePart = parts.find((part) => {
+    const header = part.split("\n").find((line) => line.startsWith("+++ "));
+    if (!header) return false;
+    // git ends a name that holds a space with a tab.
+    const named = unquoteGitPath(header.slice(4).replace(/\t?\r?$/, ""));
+
+    return named === path || fileLabel(named) === fileLabel(path);
+  });
   const lines = splitLines(filePart ?? (parts.length === 1 ? patch : ""));
   const first = lines.findIndex((line) => line.startsWith("@@"));
   return first < 0 ? [] : lines.slice(first);
+}
+
+/** GIT_ESCAPES holds the byte that each of git's letter escapes stands for. */
+const GIT_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
+
+/**
+ * unquoteGitPath returns a path from a patch's header without git's quotes:
+ * "C:\\mod\\a b.txt" is C:\mod\a b.txt. A path git did not quote is returned
+ * as it is. The bytes git writes as octal escapes are read as UTF-8.
+ */
+function unquoteGitPath(header: string): string {
+  if (header.length < 2 || !header.startsWith('"') || !header.endsWith('"')) return header;
+
+  const chars = [...header.slice(1, -1)];
+  const encoder = new TextEncoder();
+  const bytes: number[] = [];
+  for (let index = 0; index < chars.length; index++) {
+    const char = chars[index] ?? "";
+    if (char !== "\\") {
+      bytes.push(...encoder.encode(char));
+      continue;
+    }
+
+    const octal = /^[0-7]{3}/.exec(chars.slice(index + 1, index + 4).join(""));
+    if (octal) {
+      bytes.push(parseInt(octal[0], 8));
+      index += 3;
+      continue;
+    }
+
+    const next = chars[index + 1] ?? "";
+    bytes.push(GIT_ESCAPES[next] ?? next.charCodeAt(0));
+    index++;
+  }
+
+  return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
 /** toHunks returns the hunks of the lines of one file's patch. */

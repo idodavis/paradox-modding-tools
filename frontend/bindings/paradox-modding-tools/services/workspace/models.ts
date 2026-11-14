@@ -79,9 +79,13 @@ export interface FileText {
 }
 
 /**
- * Hunk is one run of lines an agent's edit changed in a file.
+ * A Hunk is one run of lines an agent's edit changed in a file.
  */
 export interface Hunk {
+    /**
+     * Before holds the run's lines before the edit and After its lines after
+     * it.
+     */
     "before": string[] | null;
     "after": string[] | null;
 }

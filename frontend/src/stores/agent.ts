@@ -6,7 +6,7 @@ import * as v1 from "@agentclientprotocol/sdk";
 import * as v2 from "@agentclientprotocol/sdk/experimental/v2";
 import { useQuery } from "@pinia/colada";
 import { until, useLocalStorage } from "@vueuse/core";
-import { Browser, JSONStream } from "@wailsio/runtime";
+import { Browser } from "@wailsio/runtime";
 import { groupBy, lowerFirst } from "es-toolkit";
 import { defineStore } from "pinia";
 import { computed, markRaw, reactive, shallowRef } from "vue";
@@ -14,11 +14,13 @@ import { computed, markRaw, reactive, shallowRef } from "vue";
 import type { Agent } from "@services/agent/models";
 import type { Tool } from "@services/mcp/models";
 import type { Place } from "@services/workspace/models";
+import * as workspaceApi from "@services/workspace/service";
 import { confirm } from "../lib/feedback";
-import { describeError, plural } from "../lib/format";
-import { accessQuery, agentsQuery, toolsQuery } from "../queries";
+import { describeError, describeTime, plural } from "../lib/format";
+import { openStream, type Start } from "../lib/stream";
+import { accessQuery, agentsQuery, loadQuery, placeQuery, reviewsQuery, toolsQuery } from "../queries";
 import { useEditorStore } from "./editor";
-import { fileLabel, listEdits, listLatestEdits, toEdits, undoFile, type DiffContent, type FileEdit } from "./edits";
+import { fileLabel, listLatestEdits, toEdits, trackEdits, type DiffContent, type FileEdit } from "./edits";
 import { useSettingsStore } from "./settings";
 import { useToolViewStore } from "./toolView";
 import { useWindowsStore, WINDOW_QUERY } from "./windows";
@@ -27,11 +29,11 @@ import { useWorkspaceStore } from "./workspace";
 /** A Protocol is a version of the Agent Client Protocol. */
 type Protocol = 1 | 2;
 
-/** A Start is Go's first message on an agent's stream: the session's folder and the other mods', or an error. */
-type Start = { folder: string; directories: string[] | null; error: string };
-
 /** A SignIn is one way to sign in to an agent: a command for PMT's terminal, or a request to the agent. */
-type SignIn = { id: string; name: string; description: string; command: string[] };
+export type SignIn = { id: string; name: string; description: string; command: string[] };
+
+/** A LinkRequest is a link an agent asks the user to open. */
+export type LinkRequest = { id: string; message: string; url: string };
 
 /** An Entry is one item of a session's transcript. */
 export type Entry =
@@ -59,6 +61,33 @@ export type Entry =
   | { kind: "link"; id: string; message: string; url: string }
   | { kind: "notice"; id: string; text: string };
 
+/**
+ * A PlanLimit is the limit of the user's plan that an agent last said is in
+ * play. Only Claude's adapter sends one.
+ */
+export type PlanLimit = {
+  /**
+   * status is the agent's own word. It warns past a threshold of its own and
+   * refuses at the limit.
+   */
+  status: "allowed" | "allowed_warning" | "rejected";
+
+  /** window is the limit's name, such as "5-hour limit". */
+  window: string;
+
+  /** percent is how much of the limit is used. It is null if not sent. */
+  percent: number | null;
+
+  /** resetsAt is when the limit resets, in milliseconds. Null if not sent. */
+  resetsAt: number | null;
+};
+
+/**
+ * A Usage is what an agent last said of a session: the tokens in its context,
+ * the context's size, and its cost and plan limit if it sent them.
+ */
+export type Usage = { used: number; size: number; cost: v2.Cost | null; limit: PlanLimit | null };
+
 /** A Session is one chat with an agent in this window. */
 export type Session = {
   key: string; // this window's own id for it
@@ -73,6 +102,7 @@ export type Session = {
   options: v2.SessionConfigOption[];
   commands: v2.AvailableCommand[];
   methods: SignIn[];
+  usage: Usage | null; // null until the agent sends a usage update
   resumable: boolean;
   deletable: boolean;
   directories: boolean;
@@ -134,6 +164,9 @@ type Offers = {
   availableCommands?: v2.AvailableCommand[];
 };
 
+/** A RateLimit is Claude's adapter's report of a plan limit, as it sends it. */
+type RateLimit = { status: PlanLimit["status"]; rateLimitType?: string; utilization?: number; resetsAt?: number };
+
 /** A MessageUpdate is what one kind of update about a message writes: an entry's kind, and a whole text or a chunk. */
 type MessageUpdate = { kind: "user" | "agent" | "thought"; isWhole: boolean };
 
@@ -153,12 +186,52 @@ export const FILE_KINDS: Record<string, string> = {
   delete: "Deleting files",
   move: "Moving files",
 };
+
+/**
+ * RATE_LIMIT is the key of Claude's adapter in a usage update's metadata. It is
+ * the adapter's own, so no other agent sends it. Its value is the status of the
+ * limit now in play, the window's type, how much of it is used as a share
+ * (usually 0 to 1) and when it resets in seconds since 1970.
+ */
+const RATE_LIMIT = "_claude/rateLimit";
+
+/** LIMIT_WINDOWS holds the words for each window type of Claude's limit. */
+const LIMIT_WINDOWS: Record<string, string> = {
+  five_hour: "5-hour limit",
+  seven_day: "Weekly limit",
+  seven_day_opus: "Weekly Opus limit",
+  seven_day_sonnet: "Weekly Sonnet limit",
+  seven_day_overage_included: "Weekly limit with extra usage",
+  overage: "Extra usage",
+};
+
 /** PMT_TOOL matches the title of a tool call for one of PMT's tools, in each form agents write it. */
 const PMT_TOOL = /^(?:mcp__pmt__|pmt[_:/])(.+)$/;
 /** AUTH_REQUIRED is the error code an agent answers with while the user has not signed in. */
 const AUTH_REQUIRED = -32000;
 /** CLIENT is how PMT names itself to an agent. */
-const CLIENT = { name: "pmt", title: "Paradox Modding Tools", version: "1" };
+export const CLIENT = { name: "pmt", title: "Paradox Modding Tools", version: "1" };
+
+/** V1_INITIALIZE is the request that opens a version 1 connection. */
+export const V1_INITIALIZE = {
+  protocolVersion: 1,
+  clientInfo: CLIENT,
+  clientCapabilities: {
+    fs: { readTextFile: false, writeTextFile: false },
+    terminal: false,
+    auth: { terminal: true },
+    elicitation: { url: {} },
+  },
+} satisfies v1.InitializeRequest;
+
+/**
+ * RESOLUTIONS holds the Go call that ends a file's review for each way to end
+ * it, and the verb of the toast that says why the call failed.
+ */
+const RESOLUTIONS = {
+  keep: { end: workspaceApi.KeepFile, verb: "keep" },
+  undo: { end: workspaceApi.UndoFile, verb: "undo" },
+};
 
 export const useAgentStore = defineStore("agent", () => {
   const toast = useToast();
@@ -170,6 +243,7 @@ export const useAgentStore = defineStore("agent", () => {
   const { data: agents } = useQuery(agentsQuery);
   const { data: access } = useQuery(accessQuery);
   const { data: tools } = useQuery(toolsQuery);
+  const { data: reviews } = useQuery(reviewsQuery);
   const sessions = reactive<Session[]>([]);
   const links = new Map<string, Link>();
   const protocols = useLocalStorage<Record<string, Protocol>>(PROTOCOLS, {});
@@ -193,6 +267,17 @@ export const useAgentStore = defineStore("agent", () => {
   /** isWaiting reports whether a session waits for the user: a permission to give or a link to open. */
   const isWaiting = (session: Session): boolean =>
     session.entries.some((entry) => entry.kind === "permission" || entry.kind === "link");
+
+  /** findReview returns a file's place while it is under review. */
+  const findReview = (path: string): Place | undefined => reviews.value?.find((place) => place.path === path);
+
+  /**
+   * listReviewed lists the places of the files a session edited that are
+   * under review, in the order the session first edited them.
+   */
+  const listReviewed = (session: Session): Place[] =>
+    listLatestEdits(session).flatMap((edit) => findReview(edit.path) ?? []);
+
   const status = computed(() => {
     const session = active.value;
     if (!session) return "";
@@ -203,8 +288,19 @@ export const useAgentStore = defineStore("agent", () => {
     if (session.state === "running") return `${name} is working: ${describeTitle(session)}`;
     if (session.state === "sign-in") return `${name} needs you to sign in`;
     if (session.state === "starting") return `${name} is starting`;
-    const fileCount = listLatestEdits(session).length;
-    return fileCount ? `${name} is done: ${plural(fileCount, "file")} edited` : "";
+    const fileCount = listReviewed(session).length;
+
+    return fileCount ? `${name} is done: ${plural(fileCount, "file")} to review` : "";
+  });
+
+  /**
+   * warnedLimit is the active session's plan limit while its agent warns or
+   * refuses. It is undefined otherwise.
+   */
+  const warnedLimit = computed(() => {
+    const limit = active.value?.usage?.limit;
+
+    return limit && limit.status !== "allowed" ? limit : undefined;
   });
 
   /** start starts a session with an agent, or the agent's replay of a record, and shows it. */
@@ -234,6 +330,7 @@ export const useAgentStore = defineStore("agent", () => {
       options: [],
       commands: [],
       methods: [],
+      usage: null,
       resumable: false,
       deletable: false,
       directories: false,
@@ -271,39 +368,15 @@ export const useAgentStore = defineStore("agent", () => {
 
   /** openDialect opens a stream to a session's agent and wraps it for the SDK. */
   async function openDialect(session: Session): Promise<{ start: Start; dialect: Dialect }> {
-    const socket = JSONStream("agent");
-    let controller!: ReadableStreamDefaultController<v2.AnyMessage>;
-    // The SDK cancels the stream it reads when its connection closes, and the stream takes nothing after that.
-    let isCancelled = false;
-    const readable = new ReadableStream<v2.AnyMessage>({
-      start: (streamController) => (controller = streamController),
-      cancel: () => void (isCancelled = true),
-    });
-    const writable = new WritableStream<v2.AnyMessage>({ write: (message) => socket.send(message) });
-    const started = new Promise<Start>((resolve, reject) => {
-      let first: Start | null = null;
-      socket.onopen = () => socket.send({ agent: session.agent.id, path: editor.activeFile()?.path ?? "" });
-      socket.onmessage = (event) => {
-        if (first) {
-          if (!isCancelled) controller.enqueue(event.data as v2.AnyMessage);
-          return;
-        }
-        first = event.data as Start;
-        if (first.error) reject(new Error(first.error));
-        else resolve(first);
-      };
-      // A stream closed to start the agent again is not the session's end.
-      socket.onclose = () => {
-        if (!isCancelled) controller.close();
-        if (!first) reject(new Error(`${session.agent.name} stopped before it started`));
-        else if (links.get(session.key) === link) session.state = "ended";
-      };
+    const opened = openStream(session.agent, editor.activeFile()?.path ?? "", false, () => {
+      if (links.get(session.key) === link) session.state = "ended";
     });
     const answers: Answers = new Map();
-    const dialect = markRaw(makeDialect(session, { readable, writable }, socket, answers));
+    const dialect = markRaw(makeDialect(session, opened.stream, opened, answers));
     const link: Link = { dialect, answers };
     links.set(session.key, link);
-    return { start: await started, dialect };
+
+    return { start: await opened.started, dialect };
   }
 
   /** unlink closes a session's stream and forgets its link. */
@@ -357,16 +430,7 @@ export const useAgentStore = defineStore("agent", () => {
         const { toolCall, options } = params as v1.RequestPermissionRequest;
         return { title: toolCall.title ?? "", toolCall: toolCall as v2.ToolCallUpdate, options };
       },
-      initialize: {
-        protocolVersion: 1,
-        clientInfo: CLIENT,
-        clientCapabilities: {
-          fs: { readTextFile: false, writeTextFile: false },
-          terminal: false,
-          auth: { terminal: true },
-          elicitation: { url: {} },
-        },
-      } satisfies v1.InitializeRequest,
+      initialize: V1_INITIALIZE,
       toCapabilities: (answer: unknown) => {
         const { agentCapabilities, authMethods } = answer as v1.InitializeResponse;
         return {
@@ -495,6 +559,8 @@ export const useAgentStore = defineStore("agent", () => {
       session.terminals[chunk.terminalId] = (session.terminals[chunk.terminalId] ?? "") + chunk.data;
     } else if (kind === "config_option_update" || kind === "available_commands_update") {
       applyOffers(session, update as Offers);
+    } else if (kind === "usage_update") {
+      applyUsage(session, update as v2.UsageUpdate);
     }
   }
 
@@ -525,7 +591,7 @@ export const useAgentStore = defineStore("agent", () => {
   function applyTool(session: Session, update: v2.ToolCallUpdate | v2.ToolCallContentChunk): void {
     let entry = session.entries.find((candidate) => candidate.kind === "tool" && candidate.id === update.toolCallId);
     if (entry?.kind !== "tool") {
-      entry = {
+      entry = reactive<Extract<Entry, { kind: "tool" }>>({
         kind: "tool",
         id: update.toolCallId,
         title: "",
@@ -535,9 +601,10 @@ export const useAgentStore = defineStore("agent", () => {
         edits: [],
         text: "",
         terminals: [],
-      };
+      });
       session.entries.push(entry);
     }
+    const wasDone = entry.status === "completed";
     const whole =
       "title" in update || "status" in update || Array.isArray(update.content) ? (update as v2.ToolCallUpdate) : null;
     if (whole?.title) entry.title = whole.title;
@@ -553,8 +620,23 @@ export const useAgentStore = defineStore("agent", () => {
     const locations = whole?.locations ?? [];
     const paths = locations.map((location) => location.path);
     entry.paths = [...new Set([...entry.paths, ...paths, ...entry.edits.map((edit) => edit.path)])];
+    // A resumed session replays its old calls while it starts. Their edits
+    // are old, so they start no review.
+    if (entry.status === "completed" && !wasDone && session.state !== "starting") startReviews(entry.edits);
     if (follow.value && locations[0])
       void toolView.followFile(locations[0].path, locations[0].line ?? 1, entry.type === "edit" ? "edit" : "agent");
+  }
+
+  /**
+   * startReviews sends Go each file the given edits changed, so that Go can
+   * start the file's review. A file Go cannot review says why on its edits.
+   */
+  function startReviews(edits: FileEdit[]): void {
+    for (const fileEdits of Object.values(groupBy(edits, (edit) => edit.path))) {
+      trackEdits(fileEdits).catch((error: unknown) => {
+        fileEdits.forEach((edit) => (edit.reviewError = describeError(error)));
+      });
+    }
   }
 
   /** finishTurn marks a session's turn over, with a notice if the turn did not end normally. */
@@ -615,16 +697,11 @@ export const useAgentStore = defineStore("agent", () => {
     answers: Answers,
     request: v2.CreateElicitationRequest,
   ): Promise<v2.CreateElicitationResponse> {
-    if (request.mode !== "url" || !("url" in request)) return Promise.resolve({ action: "decline" });
-    const id = String(request.elicitationId);
-    session.entries.push({ kind: "link", id, message: request.message, url: String(request.url) });
-    return new Promise((resolve) =>
-      answers.set(id, (action) => {
-        if (action === "accept") void Browser.OpenURL(String(request.url));
-        const choice = action === "accept" || action === "decline" ? action : "cancel";
-        resolve({ action: choice } as v2.CreateElicitationResponse);
-      }),
-    );
+    const link = toLink(request);
+    if (!link) return Promise.resolve({ action: "decline" });
+
+    session.entries.push({ kind: "link", ...link });
+    return new Promise((resolve) => answers.set(link.id, (action) => resolve(answerLink(link.url, action))));
   }
 
   /** closeEntry answers a session's open request and removes it from the transcript. */
@@ -716,12 +793,8 @@ export const useAgentStore = defineStore("agent", () => {
 
   /** signIn signs in to a session's agent, in PMT's terminal or through the agent, and starts the session again. */
   const signIn = async (session: Session, method: SignIn): Promise<void> => {
-    if (method.command.length) {
-      // Imported here because the terminal store needs the command table.
-      await (await import("./terminal")).useTerminalStore().run(method.command);
-      windows.sendCommand("terminal.show", windows.resolveTerminal());
-      return;
-    }
+    if (method.command.length) return runSignIn(method.command);
+
     await links.get(session.key)?.dialect.signIn(method.id);
     unlink(session);
     session.state = "starting";
@@ -810,38 +883,50 @@ export const useAgentStore = defineStore("agent", () => {
     }
   };
 
-  /** undo restores each file the given edits changed and marks the edits undone. A toast says why one cannot. */
-  const undo = async (edits: FileEdit[]): Promise<void> => {
-    const files = groupBy(
-      edits.filter((change) => !change.isUndone),
-      (change) => change.path,
-    );
-    for (const fileEdits of Object.values(files)) {
+  /**
+   * endReviews ends the review of each given file. Keep leaves a file as the
+   * agent wrote it, and undo gives back its text from before. A toast says why
+   * one cannot.
+   */
+  const endReviews = async (places: Place[], resolution: keyof typeof RESOLUTIONS): Promise<void> => {
+    const { end, verb } = RESOLUTIONS[resolution];
+
+    for (const place of places) {
       try {
-        await undoFile(fileEdits);
-        fileEdits.forEach((change) => (change.isUndone = true));
+        await end(place.path);
       } catch (error) {
-        const title = `Could not undo the edits to ${fileEdits[0]?.label ?? ""}`;
+        const title = `Could not ${verb} the edits to ${place.name}`;
         toast.add({ title, description: describeError(error), color: "error" });
       }
     }
   };
 
-  /** isUndoable reports whether a session made a change that is not undone yet. */
-  const isUndoable = (session: Session): boolean => listEdits(session).some((change) => !change.isUndone);
+  /**
+   * undoAllReviews asks first, then undoes the edits to every file a session
+   * edited that is still under review.
+   */
+  const undoAllReviews = async (session: Session): Promise<void> => {
+    const places = listReviewed(session);
+    if (!places.length) return;
 
-  /** undoAll asks first, then undoes every change of a session's that is not undone. */
-  const undoAll = async (session: Session): Promise<void> => {
-    const changes = listEdits(session).filter((change) => !change.isUndone);
-    const fileCount = new Set(changes.map((change) => change.path)).size;
-    if (!fileCount) return;
     const confirmed = await confirm.open({
       title: "Undo all edits?",
-      body: `${session.agent.name}'s edits to ${plural(fileCount, "file")} in this session are taken back.`,
+      body:
+        `${session.agent.name}'s edits to ${plural(places.length, "file")} still under review are taken back, ` +
+        "and a file it created goes to the trash.",
       confirm: "Undo all edits",
       destructive: true,
     });
-    if (confirmed === true) await undo(changes);
+    if (confirmed === true) await endReviews(places, "undo");
+  };
+
+  /**
+   * showFile opens a file in the editor. It does nothing if the workspace has
+   * no such file.
+   */
+  const showFile = async (path: string): Promise<void> => {
+    const place = await loadQuery(placeQuery(path)).catch(() => undefined);
+    if (place) editor.show(place);
   };
 
   /** popOut opens the agent pane in a window of its own, which takes over the session shown here. */
@@ -894,15 +979,18 @@ export const useAgentStore = defineStore("agent", () => {
     current,
     follow,
     status,
+    warnedLimit,
     isWaiting,
     start,
     open,
     archive,
     rename,
     deleteSession,
-    undo,
-    isUndoable,
-    undoAll,
+    findReview,
+    listReviewed,
+    endReviews,
+    undoAllReviews,
+    showFile,
     prompt,
     configure,
     cancel,
@@ -955,6 +1043,45 @@ function applyOffers(session: Session, offers: Offers): void {
   if (offers.availableCommands) session.commands = offers.availableCommands;
 }
 
+/**
+ * applyUsage stores what a usage update says of a session. The tokens and the
+ * size replace the last. A cost the update leaves out is kept, a null cost
+ * clears it. A plan limit the update leaves out is kept.
+ */
+function applyUsage(session: Session, update: v2.UsageUpdate): void {
+  const last = session.usage;
+  const report = update._meta?.[RATE_LIMIT] as RateLimit | undefined;
+  session.usage = {
+    used: update.used,
+    size: update.size,
+    cost: update.cost === undefined ? (last?.cost ?? null) : update.cost,
+    limit: report ? toPlanLimit(report) : (last?.limit ?? null),
+  };
+}
+
+/**
+ * toPlanLimit returns Claude's report of a plan limit as a PlanLimit. A window
+ * type without words shows as "Plan limit".
+ */
+function toPlanLimit(report: RateLimit): PlanLimit {
+  return {
+    status: report.status,
+    window: LIMIT_WINDOWS[report.rateLimitType ?? ""] ?? "Plan limit",
+    percent: report.utilization === undefined ? null : Math.round(report.utilization * 100),
+    resetsAt: report.resetsAt === undefined ? null : report.resetsAt * 1000,
+  };
+}
+
+/**
+ * describeLimit returns how much of a plan limit is used and when it resets,
+ * such as "85% used, resets today at 14:00". It leaves out what was not sent.
+ */
+export function describeLimit(limit: PlanLimit): string {
+  const resets = limit.resetsAt === null ? "" : `resets ${describeTime(new Date(limit.resetsAt))}`;
+
+  return [limit.percent === null ? "" : `${limit.percent}% used`, resets].filter(Boolean).join(", ");
+}
+
 /** toPmtTool returns the name of the PMT tool a tool call's title names, or "" if it names one of the agent's own. */
 export function toPmtTool(title: string): string {
   return PMT_TOOL.exec(title)?.[1] ?? "";
@@ -993,8 +1120,40 @@ function findPath(toolCall: v2.ToolCallUpdate | undefined): string {
   return paths.size === 1 ? ([...paths][0] ?? "") : "";
 }
 
+/** runSignIn runs a sign-in command in PMT's terminal and shows it. */
+export async function runSignIn(command: string[]): Promise<void> {
+  // Imported here because the terminal store needs the command table.
+  await (await import("./terminal")).useTerminalStore().run(command);
+
+  const windows = useWindowsStore();
+  windows.sendCommand("terminal.show", windows.resolveTerminal());
+}
+
+/**
+ * toLink returns the link an agent's request asks the user to open. It returns
+ * null if the request asks for a form.
+ */
+export function toLink(request: v2.CreateElicitationRequest): LinkRequest | null {
+  if (request.mode !== "url" || !("url" in request)) return null;
+
+  return { id: String(request.elicitationId), message: request.message, url: String(request.url) };
+}
+
+/**
+ * answerLink returns the answer to a request to open a link, and opens the
+ * link first if the user accepted. Any answer but accept or decline cancels
+ * the request.
+ */
+export function answerLink(url: string, action: string | null): v2.CreateElicitationResponse {
+  if (action === "accept") void Browser.OpenURL(url);
+
+  const choice = action === "accept" || action === "decline" ? action : "cancel";
+
+  return { action: choice } as v2.CreateElicitationResponse;
+}
+
 /** toSignIn returns how to sign in with a method. Its command is empty if PMT asks the agent itself. */
-function toSignIn(agent: Agent, method: Method): SignIn {
+export function toSignIn(agent: Agent, method: Method): SignIn {
   const terminalAuth = method._meta?.["terminal-auth"];
   let command: string[] = [];
   if (terminalAuth) command = [terminalAuth.command, ...(terminalAuth.args ?? [])];
@@ -1017,7 +1176,7 @@ function toText(block: v2.ContentBlock | undefined): string {
 }
 
 /** toUri returns a file's percent-encoded address, with the selected lines as "#L3-10" if they are given. */
-function toUri(path: string, startLine = 0, endLine = 0): string {
+export function toUri(path: string, startLine = 0, endLine = 0): string {
   const url = new URL("file://");
   url.pathname = path.replace(/\\/g, "/");
   if (startLine) url.hash = startLine === endLine ? `L${startLine}` : `L${startLine}-${endLine}`;
@@ -1025,6 +1184,6 @@ function toUri(path: string, startLine = 0, endLine = 0): string {
 }
 
 /** isAuthRequired reports whether an error is an agent's answer that the user must sign in first. */
-function isAuthRequired(error: unknown): boolean {
+export function isAuthRequired(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === AUTH_REQUIRED;
 }

@@ -10,6 +10,7 @@ import { fileUrl, loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
 import { useWorkspaceStore } from "../../../stores/workspace";
+import { GROUP, registerSuggestions } from "./completion";
 import { findModel, flushText, openModel } from "./models";
 
 /** FIX_COMMAND is the id of the command a quick fix runs. */
@@ -90,7 +91,10 @@ function registerNavigation(selector: languages.LanguageFilter[]): void {
   });
 }
 
-/** registerCompletion registers completion, inline completion and signature help. */
+/**
+ * registerCompletion registers completion, inline completion, the completion
+ * agent's suggestions and signature help.
+ */
 function registerCompletion(selector: languages.LanguageFilter[]): void {
   const settings = useSettingsStore();
   monaco.languages.registerCompletionItemProvider(selector, {
@@ -128,8 +132,13 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
       return item;
     },
   });
+  // PMT's ghost text gives way to the completion agent's.
   monaco.languages.registerInlineCompletionsProvider(selector, {
+    groupId: "pmt",
+    yieldsToGroupIds: [GROUP],
     provideInlineCompletions: async (model, position) => {
+      // Monaco shows inline completions for Copilot's setting too.
+      if (!settings.isOn("ide.predict")) return { items: [] };
       const { word, completions } = await resolveCompletions(model, position);
       const top = completions[0];
       if (!top || !word.word || word.endColumn > position.column) return { items: [] };
@@ -138,6 +147,7 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
     },
     disposeInlineCompletions: () => undefined,
   });
+  registerSuggestions(selector);
   monaco.languages.registerSignatureHelpProvider(selector, {
     signatureHelpTriggerCharacters: [" ", "="],
     provideSignatureHelp: async (model, position) => {

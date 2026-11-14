@@ -3,7 +3,7 @@ import { useQueryCache, type EntryKey } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { nextTick } from "vue";
 
-import { errorLogQuery, isGitStatus, keys } from "../queries";
+import { errorLogQuery, isGitStatus, keys, reviewsQuery } from "../queries";
 
 /**
  * An EventRow is what an event makes stale, from its data. A row that forgets empties the cached data and makes
@@ -28,6 +28,7 @@ const WORKSPACE_KEYS = [
   keys.wiki,
   keys.gits,
   keys.releases,
+  keys.reviews,
   keys.lsp,
   keys.search,
 ] as const;
@@ -64,6 +65,7 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
   // The start page's reads of the repositories go stale last, after the reads they are made of.
   "git:changed": { stale: (dir) => [keys.git(dir), keys.repositoryWork] },
   "release:changed": { stale: (modId) => [keys.release(modId), keys.ownListings] },
+  "review:changed": { stale: (path) => [reviewsQuery.key, keys.baseline(path)] },
   "wiki:updated": { stale: () => [keys.wiki] },
   "errorlog:changed": { stale: () => [errorLogQuery.key] },
   "game:exited": { stale: () => [keys.state] },

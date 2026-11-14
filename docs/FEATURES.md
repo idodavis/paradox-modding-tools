@@ -269,7 +269,14 @@ registry into its own folder, with Node if your system has none new enough.
   need no asking. **Always allow** is remembered for that agent and tool, and Settings lists what is allowed, to remove.
 - A new session starts with the model, effort and mode the agent was last given.
 - What the page has in front of you goes with your prompt as an attachment.
-- **Follow the agent** opens the files it reads. An edit can be undone from its row, or all of a session's at once.
+- **Follow the agent** opens the files it reads.
+- **Review its edits** in the editor. A file the agent changed shows as a diff against how it was, with **Keep** and
+  **Undo** over each change and for the whole file. What you type outside the changes stays yours. The pane's **Files
+  to review** lists each file still waiting, with Keep and Undo for it and for all of them at once.
+- **Tab completion** in the editor comes from GitHub Copilot, which has its own sign-in in Settings › Agents, and a
+  switch there. Until you sign in, Settings, the pane and the status bar say so. Claude and Codex do not complete code.
+- The ring in the prompt box shows how full the agent's context window is. Click it for the window and for the plan's
+  usage.
 
 ### Pop-out windows
 

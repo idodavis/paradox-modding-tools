@@ -64,6 +64,11 @@ export const McpShow = "mcp:show";
 export const ReleaseChanged = "release:changed";
 
 /**
+ * Name of the custom event "review:changed".
+ */
+export const ReviewChanged = "review:changed";
+
+/**
  * Name of the custom event "search:hits".
  */
 export const SearchHits = "search:hits";

@@ -1100,6 +1100,15 @@
 .monaco-diff-editor .cldr {
   justify-content: center;
 }
+/* Monaco has no theme color for a changed line's + or − sign or its number, so they take the diff's green and red. */
+.monaco-diff-editor .insert-sign,
+.monaco-diff-editor div:has(> .gutter-insert) > .line-numbers {
+  color: var(--ui-success);
+}
+.monaco-diff-editor .delete-sign,
+.monaco-diff-editor div:has(> .gutter-delete) > .line-numbers {
+  color: var(--ui-error);
+}
 /* The lines changed since the last commit get a bar beside the line numbers, and a wedge where lines were removed. */
 .monaco-editor .pmt-change-added,
 .monaco-editor .pmt-change-changed {

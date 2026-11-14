@@ -1,7 +1,7 @@
-// Package agent starts the coding agents PMT chats with. It lists the agents
-// PMT offers and the user's own, installs the offered ones from the ACP
-// registry with npm on Node, and pipes each running agent to the window that
-// chats with it.
+// Package agent starts the coding agents PMT chats with, and the one that
+// completes code in the editor. It lists the agents PMT offers and the user's
+// own, installs the offered ones with npm on Node, and pipes each running
+// agent to the window that talks to it.
 //
 // Go holds none of the Agent Client Protocol. The window speaks it, so this
 // package only starts the program, carries its lines both ways and ends it.
@@ -19,6 +19,15 @@
 //   - An agent is installed at the registry's version in a folder of its own,
 //     and its other versions are removed. Two installs of one agent never run
 //     at once, since two npm runs in one folder delete each other's files.
+//   - A row that names its own npm package is installed at npm's latest
+//     version, without the package's optional parts, which are builds and
+//     runtimes PMT does not run. npm's answer is saved and fetched like the
+//     registry.
+//   - A row that answers tab completion starts only for completion, with its
+//     own environment, never for a chat. Its Chat names the row that chats
+//     for it, and Settings draws the two as one agent.
+//   - Uninstalling an agent ends its completion programs in every window
+//     first, so that its folder can go, and refuses while a chat with it runs.
 //   - An agent runs in a group of its own, a job object on Windows and a
 //     process group on Linux, so ending the stream ends everything it
 //     started.
@@ -80,6 +89,9 @@ type Service struct {
 
 	// installs maps an agent's id to the time its install started.
 	installs sync.Map
+
+	// programs holds the running programs of every window, as keys.
+	programs sync.Map
 }
 
 // Agent is one agent as Settings lists it, with what the registry and PMT's
@@ -97,6 +109,10 @@ type Agent struct {
 
 	// Installing is the zero time if no install runs.
 	Installing time.Time `json:"installing"`
+
+	// Env holds the environment variables the program starts with beyond
+	// PMT's own and Node on the PATH. It is empty for a chat.
+	Env []string `json:"-"`
 }
 
 // Node is the Node that PMT's agents run on.
@@ -137,7 +153,8 @@ type release struct {
 }
 
 // agents is the table of agents PMT offers. A Register text has {url} and
-// {token} to fill in.
+// {token} to fill in. GitHub Copilot is two rows: its CLI chats, and its
+// language server answers tab completion, with the CLI kept out of it.
 var agents = []app.Agent{
 	{ID: "claude-acp", Name: "Claude",
 		Register: `claude mcp add --transport http pmt {url} --header "Authorization: Bearer {token}"`,
@@ -145,6 +162,9 @@ var agents = []app.Agent{
 	{ID: "github-copilot-cli", Name: "GitHub Copilot",
 		Register: `copilot mcp add --transport http pmt {url} --header "Authorization: Bearer {token}"`,
 		Files:    []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github"}},
+	{ID: "copilot-language-server", Name: "GitHub Copilot", Chat: "github-copilot-cli", Completion: true,
+		Package: "@github/copilot-language-server", Script: "dist/language-server.js", Args: []string{"--acp"},
+		CompletionEnv: "GITHUB_COPILOT_ACP_USE_CLI=0"},
 	{ID: "codex-acp", Name: "Codex",
 		Register: "[mcp_servers.pmt]\nurl = \"{url}\"\nhttp_headers = { Authorization = \"Bearer {token}\" }",
 		Files:    []string{"AGENTS.md", "AGENTS.override.md", ".codex"}},
@@ -186,7 +206,8 @@ func (s *Service) ListAgents() []Agent {
 	listed := make([]Agent, 0, len(agents)+len(records))
 	for _, row := range agents {
 		row.Register = replacer.Replace(row.Register)
-		listed = append(listed, s.makeOffer(row, listing, node))
+		entry, _ := s.loadEntry(row, listing)
+		listed = append(listed, s.makeOffer(row, entry, node))
 	}
 
 	for _, record := range records {
@@ -198,21 +219,16 @@ func (s *Service) ListAgents() []Agent {
 
 // makeOffer returns an offered agent with its registry entry and installed
 // version. An installed agent that the Node can run gets the program and
-// arguments that start it.
-func (s *Service) makeOffer(row app.Agent, listing registry, node Node) Agent {
-	var entry registryAgent
-	if position := slices.IndexFunc(listing.Agents, func(candidate registryAgent) bool { return candidate.ID == row.ID }); position >= 0 {
-		entry = listing.Agents[position]
-	}
-
+// arguments that start it for a chat, unless it answers tab completion only.
+func (s *Service) makeOffer(row app.Agent, entry registryAgent, node Node) Agent {
 	agent := Agent{Agent: row, Version: entry.Version, Description: entry.Description}
 	var script string
-	agent.Installed, script = s.findInstalled(row.ID)
+	agent.Installed, script = s.findInstalled(row)
 
 	started, _ := s.installs.Load(row.ID)
 	agent.Installing, _ = started.(time.Time)
 
-	if script != "" && node.Path != "" {
+	if script != "" && node.Path != "" && !row.Completion {
 		agent.Program, agent.Args = node.Path, []string{script}
 		if npx := entry.Distribution.Npx; npx != nil {
 			agent.Args = append(agent.Args, npx.Args...)
@@ -336,19 +352,20 @@ func (s *Service) InstallNode() error {
 }
 
 // InstallAgent installs an offered agent with npm and removes its other
-// versions.
+// versions. A row that names its own package is installed without the
+// package's optional parts.
 func (s *Service) InstallAgent(id string) error {
-	listing, err := s.loadRegistry()
+	offer := slices.IndexFunc(agents, func(row app.Agent) bool { return row.ID == id })
+	if offer < 0 {
+		return fmt.Errorf("PMT offers no agent %s", id)
+	}
+
+	row := agents[offer]
+	listing, listErr := s.loadRegistry()
+	entry, err := s.loadEntry(row, listing)
 	if err != nil {
-		return err
+		return errors.Join(listErr, err)
 	}
-
-	position := slices.IndexFunc(listing.Agents, func(candidate registryAgent) bool { return candidate.ID == id })
-	if position < 0 || listing.Agents[position].Distribution.Npx == nil {
-		return fmt.Errorf("the registry has no agent %s that runs on Node", id)
-	}
-
-	entry := listing.Agents[position]
 
 	node := s.DescribeNode()
 	if node.Path == "" {
@@ -371,8 +388,12 @@ func (s *Service) InstallAgent(id string) error {
 		modules = filepath.Join(filepath.Dir(node.Path), "..", "lib", "node_modules")
 	}
 
-	command := exec.Command(node.Path, filepath.Join(modules, "npm", "bin", "npm-cli.js"), "install", "--prefix", dir,
-		"--no-audit", "--no-fund", entry.Distribution.Npx.Package)
+	npm := []string{filepath.Join(modules, "npm", "bin", "npm-cli.js"), "install", "--prefix", dir, "--no-audit", "--no-fund"}
+	if row.Package != "" {
+		npm = append(npm, "--omit=optional")
+	}
+
+	command := exec.Command(node.Path, append(npm, entry.Distribution.Npx.Package)...)
 	// Npm's install scripts run on the same Node.
 	command.Env = addToPath(os.Environ(), filepath.Dir(node.Path))
 	prepareCommand(command)
@@ -388,8 +409,10 @@ func (s *Service) InstallAgent(id string) error {
 	return nil
 }
 
-// UninstallAgent removes every installed version of an offered agent. It fails
-// while the agent runs, since its folder cannot be removed then.
+// UninstallAgent removes every installed version of an offered agent. It first
+// ends the agent's completion programs in every window, and waits for them,
+// since a running program's folder cannot be removed. It fails while a chat
+// with the agent runs.
 func (s *Service) UninstallAgent(id string) error {
 	if !slices.ContainsFunc(agents, func(row app.Agent) bool { return row.ID == id }) {
 		return fmt.Errorf("PMT offers no agent %s", id)
@@ -397,6 +420,14 @@ func (s *Service) UninstallAgent(id string) error {
 
 	if _, isRunning := s.installs.Load(id); isRunning {
 		return fmt.Errorf("npm is installing %s", id)
+	}
+
+	if chats := s.listPrograms(id, false); len(chats) > 0 {
+		return fmt.Errorf("PMT cannot uninstall %s until you close the sessions with it", chats[0].agent.Name)
+	}
+
+	for _, running := range s.listPrograms(id, true) {
+		running.end()
 	}
 	defer application.Get().Event.Emit(EventChanged, id)
 
@@ -428,7 +459,8 @@ func (s *Service) findAgent(id string, node Node) (Agent, error) {
 	switch {
 	case offer >= 0:
 		saved, _ := app.LoadJSON[registry](s.resolveRegistry())
-		agent = s.makeOffer(agents[offer], saved, node)
+		entry, _ := s.loadEntry(agents[offer], saved)
+		agent = s.makeOffer(agents[offer], entry, node)
 	case record >= 0:
 		agent = Agent{Agent: own[record]}
 	default:
@@ -445,28 +477,99 @@ func (s *Service) findAgent(id string, node Node) (Agent, error) {
 	return Agent{}, fmt.Errorf("%s needs Node %s or newer", agent.Name, minNode)
 }
 
-const registryURL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json"
+// findCompletion returns the agent with the id as it starts for tab
+// completion on the given Node, with its own environment. It needs only the
+// agent itself installed. It returns an error if the agent answers no tab
+// completion, is not installed, or the Node is "".
+func (s *Service) findCompletion(id string, node Node) (Agent, error) {
+	offer := slices.IndexFunc(agents, func(row app.Agent) bool { return row.ID == id && row.Completion })
+	if offer < 0 {
+		return Agent{}, fmt.Errorf("PMT has no agent %s that completes code", id)
+	}
+
+	row := agents[offer]
+	agent := Agent{Agent: row, Env: []string{row.CompletionEnv}}
+	var script string
+	agent.Installed, script = s.findInstalled(row)
+	switch {
+	case agent.Installed == "":
+		return Agent{}, fmt.Errorf("%s is not installed", row.Name)
+	case node.Path == "":
+		return Agent{}, fmt.Errorf("%s needs Node %s or newer", row.Name, minNode)
+	}
+
+	agent.Program, agent.Args = node.Path, append([]string{script}, row.Args...)
+
+	return agent, nil
+}
+
+// The registry and npm's answer for a package's latest version. npmURL is
+// followed by the package's name and "/latest".
+const (
+	registryURL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json"
+	npmURL      = "https://registry.npmjs.org/"
+)
 
 const registryAge = 24 * time.Hour
 
-// loadRegistry returns the saved registry while it is under a day old, else a
-// fresh one. It keeps the old copy if the fetch fails, and errors if there is
-// none.
+// loadRegistry returns the ACP registry as loadCopy gives it.
 func (s *Service) loadRegistry() (registry, error) {
-	path := s.resolveRegistry()
+	var listing registry
+	content, err := loadCopy(s.resolveRegistry(), registryURL, "the ACP registry")
+	if err != nil {
+		return listing, err
+	}
+
+	return listing, json.Unmarshal(content, &listing)
+}
+
+// loadEntry returns what the registry says of an offered agent. For a row that
+// names its own package it is npm's latest version of the package and its
+// description, as loadCopy gives them from a copy beside the registry's, with
+// the package pinned to that version. It returns an error if the registry has
+// no such agent that runs on Node, or npm's answer cannot be had.
+func (s *Service) loadEntry(row app.Agent, listing registry) (registryAgent, error) {
+	if row.Package == "" {
+		position := slices.IndexFunc(listing.Agents, func(candidate registryAgent) bool { return candidate.ID == row.ID })
+		if position < 0 || listing.Agents[position].Distribution.Npx == nil {
+			return registryAgent{}, fmt.Errorf("the registry has no agent %s that runs on Node", row.ID)
+		}
+
+		return listing.Agents[position], nil
+	}
+
+	content, err := loadCopy(filepath.Join(s.resolveDir(), row.ID+".json"), npmURL+row.Package+"/latest", "npm")
+	if err != nil {
+		return registryAgent{}, err
+	}
+
+	var entry registryAgent
+	if err := json.Unmarshal(content, &entry); err != nil {
+		return registryAgent{}, err
+	}
+
+	entry.Distribution.Npx = &npxPackage{Package: row.Package + "@" + entry.Version}
+
+	return entry, nil
+}
+
+// loadCopy returns a URL's content from its copy in a file while the copy is
+// under a day old, else from a fresh fetch, which replaces the copy. It keeps
+// the old copy if the fetch fails, and errors, naming the source, if there is
+// none.
+func loadCopy(path, url, source string) ([]byte, error) {
 	content, err := os.ReadFile(path)
 	if info, statErr := os.Stat(path); statErr != nil || time.Since(info.ModTime()) > registryAge {
-		if fetched, fetchErr := app.FetchURL(registryURL, fetchTimeout); fetchErr == nil {
+		if fetched, fetchErr := app.FetchURL(url, fetchTimeout); fetchErr == nil {
 			content, err = fetched, files.WriteAtomic(path, fetched)
 		}
 	}
 
-	var listing registry
 	if len(content) == 0 {
-		return listing, errors.Join(err, errors.New("the ACP registry could not be fetched"))
+		return nil, errors.Join(err, fmt.Errorf("%s could not be fetched", source))
 	}
 
-	return listing, json.Unmarshal(content, &listing)
+	return content, nil
 }
 
 // resolveRegistry returns where the registry's saved copy is kept.
@@ -474,13 +577,13 @@ func (s *Service) resolveRegistry() string {
 	return filepath.Join(s.resolveDir(), "registry.json")
 }
 
-// findInstalled returns the newest installed version of an agent and the
-// script that starts it. Both are "" if none is installed. A folder whose
-// package declares no one program is no install.
-func (s *Service) findInstalled(id string) (version, script string) {
-	matches, _ := filepath.Glob(filepath.Join(s.resolveDir(), id+"@*"))
+// findInstalled returns the newest installed version of an offered agent and
+// the script that starts it. Both are "" if none is installed. A folder with
+// no script is no install.
+func (s *Service) findInstalled(row app.Agent) (version, script string) {
+	matches, _ := filepath.Glob(filepath.Join(s.resolveDir(), row.ID+"@*"))
 	for _, match := range matches {
-		program, err := findScript(match)
+		program, err := findScript(match, row)
 		if err != nil {
 			continue
 		}
@@ -498,9 +601,19 @@ func (s *Service) resolveDir() string {
 	return filepath.Join(s.Workspace.Config.Dirs.Cache, "agents")
 }
 
-// findScript returns the script of the agent installed in a folder: the one
-// program its one package declares. It returns an error if there is none.
-func findScript(dir string) (string, error) {
+// findScript returns the script of the agent installed in a folder: the
+// script its row names in its own package, else the one program its one
+// package declares. It returns an error if there is none.
+func findScript(dir string, row app.Agent) (string, error) {
+	if row.Script != "" {
+		script := filepath.Join(dir, "node_modules", filepath.FromSlash(row.Package), filepath.FromSlash(row.Script))
+		if !files.IsFile(script) {
+			return "", fmt.Errorf("%s holds no %s", dir, row.Script)
+		}
+
+		return script, nil
+	}
+
 	installed, err := app.LoadJSON[struct {
 		Dependencies map[string]string `json:"dependencies"`
 	}](filepath.Join(dir, "package.json"))

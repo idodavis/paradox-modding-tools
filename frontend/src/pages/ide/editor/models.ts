@@ -29,6 +29,7 @@ export type Model = {
   disk: { version: number; text: string }; // the version and text last loaded from or saved to disk
   sync: () => Promise<Diagnostic[]>; // sends the text to Go once edits pause
   syncVersion: number; // the text version Go holds; -1 if it holds none of this window's
+  isDiskEdit: boolean; // true while the disk's text is applied to the model: that edit is not the user's
 };
 
 /** SEVERITIES holds the Monaco severity of each level. Monaco has one severity for both critical and error. */
@@ -194,6 +195,7 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
     disk: { version: start.unsaved ? -1 : textModel.getAlternativeVersionId(), text: start.disk },
     sync: useDebounceFn((): Promise<Diagnostic[]> => sendText(model), 300),
     syncVersion: start.unsaved ? -1 : textModel.getVersionId(),
+    isDiskEdit: false,
   });
   textModel.onDidChangeContent(() => {
     // a file no change is written to is never unsaved
@@ -256,7 +258,9 @@ export async function applyChange(path: string): Promise<void> {
 
 /** setText replaces a model's text with text from disk, as one undoable edit. The model then counts as saved. */
 export function setText(model: Model, text: Text): void {
+  model.isDiskEdit = true;
   applyEdits(model, [{ range: model.model.getFullModelRange(), text: text.text }]);
+  model.isDiskEdit = false;
   model.encoding = text.encoding;
   model.disk = { version: model.model.getAlternativeVersionId(), text: text.text };
   model.unsaved = false;

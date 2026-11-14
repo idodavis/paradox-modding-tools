@@ -15,16 +15,16 @@ import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import type { Place } from "@services/workspace/models";
 import { fileSearchQuery } from "../queries";
 import { toPmtTool, useAgentStore, type Entry, type Session } from "../stores/agent";
-import type { FileEdit } from "../stores/edits";
 import { useToolViewStore } from "../stores/toolView";
-import CompareView from "./CompareView.vue";
+import AgentLink from "./AgentLink.vue";
+import AgentSignIn from "./AgentSignIn.vue";
+import AgentUsage from "./AgentUsage.vue";
+import { TABLES } from "./RichEditor.vue";
 
 /** A Tool is a tool call's title as the transcript shows it. */
 type Tool = { text: string; suffix: string };
-/** A Url is a link split around its host. */
-type Url = { before: string; host: string; after: string; lookalike: boolean };
 /** A ShownEntry is one entry of the transcript with what its view needs. */
-type ShownEntry = { entry: Entry; tool?: Tool; link?: Url };
+type ShownEntry = { entry: Entry; tool?: Tool };
 /** A SelectOption is one of the agent's settings whose value is one of a list. */
 type SelectOption = Extract<SessionConfigOption, { type: "select" }>;
 /** A Label names a group of a setting's values. */
@@ -39,7 +39,6 @@ const STATUSES: Record<string, { icon: string; color: string; text?: string }> =
   failed: { icon: "i-lucide-x", color: "text-error" },
   cancelled: { icon: "i-lucide-ban", color: "text-dimmed" },
 };
-const PATCH_LINE_COLORS: Record<string, string> = { "+": "text-success", "-": "text-error" };
 // An answer's text: inline code in the theme's orange softened toward its text color, on a faint tint, a code block on
 // the darkest panel, and a quote set off by a bar.
 const ANSWER = [
@@ -100,18 +99,13 @@ const { data: places } = useQuery(() => ({
   ...fileSearchQuery({ query: search.value, limit: 30 }),
   enabled: picking.value,
 }));
-const comparing = shallowRef<FileEdit | null>(null);
 const copied = shallowRef("");
 const { start: clearCopied } = useTimeoutFn(() => (copied.value = ""), 1500, { immediate: false });
 
 // Each user entry is a message of its own; the entries after it, the agent's texts and tool calls, share one message.
 const messages = computed(() =>
   session.entries.reduce<{ id: string; role: "user" | "assistant"; parts: ShownEntry[] }[]>((list, entry) => {
-    const part = {
-      entry,
-      tool: entry.kind === "tool" ? describeTool(entry) : undefined,
-      link: entry.kind === "link" ? splitUrl(entry.url) : undefined,
-    };
+    const part = { entry, tool: entry.kind === "tool" ? describeTool(entry) : undefined };
     const last = list.at(-1);
     if (entry.kind !== "user" && last?.role === "assistant") last.parts.push(part);
     else list.push({ id: entry.id, role: entry.kind === "user" ? "user" : "assistant", parts: [part] });
@@ -303,22 +297,6 @@ function splitMentions(text: string): { text: string; names: string[] } {
   return { text: text.replace(MENTION, "").trim(), names };
 }
 
-/** splitUrl splits a link around its host, so the host can stand out. */
-function splitUrl(url: string): Url {
-  try {
-    const parsed = new URL(url);
-    const start = url.indexOf(parsed.host);
-    return {
-      before: url.slice(0, start),
-      host: parsed.host,
-      after: url.slice(start + parsed.host.length),
-      lookalike: parsed.hostname.split(".").some((label) => label.startsWith("xn--")),
-    };
-  } catch {
-    return { before: "", host: url, after: "", lookalike: false };
-  }
-}
-
 /** stripControls returns a terminal's output without its color and cursor codes. */
 function stripControls(output: string): string {
   return output.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g, "");
@@ -345,30 +323,25 @@ function stripControls(output: string): string {
               :key="terminal"
               class="max-h-60 overflow-auto rounded-sm bg-(--bg-0) px-2 py-1.5 font-mono text-11 leading-4.5 text-toned"
               >{{ stripControls(session.terminals[terminal] ?? "") }}</pre>
-            <span v-for="change in entry.edits" :key="change.path" class="flex items-center gap-2">
-              <span class="truncate font-mono text-11">{{ change.label }}</span>
-              <template v-if="change.patch">
-                <span class="text-11 text-success">+{{ change.added }}</span>
-                <span class="text-11 text-error">−{{ change.removed }}</span>
-              </template>
-              <UButton
-                label="Open in compare"
-                icon="i-lucide-git-compare"
-                variant="ghost"
-                size="xs"
-                @click="comparing = change"
-              />
-              <UButton
-                v-if="change.hunks.length"
-                :label="change.isUndone ? 'Undone' : 'Undo'"
-                icon="i-lucide-undo-2"
-                color="error"
-                variant="ghost"
-                size="xs"
-                :disabled="change.isUndone"
-                @click="agent.undo([change])"
-              />
-            </span>
+            <div v-for="change in entry.edits" :key="change.path" class="flex flex-col gap-0.5">
+              <span class="flex items-center gap-2">
+                <span class="truncate font-mono text-11">{{ change.label }}</span>
+                <template v-if="change.patch">
+                  <span class="text-11 text-success">+{{ change.added }}</span>
+                  <span class="text-11 text-error">−{{ change.removed }}</span>
+                </template>
+                <UButton
+                  :label="agent.findReview(change.path) ? 'Review' : 'Open'"
+                  icon="i-lucide-git-compare"
+                  variant="ghost"
+                  size="xs"
+                  @click="agent.showFile(change.path)"
+                />
+              </span>
+              <span v-if="change.reviewError" class="text-11 text-error">
+                This change can't be reviewed in the editor: {{ change.reviewError }}
+              </span>
+            </div>
           </div>
         </UChatTool>
       </DefineTool>
@@ -382,21 +355,11 @@ function stripControls(output: string): string {
           {{ session.agent.name }} signs in to its own account, and PMT never sees it. A sign-in in PMT's Terminal comes
           back here once it is done.
         </span>
-        <button
-          v-for="method in session.methods"
-          :key="method.id"
-          type="button"
-          class="flex h-11 items-center gap-2.5 rounded-md border border-accented bg-elevated px-3 text-start"
-          @click="agent.signIn(session, method)"
-        >
-          <UIcon :name="method.command.length ? 'i-lucide-terminal' : 'i-lucide-log-in'" class="size-4 text-toned" />
-          <span class="flex min-w-0 grow flex-col">
-            <span class="text-12 font-medium">{{ method.name }}</span>
-            <span class="truncate text-11 text-dimmed">{{ method.description }}</span>
-          </span>
-          <UIcon name="i-lucide-chevron-right" class="size-4 text-dimmed" />
-        </button>
-        <UButton label="I have signed in" icon="i-lucide-refresh-cw" class="self-start" @click="agent.retry(session)" />
+        <AgentSignIn
+          :methods="session.methods"
+          @choose="(method) => agent.signIn(session, method)"
+          @done="agent.retry(session)"
+        />
       </div>
       <div v-else-if="session.state === 'ended'" class="flex max-w-180 flex-col gap-2.5">
         <span class="text-13 font-medium">The session ended</span>
@@ -441,7 +404,7 @@ function stripControls(output: string): string {
               </div>
             </UChatTool>
             <template v-else>
-              <template v-for="{ entry, tool, link } in run" :key="entry.id">
+              <template v-for="{ entry, tool } in run" :key="entry.id">
                 <div v-if="entry.kind === 'user'" class="flex flex-col items-end gap-1.5">
                   <span class="text-13 leading-5 whitespace-pre-wrap">{{ splitMentions(entry.text).text }}</span>
                   <span
@@ -456,6 +419,7 @@ function stripControls(output: string): string {
                   v-else-if="entry.kind === 'agent'"
                   :model-value="entry.text"
                   content-type="markdown"
+                  :extensions="TABLES"
                   :editable="false"
                   :mention="false"
                   :ui="{ base: ANSWER }"
@@ -505,47 +469,13 @@ function stripControls(output: string): string {
                     />
                   </div>
                 </div>
-                <div
+                <AgentLink
                   v-else-if="entry.kind === 'link'"
-                  class="flex max-w-120 flex-col gap-2 rounded-lg border border-default bg-elevated p-3"
-                >
-                  <span class="flex items-center gap-2 text-12 font-medium">
-                    {{ session.agent.name }} asks to open a link
-                    <span class="grow" />
-                    <UButton
-                      icon="i-lucide-x"
-                      variant="ghost"
-                      size="xs"
-                      square
-                      aria-label="Close"
-                      @click="agent.answer(session, entry.id, null)"
-                    />
-                  </span>
-                  <span class="text-12">{{ entry.message }}</span>
-                  <span class="font-mono text-11 break-all text-toned">
-                    {{ link?.before
-                    }}<span class="rounded-xs bg-(--accent-soft) px-0.5 text-highlighted">{{ link?.host }}</span
-                    >{{ link?.after }}
-                  </span>
-                  <span v-if="link?.lookalike" class="text-12 text-warning">
-                    The host is written with look-alike letters, so it may not be the site it seems to be.
-                  </span>
-                  <div class="flex gap-1.5">
-                    <UButton
-                      :label="link?.lookalike ? 'Open anyway' : 'Open'"
-                      icon="i-lucide-external-link"
-                      :color="link?.lookalike ? 'warning' : 'primary'"
-                      class="grow justify-center"
-                      @click="agent.answer(session, entry.id, 'accept')"
-                    />
-                    <UButton
-                      label="Decline"
-                      class="grow justify-center"
-                      @click="agent.answer(session, entry.id, 'decline')"
-                    />
-                  </div>
-                  <span class="text-11 text-dimmed">Opens in your browser. Nothing is fetched before you choose.</span>
-                </div>
+                  :agent="session.agent.name"
+                  :message="entry.message"
+                  :url="entry.url"
+                  @answer="(action) => agent.answer(session, entry.id, action)"
+                />
                 <p v-else-if="entry.kind === 'notice'" class="text-12 text-dimmed">{{ entry.text }}</p>
               </template>
             </template>
@@ -565,25 +495,6 @@ function stripControls(output: string): string {
         </template>
       </UChatMessages>
     </div>
-
-    <UModal :open="!!comparing" :title="comparing?.label ?? ''" fullscreen @update:open="comparing = null">
-      <template #body>
-        <CompareView
-          v-if="comparing && comparing.after !== null"
-          :left="comparing.before ?? ''"
-          :right="comparing.after"
-          language="plaintext"
-          left-label="Before"
-          :right-label="`After ${session.agent.name}'s edit`"
-        />
-        <pre v-else-if="comparing" class="font-mono text-12 leading-5"><span
-            v-for="(line, index) in comparing.patch.split('\n')"
-            :key="index"
-            :class="PATCH_LINE_COLORS[line.charAt(0)] ?? 'text-toned'"
-          >{{ line }}
-</span></pre>
-      </template>
-    </UModal>
 
     <template #prompt>
       <UChatPrompt
@@ -683,6 +594,7 @@ function stripControls(output: string): string {
           <UDropdownMenu :items="settings" :content="{ align: 'start', side: 'top' }">
             <UButton icon="i-lucide-sliders-horizontal" variant="ghost" size="sm" square aria-label="More settings" />
           </UDropdownMenu>
+          <AgentUsage :session="session" />
           <span class="grow" />
           <span v-if="waiting" class="text-11 text-dimmed">Waiting for you</span>
           <UChatShimmer v-else-if="busy" :text="`${session.agent.name} is working…`" class="text-11" />

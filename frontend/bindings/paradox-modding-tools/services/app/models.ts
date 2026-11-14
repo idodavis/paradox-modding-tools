@@ -24,6 +24,18 @@ export interface Agent {
      * Files are the instruction files and folders the agent reads in a mod.
      */
     "files"?: string[] | null;
+
+    /**
+     * Chat is the id of the row that chats for this one, so Settings draws
+     * the two as one agent; "" if there is none. Each row starts on its own.
+     */
+    "chat"?: string;
+
+    /**
+     * Completion reports whether the agent answers tab completion in the
+     * editor. Such an agent starts only for completion, never for a chat.
+     */
+    "completion"?: boolean;
 }
 
 /**

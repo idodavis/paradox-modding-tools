@@ -46,6 +46,14 @@ export function AddMod(workspaceID: string, dir: string, external: boolean): $Ca
 }
 
 /**
+ * Baseline returns a file's baseline. It returns an error if no workspace is
+ * open or the file has no review.
+ */
+export function Baseline(path: string): $CancellablePromise<string> {
+    return $Call.ByID(4017754542, path);
+}
+
+/**
  * Close closes the open workspace, if any.
  */
 export function Close(): $CancellablePromise<void> {
@@ -129,6 +137,15 @@ export function DetectInstalls(gameID: string): $CancellablePromise<game$0.Detec
 }
 
 /**
+ * KeepFile ends a file's review and leaves the file as the agent wrote it. A
+ * file with no review is left alone. It returns an error if no workspace is
+ * open.
+ */
+export function KeepFile(path: string): $CancellablePromise<void> {
+    return $Call.ByID(3303006498, path);
+}
+
+/**
  * Launch starts the game with its debug flag. When it exits, game:exited says
  * whether it wrote fresher dumps.
  */
@@ -179,6 +196,14 @@ export function ListLanguages(installID: string): $CancellablePromise<loc$0.Lang
  */
 export function ListReadyInstalls(): $CancellablePromise<string[] | null> {
     return $Call.ByID(1067958076);
+}
+
+/**
+ * ListReviews returns the places of the files under review, sorted by path.
+ * It returns none while no workspace is open.
+ */
+export function ListReviews(): $CancellablePromise<$models.Place[] | null> {
+    return $Call.ByID(3970524062);
 }
 
 /**
@@ -297,13 +322,12 @@ export function Restore(trashed: string, path: string): $CancellablePromise<void
 }
 
 /**
- * RevertHunks gives a file back its text from before an agent's edits, given as
- * each edit's hunks, the earliest edit first. A file the edits created goes to
- * PMT's trash once it is empty. It changes nothing and fails if the editor has
- * unsaved text of the file, or a hunk's lines are not in the file exactly once.
+ * SetBaseline replaces a file's baseline with the given text. The review ends
+ * if that is the file's text on disk. It returns an error if no workspace is
+ * open or the file has no review.
  */
-export function RevertHunks(path: string, edits: ($models.Hunk[] | null)[] | null, isNew: boolean): $CancellablePromise<void> {
-    return $Call.ByID(1562964112, path, edits, isNew);
+export function SetBaseline(path: string, text: string): $CancellablePromise<void> {
+    return $Call.ByID(1277775208, path, text);
 }
 
 /**
@@ -319,6 +343,32 @@ export function SetExternal(workspaceID: string, modID: string, external: boolea
  */
 export function State(): $CancellablePromise<$models.State> {
     return $Call.ByID(450725618);
+}
+
+/**
+ * TrackEdits starts the review of a file, given each of the agent's edits to
+ * it as hunks, the earliest edit first. The baseline is the file's text on
+ * disk with the edits undone, the latest edit and its last hunk first. A file
+ * the agent created that is not on disk yet has the baseline "", and its
+ * edits are not read. A file that has a review already is left as it is. A
+ * baseline equal to the file's text starts the review as well, since the
+ * agent's write follows. It returns an error, and starts no review, if no
+ * workspace is open, the file is outside the workspace's mods, it cannot be
+ * read, an edit has no hunk, or a hunk's lines are not in the file once.
+ */
+export function TrackEdits(path: string, edits: ($models.Hunk[] | null)[] | null, isNew: boolean): $CancellablePromise<void> {
+    return $Call.ByID(757513741, path, edits, isNew);
+}
+
+/**
+ * UndoFile writes a file's baseline in the file's encoding, or moves a file
+ * the agent created to PMT's trash, and ends its review. It returns an error,
+ * and changes nothing, if no workspace is open, the file has no review, is
+ * outside the workspace's mods or cannot be read, or has unsaved text in the
+ * editor.
+ */
+export function UndoFile(path: string): $CancellablePromise<void> {
+    return $Call.ByID(1632559861, path);
 }
 
 /**

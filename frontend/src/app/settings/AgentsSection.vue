@@ -18,7 +18,10 @@ import { confirm, copyText } from "../../lib/feedback";
 import { abbreviate, parseTime, splitError } from "../../lib/format";
 import { accessQuery, agentsQuery, keys, nodeQuery, toolsQuery } from "../../queries";
 import { ALLOWED, FILE_KINDS, toPmtTool, useAgentStore } from "../../stores/agent";
+import { useCompletionStore } from "../../stores/completion";
 import { useSettingsStore } from "../../stores/settings";
+import AgentLink from "../../ui/AgentLink.vue";
+import AgentSignIn from "../../ui/AgentSignIn.vue";
 import FileSelector from "../../ui/FileSelector.vue";
 import SettingsSection from "../../ui/SettingsSection.vue";
 
@@ -29,6 +32,7 @@ const NOTES: Record<string, string> = { "codex-acp": "# add to ~/.codex/config.t
 
 const cache = useQueryCache();
 const agent = useAgentStore();
+const completion = useCompletionStore();
 const settings = useSettingsStore();
 const { data: access } = useQuery(accessQuery);
 const { data: agents } = useQuery(agentsQuery);
@@ -38,9 +42,20 @@ const name = shallowRef("");
 const command = shallowRef("");
 const now = useNow({ scheduler: (tick) => useIntervalFn(tick, 1000) });
 
-const offered = computed(() =>
-  (agents.value ?? []).filter((row) => row.version).map((row) => ({ row, line: describeAgent(row) })),
-);
+// An agent that another runs for chat is a part of that agent's card, not a
+// card of its own.
+const offered = computed(() => {
+  const rows = (agents.value ?? []).filter((row) => row.version);
+
+  return rows
+    .filter((row) => !rows.some((other) => other.chat === row.id))
+    .map((row) => {
+      const chat = rows.find((other) => other.id === row.chat);
+      if (!chat) return { row, parts: [makePart("", row)] };
+
+      return { row, parts: [makePart("Tab completion", row), makePart("Chat", chat, "Add chat")] };
+    });
+});
 const registrable = computed(() => (agents.value ?? []).filter((row) => row.register));
 const own = computed(() =>
   (agents.value ?? [])
@@ -71,9 +86,12 @@ const refresh = () => cache.invalidateQueries({ key: keys.agents });
 const {
   mutate: install,
   isLoading: installing,
-  variables: installed,
+  variables: requested,
   error: installError,
-} = useMutation({ mutation: (id: string) => agentApi.InstallAgent(id), onSettled: refresh });
+} = useMutation({
+  mutation: (id: string) => agentApi.InstallAgent(id),
+  onSettled: refresh,
+});
 const installFailure = computed(() => (installError.value ? splitError(installError.value) : undefined));
 const {
   mutate: installNode,
@@ -101,31 +119,54 @@ const { mutate: add } = useMutation({
 });
 const { mutate: remove } = useMutation({ mutation: (id: string) => agentApi.RemoveAgent(id) });
 const { mutate: uninstall } = useMutation({
-  mutation: async (row: Agent) => {
+  mutation: async ({ title, row }: ReturnType<typeof makePart>) => {
+    // A part of a card is named by its agent and its title.
+    const subject = title ? `${row.name}'s ${title.toLowerCase()}` : row.name;
     const confirmed = await confirm.open({
-      title: `Uninstall ${row.name}?`,
-      body: `${row.name} is deleted from PMT's folder. Install puts it back.`,
+      title: `Uninstall ${subject}?`,
+      body: `${subject} is deleted from PMT's folder. You can install it again.`,
       confirm: "Uninstall",
       destructive: true,
     });
-    if (confirmed) await agentApi.UninstallAgent(row.id);
+    if (!confirmed) return;
+
+    await agentApi.UninstallAgent(row.id);
   },
   onSettled: refresh,
 });
 
-/** describeAgent returns the line under an agent's name: its install progress, its sessions, or its install. */
+/**
+ * makePart returns one part of an agent's card: its line and the button that
+ * installs or updates it, if it needs one. The button reads Install while the
+ * part is missing, or the given words.
+ */
+function makePart(title: string, row: Agent, missingLabel = "Install") {
+  const button = !row.installed ? missingLabel : row.installed !== row.version ? `Update to ${row.version}` : undefined;
+
+  return { title, row, line: describeAgent(row), button };
+}
+
+/**
+ * describeAgent returns the line under an agent's name: its install progress,
+ * the state of its completion or of its sessions, or its install.
+ */
 function describeAgent(row: Agent): { text: string; dot: string } {
   if (isInstalling(row)) {
     const started = parseTime(row.installing) ?? now.value;
     // The clock ticks once a second, so it can read just before the start.
     const seconds = Math.max(0, Math.round((now.value.getTime() - started.getTime()) / 1000));
+
     return { text: `${row.installed ? "Updating to" : "Installing"} ${row.version} with npm · ${seconds} s`, dot: "" };
   }
+
+  if (row.completion && completion.state === "sign-in") return { text: "Needs sign-in", dot: "bg-warning" };
+  if (row.completion && completion.state === "ready") return { text: "Signed in", dot: "bg-success" };
+  if (row.completion && completion.state === "error") return { text: completion.error, dot: "bg-error" };
   const live = agent.sessions.filter((session) => session.agent.id === row.id);
   if (live.some((session) => session.state === "sign-in")) return { text: "Needs sign-in", dot: "bg-warning" };
   if (live.some((session) => session.state === "idle" || session.state === "running"))
     return { text: "Signed in", dot: "bg-success" };
-  if (!row.installed) return { text: `Not installed; version ${row.version} from the registry`, dot: "" };
+  if (!row.installed) return { text: `Not installed; version ${row.version} is available`, dot: "" };
   return row.installed === row.version
     ? { text: `Version ${row.installed}, installed`, dot: "" }
     : { text: `Version ${row.installed}; ${row.version} is out`, dot: "bg-primary" };
@@ -138,7 +179,7 @@ function isRunning(row: Agent): boolean {
 
 /** isInstalling reports whether npm is installing an agent, as Go's list says or this view just asked. */
 function isInstalling(row: Agent): boolean {
-  return !!parseTime(row.installing) || (installing.value && installed.value === row.id);
+  return !!parseTime(row.installing) || (installing.value && requested.value === row.id);
 }
 
 /** mask returns a register text with the token shown as dots. */
@@ -161,8 +202,12 @@ function quote(path: string): string {
   <section class="flex flex-col gap-2.5 border-b border-accented pb-5">
     <h2 class="text-13 font-semibold">Agents</h2>
     <p class="text-12 text-dimmed">
-      PMT installs each from the Agent Client Protocol's registry into its own folder; nothing changes on your system.
-      Each signs in to its own account when a session first needs it, and PMT never sees it.
+      PMT installs each from the Agent Client Protocol's registry or from npm into its own folder; nothing changes on
+      your system. Each signs in to its own account when a session first needs it, and PMT never sees it.
+    </p>
+    <p class="text-12 text-dimmed">
+      Tab completion in the editor comes from GitHub Copilot only. Claude and Codex chat but don't complete code as you
+      type. Copilot's free plan is enough for completion beside any agent.
     </p>
     <div class="flex items-center gap-3 rounded-md border border-default bg-muted px-3 py-2.5">
       <UIcon
@@ -185,37 +230,61 @@ function quote(path: string): string {
       <UButton v-if="!node?.path" label="Download Node" :loading="downloading" @click="installNode()" />
     </div>
     <div
-      v-for="{ row, line } in offered"
+      v-for="{ row, parts } in offered"
       :key="row.id"
-      class="flex flex-wrap items-center gap-3 rounded-md border border-default px-3 py-2.5"
+      class="flex flex-col gap-2.5 rounded-md border border-default px-3 py-2.5"
     >
-      <UAvatar :text="abbreviate(row.name)" size="sm" class="rounded-md" />
-      <span class="flex min-w-0 grow flex-col gap-0.5">
+      <div class="flex items-center gap-3">
+        <UAvatar :text="abbreviate(row.name)" size="sm" class="rounded-md" />
         <span class="text-13 font-medium">{{ row.name }}</span>
-        <span class="flex items-center gap-1.5 text-12 text-dimmed">
-          <span v-if="line.dot" class="size-1.5 rounded-full" :class="line.dot" />{{ line.text }}
-        </span>
-      </span>
-      <UButton
-        v-if="row.installed !== row.version"
-        :label="row.installed ? `Update to ${row.version}` : 'Install'"
-        :disabled="!node?.path"
-        :loading="isInstalling(row)"
-        @click="install(row.id)"
-      />
-      <UTooltip v-if="row.installed" :text="isRunning(row) ? 'Close its sessions first' : undefined">
-        <UButton
-          label="Uninstall"
-          icon="i-lucide-trash-2"
-          color="error"
-          variant="ghost"
-          :disabled="isInstalling(row) || isRunning(row)"
-          @click="uninstall(row)"
+        <span v-if="!row.completion" class="text-12 text-dimmed">Chat only</span>
+      </div>
+      <template v-for="part in parts" :key="part.row.id">
+        <div class="flex flex-wrap items-center gap-3 ps-9">
+          <span class="flex min-w-0 grow flex-col gap-0.5">
+            <span v-if="part.title" class="text-12 font-medium">{{ part.title }}</span>
+            <span class="flex items-center gap-1.5 text-12 text-dimmed">
+              <span v-if="part.line.dot" class="size-1.5 rounded-full" :class="part.line.dot" />{{ part.line.text }}
+            </span>
+          </span>
+          <UButton
+            v-if="part.button"
+            :label="part.button"
+            :disabled="!node?.path"
+            :loading="isInstalling(part.row)"
+            @click="install(part.row.id)"
+          />
+          <UButton
+            v-if="part.row.completion && completion.state === 'error'"
+            label="Try again"
+            icon="i-lucide-refresh-cw"
+            @click="completion.restart()"
+          />
+          <UTooltip v-if="part.row.installed" :text="isRunning(part.row) ? 'Close its sessions first' : undefined">
+            <UButton
+              label="Uninstall"
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="ghost"
+              :disabled="isInstalling(part.row) || isRunning(part.row)"
+              @click="uninstall(part)"
+            />
+          </UTooltip>
+        </div>
+        <div v-if="part.row.completion && completion.state === 'sign-in'" class="flex flex-col gap-2.5 ps-9">
+          <AgentSignIn :methods="completion.methods" @choose="completion.signIn" @done="completion.restart()" />
+        </div>
+        <AgentLink
+          v-if="part.row.completion && completion.link"
+          :agent="row.name"
+          :message="completion.link.message"
+          :url="completion.link.url"
+          class="ms-9"
+          @answer="completion.answer"
         />
-      </UTooltip>
+      </template>
       <UAlert
-        v-if="installFailure && installed === row.id"
-        class="basis-full"
+        v-if="installFailure && parts.some((part) => requested === part.row.id)"
         color="error"
         variant="subtle"
         icon="i-lucide-circle-x"

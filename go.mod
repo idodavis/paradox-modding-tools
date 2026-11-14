@@ -9,15 +9,15 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/kaiser-chris/dds-go v1.0.0
-	github.com/kaiser-chris/pdx-asset-go v0.7.0
+	github.com/kaiser-chris/pdx-asset-go v0.7.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/wailsapp/wails/v3 v3.1.0
-	golang.org/x/mod v0.42.0
+	golang.org/x/mod v0.43.0
 	golang.org/x/net v0.62.0
-	golang.org/x/sync v0.24.0
-	golang.org/x/sys v0.49.0
-	golang.org/x/text v0.43.0
+	golang.org/x/sync v0.25.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/text v0.44.0
 	golang.org/x/time v0.16.0
 )
 

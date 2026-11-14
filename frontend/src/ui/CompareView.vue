@@ -1,8 +1,22 @@
 <!-- Two texts in a diff editor, with a toolbar above it and a chip above each side. -->
+<script lang="ts">
+import { editor } from "monaco-editor/editor/editor.api";
+
+/** DIFF_OPTIONS holds the options every diff editor in the app shares. */
+export const DIFF_OPTIONS: editor.IDiffEditorConstructionOptions = {
+  originalEditable: false,
+  renderIndicators: true,
+  // the lane of the + and − signs, wide enough to keep them off the numbers
+  // and the text
+  lineDecorationsWidth: "3ch",
+  ignoreTrimWhitespace: false,
+  useInlineViewWhenSpaceIsLimited: false,
+};
+</script>
+
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useLocalStorage } from "@vueuse/core";
-import { editor } from "monaco-editor/editor/editor.api";
 
 import { plural } from "../lib/format";
 import { useSettingsStore } from "../stores/settings";
@@ -35,15 +49,10 @@ onMounted(() => {
   if (!host.value) return;
   view = editor.createDiffEditor(host.value, {
     ...useSettingsStore().codeFont(),
+    ...DIFF_OPTIONS,
     readOnly: true,
-    originalEditable: false,
     automaticLayout: true,
     renderSideBySide: split.value,
-    renderIndicators: true,
-    // the lane of the + and − signs, wide enough to keep them off the line numbers and the text
-    lineDecorationsWidth: "3ch",
-    ignoreTrimWhitespace: false,
-    useInlineViewWhenSpaceIsLimited: false,
     hideUnchangedRegions: { enabled: !all.value },
     renderOverviewRuler: false,
     minimap: { enabled: false },
@@ -176,15 +185,3 @@ function compareAgain(): void {
     <div ref="host" class="min-h-0 flex-1 bg-(--bg-0)" />
   </div>
 </template>
-
-<style scoped>
-/* Monaco has no theme color for a changed line's + or − sign or its number, so they take the diff's green and red */
-:deep(.insert-sign),
-:deep(div:has(> .gutter-insert) > .line-numbers) {
-  color: var(--ui-success);
-}
-:deep(.delete-sign),
-:deep(div:has(> .gutter-delete) > .line-numbers) {
-  color: var(--ui-error);
-}
-</style>

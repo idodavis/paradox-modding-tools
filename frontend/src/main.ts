@@ -11,6 +11,7 @@ import { subscribeEvents } from "./app/events";
 import { takeToasts, toast } from "./lib/feedback";
 import { splitError } from "./lib/format";
 import { useAgentStore } from "./stores/agent";
+import { useCompletionStore } from "./stores/completion";
 import { useEditorStore } from "./stores/editor";
 import { useGitStore } from "./stores/git";
 import { useSearchStore } from "./stores/search";
@@ -78,6 +79,7 @@ app.runWithContext(() => {
   useEditorStore();
   useGitStore();
   useAgentStore();
+  useCompletionStore();
   useTerminalStore();
   useToolViewStore();
   setupMonaco();

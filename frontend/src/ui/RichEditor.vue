@@ -18,10 +18,13 @@ const STARTER_KIT: Partial<StarterKitOptions> = {
   link: { openOnClick: false, HTMLAttributes: { target: null, rel: null } },
   trailingNode: false,
 };
-/** Tables in the editor, without column widths, as Steam draws them. */
-const EXTENSIONS = [TableKit.configure({ table: { resizable: false } })];
+/**
+ * TABLES are the editor's tables, without column widths, as Steam draws them.
+ * The agents' answers read their tables with them too.
+ */
+export const TABLES = [TableKit.configure({ table: { resizable: false } })];
 /** The blocks and marks the editor holds, which its Markdown is written with. */
-const MARKDOWN_EXTENSIONS = [StarterKit.configure(STARTER_KIT), Image, ...EXTENSIONS];
+const MARKDOWN_EXTENSIONS = [StarterKit.configure(STARTER_KIT), Image, ...TABLES];
 const markdown = new MarkdownManager({ extensions: MARKDOWN_EXTENSIONS });
 
 /** toMarkdown returns HTML as the Markdown the editor writes for it. */
@@ -199,7 +202,7 @@ function insert(target: Editor, run: (target: Editor, address: string) => unknow
     :ui="ui"
     :mention="false"
     :starter-kit="STARTER_KIT"
-    :extensions="EXTENSIONS"
+    :extensions="TABLES"
     :handlers="TABLE_HANDLERS"
   >
     <!-- Inside the editor, so it gets the table handlers, and shown in the page's bar. -->

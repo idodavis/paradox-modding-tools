@@ -22,7 +22,6 @@ a 👍, or open a feature request.
 ### Editing
 
 - **Game-update patching:** after a patch, open a mod's copy of a changed game file and carry your changes forward.
-- **Tab completions** from Copilot in the editor.
 - **Deeper EU5 support**, and more languages in hover cards without a full rescan.
 
 ### The Visual view and events
@@ -50,8 +49,8 @@ a 👍, or open a feature request.
 
 - **A command line tool** that checks a mod from a terminal or a build script, as Health would.
 - **An LSP server**, so other editors get PMT's hover, completion, definitions and checks.
-- **IDE bridges** for Claude Code and Copilot CLI, sharing the editor's selection live and showing their edits as
-  diffs, once those connections are documented.
+- **IDE bridges** for Claude Code and Copilot CLI, sharing the editor's selection live, once those connections are
+  documented.
 
 ## Long Term
 

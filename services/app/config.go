@@ -109,6 +109,24 @@ type Agent struct {
 
 	// Files are the instruction files and folders the agent reads in a mod.
 	Files []string `json:"files,omitempty"`
+
+	// Chat is the id of the row that chats for this one, so Settings draws
+	// the two as one agent; "" if there is none. Each row starts on its own.
+	Chat string `json:"chat,omitempty"`
+
+	// Completion reports whether the agent answers tab completion in the
+	// editor. Such an agent starts only for completion, never for a chat.
+	Completion bool `json:"completion,omitempty"`
+
+	// Package is the npm package a row installs by its own name, without the
+	// package's optional parts, in place of the registry's; "" for a row the
+	// registry installs. Script is the package's script that Node runs.
+	Package string `json:"-"`
+	Script  string `json:"-"`
+
+	// CompletionEnv is the environment variable the agent starts with for
+	// tab completion.
+	CompletionEnv string `json:"-"`
 }
 
 // Window is how the main window was left.
@@ -218,6 +236,11 @@ var Catalog = []Setting{
 		Help: "Fixed, so an agent registers PMT once. PMT's tools listen on 127.0.0.1 only. A new port takes " +
 			"effect when PMT starts again, and each agent is registered again.",
 		Words: "mcp agents server port claude copilot codex"},
+	{Key: "agents.completion", Label: "Tab completion from GitHub Copilot",
+		Section: "agents", Type: "switch", Default: "true",
+		Help: "Suggests the next edit in the editor as you type, from GitHub Copilot's tab completion. It runs once " +
+			"Copilot's tab completion is installed above and you have signed in to it.",
+		Words: "copilot autocomplete suggestions ghost text inline predict ai"},
 	{Key: "agents.allowed", Label: "Allowed without asking",
 		Section: "agents", Type: "text", Default: "",
 		Help: "The tools an agent may use without asking, after you chose Always allow for them. Each is the agent and " +

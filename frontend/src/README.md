@@ -52,6 +52,22 @@ Data from Go lives in the query cache, not in stores. A store holds what belongs
 groups and tabs, the search being typed, the shells, the windows and what passes between them. `stores/workspace.ts`
 holds the active workspace's id and what every page reads of the open workspace.
 
+## Agents
+
+The agent pane and the editor's tab completion speak the Agent Client Protocol to an agent's program over a stream that
+Go carries. [The editor](#the-editor) holds the review of an agent's edits and the tab completion. The rest:
+
+- `stores/agent.ts`: the window's chats with agents.
+- `stores/edits.ts`: the edits an agent's tool calls make to files, which it hands to Go to review.
+- `stores/completion.ts`: the window's one connection to the agent that completes code in the editor. It starts with the
+  window's first open file while an installed agent offers completion and the setting is on, and holds whether the
+  agent is ready, needs the user to sign in, or failed, which Settings shows.
+- `lib/stream.ts`: opens the stream to an agent's program, which the chats and the completion connection both use.
+- `ui/AgentSession.vue`: one chat, with its prompt box.
+- `ui/AgentSignIn.vue`: the ways to sign in to an agent, a button each.
+- `ui/AgentLink.vue`: a link an agent asks to open, with its host marked, and the choice to open or decline it.
+- `ui/AgentUsage.vue`: the ring in the prompt box and its panel of the context window and the plan's usage.
+
 ## Pages and commands
 
 `app/pages.ts` is the catalog of pages: each page's title, icon, help and whether it needs a workspace. The router
@@ -75,8 +91,13 @@ Wails' runtime acts only on the window that calls it.
 - `grammars.ts`: Monarch grammars that color shapes only; the meaning comes from Go's semantic tokens on top.
 - `providers.ts`: Monaco's providers, each handing the lsp service's answer to Monaco.
 - `models.ts`: the open files as Monaco models, which follow their files on disk and show Go's problems.
+- `completion.ts`: tab completion. It tells the completion agent of the open files and shows its suggestions as Monaco's
+  inline completions, which PMT's own ghost text gives way to.
+- `review.ts`: an agent's edits to a file, shown as the file against its text from before them, with Keep and Undo for
+  each change and for the file.
 - `hover.ts`: PMT's hover card, in place of Monaco's own.
-- `tabs.ts`, `conflicts.ts`, `changes.ts`: how a tab shows each format, merge conflicts, and an agent's changes.
+- `tabs.ts`, `conflicts.ts`, `changes.ts`: how a tab shows each format, merge conflicts, and the lines changed since
+  the last commit.
 
 ## Look
 

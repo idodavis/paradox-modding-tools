@@ -6,9 +6,9 @@ The workspace service holds the one open workspace: a game install and the mods 
 one loads the install's schema and index, or builds them, scans the mods on top and watches their folders. Every other
 service asks it for the open session at each call, so the workspace's state exists once.
 
-It also keeps the records of installs, workspaces and mods, reads and writes the mods' files, and serves files to the
-page. What a key means is [lang](../../internal/lang/README.md)'s; where a name is defined is the
-[index](../../internal/index/README.md)'s.
+It also keeps the records of installs, workspaces and mods, reads and writes the mods' files, keeps the review of the
+files a coding agent edits, and serves files to the page. What a key means is [lang](../../internal/lang/README.md)'s;
+where a name is defined is the [index](../../internal/index/README.md)'s.
 
 **Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),
 [jomini](../../internal/jomini/README.md), [lang](../../internal/lang/README.md), [loc](../../internal/loc/README.md),
@@ -66,7 +66,16 @@ place, and the page shows its fields as they are. The game's own files and a Wor
 - Writes are refused outside the workspace's mods. A write is atomic and keeps the file's encoding.
 - `CreateCopy` copies a file of the game or of another mod to the same path in a mod, where it overrides the original.
 - `Delete` moves a file into PMT's trash, which empties at the next start, so `Restore` can bring it back.
-- `RevertHunks` gives a file back its text from before a coding agent's edits.
+- `TrackEdits` starts the review of a file a coding agent edits, once. The review's baseline is the file's text on
+  disk with the agent's edits undone, in the file's own line endings. A file the agent created that is not on disk
+  yet has the baseline "". It is refused if an edit's lines are not in the file once.
+- `ListReviews` lists the places of the files under review. `Baseline` returns a file's baseline, and `SetBaseline`
+  replaces it, which is how the page keeps one change. `KeepFile` ends a review and leaves the file as it is.
+  `UndoFile` writes the baseline back, or moves a file the agent created to the trash, and ends the review. It refuses
+  while the editor holds unsaved text for the file.
+- A review ends on `KeepFile`, on `UndoFile`, on `SetBaseline` with the file's text on disk, and when the watcher
+  reports the file with a text on disk equal to its baseline (a file the agent created: when it is deleted). The
+  reviews live in the session, so closing the workspace drops them and leaves the files as the agent wrote them.
 - `ServeHTTP` serves files to the page at `/files`. A DDS or TGA is decoded to PNG first, since the browser cannot
   show it.
 
@@ -122,7 +131,7 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 | `session.go` | The open session: its documents, buffers, texts and rescans. |
 | `mod.go` | Mods, their descriptors, and a new mod's skeleton. |
 | `locate.go` | Places: where a file sits, and every copy of a path in load order. |
-| `revert.go` | Taking a coding agent's edits back. |
+| `review.go` | The review of a coding agent's edits, and the matching of its hunks to a file's lines. |
 | `watcher.go` | The watcher on the mods' folders. |
 
 ## Events
@@ -136,12 +145,16 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 | `install:scanned` | the install's id | an install's scan finished |
 | `fs:changed` | a `FileChange` | a file of the open workspace changed on disk, and the index has it |
 | `game:exited` | whether the dumps are fresher | the launched game exited |
+| `review:changed` | the file's path | a file's review started, its baseline changed or the review ended |
 
 ## Terms
 
 - **Session**: the open workspace as every service reads it.
 - **Document**: one file parsed once in the dialect of its format.
 - **Buffer**: the document of the editor's text for one open file.
+- **Review**: a file a coding agent edited that the user has not kept or undone yet. The session holds it.
+- **Baseline**: a reviewed file's text from before the agent's edits that are not kept, in the file's own line endings.
+- **Hunk**: one run of lines an agent's edit changed in a file, as its lines before and after the edit.
 - **Place**: where one file sits in the workspace.
 - **Workspace**: one recorded workspace as the pages list it: its install, its game and its mods.
 - **Mod**: one mod of the open workspace: the recorded mod with its descriptor.

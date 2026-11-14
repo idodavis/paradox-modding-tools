@@ -114,7 +114,8 @@ type Workspace struct {
 
 // The events the workspace service sends. EventOpened carries the workspace's
 // id, EventFailed the error's text, EventInstallScanned the install's id and
-// EventGameExited true if the game wrote fresher dumps.
+// EventGameExited true if the game wrote fresher dumps. EventReviewChanged
+// carries the path of a file whose review started, changed or ended.
 const (
 	EventOpened          = "workspace:opened"
 	EventFailed          = "workspace:failed"
@@ -123,6 +124,7 @@ const (
 	EventInstallScanned  = "install:scanned"
 	EventFileChanged     = "fs:changed"
 	EventGameExited      = "game:exited"
+	EventReviewChanged   = "review:changed"
 )
 
 func init() {
@@ -133,6 +135,7 @@ func init() {
 	application.RegisterEvent[string](EventInstallScanned)
 	application.RegisterEvent[FileChange](EventFileChanged)
 	application.RegisterEvent[bool](EventGameExited)
+	application.RegisterEvent[string](EventReviewChanged)
 }
 
 // ServiceShutdown closes the open workspace.

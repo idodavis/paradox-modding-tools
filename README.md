@@ -9,7 +9,8 @@
 
 A desktop workspace for modding **Crusader Kings III**, **Victoria 3** and **Europa Universalis V** (partial). Open a
 game install with the mods you are working on, and PMT gives you an editor that knows the game's script, a graph of
-your events, a health check of your load order, the wiki's patch notes and Workshop publishing, in one window.
+your events, a health check of your load order, what each game patch changed under your mods and Workshop
+publishing, in one window.
 
 **Alpha: expect bugs.** Windows and Linux. Unofficial, and not affiliated with Paradox Interactive. Tested on CK3
 1.20.1.2, Victoria 3 1.13.11 and EU5's current release.
@@ -27,8 +28,8 @@ your events, a health check of your load order, the wiki's patch notes and Works
 | **[IDE](docs/FEATURES.md#ide):** an editor that knows the game's script: hover cards, completion, go to definition, checks as you type, and the game's own files beside yours. | **[Event Graph](docs/FEATURES.md#event-graph):** what fires what, from any event, with each branch's conditions. |
 | [<img src="docs/images/health.png" width="400" alt="Health">](docs/FEATURES.md#health) | [<img src="docs/images/visual-view-gui.png" width="400" alt="Visual view">](docs/FEATURES.md#visual-view) |
 | **[Health](docs/FEATURES.md#health):** what conflicts between your mods and the game, and what is wrong in each mod, worst first. | **[Visual view](docs/FEATURES.md#visual-view):** GUI windows and coats of arms drawn as the game draws them. |
-| [<img src="docs/images/publish.png" width="400" alt="Publish">](docs/FEATURES.md#publish) | [<img src="docs/images/patch-notes.png" width="400" alt="Patch Notes">](docs/FEATURES.md#patch-notes) |
-| **[Publish](docs/FEATURES.md#publish):** your Workshop page, written and uploaded from PMT, and compared with Steam's copy. | **[Patch Notes](docs/FEATURES.md#patch-notes):** the wiki's notes for each game version. |
+| [<img src="docs/images/publish.png" width="400" alt="Publish">](docs/FEATURES.md#publish) | [<img src="docs/images/patch-notes.png" width="400" alt="Patch Center">](docs/FEATURES.md#patch-center) |
+| **[Publish](docs/FEATURES.md#publish):** your Workshop page, written and uploaded from PMT, and compared with Steam's copy. | **[Patch Center](docs/FEATURES.md#patch-center):** what each game patch changed under your mods, with every version's notes. |
 
 Source control, a terminal, the wiki beside your file, a coding assistant and pop-out windows are in
 [FEATURES.md](docs/FEATURES.md) too.

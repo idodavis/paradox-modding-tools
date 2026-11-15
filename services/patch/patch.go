@@ -1,6 +1,8 @@
-// Package patch fetches the Modding Co-ops' digests of a game's updates, reads
-// them into the game's patches, lists the versions the Patch Center shows, and
-// says what the patches mean for each mod of the open workspace.
+// Package patch is the Patch Center's service. It fetches the Modding Co-ops'
+// digests of a game's updates and reads them into the game's patches, lists
+// the versions the Patch Center shows, and says which of the digests' articles
+// touch each mod of the open workspace. What a patch is, and where a game's
+// patches are kept, is the engine's patch package.
 //
 // A game's Co-op keeps one repository of digests, each version in a folder of
 // its own. A refresh asks GitHub for the repository's newest commit, and only
@@ -8,10 +10,9 @@
 // is read in memory and never written to disk. The patches are saved in the
 // game's folder of patches, with the dumps of each version an install is on.
 //
-// GitHub is asked at most once every 6 hours for a game, as the folder keeps
-// the time of the last ask. While the digest has no patch of the installed
-// version, a workspace that stays open asks again every 6 hours, until the
-// digest has it. A game with no digest is never asked.
+// GitHub is asked at most once every 6 hours for a game. While the digest has
+// no patch of the installed version, a workspace that stays open asks again
+// every 6 hours. A game with no digest is never asked.
 //
 // The Co-ops' layout, as the package reads it:
 //
@@ -30,7 +31,10 @@
 //   - The notes are breaking_changes.md or changes_breaking.md, features.md,
 //     major_features.md or changes_features.md, and discord.md. A file is
 //     split at its ## headings, one article each. A heading whose lines only
-//     point into the digest's other files is no article.
+//     point into the digest's other files is no article. An article is a
+//     breaking change if its file is one of them, or if its heading is
+//     "Breaking Changes", which is where discord.md writes them for a
+//     version that has no file of them.
 //   - An article's folders are its links to a type doc, as types/x.md, named
 //     by discord.md's list of the type docs, else by the one database of the
 //     game's schema whose folder ends in /x. Its keys are the words it writes
@@ -57,20 +61,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/lang"
-	"paradox-modding-tools/internal/schema"
-	"paradox-modding-tools/services/health"
-	"paradox-modding-tools/services/steam"
+	"paradox-modding-tools/internal/patch"
 	"paradox-modding-tools/services/wiki"
 	"paradox-modding-tools/services/workspace"
 )
@@ -79,25 +78,21 @@ import (
 type Service struct {
 	Workspace *workspace.Service
 	Wiki      *wiki.Service
-	Health    *health.Service
-	Steam     *steam.Service
 
 	// mu keeps two refreshes from running at once.
 	mu sync.Mutex
 
-	// stopMu guards stop, which ends the recheck of the open workspace and is
-	// nil while none runs.
-	stopMu sync.Mutex
-	stop   context.CancelFunc
+	// stop ends the recheck of the open workspace. It holds nil while none
+	// runs.
+	stop atomic.Pointer[context.CancelFunc]
 }
 
-// EventUpdated is sent when a refresh finishes. Its data is the error's text,
-// or "" if it worked.
+// EventUpdated is sent when a refresh saved new patches or failed. Its data is
+// the error's text, or "" if it worked.
 const EventUpdated = "patch:updated"
 
 // recheck is how long the digest is left alone after GitHub was asked for its
-// newest commit: it is asked again this often while it has no patch of the
-// installed version, and never sooner than this after the last time.
+// newest commit.
 const recheck = 6 * time.Hour
 
 func init() {
@@ -123,22 +118,27 @@ func (s *Service) ServiceStartup(ctx context.Context, options application.Servic
 // setStop ends the running recheck, if any, and keeps the given function to
 // end the next one.
 func (s *Service) setStop(stop context.CancelFunc) {
-	s.stopMu.Lock()
-	running := s.stop
-	s.stop = stop
-	s.stopMu.Unlock()
-
-	if running != nil {
-		running()
+	if running := s.stop.Swap(&stop); running != nil && *running != nil {
+		(*running)()
 	}
 }
 
 // watchDigest refreshes the patches, and again every recheck for as long as the
-// context lives and the digest has no patch of the installed version.
+// context lives and the digest of the open workspace's game has no patch of
+// the installed version.
 func (s *Service) watchDigest(ctx context.Context) {
 	for {
 		_ = s.Refresh()
-		if !s.lacksPatch() {
+
+		ws, err := s.Workspace.Session()
+		if err != nil || ws.Game.Digests == "" {
+			return
+		}
+
+		hasPatch := slices.ContainsFunc(*ws.Patches.Load(), func(gamePatch patch.Patch) bool {
+			return !gamePatch.Local && game.IsInstalled(gamePatch.Version, ws.Schema.Version)
+		})
+		if hasPatch {
 			return
 		}
 
@@ -150,154 +150,77 @@ func (s *Service) watchDigest(ctx context.Context) {
 	}
 }
 
-// lacksPatch reports whether the open workspace's game has a digest that holds
-// no patch of the installed version. It is false where no workspace is open.
-func (s *Service) lacksPatch() bool {
-	ws, err := s.Workspace.Session()
-	if err != nil || ws.Game.Digests == "" {
-		return false
-	}
-
-	return !slices.ContainsFunc(*ws.Patches.Load(), func(patch workspace.Patch) bool {
-		return !patch.Local && game.IsInstalled(patch.Version, ws.Schema.Version)
-	})
-}
-
 // Refresh reads the digests of the open workspace's game again if its
-// repository has a new commit, and sends patch:updated at the end. It does
-// nothing for a game that has no digests, and asks GitHub no sooner than
-// recheck after it last did. It returns an error if no workspace is open or
-// the fetch fails, and the files saved before stay. Where a part of the digest
-// could not be read, it saves the rest and returns what it left out.
+// repository has a new commit. If it saved new patches, the session loads
+// them, and it sends patch:updated then and when it fails. It does nothing
+// for a game that has no digests, and asks GitHub no sooner than recheck after
+// it last did. It returns an error if no workspace is open or the fetch fails,
+// and the files saved before stay. Where a part of the digest could not be
+// read, it saves the rest and returns what it left out.
 func (s *Service) Refresh() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	ws, err := s.Workspace.Session()
+	isSaved := false
 	if err == nil {
 		if ws.Game.Digests == "" {
 			return nil
 		}
 
-		dir := workspace.ResolvePatchDir(s.Workspace.Config.Dirs.Cache, ws.Game)
-		err = fetchPatches(dir, ws.Game, ws.Schema, workspace.ListInstallVersions(s.Workspace.Config.Config(), ws.Game))
-
-		// The patches that were saved are read even where the refresh stopped
-		// part way, since its error does not say how far it got.
-		err = errors.Join(err, ws.LoadPatches())
+		isSaved, err = s.fetchPatches(ws)
 	}
 
-	message := ""
-	if err != nil {
-		message = err.Error()
+	if isSaved {
+		ws.LoadPatches()
 	}
 
-	application.Get().Event.Emit(EventUpdated, message)
+	if isSaved || err != nil {
+		message := ""
+		if err != nil {
+			message = err.Error()
+		}
+
+		application.Get().Event.Emit(EventUpdated, message)
+	}
 
 	return err
 }
 
-// fetchPatches reads a game's repository into the folder of patches, unless
-// GitHub was asked less than recheck ago or the folder is current with the
+// fetchPatches reads the repository of a session's game into the game's folder
+// of patches, and reports whether it saved new patches. It saves nothing if
+// GitHub was asked less than recheck ago, or the folder is current with the
 // newest commit.
-func fetchPatches(dir string, row *game.Game, language *lang.Schema, installs []string) error {
-	if elapsed := time.Since(loadChecked(dir)); elapsed >= 0 && elapsed < recheck {
-		return nil
+func (s *Service) fetchPatches(ws *workspace.Session) (bool, error) {
+	records := s.Workspace.Config
+	dir := patch.ResolveDir(records.Dirs.Cache, ws.Game)
+	installs := workspace.ListInstallVersions(records.Config(), ws.Game)
+	if time.Since(patch.FindAsked(dir)) < recheck {
+		return false, nil
 	}
 
-	if err := files.WriteAtomic(workspace.ResolveCheckedFile(dir), []byte(time.Now().Format(time.RFC3339))); err != nil {
-		return err
-	}
-
-	head, err := fetchHead(row.Digests)
+	head, err := fetchHead(ws.Game.Digests)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	if isCurrent(dir, head, installs) {
-		return nil
+	if patch.IsCurrent(dir, head, installs) {
+		return false, patch.MarkAsked(dir)
 	}
 
-	source, err := fetchArchive(row.Digests)
+	source, err := fetchArchive(ws.Game.Digests)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	patches, kept, skipped := readArchive(source, language, installs)
+	patches, dumps, skipped := readArchive(source, ws.Game.Digests, ws.Schema, installs)
 	if len(patches) == 0 {
-		return errors.Join(skipped, fmt.Errorf("the digest %s holds no version", row.Digests))
+		return false, errors.Join(skipped, fmt.Errorf("the digest %s holds no version", ws.Game.Digests))
 	}
 
-	if err := saveDigest(dir, head, patches, kept); err != nil {
-		return err
+	if err := patch.SaveDigest(dir, head, patches, dumps); err != nil {
+		return false, err
 	}
 
-	return skipped
-}
-
-// loadChecked returns when GitHub was last asked for the digest's newest
-// commit. It is the zero time for a folder that was never asked and for a file
-// that cannot be read.
-func loadChecked(dir string) time.Time {
-	text, _ := os.ReadFile(workspace.ResolveCheckedFile(dir))
-	checked, _ := time.Parse(time.RFC3339, string(text))
-
-	return checked
-}
-
-// isCurrent reports whether the folder of patches was read from the given
-// commit and holds the dumps of each version an install is on that the digest
-// has, so that nothing is to be downloaded.
-func isCurrent(dir, head string, installs []string) bool {
-	sha, err := os.ReadFile(workspace.ResolveShaFile(dir))
-	digest, ok := files.LoadGob[[]workspace.Patch](workspace.ResolveDigestFile(dir))
-	if err != nil || string(sha) != head || !ok {
-		return false
-	}
-
-	for _, patch := range digest {
-		for _, install := range installs {
-			if game.IsInstalled(patch.Version, install) && !files.IsFile(workspace.ResolveDumpsFile(dir, install)) {
-				return false
-			}
-		}
-	}
-
-	return true
-}
-
-// saveDigest saves the patches and the dumps of the versions installs are on,
-// and the commit they were read from last, so that a failed save is read again
-// by the next refresh. It deletes the dumps of any other version. A version's
-// dumps are written only if the folder has none of it yet, or its file cannot
-// be read: a published version's dumps never change, and a file written again
-// would change its time, which names the install's schema cache and would
-// build the schema again.
-func saveDigest(dir, head string, patches workspace.Patches, kept map[string]*schema.Dumps) error {
-	saved := map[string]bool{}
-	for install, dumps := range kept {
-		file := workspace.ResolveDumpsFile(dir, install)
-		saved[file] = true
-		if _, ok := files.LoadGob[*schema.Dumps](file); ok {
-			continue
-		}
-
-		if err := files.SaveGob(file, dumps); err != nil {
-			return err
-		}
-	}
-
-	// A file that cannot be deleted now goes at a later refresh.
-	stale, _ := filepath.Glob(workspace.ResolveDumpsFile(dir, "*"))
-	for _, file := range stale {
-		if !saved[file] {
-			_ = os.Remove(file)
-		}
-	}
-
-	if err := files.SaveGob(workspace.ResolveDigestFile(dir), []workspace.Patch(patches)); err != nil {
-		return err
-	}
-
-	return files.WriteAtomic(workspace.ResolveShaFile(dir), []byte(head))
+	return true, skipped
 }

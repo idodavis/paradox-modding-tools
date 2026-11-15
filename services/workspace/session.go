@@ -22,6 +22,7 @@ import (
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
+	"paradox-modding-tools/internal/patch"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/app"
 )
@@ -50,24 +51,10 @@ type Session struct {
 	// before the base language.
 	Language string
 
-	// Patches are the game's patches: the digest's and the ones PMT compared
-	// itself. A refresh of the digest replaces them whole while readers use
-	// them, so a reader loads them once and keeps that copy.
-	Patches atomic.Pointer[Patches]
-
-	// copies is the record of the kept copies of the game files the mods
-	// replace, which the open sets and no one changes after.
-	copies atomic.Pointer[copyHashes]
-
-	// stale holds the answers of ListStaleFiles, by mod, and the index, the
-	// patches and the load order they were made from.
-	stale struct {
-		sync.Mutex
-		mods    *index.Index
-		patches *Patches
-		order   *[]Mod
-		files   map[string][]GameFile
-	}
+	// Patches are the game's patches: the digest's, the shipped ones and the
+	// ones PMT compared itself. A refresh of the digest replaces them whole
+	// while readers use them, so a reader loads them once and keeps that copy.
+	Patches atomic.Pointer[patch.Patches]
 
 	// updatedFrom is the install's recorded version, when the open found
 	// another.
@@ -126,16 +113,14 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 	ws := &Session{
 		ID: workspaceID, Game: row, InstallPath: install.Path, Language: record.Language,
 		buffers: map[string]lang.Document{}, documents: documents, caches: folder,
-		reviews: map[string]fileReview{}, patchDir: ResolvePatchDir(s.Config.Dirs.Cache, row),
+		reviews: map[string]fileReview{}, patchDir: patch.ResolveDir(s.Config.Dirs.Cache, row),
 		installVersions: ListInstallVersions(s.Config.Config(), row),
 	}
 	if err := ws.loadInstall(install.Path, version, progress); err != nil {
 		return nil, err
 	}
 
-	// A patches file that cannot be read is no patches. The patch service writes
-	// it again.
-	_ = ws.LoadPatches()
+	ws.LoadPatches()
 
 	// Older caches go. One that cannot be deleted now goes at a later open.
 	_ = removeEntries(filepath.Dir(folder), filepath.Base(folder))
@@ -153,7 +138,7 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 		}
 	}
 
-	ws.Order.Store(&order)
+	ws.storeOrder(order)
 
 	const stage = "Reading your mods"
 	progress(stage, 0)
@@ -166,7 +151,7 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 	ws.Mods.Store(mods)
 
 	// A copy that cannot be kept is taken at a later open.
-	_ = ws.saveCopies(s.Config.Config())
+	_ = ws.keepCopies(s.Config.Config())
 
 	ws.watcher, err = startWatcher(dirs, func(changes []FileChange) {
 		// A file that cannot be scanned keeps its old entries.
@@ -222,7 +207,7 @@ func resolveCaches(cacheDir string, row *game.Game, installPath, version, build 
 	}
 
 	var digestAt int64
-	if stat, err := os.Stat(ResolveDumpsFile(ResolvePatchDir(cacheDir, row), version)); err == nil {
+	if stat, err := os.Stat(patch.ResolveDumpsFile(patch.ResolveDir(cacheDir, row), version)); err == nil {
 		digestAt = stat.ModTime().Unix()
 	}
 
@@ -294,7 +279,9 @@ func (s *Session) loadInstall(installPath, version string, progress func(stage s
 	s.Schema, s.Install = language, install
 
 	if !hasSchema || !hasInstall {
-		if err = s.keepVersion(own); err != nil {
+		// The next update of the game is compared with this version's snapshot.
+		current := patch.TakeSnapshot(own, install)
+		if err = patch.KeepSnapshot(s.patchDir, version, current, s.installVersions, language); err != nil {
 			return err
 		}
 	}
@@ -307,7 +294,7 @@ func (s *Session) loadInstall(installPath, version string, progress func(stage s
 // the schema used them, nil where it did not.
 func (s *Session) buildSchema(installPath, version string, listing []files.File) (*lang.Schema, *schema.Dumps, error) {
 	dialect, dumpDirs := lang.LookupDialect(s.Game.ID), s.Game.FindDumpDirs(installPath)
-	digest, _ := files.LoadGob[*schema.Dumps](ResolveDumpsFile(s.patchDir, version))
+	digest, _ := files.LoadGob[*schema.Dumps](patch.ResolveDumpsFile(s.patchDir, version))
 	language, own, err := schema.Build(dialect, dumpDirs, digest, installPath, version, listing, index.ParseFile)
 	if err != nil {
 		return nil, nil, err
@@ -328,89 +315,41 @@ func (s *Session) buildSchema(installPath, version string, listing []files.File)
 	return language, own, nil
 }
 
-// keepVersion keeps what the install's version holds for the next update to
-// compare with: its keys, and the install's own dumps where the schema was
-// built from them. First it compares them with what is kept of the newest older
-// version, if there is one, and saves the result as the local patch of the new
-// version. A version kept of the same or a newer version is compared with
-// nothing, since another install of the game may be on that version. Where the
-// schema was built from the install's dumps, it then deletes what is kept of
-// versions that no install is on.
-//
-// The comparison is made on every build and not only at an update with fresh
-// dumps, since the install's dumps stay older than the install until the user
-// runs script_docs, and the docs, the files and their hashes need none.
-func (s *Session) keepVersion(own *schema.Dumps) error {
-	version := s.Schema.Version
-	kept := listKeptVersions(s.patchDir)
-	older := slices.DeleteFunc(slices.Clone(kept), func(other string) bool {
-		return game.CompareVersions(other, version) >= 0
-	})
-	keys := VersionKeys{Docs: s.Schema.ListDocKeys(), Defined: s.Install.ListDefinedKeys()}
-	if len(older) > 0 {
-		if err := s.compareKept(slices.MaxFunc(older, game.CompareVersions), own, keys); err != nil {
-			return err
-		}
-	}
+// LoadPatches loads the game's patches again, and stores the load order again
+// with each mod's range, so that every answer kept for a load order is made
+// again.
+func (s *Session) LoadPatches() {
+	patches := patch.Load(s.patchDir, s.Game.ID)
 
-	if err := files.SaveGob(ResolveKeysFile(s.patchDir, version), keys); err != nil {
-		return err
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if own == nil {
-		return nil
+	s.Patches.Store(&patches)
+	if order := s.Order.Load(); order != nil {
+		s.storeOrder(slices.Clone(*order))
 	}
-
-	if err := files.SaveGob(ResolveOwnFile(s.patchDir, version), own); err != nil {
-		return err
-	}
-
-	// A file that cannot be deleted now goes at a later open.
-	for _, other := range kept {
-		if other != version && !slices.Contains(s.installVersions, other) {
-			_ = os.Remove(ResolveOwnFile(s.patchDir, other))
-			_ = os.Remove(ResolveKeysFile(s.patchDir, other))
-		}
-	}
-
-	return nil
 }
 
-// compareKept saves the comparison of what is kept of a version with the new
-// version as the local patch of the new version. Each part of the patch is
-// compared where the old version's side is kept: the own dumps, the keys, and
-// the hashes of the game's files. A part that cannot be compared stays as the
-// local patch of the new version has it, if that was compared with the same
-// version, since the old side of the hashes goes when no mod needs it.
-func (s *Session) compareKept(base string, own *schema.Dumps, keys VersionKeys) error {
-	file := ResolveLocalFile(s.patchDir)
-
-	// A local file that cannot be read is replaced.
-	local, _ := files.LoadGob[[]Patch](file)
-	patch := Patch{Version: s.Schema.Version, Base: base, Local: true}
-	if position := slices.IndexFunc(local, func(other Patch) bool { return other.Version == patch.Version }); position >= 0 {
-		if local[position].Base == base {
-			patch = local[position]
-		}
-
-		local = slices.Delete(local, position, position+1)
+// storeOrder stores a load order with the range of each mod set: the version
+// its patches start at when they end at the install's version, and whether
+// its supported version decides that. The caller holds the lock.
+func (s *Session) storeOrder(order []Mod) {
+	patches := *s.Patches.Load()
+	for position, mod := range order {
+		start, judged := patches.ResolveStart(mod.Descriptor.SupportedVersion, mod.Base, s.Schema.Version)
+		order[position].Start, order[position].Judged = start, judged
 	}
 
-	if previous, ok := files.LoadGob[*schema.Dumps](ResolveOwnFile(s.patchDir, base)); ok && own != nil {
-		patch.DumpChanges = schema.CompareDumps(previous, own, s.Schema)
-	}
+	s.Order.Store(&order)
+}
 
-	if previous, ok := files.LoadGob[VersionKeys](ResolveKeysFile(s.patchDir, base)); ok {
-		patch.DocChanges = schema.CompareKeys(previous.Docs, keys.Docs)
-		patch.DefinitionChanges = schema.CompareKeys(previous.Defined, keys.Defined)
-	}
+// ListModPatches returns the patches of a mod's range: those after the version
+// the mod is made for, up to the install's. It returns none for a mod with no
+// version to count from, and for a mod that is not in the workspace.
+func (s *Session) ListModPatches(modID string) patch.Patches {
+	mod, _ := findMod(*s.Order.Load(), modID)
 
-	record, _ := files.LoadGob[copyHashes](ResolveCopiesFile(s.patchDir))
-	if previous, ok := record[base]; ok {
-		patch.GameFiles = CompareHashes(s.Install, previous, ListHashes(s.Install))
-	}
-
-	return files.SaveGob(file, append(local, patch))
+	return s.Patches.Load().ListRange(mod.Start, s.Schema.Version)
 }
 
 // loadTranslation adds the workspace's language to the install's index, unless
@@ -478,7 +417,7 @@ func (s *Session) refreshMod(record app.Mod) {
 		order[position] = mod
 	}
 
-	s.Order.Store(&order)
+	s.storeOrder(order)
 }
 
 // refreshChanged runs refreshMod for each of the records that is not the

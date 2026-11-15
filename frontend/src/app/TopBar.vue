@@ -14,7 +14,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import * as health from "@services/health/service";
 import { countFindings, list, plural } from "../lib/format";
-import { gamesQuery, levelsQuery, reportQuery, useRescan, workspacesQuery } from "../queries";
+import { gamesQuery, reportQuery, useLevels, useRescan, workspacesQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { useSeenPatch } from "../stores/patchSeen";
 import { gameIcon, useSettingsStore } from "../stores/settings";
@@ -51,7 +51,7 @@ const commandBus = useEventBus(COMMAND_BUS);
 
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: games } = useQuery(gamesQuery);
-const { data: levels } = useQuery(levelsQuery);
+const { findLevel } = useLevels();
 const { data: report } = useQuery(() => ({
   ...reportQuery(workspace.listModIds()),
   enabled: workspace.isOpen(),
@@ -64,7 +64,7 @@ const { isNew: patchIsNew } = useSeenPatch();
  * and the words it carries.
  */
 const tabDots = computed((): Partial<Record<WorkspacePage, { color: string; title: string }>> => {
-  const worst = levels.value?.find((level) => level.id === report.value?.worst);
+  const worst = findLevel(report.value?.worst);
   return {
     health: worst?.problem ? { color: `var(--ui-${worst.color})`, title: `Health found ${worst.label}` } : undefined,
     "patch-center": patchIsNew.value

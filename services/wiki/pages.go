@@ -12,21 +12,37 @@ import (
 	"golang.org/x/net/html"
 
 	"paradox-modding-tools/internal/files"
+	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/services/app"
 )
 
 // Note is one patch's notes page.
 type Note struct {
 	Version string `json:"version"`
 
-	// Parent is the version a hotfix belongs to, such as 1.14 for 1.14.2. It is
-	// "" for a release.
-	Parent string `json:"parent"`
-
 	// Released is the date the note gives for its release, or "" for none.
 	Released string `json:"released"`
 	Title    string `json:"title"`
 	Modding  bool   `json:"modding"`
+}
+
+// ResolveNote returns the version of the wiki's note that holds the notes of a
+// game version. The wiki writes one note for a release, as 1.15, and one for
+// its hotfixes, as 1.15.X. A version whose numbers after the first two are
+// all 0, as 1.15.0, is in the release's note. Any other version of the
+// release, as 1.15.1, is in the hotfixes'. An open beta is read by its number.
+// It returns "" for a version that names no release.
+func ResolveNote(version string) string {
+	release := game.ResolveRelease(version)
+	number, _, _ := strings.Cut(version, "-")
+	rest := strings.Split(strings.TrimPrefix(number, release), ".")
+	isHotfix := slices.ContainsFunc(rest, func(part string) bool { return part != "" && part != "0" })
+	if release == "" || !isHotfix {
+		return release
+	}
+
+	return release + ".X"
 }
 
 // ErrNoListing is the error of ListNotes before a refresh has fetched the
@@ -152,7 +168,7 @@ const releaseSpan = 2000
 // resolveReleased returns the date a patch note says it was released on, as
 // in "released on 2026-09-30" near the start of its text, or "" for none.
 func resolveReleased(root *html.Node) string {
-	text := textOf(root)
+	text := app.TextOf(root)
 	match := releasePattern.FindStringSubmatch(text[:min(len(text), releaseSpan)])
 	if len(match) < 2 {
 		return ""
@@ -164,7 +180,7 @@ func resolveReleased(root *html.Node) string {
 // hasModding reports whether a heading of the page holds the word Modding.
 func hasModding(root *html.Node) bool {
 	for node := range root.Descendants() {
-		if elements[node.DataAtom].heading && strings.Contains(textOf(node), "Modding") {
+		if app.LevelOf(node) > 0 && strings.Contains(app.TextOf(node), "Modding") {
 			return true
 		}
 	}

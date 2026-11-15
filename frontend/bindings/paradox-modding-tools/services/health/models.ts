@@ -295,8 +295,10 @@ export interface Report {
 
     /**
      * Own counts the findings of the user's own mods, external ones left out.
+     * OwnPatch counts the patch question's findings of the same mods.
      */
     "own": Tally;
+    "ownPatch": Tally;
     "checkedAt": string;
 
     /**

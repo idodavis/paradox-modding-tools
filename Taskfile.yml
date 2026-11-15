@@ -60,9 +60,8 @@ tasks:
   check:go:
     summary: gofmt, the four vets, staticcheck, golangci-lint and the short tests.
     vars:
-      # the engine's packages that build without Wails, whose files for other systems need no cgo; schema's gen
-      # command reads the workspace service's patches, so it is vetted with the services below
-      ENGINE: ./internal/files/... ./internal/game/... ./internal/jomini/... ./internal/loc/... ./internal/lang/... ./internal/schema ./internal/texture/... ./internal/index/... ./internal/terminal/...
+      # the engine's packages that build without Wails, whose files for other systems need no cgo
+      ENGINE: ./internal/files/... ./internal/game/... ./internal/jomini/... ./internal/loc/... ./internal/lang/... ./internal/schema/... ./internal/texture/... ./internal/index/... ./internal/patch/... ./internal/terminal/...
     cmds:
       - task: check:dist
       - test -z "$(gofmt -l main.go internal services)"
@@ -71,7 +70,7 @@ tasks:
       - go vet {{.PACKAGES}}
       - GOOS=linux go vet {{.ENGINE}}
       - GOOS=windows go vet {{.ENGINE}}
-      - GOOS=linux go vet -tags server ./services/... ./internal/schema/gen
+      - GOOS=linux go vet -tags server ./services/...
       - staticcheck {{.PACKAGES}}
       - golangci-lint run {{.PACKAGES}}
       - task: test

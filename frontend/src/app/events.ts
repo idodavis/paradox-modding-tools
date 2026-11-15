@@ -56,7 +56,7 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
       keys.draws,
       keys.health,
       keys.patch,
-      ...(descriptor ? [keys.workspaces] : []),
+      ...(descriptor ? [keys.workspaces, keys.releases] : []),
       ...useQueryCache()
         .getEntries({ key: keys.gits })
         .filter((entry) => isGitStatus(entry.key))
@@ -69,7 +69,7 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
   "release:changed": { stale: (modId) => [keys.release(modId), keys.ownListings] },
   "review:changed": { stale: (path) => [reviewsQuery.key, keys.baseline(path)] },
   "wiki:updated": { stale: () => [keys.wiki, keys.patch] },
-  "patch:updated": { stale: () => [keys.patch, keys.health, keys.lsp] },
+  "patch:updated": { stale: () => [keys.patch, keys.health, keys.lsp, keys.workspaces] },
   "errorlog:changed": { stale: () => [errorLogQuery.key] },
   "game:exited": { stale: () => [keys.state] },
   "shell:started": { stale: () => [keys.shells] },

@@ -7,17 +7,13 @@ export {
 };
 
 export type {
-    Article,
     Dependency,
     Descriptor,
     FileChange,
     FileText,
-    GameFile,
     Hunk,
-    KeyRename,
     Mod,
     ModFolder,
-    Patch,
     Place,
     Review,
     Scanning,

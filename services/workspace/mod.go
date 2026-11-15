@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -63,6 +62,13 @@ type Mod struct {
 
 	// Workshop is true for Steam's copy of a Workshop mod, which is read only.
 	Workshop bool `json:"workshop"`
+
+	// Start is the game version the patches' changes are counted from for the
+	// mod, "" for none. Judged is whether the mod's supported version decides
+	// it. Where it does not, as for a blank one or 1.13*, Start is the base
+	// version of the mod's record. The session's load order sets both.
+	Start  string `json:"start"`
+	Judged bool   `json:"judged"`
 }
 
 // ModFolder is the folder a new mod would be made in, or why it cannot be
@@ -572,39 +578,15 @@ func findLocalizationFolder(row *game.Game) (string, bool) {
 	return "", false
 }
 
-var releaseVersion = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.|$)`)
-
 // ToSupportedVersion turns a game version into the release a mod supports, such
 // as 1.20.* for 1.20.1.2. It returns "" for a version without two numbers.
 func ToSupportedVersion(version string) string {
-	match := releaseVersion.FindStringSubmatch(version)
-	if match == nil {
+	release := game.ResolveRelease(version)
+	if release == "" {
 		return ""
 	}
 
-	return match[1] + "." + match[2] + ".*"
-}
-
-// MatchVersion reports whether a mod made for a supported version runs on a
-// game version. It compares part by part, and a * matches the rest. judged is
-// false where it is not known how the games compare, such as for a * inside a
-// part or a build id.
-func MatchVersion(supported, version string) (matches, judged bool) {
-	wanted, actual := strings.Split(supported, "."), strings.Split(version, ".")
-	notNumber := func(part string) bool { return jomini.Classify(part) != jomini.ClassNumber }
-	notWanted := func(part string) bool { return part != "*" && notNumber(part) }
-	judged = supported != "" && !slices.ContainsFunc(wanted, notWanted) && !slices.ContainsFunc(actual, notNumber)
-
-	for position, part := range wanted {
-		switch {
-		case part == "*":
-			return true, judged
-		case position >= len(actual) || part != actual[position]:
-			return false, judged
-		}
-	}
-
-	return len(wanted) == len(actual), judged
+	return release + ".*"
 }
 
 // resolveModFolder returns the folder for a mod, named after it. It fails for a

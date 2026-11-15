@@ -54,10 +54,12 @@ export function setupModels(): void {
       void (model.unsaved ? syncText(model) : diagnose(model));
     });
   });
-  // a check turned on or off changes every open file's problems
+  // A check turned on or off changes every open file's problems. So does the
+  // version a mod is compared from, and so do new patches of the game.
   Events.On("config:changed", ({ data }) => {
-    if (!data || data === "settings") models.forEach((model) => void diagnose(model));
+    if (!data || data === "settings" || data === "workspaces") models.forEach((model) => void diagnose(model));
   });
+  Events.On("patch:updated", () => models.forEach((model) => void diagnose(model)));
 }
 
 /** openModel returns a file's model, loading its text if needed. A file has one model. */

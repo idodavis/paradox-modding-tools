@@ -400,6 +400,17 @@ func CompareVersions(first, second string) int {
 	return 1
 }
 
+// releaseNumber is the two numbers a version starts with, which name its
+// release.
+var releaseNumber = regexp.MustCompile(`^\d+\.\d+`)
+
+// ResolveRelease returns the release of a version: the two numbers it starts
+// with, as 1.15 for 1.15.1, for 1.15.X and for 1.15.*. It returns "" for a
+// version that does not start with two numbers.
+func ResolveRelease(version string) string {
+	return releaseNumber.FindString(version)
+}
+
 // betaSuffix ends the version of an open beta, as in 1.14.4-openbeta, which
 // is how the Modding Co-ops' digests name its folder.
 const betaSuffix = "-openbeta"

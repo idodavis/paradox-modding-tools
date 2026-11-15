@@ -279,7 +279,7 @@ function listHits(finding: Finding): Finding[] {
         />
       </template>
       <template #detail>
-        <HealthDetail v-if="opened" :finding="opened" :outdated="outdated">
+        <HealthDetail v-if="opened" :finding="opened">
           <HealthSection v-if="related" title="Related">
             <HealthLink :level="related.level" :parts="relation" @open="emit('compatibility', related)" />
           </HealthSection>

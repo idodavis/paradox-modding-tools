@@ -8,7 +8,7 @@ import { isEqual, omit } from "es-toolkit";
 import { useRouter } from "vue-router";
 
 import { describeCount, joinParts, list, plural, toSentence } from "../../lib/format";
-import { comparisonQuery, levelsQuery, reportQuery, steamStatusQuery } from "../../queries";
+import { comparisonQuery, reportQuery, steamStatusQuery, useLevels } from "../../queries";
 import { STAGES, useUploadStore } from "../../stores/uploads";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LevelCounts from "../../ui/LevelCounts.vue";
@@ -43,7 +43,7 @@ const {
   refetch: checkSteam,
   isLoading: checkingSteam,
 } = useQuery(() => ({ ...steamStatusQuery, enabled: enabled.value }));
-const { data: levels } = useQuery(levelsQuery);
+const { levels, findLevel } = useLevels();
 const { data: report } = useQuery(() => ({ ...reportQuery(workspace.listModIds()), enabled: enabled.value }));
 const { data: comparison } = useQuery(() => ({
   ...comparisonQuery({ modId, key: listingKey }),
@@ -71,9 +71,12 @@ const sentence = computed(() =>
     (levels.value ?? []).filter((level) => level.problem).flatMap((level) => group.value?.phrases?.[level.id] ?? []),
   ),
 );
-const faults = computed(() =>
-  (group.value?.findings ?? []).filter((finding) => levels.value?.find((level) => level.id === finding.level)?.fix),
-);
+// A name a game patch removed or renamed under the mod is a fault too, and
+// is in the report's patch group, not the mod's.
+const faults = computed(() => {
+  const patched = listingKey ? [] : (report.value?.patch.findings ?? []).filter((finding) => finding.origin === modId);
+  return [...(group.value?.findings ?? []), ...patched].filter((finding) => findLevel(finding.level)?.fix);
+});
 const worst = computed(() => levels.value?.find((level) => level.problem && level.id === group.value?.worst));
 const label = computed(() => {
   if (reason.value) return "Start Steam to upload";

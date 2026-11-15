@@ -91,6 +91,7 @@ Arrows point to what a package imports. An import that follows from others is le
 | [lang](../internal/lang/README.md) | The script language of one game version: its fixed rules as tables, the model of what is learned about it, and the one walk over a file that every reader of script uses. |
 | [schema](../internal/schema/README.md) | Builds the model of one game version's language from the game's dumps, its docs and its own files. |
 | [index](../internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy of a definition the game keeps. |
+| [patch](../internal/patch/README.md) | What each version of a game changed, as plain data: the game's patches from its digest, the shipped history and PMT's own comparison, their ranges, and the snapshots and copies kept to compare and merge with. |
 | [terminal](../internal/terminal/README.md) | Runs shells under Windows' pseudo console or a Linux pty. |
 
 [`schema/gen`](../internal/schema/gen/) writes the shipped backup schemas and each game's shipped history of patches,
@@ -139,7 +140,7 @@ flowchart TD
 - **The game's dumps:** the lists of triggers, effects, scopes, on_actions and data types that the game writes when it
   runs with its debug flag, in the game's folder under Documents.
 - **The mods:** each mod's folder and its descriptor, CK3's `.mod` file or Vic3's and EU5's `metadata.json`.
-- **The community wiki**, for the Wiki pane and Patch Notes.
+- **The community wiki**, for the Wiki pane and the Patch Center's notes.
 - **The Modding Co-ops' digests** of Vic3 and EU5, one GitHub repository each, read for what each version changed.
 - **Steam**, through the game's own copy of Steam's library, for publishing.
 
@@ -242,7 +243,7 @@ read that section refresh. Each package README lists the events its service send
 | Assistant | `app/agent/`, `stores/agent.ts` | agent, mcp | |
 | Event Graph | `pages/graph` | graph | index, lang |
 | Health | `pages/health` | health | index, lang, loc |
-| Patch Notes | `pages/notes` | wiki | |
+| Patch Center | `pages/patch` | patch, wiki, health, lsp, workspace | patch, schema |
 | Publish | `pages/publish`, `stores/uploads.ts` | steam | files, game |
 | Settings | `app/settings` | app, workspace | |
 

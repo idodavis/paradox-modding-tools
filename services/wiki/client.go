@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/html"
 	"golang.org/x/time/rate"
 
 	"paradox-modding-tools/internal/files"
@@ -77,6 +78,33 @@ func newClient(cacheDir string, row *game.Game) *Client {
 	}
 }
 
+// resolveLink is the link rule of a wiki page. A link inside the page stays as
+// it is. Any other keeps only a web address, made absolute, and a link to
+// another page of the wiki also gets that page's title as data-page.
+func (c *Client) resolveLink(target string) []html.Attribute {
+	if strings.HasPrefix(target, "#") {
+		return []html.Attribute{{Key: "href", Val: target}}
+	}
+
+	address, err := url.Parse(target)
+	if err != nil {
+		return nil
+	}
+
+	address = c.origin.ResolveReference(address)
+	if address.Scheme != "http" && address.Scheme != "https" {
+		return nil
+	}
+
+	var link []html.Attribute
+	title := strings.TrimPrefix(strings.TrimPrefix(address.Path, "/"), "wiki/")
+	if address.Host == c.origin.Host && title != "" && title != "index.php" {
+		link = append(link, html.Attribute{Key: "data-page", Val: strings.ReplaceAll(title, "_", " ")})
+	}
+
+	return append(link, html.Attribute{Key: "href", Val: address.String()})
+}
+
 // FetchPage fetches a page and caches it sanitized, with the revision the wiki
 // gave. It returns an error if the fetch fails or the wiki has no such page.
 func (c *Client) FetchPage(title string) (Page, error) {
@@ -100,13 +128,13 @@ func (c *Client) FetchPage(title string) (Page, error) {
 		return Page{}, fmt.Errorf("wiki page %q: %s", title, response.Error.Info)
 	}
 
-	root, err := parseFragment(response.Parse.Text)
+	// The facts are read from the sanitized page.
+	sanitized := app.Sanitize(response.Parse.Text, c.resolveLink)
+	root, err := app.ParseFragment(sanitized)
 	if err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)
 	}
 
-	// The facts are read from the sanitized page, so sanitize it first.
-	sanitized := sanitizePage(root, c.origin)
 	page := Page{
 		Title: response.Parse.Title, URL: c.origin.JoinPath(strings.ReplaceAll(response.Parse.Title, " ", "_")).String(),
 		HTML: sanitized, FetchedAt: time.Now(), Revision: response.Parse.Revision, Modding: hasModding(root),
@@ -159,12 +187,12 @@ func (c *Client) loadText(title string) (string, bool) {
 
 	text, ok := c.texts[title]
 	if !ok {
-		root, err := parseFragment(page.HTML)
+		root, err := app.ParseFragment(page.HTML)
 		if err != nil {
 			return "", false
 		}
 
-		text = strings.ToLower(textOf(root))
+		text = strings.ToLower(app.TextOf(root))
 		c.texts[title] = text
 	}
 

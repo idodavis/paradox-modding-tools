@@ -448,7 +448,7 @@ function listProblems(): { place: Place; problems: Problem[] }[] {
 /** listFindings returns Health's findings in a file that the editor does not make itself, as problems. */
 function listFindings(place: Place): Problem[] {
   const disabled = settings.value("ide.checks").split(",");
-  const groups = report.value ? [report.value.compatibility, ...(report.value.mods ?? [])] : [];
+  const groups = report.value ? [report.value.compatibility, report.value.patch, ...(report.value.mods ?? [])] : [];
   return groups
     .flatMap((group) => group.findings ?? [])
     .flatMap((finding) => {

@@ -7,8 +7,9 @@ one loads the install's schema and index, or builds them, scans the mods on top 
 service asks it for the open session at each call, so the workspace's state exists once.
 
 It also keeps the records of installs, workspaces and mods, reads and writes the mods' files, keeps the review of the
-files a coding agent edits, keeps a game's patches (what each version of the game changed), and serves files to the
-page. What a key means is [lang](../../internal/lang/README.md)'s;
+files a coding agent edits, holds the game's patches for the open session, and serves files to the page. What a key
+means is [lang](../../internal/lang/README.md)'s; what each version of the game changed is
+[patch](../../internal/patch/README.md)'s;
 where a name is defined is the [index](../../internal/index/README.md)'s.
 
 **Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),
@@ -38,54 +39,27 @@ flowchart TD
   time of its dumps, the time of the digest's dumps of that version (0 for none) and PMT's version. A game patch, fresh
   dumps, digest dumps saved later or a new build of PMT each scan again, and the open deletes the game's older cache
   folders.
-- Whenever the open builds the schema or the install's index (`keepVersion`), the game's folder of patches keeps the
-  version's keys (`ResolveKeysFile`): the keys the docs document (`ListDocKeys`) and the names the install's files
-  define (`ListDefinedKeys`), localization keys included. Where the build used the install's own dumps and they are not
-  older than the install, it keeps them too (`ResolveOwnFile`). Each is one file for each version an install is on,
-  since the user may keep an older version of the game as an install of its own.
-- The build first compares the version with what is kept of the newest older version and saves the result as a local
-  patch of the new version, based on that one (`compareKept`). It compares the dumps (`schema.CompareDumps`), the
-  documented keys and the defined names (`schema.CompareKeys`), and the hashes of the game's files from the record
-  below. A part is compared where the older version's side is kept, so the dumps wait for the user to run `script_docs`
-  after an update, while the docs' keys, the defined names and the files need none. A part that cannot be compared
-  stays as the local patch of the version had it, if that was compared with the same version, since the record drops the
-  older version when no mod needs it. A version kept of the same or a newer version, or none kept before, is compared
-  with nothing. What is kept of a version no install is on is deleted once the build used the install's own dumps. The
-  open then loads the game's patches into the session, where per version the digest's patch wins over the shipped
-  history's, which wins over the local one, and each part the winner lacks comes from the next that has it
-  (`MergePatches`).
-- After the mods are scanned, the open keeps the game files they replace (`saveCopies`), which is the next section.
+- Whenever the open builds the schema or the install's index, it hands [patch](../../internal/patch/README.md) a
+  snapshot of the version (`patch.KeepSnapshot`), which compares it with the one before and keeps PMT's own patch.
+- The open loads the game's patches into the session (`LoadPatches`, which is `patch.Load`), and the load order is
+  stored with each mod's range (`storeOrder`): `Mod.Start`, the version its patches are counted from, and
+  `Mod.Judged`, whether its supported version decides that. `LoadPatches` stores the order again, so every answer
+  kept for a load order (lsp's problems, Health's report) is made again when the patches change.
+- After the mods are scanned, the open keeps the game files they replace (`keepCopies`), which is the next section.
 - Changing what the open read (the install, the language, or the mods and their order) opens the workspace again. So
   does moving or rescanning its install.
 
-## Kept copies of game files
+## Game files under a mod's files
 
 A mod's file at the path of a game file replaces it (`findReplaced`; a DLC's file is read over the base game's, so the
-last one in load order is the game's). The game's folder of patches keeps what a three-way compare of the mod's file
-needs, and what tells a mod that the game changed a file under it:
+last one in load order is the game's). The session ties the mods to what [patch](../../internal/patch/README.md)
+keeps:
 
-- **The record** (`ResolveCopiesFile`) holds, for each game version PMT has seen, the SHA-256 of each game file's
-  content at that version, by its path from the game's folder. The index scan takes each hash (`files.File.Hash`) of
-  each file it reads, so the record holds every script, GUI, font, GFX, table and base-language localization file the
-  game reads (`listHashes`), and no picture or other file the scan does not read. A file a mod replaces is added to it
-  whether the scan read it or not (`writeCopy` hashes one the scan did not).
-- **The copies** are the text files' content, gzipped and named by its hash in the folder `copies`, so a file that did
-  not change between versions is kept once. A picture or mesh is hashed and not copied, since a compare and merge reads
-  text.
-- **`FindBase`** returns the version and hash that is a valid base for a mod's file: the hash at the mod's range
-  start, or at the latest version before it when every patch in between lists the files it changed and none lists
-  this one. A version between that has no patch is not known, and is read as unchanged. It returns false for none. It
-  is the one place that decides whether a file has a base.
-- **`FindCopyFile`** returns the file of the copy of the base `FindBase` gives, and false where the file is not text or
-  no mod replaced it when PMT saw that version, since the record holds more files than the copies do. **`FindCopy`**
-  returns that copy's text, and false for none, which is where the compare stays two-way.
-- **`ListStaleFiles`** lists the game files a mod replaces that changed in its range: the patches' files with their
-  status, and any other whose hash at the range start differs from now ("modified") or whose file the game has dropped
-  ("deleted"), which is how a game with no digest tells.
-- **Dropping.** The same open deletes each version no install of the game is on and that no mod of any workspace of
-  the game needs, which is the latest recorded version at or before the mod's range start, and then each copy that no
-  version left in the record names (`deleteCopies`). The copies are shared by every workspace of the game, so a
-  workspace's open reads the other workspaces' mods.
+- **`keepCopies`** hands each replaced game file to `patch.KeepCopy`, and tells `patch.DeleteCopies` which versions
+  the mods of every workspace of the game still need, since the copies are shared.
+- **`FindGameChange`** says what the patches of a mod's range did to the game file under one of the mod's files, in
+  which version, and from which kept copy the change can be merged, if any. A change no patch lists is not known.
+- **`MergeGameFile`** applies the game's changes since that copy to the mod's file and starts the file's review.
 
 ## The session
 
@@ -116,7 +90,7 @@ place, and the page shows its fields as they are. The game's own files and a Wor
 - `CreateCopy` copies a file of the game or of another mod to the same path in a mod, where it overrides the original.
 - `Delete` moves a file into PMT's trash, which empties at the next start, so `Restore` can bring it back.
 - `MergeGameFile` applies the game's changes to a game file to the mod's file that replaces it. It diffs the kept copy
-  (`FindCopy`) against the game's file now by lines and gives each run of changed lines as a `Hunk`, with the unchanged
+  (`patch.FindCopy`) against the game's file now by lines and gives each run of changed lines as a `Hunk`, with the unchanged
   lines around it as its anchors. The anchors grow a line on each side at a time until the hunk's lines are in the copy
   once, and hunks whose anchors share or touch a line are one. A hunk lands where its copy's lines are in the mod's
   file once, through `revertHunk` with its sides swapped; one the mod made already fits as it is. Any other is counted
@@ -190,8 +164,7 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 | `session.go` | The open session: its documents, buffers, texts and rescans. |
 | `mod.go` | Mods, their descriptors, and a new mod's skeleton. |
 | `locate.go` | Places: where a file sits, and every copy of a path in load order. |
-| `patches.go` | A game's patches as plain data, their files, the history the app ships, the session's loading of them, and a mod's range of versions. |
-| `copies.go` | The kept copies of the game files mods replace, by game version, the files of a mod's range that changed, and the merge of the game's changes into a mod's file. |
+| `copies.go` | Which game files the mods replace, what the patches of a mod's range did to them, and the merge of the game's changes into a mod's file. |
 | `review.go` | The review of a coding agent's edits, and the matching of its hunks to a file's lines. |
 | `watcher.go` | The watcher on the mods' folders. |
 
@@ -226,32 +199,12 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 - **State**: the open workspace as the frontend sees it.
 - **FileText**: a file's text in its encoding, with its place and the editor's draft.
 - **FileChange**: one file that changed or was deleted on disk.
-- **Patch**: what one version of a game changed against its base: its dump changes, key renames, game files,
-  articles, document changes and definition changes. A local patch is one PMT compared itself, when the game updated
-  or when it made the shipped history, and a digest's patch is one the Co-op wrote.
-- **History**: the patches the app ships for a game (`LoadHistory`), embedded from `shipped/<game>.gob` and written by
-  the `gen` command of [schema](../../internal/schema/README.md). It holds each version `gen` saw an install on, and for
-  Crusader Kings III the dump changes of the versions from 1.0.3 to 1.10.2 from OldEnt's dumps. Versions between that
-  and the first `gen` saw are not in it.
-- **DocChanges**, **DefinitionChanges**: the keys the game's docs began or stopped to document, and the names the
-  game's files began or stopped to define, as `schema.KeyChange`s.
-- **Base**: the version a patch is compared against: the latest earlier version that is not an open beta.
-- **KeyRename**: a key a patch gave a new key, with its replacement.
-- **GameFile**: a file of the game that a patch added, modified or deleted, as git says.
-- **Article**: one titled part of a digest's written notes, with the folders and keys it names.
-- **Patches**: a game's patches, oldest version first, and the range of them after one version up to another.
-  `ResolvePatchDir` is the folder of the app's cache that holds them, which the [patch](../patch/README.md) service
-  saves. The session's `Patches` are the digest's file, the history and the local file merged (`LoadPatches`), which
-  the open and the patch service's refresh each call.
-- **Range**: the versions a mod's patches run from and to, as `ResolveRange` says. The end is the install's version.
-  The start is the oldest version the mod's supported version matches, else the mod's `Base` where the supported
-  version is blank or cannot be judged (`1.13*`), else "" for none. Open betas count only where the install is on one.
+- **Patches**: the session's copy of the game's patches, which [patch](../../internal/patch/README.md) loads and the
+  open and the patch service's refresh each store (`LoadPatches`).
+- **Range**: the versions a mod's patches run from and to. The end is the install's version, and the start is
+  `Mod.Start`, as `patch.ResolveStart` gives it. `ListModPatches` gives the range's patches.
 - **Install versions**: the version each recorded install of a game is on, once each (`ListInstallVersions`), which
-  the patch service keeps the digest's dumps for and the session keeps its own dumps and keys for.
-- **Copy**: a gzipped copy of a text game file's content as it was at a game version, named by the hash of the content.
-  `FindBase` finds the hash that is a valid base for a mod's file, `FindCopyFile` the copy of it, and `FindCopy`
-  returns its text.
-- **Stale file**: a game file a mod replaces that changed within the mod's range, as `ListStaleFiles` lists it.
+  the digest's dumps, the snapshots and the copies are kept for.
 - **Mod base**: the game version a mod with no readable supported version is compared from, kept in the mod's
   record and written by `UpdateMod`.
 - **Scanning**: one stage of an install's scan, in words, with the percent of its files done, or -1 for a stage that

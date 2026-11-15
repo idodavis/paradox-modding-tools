@@ -105,6 +105,7 @@ again, or after a timeout, and `window:closed` follows.
 | `app.go` | The service: its events, the log and the running mark, the settings, the windows, `FetchURL`. |
 | `config.go` | PMT's folders, the records, the catalog of settings, and `ConfigFile`. |
 | `update.go` | The check for a newer version, the install of any release, and the list of releases. |
+| `document.go` | The one document form: `Sanitize` cuts a source's HTML down to text, lists, tables, code and links, with a `LinkRule` per source, and `RenderMarkdown` makes one from markdown. The wiki's pages, the digests' articles and the releases' notes all pass through it, and one view of the page draws them. |
 
 ## Events
 

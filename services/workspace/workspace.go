@@ -39,6 +39,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -357,8 +358,14 @@ func (s *Service) ResetData() error {
 }
 
 // ListWorkspaces returns every recorded workspace with its install and mods.
+// The open workspace's mods have the range its session set.
 func (s *Service) ListWorkspaces() []Workspace {
 	records := s.Config.Config()
+	open, order := "", []Mod(nil)
+	if ws, err := s.Session(); err == nil {
+		open, order = ws.ID, *ws.Order.Load()
+	}
+
 	workspaces := make([]Workspace, len(records.Workspaces))
 	for position, record := range records.Workspaces {
 		install, row, _ := findInstall(records, record.Install)
@@ -369,8 +376,13 @@ func (s *Service) ListWorkspaces() []Workspace {
 
 		workspaces[position].Mods = make([]Mod, len(record.Mods))
 		roots := row.ListWorkshopRoots()
-		for modPosition, mod := range record.Mods {
-			workspaces[position].Mods[modPosition] = readMod(row, roots, mod)
+		for modPosition, recorded := range record.Mods {
+			mod := readMod(row, roots, recorded)
+			if loaded, ok := findMod(order, mod.ID); ok && record.ID == open {
+				mod.Start, mod.Judged = loaded.Start, loaded.Judged
+			}
+
+			workspaces[position].Mods[modPosition] = mod
 		}
 	}
 
@@ -643,8 +655,8 @@ func (s *Service) ResolveFolder(path string) (string, string) {
 	return home, ""
 }
 
-// Launch starts the game with its debug flag. When it exits, game:exited says
-// whether it wrote fresher dumps.
+// Launch starts the game with its debug flag, as Steam starts it. When it
+// exits, game:exited says whether it wrote fresher dumps.
 func (s *Service) Launch() error {
 	ws, err := s.Session()
 	if err != nil {
@@ -656,8 +668,12 @@ func (s *Service) Launch() error {
 		return fmt.Errorf("%s cannot be started on this system", ws.Game.Name)
 	}
 
+	// Steam tells a game it starts which app it is through SteamAppId. A game
+	// started without it cannot ask Steam which DLC the user owns, unless it
+	// ships a steam_appid.txt, which EU5 does not.
 	command := exec.Command(program, args...)
 	command.Dir = filepath.Dir(program)
+	command.Env = append(os.Environ(), "SteamAppId="+strconv.Itoa(ws.Game.SteamAppID))
 	if err := command.Start(); err != nil {
 		return err
 	}

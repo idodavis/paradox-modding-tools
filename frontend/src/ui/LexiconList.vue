@@ -1,6 +1,7 @@
 <!--
-  The game's keys of one lexicon class, with the class tabs, a filter and a letter rail. A row opens to its card, its
-  history and its uses in the mods, and says what the patches of a range of versions did to it.
+  The game's keys of one lexicon class, with the class tabs, a filter and a
+  letter rail. A row opens to the key's card, and says what the patches of a
+  range of versions did to it.
 -->
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
@@ -8,12 +9,11 @@ import { useQuery } from "@pinia/colada";
 
 import { Status } from "@internal/schema/models";
 import type { Class } from "@services/lsp/models";
-import type { Patch } from "@services/workspace/models";
 
-import { describeCount, matchQuery } from "../lib/format";
+import { describeCount, MARKS, matchQuery } from "../lib/format";
 import { lexiconKeyQuery, lexiconQuery } from "../queries";
 import { useWorkspaceStore } from "../stores/workspace";
-import OriginChip from "./OriginChip.vue";
+import HoverCard from "./HoverCard.vue";
 import ScriptSnippet from "./ScriptSnippet.vue";
 import SourceLink from "./SourceLink.vue";
 
@@ -34,14 +34,6 @@ const {
 const kind = defineModel<string>("kind", { required: true });
 const filter = defineModel<string>("filter", { default: "" });
 
-/** The mark of each thing a patch did to a key. */
-const MARKS: Record<Exclude<Status, Status.$zero>, { label: string; text: string; dot: string }> = {
-  [Status.StatusAdded]: { label: "New", text: "text-success", dot: "bg-success" },
-  [Status.StatusChanged]: { label: "Changed", text: "text-info", dot: "bg-info" },
-  [Status.StatusRemoved]: { label: "Removed", text: "text-error", dot: "bg-error" },
-};
-const SITES_SHOWN = 8;
-
 const workspace = useWorkspaceStore();
 const open = shallowRef("");
 watch(kind, () => (open.value = ""));
@@ -50,10 +42,7 @@ const { data: rows } = useQuery(() => ({
   ...lexiconQuery({ kind: kind.value, start, end }),
   enabled: workspace.isOpen(),
 }));
-const visible = computed(() =>
-  (rows.value ?? []).filter((row) => (!start || row.status) && matchQuery(filter.value, row.name, row.blurb)),
-);
-const marked = computed(() => (rows.value ?? []).filter((row) => row.status).length);
+const visible = computed(() => (rows.value ?? []).filter((row) => matchQuery(filter.value, row.name, row.blurb)));
 const label = computed(() => classes.find((own) => own.id === kind.value)?.label.toLowerCase() ?? "");
 const opened = computed(() => visible.value.find((row) => row.name === open.value));
 // A scripted effect or trigger is no key of the dumps, so it has no card.
@@ -106,14 +95,6 @@ function estimateSize(index: number): number {
   if (row?.name === open.value) return 320;
   return row?.blurb ? 48 : 30;
 }
-
-/** describeChange says what a patch did to its one key. */
-function describeChange(patch: Patch): string {
-  const change = patch.dumpChanges?.[0];
-  if (change?.status === Status.StatusAdded) return "Added.";
-  if (change?.status === Status.StatusRemoved) return "Removed.";
-  return `Changed: ${(change?.differences ?? []).join(", ")}.`;
-}
 </script>
 
 <template>
@@ -158,74 +139,32 @@ function describeChange(patch: Patch): string {
             @click="open = item.name === open ? '' : item.name"
           >
             <span class="flex min-w-0 items-center gap-2">
-              <UBadge
-                v-if="item.name === open"
-                :label="card?.what ?? item.class"
-                color="neutral"
-                variant="subtle"
-                size="sm"
-              />
               <span
                 class="truncate font-mono text-13 font-medium text-highlighted"
                 :class="item.status === Status.StatusRemoved && 'text-dimmed line-through decoration-error'"
                 >{{ item.name }}</span
               >
               <span
-                v-if="item.status !== Status.$zero"
-                class="inline-flex shrink-0 items-center gap-1.5 text-11 font-medium"
-                :class="MARKS[item.status].text"
+                v-if="item.status"
+                class="inline-flex shrink-0 items-center gap-1.5 text-11 font-medium capitalize"
+                :class="MARKS[item.status]?.color"
               >
-                <span class="size-1.5 rounded-full" :class="MARKS[item.status].dot" />
-                {{ MARKS[item.status].label }}
+                <span class="size-1.5 rounded-full bg-current" />
+                {{ MARKS[item.status]?.count }}
                 <span class="font-mono font-normal text-dimmed">{{ item.version }}</span>
               </span>
             </span>
             <span v-if="item.blurb && item.name !== open" class="truncate text-12 text-dimmed">{{ item.blurb }}</span>
           </button>
           <template v-if="item.name === open">
-            <div class="flex flex-col gap-2 border-t border-default px-3.5 py-2.5">
-              <p v-if="card?.blurb || item.blurb" class="text-13 text-toned">{{ card?.blurb || item.blurb }}</p>
-              <div v-if="card?.rows?.length" class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 text-12">
-                <template v-for="row in card.rows" :key="row.label">
-                  <span class="text-dimmed">{{ row.label }}</span>
-                  <span class="text-toned">{{ row.text }}</span>
-                </template>
-              </div>
+            <HoverCard v-if="card" :card="card" class="border-t border-default" />
+            <div v-if="item.defined || item.usage" class="flex flex-col gap-2 border-t border-default px-3.5 py-2.5">
               <SourceLink v-if="item.defined" :place="item.defined.place" :line="item.defined.line" class="text-11" />
               <ScriptSnippet
                 v-if="item.usage"
                 :text="item.usage"
                 class="rounded-md border border-default px-2.5 pb-1.5"
               />
-            </div>
-            <div v-if="card?.history?.length" class="flex flex-col gap-1.5 border-t border-default px-3.5 py-2.5">
-              <span class="text-11 font-medium text-dimmed">History</span>
-              <div class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-12 text-toned">
-                <template v-for="patch in card.history" :key="patch.version">
-                  <span class="font-mono text-11 text-dimmed">{{ patch.version }}</span>
-                  <span>{{ describeChange(patch) }}</span>
-                </template>
-              </div>
-            </div>
-            <div v-if="card?.sites?.length" class="flex flex-col gap-1.5 border-t border-default px-3.5 py-2.5">
-              <span class="text-11 font-medium text-dimmed">In your mods</span>
-              <SourceLink
-                v-for="site in card.sites.slice(0, SITES_SHOWN)"
-                :key="`${site.place.key}:${site.line}`"
-                :place="site.place"
-                :line="site.line"
-                class="text-11"
-              >
-                <template #leading>
-                  <OriginChip :origin="site.place.origin" dot />
-                  <span class="max-w-32 truncate font-sans text-dimmed">{{
-                    workspace.originName(site.place.origin)
-                  }}</span>
-                </template>
-              </SourceLink>
-              <span v-if="card.sites.length > SITES_SHOWN" class="text-11 text-dimmed"
-                >+{{ card.sites.length - SITES_SHOWN }} more</span
-              >
             </div>
           </template>
         </div>
@@ -244,25 +183,24 @@ function describeChange(patch: Patch): string {
         </button>
       </nav>
     </div>
-    <p v-else class="flex-1 px-3.5 py-3 text-12 text-dimmed">
-      {{
-        !rows
-          ? "Reading the game's dumps…"
-          : start && !marked
-            ? `No ${label} changed.`
-            : "Nothing in the lexicon matches."
-      }}
-    </p>
+    <p v-else-if="!rows" class="flex-1 px-3.5 py-3 text-12 text-dimmed">Reading the game's dumps…</p>
+    <UEmpty
+      v-else
+      icon="i-lucide-book-a"
+      :title="start && !rows.length ? `No ${label} changed` : 'Nothing in the lexicon matches'"
+      size="sm"
+      class="m-auto"
+    />
     <div v-if="start" class="flex shrink-0 items-center gap-3 border-t border-default px-3 py-1.5 text-11 text-dimmed">
-      <span>Since {{ start }}, {{ describeCount(marked) }} of the {{ label }} changed</span>
+      <span>Since {{ start }}, {{ describeCount(rows?.length ?? 0) }} of the {{ label }} changed</span>
       <span class="grow" />
       <span
         v-for="mark in Object.values(MARKS)"
-        :key="mark.label"
-        class="inline-flex items-center gap-1.5 font-medium"
-        :class="mark.text"
+        :key="mark.count"
+        class="inline-flex items-center gap-1.5 font-medium capitalize"
+        :class="mark.color"
       >
-        <span class="size-1.5 rounded-full" :class="mark.dot" />{{ mark.label }}
+        <span class="size-1.5 rounded-full bg-current" />{{ mark.count }}
       </span>
     </div>
   </div>

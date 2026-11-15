@@ -230,7 +230,9 @@ type Report struct {
 	Mods []Group `json:"mods"`
 
 	// Own counts the findings of the user's own mods, external ones left out.
-	Own Tally `json:"own"`
+	// OwnPatch counts the patch question's findings of the same mods.
+	Own      Tally `json:"own"`
+	OwnPatch Tally `json:"ownPatch"`
 
 	CheckedAt time.Time `json:"checkedAt"`
 

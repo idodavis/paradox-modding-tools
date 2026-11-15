@@ -7,6 +7,7 @@ import type { DropdownMenuItem, ToastProps } from "@nuxt/ui";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useEventBus, useIntervalFn } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
+import { keyBy } from "es-toolkit";
 import { computed, onScopeDispose, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -31,6 +32,7 @@ import {
 import { describeLimit, useAgentStore } from "../stores/agent";
 import { useCompletionStore } from "../stores/completion";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
+import DocumentView from "../ui/DocumentView.vue";
 import HowModWorks from "../ui/HowModWorks.vue";
 import ScriptDocsGuide from "../ui/ScriptDocsGuide.vue";
 import { STATUS_ITEM } from "../ui/StatusFacts.vue";
@@ -90,6 +92,7 @@ const {
 } = useQuery({ ...updateQuery, staleTime: CHECK_INTERVAL, enabled: THIS_WINDOW === "main" });
 if (THIS_WINDOW === "main") useIntervalFn(() => void checkUpdate(), CHECK_INTERVAL);
 const { data: releases, error: listError, refetch: refetchReleases } = useQuery({ ...releasesQuery, enabled: false });
+const releasesById = computed(() => keyBy(releases.value ?? [], (release) => release.id));
 const { data: crashed } = useQuery(crashedQuery);
 const { data: configFault } = useQuery(configFaultQuery);
 const { data: levels } = useQuery(levelsQuery);
@@ -342,7 +345,7 @@ const LAUNCH = findCommand("game.launch");
     <ScriptDocsGuide v-if="guiding" v-model:open="guiding" :game="state?.game?.id ?? ''" />
     <UModal
       title="Releases"
-      :ui="{ content: 'h-160 sm:max-w-3xl' }"
+      :ui="{ content: 'h-160 sm:max-w-3xl', body: 'flex min-h-0 flex-col p-0 sm:p-0' }"
       @update:open="(opened) => opened && refetchReleases()"
     >
       <UTooltip :text="update ? 'Releases and updates: a newer version is out' : 'Releases and updates'">
@@ -352,28 +355,27 @@ const LAUNCH = findCommand("game.launch");
         </button>
       </UTooltip>
       <template #body>
-        <div class="flex flex-col gap-5">
-          <p v-if="listError" class="text-13 text-error">
-            The releases could not be read. {{ toSentence(listError.message) }}
-          </p>
-          <section v-for="release in releases ?? []" :key="release.version" class="flex flex-col gap-1.5">
-            <div class="flex items-center gap-2">
-              <h3 class="text-13 font-semibold text-highlighted">
-                {{ release.version }} <span class="font-normal text-dimmed">{{ day(release.date) }}</span>
-              </h3>
-              <UBadge v-if="release.running" label="Running" color="primary" variant="subtle" size="sm" />
+        <p v-if="listError" class="px-4 pt-3 text-13 text-error">
+          The releases could not be read. {{ toSentence(listError.message) }}
+        </p>
+        <DocumentView :html="(releases ?? []).map((release) => release.notes).join('')" save-id="releases">
+          <template #entry="{ id }">
+            <UBadge v-if="releasesById[id]?.running" label="Running" color="primary" variant="subtle" size="sm" />
+          </template>
+          <!-- The rail's entry is a button, so the install button sits here. -->
+          <template #section="{ id }">
+            <div v-if="releasesById[id]" class="flex items-center gap-2 pb-2 text-12 text-dimmed">
+              {{ day(releasesById[id].date) }}
               <UButton
-                v-else-if="release.installable"
+                v-if="!releasesById[id].running && releasesById[id].installable"
                 label="Install this version"
                 size="xs"
                 variant="soft"
-                class="ml-auto"
-                @click="installVersion(release)"
+                @click="installVersion(releasesById[id])"
               />
             </div>
-            <UEditor :model-value="release.notes" content-type="markdown" :editable="false" :mention="false" />
-          </section>
-        </div>
+          </template>
+        </DocumentView>
       </template>
       <template #footer>
         <span class="grow text-12 text-error">

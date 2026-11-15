@@ -13,7 +13,7 @@ reads that workspace. Each page also has its own Help, in the top bar's gear men
   - [IDE](#ide)
   - [Event Graph](#event-graph)
   - [Health](#health)
-  - [Patch Notes](#patch-notes)
+  - [Patch Center](#patch-center)
   - [Publish](#publish)
   - [Settings](#settings)
   - [The IDE's parts](#the-ides-parts)
@@ -142,12 +142,27 @@ how things are.
 - **The game log** lists the lines from your mods apart from the game's own. Open it in the IDE, or let it follow the
   log while you play.
 
-## Patch Notes
+## Patch Center
 
-![Patch Notes](images/patch-notes.png)
+![Patch Center](images/patch-notes.png)
 
-The game's patch notes, from its wiki, for the game of the open workspace. Pick a version to read it. A dot marks a
-note with a Modding section. Ctrl F finds in the note shown. PMT reads the notes when it starts and keeps them.
+What the game's patches changed, for the game of the open workspace, and what that means for your mods.
+
+- **Your mods** counts, for each mod, what changed between the version it is made for and the game's version now:
+  names the game renamed or removed that the mod still uses, game files that changed under the mod's copies, and
+  the notes that name what the mod holds. Open a name where the mod uses it, or compare a copy with the game's file.
+  The same findings show in the editor and in Health.
+- **Merge** carries the game's changes into your copy of a game file. PMT keeps the game's files your mods replace
+  each time the game updates, so a merge is offered for the updates PMT has seen.
+- A mod that names no game version asks which version to compare from. **Mark as made for** writes the game's
+  version into the mod once you have brought it up to date. Mods that are not yours are listed and never changed.
+- **A version** shows its patch notes from the wiki, the Modding Co-op's digest, the script keys and data functions
+  it changed, and the game files it changed. The digest marks the mods each article touches, and **Only what
+  touches my mods** hides the rest. Ctrl F finds in what is shown.
+
+The notes come from the game's wiki. What each version of Victoria 3 and EU5 changed comes from their Modding
+Co-op's digests. For CK3, and for a version with no digest, PMT ships what it compared itself, and compares each new
+version when the game updates. PMT reads all of it when it starts and keeps it.
 
 ## Publish
 
@@ -244,7 +259,8 @@ Diffs open as tabs. Merge conflicts are resolved in the editor. PMT reimplements
 
 The Wiki button at the end of the editor's tabs (Ctrl Shift W) opens the wiki's pages for the file you are in. It
 can follow the open file. It also holds the **Lexicon**: the game's triggers, effects and scopes, each with where the
-game's own files use it. Look a name up from the editor's right-click menu.
+game's own files use it. Look a name up from the editor's right-click menu. **Changed since** lists only what the
+game added, changed or removed after a version.
 
 ### Terminal
 
@@ -331,7 +347,7 @@ What EU5 has:
 - The editor, with hover, completion, go to and rename, over EU5's three stages (`in_game`, `main_menu` and
   `loading_screen`).
 - Entry modes such as `INJECT:` and `REPLACE:` before a name, which the editor knows and checks.
-- The Event Graph, Health, Patch Notes, the Visual view and Publish.
+- The Event Graph, Health, the Patch Center, the Visual view and Publish.
 
 EU5 has no Linux build. On Linux it runs through Proton, PMT finds its documents folder in Steam's Proton folder, and
 PMT cannot start the game for you. See [Each system](#each-system).

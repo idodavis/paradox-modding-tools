@@ -153,21 +153,28 @@ func (s *Service) checkCode(id string) error {
 	return nil
 }
 
-// checkPatch returns an error, naming the newest versions, if the wiki has no
-// notes of that version.
+// checkPatch returns an error, naming the newest versions, if neither the
+// game's patches nor the wiki's notes hold that version. The Patch Center
+// lists both.
 func (s *Service) checkPatch(version string) error {
-	notes, err := s.Wiki.ListNotes()
+	ws, err := s.Workspace.Session()
 	if err != nil {
 		return err
 	}
 
-	versions := make([]string, 0, len(notes))
+	var versions []string
+	for _, patch := range slices.Backward(*ws.Patches.Load()) {
+		versions = append(versions, patch.Version)
+	}
+
+	// The wiki has no notes until a refresh has fetched its listing.
+	notes, _ := s.Wiki.ListNotes()
 	for _, note := range notes {
 		versions = append(versions, note.Version)
 	}
 
 	if !slices.Contains(versions, version) {
-		return fmt.Errorf("no patch notes of %q; the newest are %s", version, strings.Join(versions[:min(len(versions), 8)], ", "))
+		return fmt.Errorf("no version %q; the newest are %s", version, strings.Join(versions[:min(len(versions), 8)], ", "))
 	}
 
 	return nil

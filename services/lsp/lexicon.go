@@ -13,6 +13,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/internal/patch"
 	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
@@ -29,8 +30,8 @@ type LexiconRow struct {
 	Target string   `json:"target,omitempty"`
 
 	// Status is what the latest patch of the range did to the key, and
-	// Version is that patch's version. Both are "" for a key the range did
-	// not change, and for a lexicon built with no range.
+	// Version is that patch's version. Both are "" in a lexicon built with no
+	// range.
 	Status  schema.Status `json:"status"`
 	Version string        `json:"version"`
 
@@ -43,23 +44,35 @@ type LexiconRow struct {
 // there holds every patch.
 const beforeAll = "0"
 
-// ListClasses returns the lexicon's classes in the order its tabs show them.
-func (s *Service) ListClasses() []Class { return Classes }
+// ListClasses returns the lexicon's classes in the order its tabs show them,
+// each with the database that holds its keys in the open workspace's game.
+func (s *Service) ListClasses() []Class {
+	classes := slices.Clone(Classes)
+	if ws, err := s.Workspace.Session(); err == nil {
+		for position, class := range classes {
+			classes[position] = class.resolve(ws.Schema)
+		}
+	}
+
+	return classes
+}
 
 // BuildLexicon returns the rows of a class, sorted by name, scripted effects
-// and triggers included. With a start and an end version, each row also says
-// how the patches after the start, up to the end, last changed its key, and
-// there is a row for each key they removed that the game no longer has. It
-// returns an error if no workspace is open or the class is unknown.
+// and triggers included. With a start version, it returns only the rows of the
+// keys that the patches after the start, up to the end version, changed. Each
+// says how they last changed it, and a key the game no longer has is among
+// them. It returns an error if no workspace is open or the class is unknown.
 func (s *Service) BuildLexicon(id, start, end string) ([]LexiconRow, error) {
 	ws, class, err := s.loadClass(id)
 	if err != nil {
 		return nil, err
 	}
 
-	database := class.resolveDatabase(ws.Schema)
-	rows := listRows(ws, ws.Mods.Load(), class, database)
-	rows = markChanges(rows, class, database, ws.Patches.Load().ListRange(start, end))
+	rows := listRows(ws, ws.Mods.Load(), class)
+	if start != "" {
+		rows = listChanged(rows, class, ws.Patches.Load().ListRange(start, end))
+	}
+
 	slices.SortFunc(rows, func(first, second LexiconRow) int {
 		return cmp.Or(strings.Compare(strings.ToLower(first.Name), strings.ToLower(second.Name)), strings.Compare(first.Name, second.Name))
 	})
@@ -68,8 +81,8 @@ func (s *Service) BuildLexicon(id, start, end string) ([]LexiconRow, error) {
 }
 
 // DescribeKey returns the card of one key of a lexicon class: what hover says
-// of the key, the patches that changed it, and where the mods use it. A key
-// the game no longer has gets a card only if a patch removed it. It returns an
+// of the key, what each patch did to it, and where the mods use it. A key
+// the game no longer has gets a card only if a patch changed it. It returns an
 // error if no workspace is open, the class is unknown, or the key is neither
 // in the game nor in a patch.
 func (s *Service) DescribeKey(id, key string) (Card, error) {
@@ -78,41 +91,56 @@ func (s *Service) DescribeKey(id, key string) (Card, error) {
 		return Card{}, err
 	}
 
-	database, mods := class.resolveDatabase(ws.Schema), ws.Mods.Load()
-	card := Card{Title: key, History: listHistory(ws.Patches.Load(), ws.Schema.Version, database, key), Stale: ws.Schema.Dumps.Stale}
-	switch {
-	case class.Functions:
+	card := Card{Title: key, Stale: ws.Schema.Dumps.Stale}
+	if class.Database == lang.DataFunctions {
 		typeName, functionName, _ := strings.Cut(key, ".")
 		if function, ok := ws.Schema.DataTypes[typeName].Functions[functionName]; ok {
 			describeFunctionFacts(&card, function)
 		}
-
-	default:
-		if definition := ws.Schema.LookupDefinition(database, key); definition != nil {
-			describeDefinition(&card, class, definition)
-			if isCommand(database) && definition.Target != "" {
-				card.add(rowTarget, describeScope(definition.Target))
-			}
+	} else if definition := ws.Schema.LookupDefinition(class.Database, key); definition != nil {
+		describeDefinition(&card, class, definition)
+		if isCommand(class.Database) && definition.Target != "" {
+			card.add(rowTarget, describeScope(definition.Target))
 		}
 	}
 
-	if card.What == "" && len(card.History) == 0 {
+	// A key the game no longer has takes the entry of its last change.
+	lastBlurb := ""
+	for version, change := range ws.Patches.Load().ListRange(beforeAll, ws.Schema.Version).Changes(class.Database) {
+		if change.Key == key {
+			card.History = append(card.History, CardRow{Label: version, Text: describeChange(change)})
+			lastBlurb = change.Blurb
+		}
+	}
+
+	switch {
+	case card.What == "" && len(card.History) == 0:
 		return Card{}, fmt.Errorf("%q is not a key of the %s lexicon", key, class.ID)
+	case card.What == "":
+		card.What, card.Blurb = class.ID, lastBlurb
 	}
 
-	if card.What == "" {
-		// a removed key has the entry its last patch took away
-		card.What, card.Blurb = class.ID, card.History[len(card.History)-1].DumpChanges[0].Blurb
-	}
-
-	if database != "" {
-		card.Sites = MakeSites(ws, mods, listOwnUses(mods, database, key), nil)
+	if mods := ws.Mods.Load(); class.Database != "" {
+		card.Sites = MakeSites(ws, mods, listOwnUses(mods, class.Database, key), nil)
 	}
 
 	return card, nil
 }
 
-// loadClass returns the open session and the lexicon class with the given id.
+// describeChange says what a patch did to a key of the dumps.
+func describeChange(change schema.KeyChange) string {
+	switch change.Status {
+	case schema.StatusAdded:
+		return "Added."
+	case schema.StatusRemoved:
+		return "Removed."
+	}
+
+	return "Changed: " + strings.Join(change.Differences, ", ") + "."
+}
+
+// loadClass returns the open session and the lexicon class with the given id,
+// with its database in the session's game.
 func (s *Service) loadClass(id string) (*workspace.Session, Class, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -124,70 +152,63 @@ func (s *Service) loadClass(id string) (*workspace.Session, Class, error) {
 		return nil, Class{}, fmt.Errorf("%q is not a lexicon class", id)
 	}
 
-	return ws, Classes[position], nil
+	return ws, Classes[position].resolve(ws.Schema), nil
 }
 
-// resolveDatabase returns the database that holds the class's keys in a
-// language. It is "" for the functions, and for a game with no database of
-// the class.
-func (c Class) resolveDatabase(language *lang.Schema) string {
+// resolve returns the class with the database that holds its keys in a
+// language. The on_actions' is the language's own, "" for a game with none.
+func (c Class) resolve(language *lang.Schema) Class {
 	if c.OnActions {
-		return language.OnActions
+		c.Database = language.OnActions
 	}
 
-	return c.Database
+	return c
 }
 
 // listRows returns a row for each key a class lists, then a row for each
 // scripted definition that acts as one of its commands.
-func listRows(ws *workspace.Session, mods *index.Index, class Class, database string) []LexiconRow {
-	if class.Functions {
-		return listFunctions(ws.Schema, class.ID)
+func listRows(ws *workspace.Session, mods *index.Index, class Class) []LexiconRow {
+	var rows []LexiconRow
+	if class.Database == lang.DataFunctions {
+		for _, dataType := range ws.Schema.DataTypes {
+			for _, function := range dataType.Functions {
+				rows = append(rows, LexiconRow{
+					Class: class.ID, Name: dataType.Name + "." + function.Name, Blurb: function.Blurb,
+					Target: lang.ReturnType(function),
+				})
+			}
+		}
+
+		return rows
 	}
 
-	var rows []LexiconRow
-	for _, key := range ws.Schema.ListKeys(database) {
-		definition := ws.Schema.LookupDefinition(database, key)
+	for _, key := range ws.Schema.ListKeys(class.Database) {
+		definition := ws.Schema.LookupDefinition(class.Database, key)
 		rows = append(rows, LexiconRow{
 			Class: class.ID, Name: key, Blurb: definition.Blurb, Usage: definition.Usage, Scopes: definition.Scopes,
 			Target: definition.Target,
 		})
 	}
 
-	if database == "" {
+	if class.Database == "" {
 		return rows
 	}
 
-	return slices.Concat(rows, listScripted(ws, mods, class.ID, database))
-}
-
-// listFunctions returns a row for each function of the data types, named
-// Type.Function.
-func listFunctions(language *lang.Schema, class string) []LexiconRow {
-	var rows []LexiconRow
-	for _, dataType := range language.DataTypes {
-		for _, function := range dataType.Functions {
-			rows = append(rows, LexiconRow{
-				Class: class, Name: dataType.Name + "." + function.Name, Blurb: function.Blurb, Target: lang.ReturnType(function),
-			})
-		}
-	}
-
-	return rows
+	return slices.Concat(rows, listScripted(ws, mods, class))
 }
 
 // listScripted returns a row for each scripted definition that acts as a
-// command of a database.
-func listScripted(ws *workspace.Session, mods *index.Index, class, database string) []LexiconRow {
+// command of a class's database.
+func listScripted(ws *workspace.Session, mods *index.Index, class Class) []LexiconRow {
 	var rows []LexiconRow
 	for _, called := range lang.Called {
 		owner := ws.Schema.Databases[called]
-		if owner == nil || owner.Declaration.Command() != database {
+		if owner == nil || owner.Declaration.Command() != class.Database {
 			continue
 		}
 
 		for _, winner := range mods.ListKept(ws.Schema, called) {
-			rows = append(rows, makeScripted(ws, mods, class, mods.ToReference(winner.Site), winner.Site))
+			rows = append(rows, makeScripted(ws, mods, class.ID, mods.ToReference(winner.Site), winner.Site))
 		}
 	}
 
@@ -216,55 +237,28 @@ func makeScripted(ws *workspace.Session, mods *index.Index, class string, refere
 	return LexiconRow{Class: class, Name: reference.Name, Usage: usage, Defined: &defined}
 }
 
-// markChanges gives each row the status and version of its key's latest
-// change in the patches, and adds a row for each key the patches removed that
-// no row has. The added rows hold the removed entry's blurb.
-func markChanges(rows []LexiconRow, class Class, database string, patches []workspace.Patch) []LexiconRow {
+// listChanged returns the rows of the keys the patches changed, each with the
+// status and version of its key's latest change. A key they changed that no
+// row has, since the game no longer has it, gets a row with the blurb of that
+// change.
+func listChanged(rows []LexiconRow, class Class, patches patch.Patches) []LexiconRow {
 	latest := map[string]LexiconRow{}
-	for _, patch := range patches {
-		for _, change := range patch.DumpChanges {
-			if change.Database == database {
-				latest[change.Key] = LexiconRow{
-					Class: class.ID, Name: change.Key, Blurb: change.Blurb, Status: change.Status, Version: patch.Version,
-				}
-			}
+	for version, change := range patches.Changes(class.Database) {
+		latest[change.Key] = LexiconRow{
+			Class: class.ID, Name: change.Key, Blurb: change.Blurb, Status: change.Status, Version: version,
 		}
 	}
 
-	for position, row := range rows {
+	var changed []LexiconRow
+	for _, row := range rows {
 		if change, ok := latest[row.Name]; ok {
-			rows[position].Status, rows[position].Version = change.Status, change.Version
+			row.Status, row.Version = change.Status, change.Version
+			changed = append(changed, row)
 			delete(latest, row.Name)
 		}
 	}
 
-	for _, change := range latest {
-		if change.Status == schema.StatusRemoved {
-			rows = append(rows, change)
-		}
-	}
-
-	return rows
-}
-
-// listHistory returns the patches up to a version that changed a key of a
-// database, oldest first. Each holds only that key's change.
-func listHistory(patches *workspace.Patches, end, database, key string) []workspace.Patch {
-	var history []workspace.Patch
-	for _, patch := range patches.ListRange(beforeAll, end) {
-		position := slices.IndexFunc(patch.DumpChanges, func(change schema.DumpChange) bool {
-			return change.Database == database && change.Key == key
-		})
-		if position < 0 {
-			continue
-		}
-
-		history = append(history, workspace.Patch{
-			Version: patch.Version, Base: patch.Base, Local: patch.Local, DumpChanges: []schema.DumpChange{patch.DumpChanges[position]},
-		})
-	}
-
-	return history
+	return slices.AppendSeq(changed, maps.Values(latest))
 }
 
 // listOwnUses returns the references to a key in the mods' own files, not the

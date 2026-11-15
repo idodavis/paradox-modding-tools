@@ -1,33 +1,143 @@
-// digest.go reads a digest repository into a game's patches.
+// digest.go downloads a digest repository from GitHub and reads its versions
+// into a game's patches.
 
 package patch
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"path"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/internal/patch"
 	"paradox-modding-tools/internal/schema"
-	"paradox-modding-tools/services/workspace"
+	"paradox-modding-tools/services/app"
 )
 
-// otherFolders are the top folders of a digest that hold no version: its own
-// copy of the newest dumps, its pictures and its scripts.
-var otherFolders = []string{"documentation", "current_docs", "image", "script"}
+const (
+	headTimeout = 30 * time.Second
+	zipTimeout  = 5 * time.Minute
 
-// readArchive reads every version of a digest into a patch, oldest first, and
-// returns the dumps of each version an install is on, by the install's version.
-// It compares a version's dumps with its base's, and reads past a file it
-// cannot read: that is joined into the error it returns beside the patches.
-func readArchive(source archive, language *lang.Schema, installs []string) (workspace.Patches, map[string]*schema.Dumps, error) {
-	var patches workspace.Patches
+	// fileLimit is the most a file of the zip may hold when read. A digest's
+	// largest file is a few megabytes.
+	fileLimit = 64 << 20
+)
+
+// archive is the files of a digest's zip, by path from the digest's own
+// folder. Nothing is written to disk, so a path in the zip is only ever a key.
+type archive map[string]*zip.File
+
+// fetchHead returns the id of the newest commit of a GitHub repository, given
+// as owner/name. It is one small request, so an unchanged digest costs no
+// download.
+func fetchHead(digests string) (string, error) {
+	body, err := app.FetchURL("https://api.github.com/repos/"+digests+"/commits/HEAD", headTimeout)
+	if err != nil {
+		return "", err
+	}
+
+	var commit struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.Unmarshal(body, &commit); err != nil || commit.SHA == "" {
+		return "", errors.Join(fmt.Errorf("GitHub gave no commit for %s", digests), err)
+	}
+
+	return commit.SHA, nil
+}
+
+// fetchArchive downloads the newest zip of a GitHub repository, given as
+// owner/name, and opens it in memory. It returns an error if the zip does not
+// open or its files are not all in one folder, as GitHub's zips are.
+func fetchArchive(digests string) (archive, error) {
+	body, err := app.FetchURL("https://codeload.github.com/"+digests+"/zip/HEAD", zipTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return nil, fmt.Errorf("the zip of %s does not open: %w", digests, err)
+	}
+
+	top := files.FindZipFolder(reader)
+	if top == "" {
+		return nil, fmt.Errorf("the zip of %s has no single folder of files", digests)
+	}
+
+	contents := archive{}
+	for _, entry := range reader.File {
+		if !entry.FileInfo().IsDir() {
+			contents[strings.TrimPrefix(entry.Name, top+"/")] = entry
+		}
+	}
+
+	return contents, nil
+}
+
+// read returns the text of a file of the archive, which it decodes as the
+// game's own files are. It returns an error for a file the archive does not
+// have, or one that does not read or is over fileLimit.
+func (a archive) read(file string) (string, error) {
+	entry, ok := a[file]
+	if !ok {
+		return "", fmt.Errorf("the digest has no %s", file)
+	}
+
+	reader, err := entry.Open()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", file, err)
+	}
+
+	content, err := io.ReadAll(io.LimitReader(reader, fileLimit+1))
+	if err = errors.Join(err, reader.Close()); err != nil {
+		return "", fmt.Errorf("%s: %w", file, err)
+	}
+
+	if len(content) > fileLimit {
+		return "", fmt.Errorf("%s is over %d bytes", file, fileLimit)
+	}
+
+	return files.DecodeText(content).Text, nil
+}
+
+// listFolder returns the files directly in a folder of the archive, sorted and
+// without the folder.
+func (a archive) listFolder(folder string) []string {
+	var listing []string
+	for file := range a {
+		if path.Dir(file) == folder {
+			listing = append(listing, path.Base(file))
+		}
+	}
+
+	slices.Sort(listing)
+
+	return listing
+}
+
+// readArchive reads every version of a digest, given as owner/name, into a
+// patch, oldest first, and returns the dumps of each version an install is
+// on, by the install's version. It compares a version's dumps with its base's,
+// and reads past a file it cannot read: that is joined into the error it
+// returns beside the patches.
+func readArchive(
+	source archive, digests string, language *lang.Schema, installs []string,
+) (patch.Patches, map[string]*schema.Dumps, error) {
+	var patches patch.Patches
 	var skipped error
 	var baseDumps *schema.Dumps
-	kept := map[string]*schema.Dumps{}
+	installDumps := map[string]*schema.Dumps{}
 	latest := map[string]string{}
 
 	for _, folder := range source.listVersions() {
@@ -36,15 +146,20 @@ func readArchive(source archive, language *lang.Schema, installs []string) (work
 		dumps := schema.ParseDumps(latest)
 		dumps.Version = version
 
-		patch, err := readPatch(source, folder, patches.ResolveBase(version), language)
-		skipped = errors.Join(skipped, err)
-		if patch.Base != "" {
-			patch.DumpChanges = schema.CompareDumps(baseDumps, dumps, language)
+		gameFiles, filesErr := readGameFiles(source, folder)
+		articles, renames, notesErr := readNotes(source, digests, folder, language)
+		skipped = errors.Join(skipped, filesErr, notesErr)
+		gamePatch := patch.Patch{
+			Version: version, Base: patches.ResolveBase(version), GameFiles: gameFiles, KeyRenames: renames,
+			Articles: articles,
+		}
+		if gamePatch.Base != "" {
+			gamePatch.DumpChanges = schema.CompareDumps(baseDumps, dumps, language)
 		}
 
 		for _, install := range installs {
 			if game.IsInstalled(version, install) {
-				kept[install] = toShipped(dumps)
+				installDumps[install] = toShipped(dumps)
 			}
 		}
 
@@ -52,11 +167,15 @@ func readArchive(source archive, language *lang.Schema, installs []string) (work
 			baseDumps = dumps
 		}
 
-		patches = append(patches, patch)
+		patches = append(patches, gamePatch)
 	}
 
-	return patches, kept, skipped
+	return patches, installDumps, skipped
 }
+
+// otherFolders are the top folders of a digest that hold no version: its own
+// copy of the newest dumps, its pictures and its scripts.
+var otherFolders = []string{"documentation", "current_docs", "image", "script"}
 
 // listVersions returns the folder of each version of the digest, oldest first.
 // A version's folder is the one that holds a docs folder, whether it is flat,
@@ -114,31 +233,20 @@ func toShipped(dumps *schema.Dumps) *schema.Dumps {
 }
 
 // gitStatuses are the letters a digest's list of changed files writes before a
-// file, and the status of the game file each stands for.
-var gitStatuses = map[string]string{"M": workspace.FileModified, "A": workspace.FileAdded, "D": workspace.FileDeleted}
+// file, and what each says the version did to the file.
+var gitStatuses = map[string]schema.Status{
+	"M": schema.StatusChanged, "A": schema.StatusAdded, "D": schema.StatusRemoved,
+}
 
 // changedLine is a line of changes_files.md, as " - **M** game/common/x.txt".
 var changedLine = regexp.MustCompile(`^ - \*\*([A-Z])\*\* (.+)$`)
 
-// readPatch reads what a version's folder says about the version: its game
-// files and its written notes. The patch has no dump changes, which the caller
-// compares. It reads past a file it cannot read, and returns what it skipped.
-func readPatch(source archive, folder, base string, language *lang.Schema) (workspace.Patch, error) {
-	gameFiles, err := readGameFiles(source, folder)
-	articles, renames, notesErr := readNotes(source, folder, language)
-	patch := workspace.Patch{
-		Version: path.Base(folder), Base: base, GameFiles: gameFiles, KeyRenames: renames, Articles: articles,
-	}
-
-	return patch, errors.Join(err, notesErr)
-}
-
-// readGameFiles reads the game files a version's changes_files.md lists. A file
-// outside the game's own folder, as caligula_rev.txt is, is left out. It
-// returns none for a version that has no such list.
-func readGameFiles(source archive, folder string) ([]workspace.GameFile, error) {
+// readGameFiles reads the game files a version's changes_files.md lists,
+// sorted by path. A file outside the game's own folder, as caligula_rev.txt
+// is, is left out. It returns none for a version that has no such list.
+func readGameFiles(source archive, folder string) ([]patch.GameFile, error) {
 	file := folder + "/changes_files.md"
-	if !source.holds(file) {
+	if _, ok := source[file]; !ok {
 		return nil, nil
 	}
 
@@ -147,7 +255,7 @@ func readGameFiles(source archive, folder string) ([]workspace.GameFile, error) 
 		return nil, err
 	}
 
-	var changed []workspace.GameFile
+	var changed []patch.GameFile
 	for line := range strings.Lines(text) {
 		match := changedLine.FindStringSubmatch(strings.TrimRight(line, "\r\n"))
 		if match == nil {
@@ -156,9 +264,11 @@ func readGameFiles(source archive, folder string) ([]workspace.GameFile, error) 
 
 		rel, inGame := strings.CutPrefix(match[2], "game/")
 		if status, known := gitStatuses[match[1]]; inGame && known {
-			changed = append(changed, workspace.GameFile{Rel: rel, Status: status})
+			changed = append(changed, patch.GameFile{Rel: rel, Status: status})
 		}
 	}
+
+	slices.SortFunc(changed, patch.CompareFiles)
 
 	return changed, nil
 }

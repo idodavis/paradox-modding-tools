@@ -44,11 +44,10 @@ cannot be fetched does not stop the others; their errors are joined. `ReadPage` 
 
 ## Sanitizing
 
-`Sanitize` strips a page's HTML down to what the article pane shows. The wiki's own chrome, citations and pictures are
-dropped, and so are the See also, References, External links and Further reading sections. The scripting tools section
-goes last, and a table of more than two rows is folded closed. A link is made absolute against the wiki's address, and
-a link to another page of the wiki carries that page's title as `data-page`. A link keeps its address only if it is a
-web address.
+A page's HTML is cut down to a document by [app](../app/README.md)'s `Sanitize`, the one sanitizer of every document
+the pages show. The wiki gives it its link rule (`Client.resolveLink`): a link is made absolute against the wiki's
+address, a link to another page of the wiki carries that page's title as `data-page`, and a link keeps its address
+only if it is a web address.
 
 ## The pages of a file
 
@@ -66,7 +65,8 @@ and asks again when `wiki:updated` arrives. A file with no page gets an empty li
 A `Note` is one patch's notes page. Its title is `Patch 1.20`, or `Patch 1.20.X` for a minor version's hotfix notes.
 `ListNotes` lists them newest first, by semver, with a minor version's hotfix notes after all of its numbered patches.
 A note's page is read as any other page. Its `Modding` flag says whether it has a Modding section, and it is false for a
-note whose page is not cached.
+note whose page is not cached. `ResolveNote` says which note holds the notes of a game version, as `1.15.X` for
+`1.15.1`, which is how the [patch](../patch/README.md) service pairs each of the game's patches with its note.
 
 ## Files
 
@@ -75,7 +75,6 @@ note whose page is not cached.
 | `wiki.go` | The service: its events, reading a page, listing the notes and refreshing. |
 | `client.go` | The client of one game's wiki, its pages and their cache. |
 | `refresh.go` | The listing of the wiki's categories and the refresh of its pages. |
-| `sanitize.go` | Cutting a page's HTML down to what the pane shows. |
 | `pages.go` | Finding and searching pages, and the facts of a patch note. |
 
 ## Events

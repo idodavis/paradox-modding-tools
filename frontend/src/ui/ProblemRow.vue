@@ -1,9 +1,8 @@
 <!-- One problem as a row with its level's mark, its message and a second line. A long message wraps to two lines. -->
 <script setup lang="ts">
 import { computed } from "vue";
-import { useQuery } from "@pinia/colada";
 
-import { levelsQuery } from "../queries";
+import { useLevels } from "../queries";
 
 const {
   level = "",
@@ -28,8 +27,8 @@ const {
 }>();
 const emit = defineEmits<{ open: [] }>();
 
-const { data: levels } = useQuery(levelsQuery);
-const mark = computed(() => levels.value?.find((row) => row.id === level));
+const { findLevel } = useLevels();
+const mark = computed(() => findLevel(level));
 // a path shortens in its folders so its file name stays whole; any other second line is all "folder"
 const folder = computed(() => (mono ? detail.slice(0, Math.max(detail.lastIndexOf("/"), 0)) : detail));
 const file = computed(() => detail.slice(folder.value.length));

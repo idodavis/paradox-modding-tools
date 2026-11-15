@@ -24,7 +24,7 @@ flowchart LR
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `main.ts`    | The bootstrap: plugins, the one error handler, Monaco's setup, the mount.                                                                                                           |
 | `app/`       | The frame every page sits in: the top bar, the status bar, the command palette, the agent pane, Settings, and the tables the whole app reads (pages, commands, events, the router). |
-| `pages/`     | One folder per page: `library`, `wizard`, `newmod`, `ide`, `graph`, `health`, `notes`, `publish`.                                                                                   |
+| `pages/`     | One folder per page: `library`, `wizard`, `newmod`, `ide`, `graph`, `health`, `patch`, `publish`.                                                                                   |
 | `ui/`        | Components more than one page uses, such as the hover card, a source link or the load order.                                                                                        |
 | `stores/`    | The Pinia stores.                                                                                                                                                                   |
 | `queries.ts` | Every query that reads Go, and the keys that events and mutations refresh.                                                                                                          |

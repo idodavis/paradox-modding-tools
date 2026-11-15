@@ -6,6 +6,5 @@ export {
 } from "./models.js";
 
 export type {
-    DumpChange,
     KeyChange
 } from "./models.js";

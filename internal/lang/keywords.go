@@ -208,6 +208,11 @@ const (
 	DumpModifiers = "dumped_modifiers"
 )
 
+// DataFunctions names the functions of the data types where a key needs a
+// database, as in a patch's changes. The schema has no database of that name:
+// a function's key is its type and name, as Character.GetName.
+const DataFunctions = "data_functions"
+
 // Dumps lists the databases the dumps fill.
 var Dumps = []string{DumpEffects, DumpTriggers, DumpLinks, DumpTypes, DumpModifiers}
 

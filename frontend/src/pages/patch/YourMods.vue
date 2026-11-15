@@ -5,18 +5,18 @@
   that name what it holds.
 -->
 <script setup lang="ts">
-import { computed, reactive, shallowRef } from "vue";
+import { computed, shallowRef } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { groupBy, sortBy, sumBy, uniq } from "es-toolkit";
 
-import type { Impact } from "@services/patch/models";
+import type { Finding } from "@services/health/models";
 import * as patch from "@services/patch/service";
 import type { Place } from "@services/workspace/models";
 import * as workspaceApi from "@services/workspace/service";
 import { compareWithGame } from "../../app/commands";
 import { toast } from "../../lib/feedback";
-import { describeCount, describeRelease, list, plural } from "../../lib/format";
-import { keys, levelsQuery, notesQuery } from "../../queries";
+import { describeCount, list, plural } from "../../lib/format";
+import { keys, notesQuery, reportQuery, stateQuery, tiesQuery, useLevels } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LevelMeter from "../../ui/LevelMeter.vue";
@@ -25,50 +25,49 @@ import SourceLink from "../../ui/SourceLink.vue";
 import VerdictHead from "../../ui/VerdictHead.vue";
 import ImpactBlock from "./ImpactBlock.vue";
 
-const { impacts } = defineProps<{ impacts: Impact[] }>();
-
-/** How many rows a block lists before it offers the rest. */
-const ROWS_SHOWN = 5;
-/** The blocks of names, each of the findings of one check of a card. */
-const NAME_BLOCKS = [
-  { key: "renamed", title: "Names the game renamed" },
-  { key: "removed", title: "Names the game removed" },
-] as const;
+/** The splitter's two panes, the mods and the chosen mod. */
+const PANES = [{ slot: "list", defaultSize: 34, minSize: 20, maxSize: 60 }, { slot: "detail" }];
 
 const workspace = useWorkspaceStore();
 const editor = useEditorStore();
 const cache = useQueryCache();
-const { data: levels } = useQuery(levelsQuery);
+const { data: state } = useQuery(stateQuery);
+const { findLevel } = useLevels();
 const { data: notes } = useQuery(() => ({ ...notesQuery, enabled: workspace.isOpen() }));
+const { data: ties } = useQuery(() => ({ ...tiesQuery, enabled: workspace.isOpen() }));
+const { data: report } = useQuery(() => ({ ...reportQuery(workspace.listModIds()), enabled: workspace.isOpen() }));
 
+/** The game's version, where every mod's patches end. */
+const end = computed(() => state.value?.install.version ?? "");
 /** The releases with known changes, newest first. */
 const releases = computed(() =>
   (notes.value ?? []).filter((note) => note.known && !note.beta).map((note) => note.version),
 );
-const expanded = reactive(new Set<string>());
 const chosen = shallowRef("");
 
 /** The mods, each with what the patches changed under it. */
-const cards = computed(() =>
-  impacts.map((impact) => {
-    const findings = groupBy(impact.findings ?? [], (finding) => finding.code);
-    const ties = (impact.ties ?? []).filter((tie) => tie.article.breaking || tie.article.new);
-    const renamed = findings["patch-renamed"] ?? [];
-    const removed = findings["patch-removed"] ?? [];
-    const files = findings["stale-copy"] ?? [];
-    const breaking = ties.filter((tie) => tie.article.breaking);
-    const added = ties.filter((tie) => tie.article.new);
+const cards = computed(() => {
+  const findings = groupBy(report.value?.patch.findings ?? [], (finding) => finding.origin);
+  const tied = groupBy(ties.value ?? [], (tie) => tie.modId);
+  return workspace.listMods().map((mod) => {
+    const codes = groupBy(findings[mod.id] ?? [], (finding) => finding.code);
+    const renamed = codes["patch-renamed"] ?? [];
+    const removed = codes["patch-removed"] ?? [];
+    const files = codes["stale-copy"] ?? [];
+    const breaking = (tied[mod.id] ?? []).filter((tie) => tie.breaking);
+    const added = (tied[mod.id] ?? []).filter((tie) => tie.new);
     const counts = [
-      { word: "renamed", count: renamed.length, color: levelColor(renamed[0]?.level) },
-      { word: "removed", count: removed.length, color: levelColor(removed[0]?.level) },
-      { word: files.length === 1 ? "file" : "files", count: files.length, color: levelColor(files[0]?.level) },
+      { word: "renamed", count: renamed.length, color: levelColor(renamed[0]) },
+      { word: "removed", count: removed.length, color: levelColor(removed[0]) },
+      { word: files.length === 1 ? "file" : "files", count: files.length, color: levelColor(files[0]) },
       { word: "breaking", count: breaking.length, color: "error" },
       { word: "new", count: added.length, color: "success" },
     ].filter((row) => row.count);
-    const mod = workspace.listMods().find((own) => own.id === impact.modId);
-    return { impact, mod, renamed, removed, files, breaking, added, counts };
-  }),
-);
+    // Made for the game's version, as Go judged it, and nothing changed in it.
+    const quiet = !!mod.start && mod.judged && !counts.length && !codes["supported-version"];
+    return { mod, renamed, removed, files, breaking, added, counts, quiet };
+  });
+});
 type Card = (typeof cards.value)[number];
 
 const ranked = computed(() =>
@@ -78,37 +77,44 @@ const ranked = computed(() =>
     (card) => -card.added.length,
   ]),
 );
-const listed = computed(() => ranked.value.filter((card) => !isQuiet(card)));
-const quiet = computed(() => ranked.value.filter(isQuiet));
-const current = computed(
-  () => ranked.value.find((card) => card.impact.modId === chosen.value) ?? listed.value[0] ?? ranked.value[0],
-);
-/** The blocks of notes that name what the chosen mod holds. */
+/**
+ * The list's groups: the user's mods that have something to do, those that
+ * have nothing, and the mods of others, which are shown and never patched.
+ */
+const groups = computed(() => {
+  const own = ranked.value.filter((card) => !card.mod.external);
+  return [
+    { title: "", cards: own.filter((card) => !card.quiet) },
+    { title: `Made for ${end.value}, nothing to do`, cards: own.filter((card) => card.quiet) },
+    { title: "External mods · not yours to fix", cards: ranked.value.filter((card) => card.mod.external) },
+  ].filter((group) => group.cards.length);
+});
+const current = computed(() => ranked.value.find((card) => card.mod.id === chosen.value) ?? groups.value[0]?.cards[0]);
+/** The user's own mods, which the panels count. */
+const owned = computed(() => cards.value.filter((card) => !card.mod.external));
+/** The chosen mod's blocks of names and of notes that name what it holds. */
+const nameBlocks = computed(() => [
+  { title: "Names the game renamed", findings: current.value?.renamed ?? [] },
+  { title: "Names the game removed", findings: current.value?.removed ?? [] },
+]);
 const tieBlocks = computed(() => [
   {
-    key: "breaking",
-    title: "Breaking changes in what it holds",
-    icon: "i-lucide-triangle-alert",
     tone: "error",
+    icon: "i-lucide-triangle-alert",
+    title: "Breaking changes in what it holds",
     ties: current.value?.breaking ?? [],
   },
-  {
-    key: "new",
-    title: "New features it can use",
-    icon: "i-lucide-star",
-    tone: "success",
-    ties: current.value?.added ?? [],
-  },
+  { tone: "success", icon: "i-lucide-star", title: "New features it can use", ties: current.value?.added ?? [] },
 ]);
 const busiest = computed(() => Math.max(1, ...cards.value.map((card) => sumBy(card.counts, (row) => row.count))));
 const panels = computed(() => {
-  const names = cards.value.flatMap((card) => [...card.renamed, ...card.removed]);
-  const withNames = cards.value.filter((card) => card.renamed.length + card.removed.length);
-  const withFiles = cards.value.filter((card) => card.files.length);
-  const mergeable = sumBy(cards.value, (card) => card.files.filter(canMerge).length);
-  const breaking = sumBy(cards.value, (card) => card.breaking.length);
-  const added = sumBy(cards.value, (card) => card.added.length);
-  const versions = cards.value.flatMap((card) => [...card.breaking, ...card.added].map((tie) => tie.version));
+  const names = owned.value.flatMap((card) => [...card.renamed, ...card.removed]);
+  const withNames = owned.value.filter((card) => card.renamed.length + card.removed.length);
+  const withFiles = owned.value.filter((card) => card.files.length);
+  const mergeable = sumBy(owned.value, (card) => card.files.filter(canMerge).length);
+  const breaking = sumBy(owned.value, (card) => card.breaking.length);
+  const added = sumBy(owned.value, (card) => card.added.length);
+  const versions = owned.value.flatMap((card) => [...card.breaking, ...card.added].map((tie) => tie.version));
   const shownNames = uniq(names.map((finding) => finding.name));
   const nameMore = shownNames.length > 2 ? [`${describeCount(shownNames.length - 2)} more`] : [];
   return [
@@ -118,14 +124,14 @@ const panels = computed(() => {
       color: names.length ? "error" : "success",
       verdict: describeVerdict(
         [
-          { count: sumBy(cards.value, (card) => card.renamed.length), word: "renamed" },
-          { count: sumBy(cards.value, (card) => card.removed.length), word: "removed" },
+          { count: sumBy(owned.value, (card) => card.renamed.length), word: "renamed" },
+          { count: sumBy(owned.value, (card) => card.removed.length), word: "removed" },
         ],
         "Nothing renamed or removed",
       ),
       note: [
         list([...shownNames.slice(0, 2), ...nameMore]),
-        list(withNames.map((card) => workspace.originName(card.impact.modId))),
+        list(withNames.map((card) => workspace.originName(card.mod.id))),
         list(uniq(names.map((finding) => finding.facts?.version ?? ""))),
       ]
         .filter(Boolean)
@@ -134,13 +140,13 @@ const panels = computed(() => {
     {
       icon: "i-lucide-file",
       kicker: "Game files under your copies",
-      color: withFiles.length ? levelColor(withFiles[0]?.files[0]?.level) : "success",
+      color: withFiles.length ? levelColor(withFiles[0]?.files[0]) : "success",
       verdict: describeVerdict(
         [{ count: sumBy(withFiles, (card) => card.files.length), word: "changed" }],
         "Nothing changed",
       ),
       note: [
-        ...withFiles.map((card) => `${workspace.originName(card.impact.modId)} ${describeCount(card.files.length)}`),
+        ...withFiles.map((card) => `${workspace.originName(card.mod.id)} ${describeCount(card.files.length)}`),
         mergeable && `${describeCount(mergeable)} can merge`,
       ]
         .filter(Boolean)
@@ -186,22 +192,14 @@ const { mutate: merge } = useMutation({
   },
 });
 
-/** levelColor returns the Nuxt UI color of a level, or info if unknown. */
-function levelColor(level: string | undefined): string {
-  return levels.value?.find((row) => row.id === level)?.color ?? "info";
-}
-
-/**
- * isQuiet reports whether a mod is made for the game's release and nothing the
- * patches changed is in it.
- */
-function isQuiet({ impact, counts }: Card): boolean {
-  return !counts.length && !!impact.start && describeRelease(impact.start) === describeRelease(impact.end);
+/** levelColor returns the color of a finding's level, or info with none. */
+function levelColor(finding: Finding | undefined): string {
+  return findLevel(finding?.level)?.color ?? "info";
 }
 
 /** canMerge reports whether the game's changes to a file can be merged. */
-function canMerge(file: Card["files"][number]): boolean {
-  return file.facts?.status === "modified" && !!file.facts.base;
+function canMerge(file: Finding): boolean {
+  return !!file.facts?.base;
 }
 
 /**
@@ -219,32 +217,22 @@ function describeVerdict(
 }
 
 /** describeRange returns the versions a mod's patches run from and to. */
-function describeRange({ impact, mod }: Card): string {
-  const start = impact.start || (impact.judged && mod?.descriptor.supportedVersion) || "no version";
-  return `${start} → ${impact.end}`;
+function describeRange({ mod }: Card): string {
+  return `${mod.start || (mod.judged && mod.descriptor.supportedVersion) || "no version"} → ${end.value}`;
 }
 
 /** describeEmpty says why a mod has nothing listed. */
-function describeEmpty({ impact, mod }: Card): string {
-  if (impact.start) return "Nothing the patches changed is in this mod.";
-  if (!impact.judged) return "Pick the version this mod is made for, and PMT shows what the patches changed under it.";
-  return `PMT knows no patch between ${mod?.descriptor.supportedVersion} and ${impact.end} yet.`;
-}
-
-/** listShown returns a block's rows: all once asked for, else the first few. */
-function listShown<Row>(key: string, rows: Row[]): Row[] {
-  return expanded.has(key) ? rows : rows.slice(0, ROWS_SHOWN);
-}
-
-/** hasMore reports whether a block has rows it has not listed. */
-function hasMore(key: string, total: number): boolean {
-  return !expanded.has(key) && total > ROWS_SHOWN;
+function describeEmpty({ mod }: Card): string {
+  if (mod.start) return "Nothing the patches changed is in this mod.";
+  if (mod.external) return "This mod names no game version PMT can read, so PMT cannot count the patches for it.";
+  if (!mod.judged) return "Pick the version this mod is made for, and PMT shows what the patches changed under it.";
+  return `PMT knows no patch between ${mod.descriptor.supportedVersion} and ${end.value} yet.`;
 }
 </script>
 
 <template>
   <div class="flex min-h-0 flex-col gap-3.5 px-6 py-4">
-    <p v-if="!impacts.length" class="text-13 text-dimmed">This workspace has no mods.</p>
+    <UEmpty v-if="!cards.length" icon="i-lucide-layers" title="This workspace has no mods" size="sm" class="m-auto" />
     <template v-else>
       <div class="grid shrink-0 grid-cols-[repeat(auto-fit,minmax(17rem,1fr))] gap-3">
         <section
@@ -261,118 +249,124 @@ function hasMore(key: string, total: number): boolean {
         </section>
       </div>
 
-      <div class="flex min-h-0 flex-1 overflow-hidden rounded-lg border border-default">
-        <section class="flex w-[34%] min-w-64 shrink-0 flex-col overflow-y-auto border-e border-default bg-muted">
-          <div class="flex h-9 shrink-0 items-center gap-2 border-b border-default px-3 text-12 font-semibold">
-            Mods<span class="text-11 font-normal text-dimmed">{{ cards.length }}</span>
-            <span class="grow" />
-            <span class="text-11 font-normal text-dimmed">worst first</span>
-          </div>
-          <button
-            v-for="card in listed"
-            :key="card.impact.modId"
-            type="button"
-            class="flex shrink-0 flex-col gap-1.5 border-b border-default border-s-2 px-3 py-2.5 text-start hover:bg-accented"
-            :class="card === current ? 'border-s-primary bg-(--accent-soft)' : 'border-s-transparent'"
-            @click="chosen = card.impact.modId"
-          >
-            <span class="flex min-w-0 items-center gap-2">
-              <OriginChip :origin="card.impact.modId" dot />
-              <span class="min-w-0 truncate text-13 font-semibold text-highlighted">
-                {{ workspace.originName(card.impact.modId) }}
-              </span>
+      <USplitter
+        :items="PANES"
+        auto-save-id="pmt.patchCenter.mods"
+        class="min-h-0 flex-1 overflow-hidden rounded-lg border border-default"
+      >
+        <template #list>
+          <section class="flex h-full w-full flex-col overflow-y-auto border-e border-default bg-muted">
+            <div class="flex h-9 shrink-0 items-center gap-2 border-b border-default px-3 text-12 font-semibold">
+              Mods<span class="text-11 font-normal text-dimmed">{{ cards.length }}</span>
               <span class="grow" />
-              <span class="font-mono text-11.5 whitespace-nowrap text-dimmed">{{ describeRange(card) }}</span>
-            </span>
-            <LevelMeter :segments="card.counts" :scale="busiest" />
-            <span class="flex items-center gap-2.5 text-11.5 whitespace-nowrap text-dimmed">
-              <span v-for="row in card.counts" :key="row.word">
-                <b class="font-semibold" :style="{ color: `var(--ui-${row.color})` }">{{ describeCount(row.count) }}</b>
-                {{ row.word }}
-              </span>
-              <span v-if="!card.counts.length" class="truncate" :title="describeEmpty(card)">
-                {{ describeEmpty(card) }}
-              </span>
-            </span>
-          </button>
-          <template v-if="quiet.length">
-            <div class="flex h-7.5 shrink-0 items-center border-b border-default bg-elevated px-3 text-11 text-dimmed">
-              Made for {{ describeRelease(quiet[0]?.impact.end ?? "") }}.*, nothing to do
+              <span class="text-11 font-normal text-dimmed">worst first</span>
             </div>
-            <button
-              v-for="card in quiet"
-              :key="card.impact.modId"
-              type="button"
-              class="flex shrink-0 items-center gap-2 border-b border-default border-s-2 px-3 py-2.5 text-start opacity-70 hover:bg-accented"
-              :class="card === current ? 'border-s-primary bg-(--accent-soft)' : 'border-s-transparent'"
-              @click="chosen = card.impact.modId"
-            >
-              <OriginChip :origin="card.impact.modId" dot />
-              <span class="min-w-0 truncate text-13 font-medium text-highlighted">
-                {{ workspace.originName(card.impact.modId) }}
-              </span>
-              <span class="grow" />
-              <span class="font-mono text-11.5 whitespace-nowrap text-dimmed">{{ describeRange(card) }}</span>
-            </button>
-          </template>
-        </section>
-
-        <section v-if="current" class="flex min-w-0 grow flex-col bg-(--bg-0)">
-          <div class="flex h-13 shrink-0 items-center gap-2.5 border-b border-default bg-muted px-4">
-            <OriginChip :origin="current.impact.modId" dot />
-            <span class="min-w-0 truncate text-16">{{ workspace.originName(current.impact.modId) }}</span>
-            <span class="font-mono text-12 whitespace-nowrap text-dimmed">{{ describeRange(current) }}</span>
-            <span class="grow" />
-            <UButton
-              label="Open in the IDE"
-              icon="i-lucide-code"
-              variant="ghost"
-              :to="{ name: 'workspace-ide', params: { id: workspace.activeId() } }"
-            />
-          </div>
-          <div
-            v-if="!current.impact.judged || !current.mod?.workshop"
-            class="flex h-10 shrink-0 items-center gap-2 border-b border-default bg-elevated px-4 text-12 text-dimmed"
-          >
-            <template v-if="!current.impact.judged">
-              <span>No version given, so PMT compares from</span>
-              <USelectMenu
-                :model-value="current.mod?.base || undefined"
-                :items="releases"
-                :search-input="false"
-                placeholder="Pick a version"
-                size="xs"
-                class="w-32"
-                @update:model-value="setBase({ modId: current.impact.modId, base: `${$event}` })"
-              />
+            <template v-for="group in groups" :key="group.title">
+              <div
+                v-if="group.title"
+                class="flex h-7.5 shrink-0 items-center border-b border-default bg-elevated px-3 text-11 text-dimmed"
+              >
+                {{ group.title }}
+              </div>
+              <button
+                v-for="card in group.cards"
+                :key="card.mod.id"
+                type="button"
+                class="flex shrink-0 flex-col gap-1.5 border-b border-default border-s-2 px-3 py-2.5 text-start hover:bg-accented"
+                :class="[
+                  card === current ? 'border-s-primary bg-(--accent-soft)' : 'border-s-transparent',
+                  card.quiet && 'opacity-70',
+                ]"
+                @click="chosen = card.mod.id"
+              >
+                <span class="flex min-w-0 items-center gap-2">
+                  <OriginChip :origin="card.mod.id" dot />
+                  <span class="min-w-0 truncate text-13 font-semibold text-highlighted">
+                    {{ workspace.originName(card.mod.id) }}
+                  </span>
+                  <span class="grow" />
+                  <span class="font-mono text-11.5 whitespace-nowrap text-dimmed">{{ describeRange(card) }}</span>
+                </span>
+                <template v-if="!card.quiet">
+                  <LevelMeter :segments="card.counts" :scale="busiest" />
+                  <span class="flex items-center gap-2.5 text-11.5 whitespace-nowrap text-dimmed">
+                    <span v-for="row in card.counts" :key="row.word">
+                      <b class="font-semibold" :style="{ color: `var(--ui-${row.color})` }">
+                        {{ describeCount(row.count) }}
+                      </b>
+                      {{ row.word }}
+                    </span>
+                    <span v-if="!card.counts.length" class="truncate" :title="describeEmpty(card)">
+                      {{ describeEmpty(card) }}
+                    </span>
+                  </span>
+                </template>
+              </button>
             </template>
-            <span class="grow" />
-            <UButton
-              v-if="!current.mod?.workshop"
-              :label="`Mark as made for ${current.impact.end}`"
-              variant="subtle"
-              size="sm"
-              @click="markMadeFor(current.impact.modId)"
-            />
-          </div>
+          </section>
+        </template>
 
-          <p v-if="!current.counts.length" class="px-4 py-3.5 text-13 text-dimmed">{{ describeEmpty(current) }}</p>
-          <div v-else class="@container min-h-0 flex-1 overflow-y-auto p-4">
-            <div class="grid grid-cols-1 items-start gap-3.5 @3xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-              <div class="flex min-w-0 flex-col gap-3.5">
-                <template v-for="{ key, title } in NAME_BLOCKS" :key="key">
+        <template #detail>
+          <section v-if="current" class="flex h-full min-w-0 grow flex-col bg-(--bg-0)">
+            <div class="flex h-13 shrink-0 items-center gap-2.5 border-b border-default bg-muted px-4">
+              <OriginChip :origin="current.mod.id" dot />
+              <span class="min-w-0 truncate text-16">{{ workspace.originName(current.mod.id) }}</span>
+              <span class="font-mono text-12 whitespace-nowrap text-dimmed">{{ describeRange(current) }}</span>
+              <span class="grow" />
+              <UButton
+                label="Open in the IDE"
+                icon="i-lucide-code"
+                variant="ghost"
+                :to="{ name: 'workspace-ide', params: { id: workspace.activeId() } }"
+              />
+            </div>
+            <!-- Someone else's mod is never patched, and one made for the -->
+            <!-- game's version has nothing to pick or mark. -->
+            <div
+              v-if="!current.mod.external && !(current.mod.judged && current.mod.start === end)"
+              class="flex h-10 shrink-0 items-center gap-2 border-b border-default bg-elevated px-4 text-12 text-dimmed"
+            >
+              <template v-if="!current.mod.judged">
+                <span>No version given, so PMT compares from</span>
+                <USelectMenu
+                  :model-value="current.mod.base || undefined"
+                  :items="releases"
+                  :search-input="false"
+                  placeholder="Pick a version"
+                  size="xs"
+                  class="w-32"
+                  @update:model-value="setBase({ modId: current.mod.id, base: `${$event}` })"
+                />
+              </template>
+              <span class="grow" />
+              <UButton
+                :label="`Mark as made for ${end}`"
+                variant="subtle"
+                size="sm"
+                @click="markMadeFor(current.mod.id)"
+              />
+            </div>
+
+            <UEmpty
+              v-if="!current.counts.length"
+              icon="i-lucide-circle-check"
+              :title="describeEmpty(current)"
+              size="sm"
+              class="m-auto"
+            />
+            <div v-else :key="current.mod.id" class="@container min-h-0 flex-1 overflow-y-auto p-4">
+              <div class="grid grid-cols-1 items-start gap-3.5 @3xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+                <div class="flex min-w-0 flex-col gap-3.5">
                   <ImpactBlock
-                    v-if="current[key].length"
+                    v-for="block in nameBlocks"
+                    :key="block.title"
+                    v-slot="{ row: finding }"
                     tone="error"
                     icon="i-lucide-tag"
-                    :title="title"
-                    :count="current[key].length"
+                    :title="block.title"
+                    :rows="block.findings"
                   >
-                    <div
-                      v-for="finding in current[key]"
-                      :key="finding.name"
-                      class="flex h-7.5 items-center gap-2.5 border-t border-default px-3 text-12"
-                    >
+                    <div class="flex h-7.5 items-center gap-2.5 border-t border-default px-3 text-12">
                       <code
                         class="font-mono"
                         :class="
@@ -399,86 +393,68 @@ function hasMore(key: string, total: number): boolean {
                       <span class="font-mono text-11 text-dimmed">{{ finding.facts?.version }}</span>
                     </div>
                   </ImpactBlock>
-                </template>
 
-                <ImpactBlock
-                  v-if="current.files.length"
-                  tone="warning"
-                  icon="i-lucide-file"
-                  title="Game files your copies replace"
-                  :count="current.files.length"
-                  :aside="current.files.some(canMerge) ? `${current.files.filter(canMerge).length} can merge` : ''"
-                  :more="
-                    hasMore(`${current.impact.modId}:files`, current.files.length)
-                      ? plural(current.files.length - ROWS_SHOWN, 'more file')
-                      : ''
-                  "
-                  @more="expanded.add(`${current.impact.modId}:files`)"
-                >
-                  <div
-                    v-for="file in listShown(`${current.impact.modId}:files`, current.files)"
-                    :key="file.name"
-                    class="flex h-7.5 items-center gap-2.5 border-t border-default ps-3 pe-2 text-12"
-                  >
-                    <span class="min-w-0 truncate font-mono text-highlighted" :title="file.name">
-                      {{ file.name }}
-                    </span>
-                    <span class="grow" />
-                    <span class="font-mono text-11 whitespace-nowrap text-warning">
-                      {{ file.facts?.status }} {{ file.facts?.version }}
-                    </span>
-                    <template v-if="file.sites?.[0]">
-                      <UButton
-                        v-if="canMerge(file)"
-                        label="Merge"
-                        icon="i-lucide-git-merge"
-                        color="success"
-                        variant="ghost"
-                        size="xs"
-                        aria-label="Merge the game's changes into this copy"
-                        @click="merge(file.sites[0].place)"
-                      />
-                      <UButton
-                        label="Compare"
-                        icon="i-lucide-diff"
-                        variant="ghost"
-                        size="xs"
-                        aria-label="Compare this copy with the game's"
-                        @click="compareWithGame(file.sites[0].place)"
-                      />
-                    </template>
-                  </div>
-                </ImpactBlock>
-              </div>
-
-              <div class="flex min-w-0 flex-col gap-3.5">
-                <template v-for="block in tieBlocks" :key="block.key">
                   <ImpactBlock
-                    v-if="block.ties.length"
+                    v-slot="{ row: file }"
+                    tone="warning"
+                    icon="i-lucide-file"
+                    title="Game files your copies replace"
+                    :rows="current.files"
+                    :aside="current.files.some(canMerge) ? `${current.files.filter(canMerge).length} can merge` : ''"
+                  >
+                    <div class="flex h-7.5 items-center gap-2.5 border-t border-default ps-3 pe-2 text-12">
+                      <span class="min-w-0 truncate font-mono text-highlighted" :title="file.name">{{
+                        file.name
+                      }}</span>
+                      <span class="grow" />
+                      <span class="font-mono text-11 whitespace-nowrap text-warning">
+                        {{ file.facts?.status }} {{ file.facts?.version }}
+                      </span>
+                      <template v-if="file.sites?.[0]">
+                        <UButton
+                          v-if="canMerge(file) && !current.mod.external"
+                          label="Merge"
+                          icon="i-lucide-git-merge"
+                          color="success"
+                          variant="ghost"
+                          size="xs"
+                          aria-label="Merge the game's changes into this copy"
+                          @click="merge(file.sites[0].place)"
+                        />
+                        <UButton
+                          label="Compare"
+                          icon="i-lucide-diff"
+                          variant="ghost"
+                          size="xs"
+                          aria-label="Compare this copy with the game's"
+                          @click="compareWithGame(file.sites[0].place)"
+                        />
+                      </template>
+                    </div>
+                  </ImpactBlock>
+                </div>
+
+                <div class="flex min-w-0 flex-col gap-3.5">
+                  <ImpactBlock
+                    v-for="block in tieBlocks"
+                    :key="block.title"
+                    v-slot="{ row: tie }"
                     :tone="block.tone"
                     :icon="block.icon"
                     :title="block.title"
-                    :count="block.ties.length"
-                    :more="
-                      hasMore(`${current.impact.modId}:${block.key}`, block.ties.length)
-                        ? `${describeCount(block.ties.length - ROWS_SHOWN)} more`
-                        : ''
-                    "
-                    @more="expanded.add(`${current.impact.modId}:${block.key}`)"
+                    :rows="block.ties"
                   >
                     <RouterLink
-                      v-for="tie in listShown(`${current.impact.modId}:${block.key}`, block.ties)"
-                      :key="`${tie.version}:${tie.article.title}`"
                       :to="{
                         name: 'patch-center',
                         params: { id: workspace.activeId() },
-                        query: { patch: tie.version },
+                        query: { patch: tie.version, tab: 'digest', article: tie.id },
                       }"
                       class="flex h-7.5 items-center gap-2.5 border-t border-default px-3 text-12 hover:bg-accented"
                     >
-                      <span class="min-w-0 truncate" :class="block.tone === 'error' ? 'text-error' : 'text-success'">
-                        {{ tie.article.title }}
-                      </span>
+                      <span class="min-w-0 truncate" :style="{ color: `var(--ui-${block.tone})` }">{{
+                        tie.title
+                      }}</span>
                       <span class="grow" />
                       <span class="text-11 whitespace-nowrap text-dimmed">
                         {{ plural(tie.count, "file or use", "files and uses") }}
@@ -486,12 +462,12 @@ function hasMore(key: string, total: number): boolean {
                       <span class="font-mono text-11 text-dimmed">{{ tie.version }}</span>
                     </RouterLink>
                   </ImpactBlock>
-                </template>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
-      </div>
+          </section>
+        </template>
+      </USplitter>
     </template>
   </div>
 </template>

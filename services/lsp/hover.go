@@ -62,9 +62,9 @@ type Card struct {
 
 	Sites []Site `json:"sites,omitempty"`
 
-	// History holds the patches that changed a lexicon key, oldest first, each
-	// with only that key's change. It is empty for any other card.
-	History []workspace.Patch `json:"history,omitempty"`
+	// History holds what each patch did to a lexicon key, oldest first: the
+	// patch's version and its change in words. It is empty for any other card.
+	History []CardRow `json:"history,omitempty"`
 
 	// Range is the word the card is about.
 	Range jomini.Range `json:"range"`
@@ -87,17 +87,14 @@ type Class struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
 
-	// Database is the dumps' database that holds the class's keys, "" for
-	// none.
-	Database string `json:"-"`
+	// Database is the database that holds the class's keys, and that a
+	// patch's changes of them name.
+	Database string `json:"database"`
 
 	// OnActions is whether the class's database is the language's on_actions
-	// one, which each game names its own way. Database is then "".
+	// one, which each game names its own way. Database is then "" until the
+	// class is resolved for a game.
 	OnActions bool `json:"-"`
-
-	// Functions is whether the class lists the functions of the data types,
-	// which are in no database.
-	Functions bool `json:"-"`
 }
 
 // A cursor is the innermost statement at an offset, with what the walk decided
@@ -120,7 +117,7 @@ var Classes = []Class{
 	{ID: "scope", Label: "Scopes", Database: lang.DumpTypes},
 	{ID: "modifier", Label: "Modifiers", Database: lang.DumpModifiers},
 	{ID: "on_action", Label: "On actions", OnActions: true},
-	{ID: "function", Label: "Functions", Functions: true},
+	{ID: "function", Label: "Functions", Database: lang.DataFunctions},
 }
 
 // The labels of a card's rows.

@@ -68,7 +68,7 @@ func openService(t *testing.T) (*Service, *workspace.Session) {
 // keepPage caches a page with the given title and HTML in a client's folder.
 func keepPage(t *testing.T, client *Client, html, title string) {
 	t.Helper()
-	root, _ := parseFragment(html)
+	root, _ := app.ParseFragment(html)
 	page := Page{
 		Title: title, HTML: html, FetchedAt: time.Now(), Revision: 7, Modding: hasModding(root), Released: resolveReleased(root),
 	}
@@ -103,12 +103,9 @@ func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 		`<table><thead><tr><th>head</th></tr></thead><tbody><tr><td colspan="2">cell</td></tr></tbody></table>` +
 		`<details><summary>Table, 3 rows</summary><table><tbody><tr><td>1</td></tr><tr><td>2</td></tr>` +
 		`<tr><td>3</td></tr></tbody></table></details><pre>code block</pre><span>wrapped</span><h2>Last</h2><p>kept</p>`
-	root, err := parseFragment(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := sanitizePage(root, &url.URL{Scheme: "http", Host: "wiki.test"}); got != want {
-		t.Errorf("sanitizePage =\n%s\nwant\n%s", got, want)
+	client := &Client{origin: &url.URL{Scheme: "http", Host: "wiki.test"}}
+	if got := app.Sanitize(input, client.resolveLink); got != want {
+		t.Errorf("Sanitize =\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -160,8 +157,8 @@ func TestListNotesOrdersNewestFirst(t *testing.T) {
 	keepPage(t, client, `<h3>Modding changes</h3>`, "Patch 1.30.X")
 	notes, err := wik.ListNotes()
 	want := []Note{
-		{minor, "", "2026-09-30", "Patch 1.30", false}, {"1.30.X", minor, "", "Patch 1.30.X", true},
-		{"1.10", "", "", "Patch 1.10", false}, {"1.9", "", "", "Patch 1.9", true},
+		{minor, "2026-09-30", "Patch 1.30", false}, {"1.30.X", "", "Patch 1.30.X", true},
+		{"1.10", "", "Patch 1.10", false}, {"1.9", "", "Patch 1.9", true},
 	}
 	if err != nil || !slices.Equal(notes, want) {
 		t.Errorf("ListNotes = %+v, %v, want %+v", notes, err, want)

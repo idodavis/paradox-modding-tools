@@ -16,7 +16,7 @@ import {
   plural,
   toSiteKey,
 } from "../../lib/format";
-import { levelsQuery, loadQuery, placeQuery, snippetsQuery } from "../../queries";
+import { loadQuery, placeQuery, snippetsQuery, useLevels } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import FactText from "../../ui/FactText.vue";
@@ -67,7 +67,7 @@ const GROUPINGS = [
 
 const workspace = useWorkspaceStore();
 const editor = useEditorStore();
-const { data: levels } = useQuery(levelsQuery);
+const { findLevel } = useLevels();
 const scope = shallowRef<string | number>("mods");
 const grouping = shallowRef<string | number>("mod");
 /** The mods whose sections are folded. */
@@ -174,7 +174,7 @@ function fold(mod: string): void {
 /** describeFaultColor returns the level color of the mod's problem at a row's place, or undefined for none. */
 function describeFaultColor(finding: Finding): string | undefined {
   const shared = faults.value.get(toSiteKey(finding));
-  return shared && levels.value?.find((level) => level.id === shared.finding.level)?.color;
+  return shared && findLevel(shared.finding.level)?.color;
 }
 
 /** showGame shows the game's own rows. */

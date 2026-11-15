@@ -74,10 +74,10 @@ export interface Card {
     "sites"?: Site[] | null;
 
     /**
-     * History holds the patches that changed a lexicon key, oldest first, each
-     * with only that key's change. It is empty for any other card.
+     * History holds what each patch did to a lexicon key, oldest first: the
+     * patch's version and its change in words. It is empty for any other card.
      */
-    "history"?: workspace$0.Patch[] | null;
+    "history"?: CardRow[] | null;
 
     /**
      * Range is the word the card is about.
@@ -109,6 +109,12 @@ export interface Class {
      */
     "id": string;
     "label": string;
+
+    /**
+     * Database is the database that holds the class's keys, and that a
+     * patch's changes of them name.
+     */
+    "database": string;
 }
 
 /**
@@ -346,8 +352,8 @@ export interface LexiconRow {
 
     /**
      * Status is what the latest patch of the range did to the key, and
-     * Version is that patch's version. Both are "" for a key the range did
-     * not change, and for a lexicon built with no range.
+     * Version is that patch's version. Both are "" in a lexicon built with no
+     * range.
      */
     "status": schema$0.Status;
     "version": string;

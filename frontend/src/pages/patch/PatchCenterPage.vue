@@ -5,22 +5,20 @@
   where its documentation is not of the installed version.
 -->
 <script setup lang="ts">
-import { computed, shallowRef, watch } from "vue";
-import { useMutation, useQuery } from "@pinia/colada";
+import { computed, watch } from "vue";
+import { useQuery } from "@pinia/colada";
 import { useRouter } from "vue-router";
 
 import type { Note } from "@services/patch/models";
-import * as workspaceApi from "@services/workspace/service";
+import { findCommand } from "../../app/commands";
 import { useShown } from "../../app/pages";
-import { describeRelease } from "../../lib/format";
-import { impactsQuery, notesQuery, reportQuery, stateQuery } from "../../queries";
+import { codesQuery, notesQuery, reportQuery, stateQuery } from "../../queries";
 import { useSeenPatch } from "../../stores/patchSeen";
 import { makeChip, useChip } from "../../stores/toolView";
 import { useWorkspaceStore } from "../../stores/workspace";
 import FactText from "../../ui/FactText.vue";
 import LevelCounts from "../../ui/LevelCounts.vue";
 import OriginChip from "../../ui/OriginChip.vue";
-import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 import PatchDetail from "./PatchDetail.vue";
 import YourMods from "./YourMods.vue";
@@ -29,19 +27,24 @@ const {
   id,
   patch = "",
   find = "",
+  tab = "",
+  article = "",
 } = defineProps<{
   id: string;
   /** The version shown, as the route names it. Without one, Your mods. */
   patch?: string;
   /** Text to find in the notes shown. */
   find?: string;
+  /** The version's tab and the digest's article to open at. */
+  tab?: string;
+  article?: string;
 }>();
 
 /** A Row is a line of the version list: a version or a release's heading. */
 type Row = Note & { label: string; type?: "label" };
 
-/** The console commands that make the game write its documentation. */
-const CONSOLE_COMMANDS = ["script_docs", "dump_data_types"];
+const LAUNCH = findCommand("game.launch");
+const GUIDE = findCommand("docs.guide");
 /** How many mods made for a version its row shows before it counts the rest. */
 const MODS_SHOWN = 3;
 const PANES = [{ slot: "versions", defaultSize: 18, minSize: 14, maxSize: 30 }, { slot: "shown" }];
@@ -50,7 +53,7 @@ const router = useRouter();
 const workspace = useWorkspaceStore();
 const { data: state } = useQuery(stateQuery);
 const { data: notes } = useQuery(() => ({ ...notesQuery, enabled: workspace.isOpen() }));
-const { data: impacts } = useQuery(() => ({ ...impactsQuery, enabled: workspace.isOpen() }));
+const { data: codes } = useQuery(codesQuery);
 const { data: report } = useQuery(() => ({
   ...reportQuery(workspace.listModIds()),
   enabled: workspace.isOpen(),
@@ -62,18 +65,17 @@ const { data: report } = useQuery(() => ({
  */
 const groups = computed(() =>
   (notes.value ?? []).reduce<Row[][]>((all, note) => {
-    const release = describeRelease(note.version);
     const row = { ...note, label: note.version };
     const last = all.at(-1);
-    if (last && describeRelease(last[0]?.version ?? "") === release) last.push(row);
-    else all.push([{ ...row, type: "label", label: note.beta ? `${release}, open beta` : release }, row]);
+    if (last?.[0]?.release === note.release) last.push(row);
+    else all.push([{ ...row, type: "label", label: note.beta ? `${note.release}, open beta` : note.release }, row]);
 
     return all;
   }, []),
 );
 const latest = computed(() => notes.value?.find((note) => !note.beta)?.version);
 const gameName = computed(() => state.value?.game?.name ?? "");
-/** Where the page's notes come from: the wiki, and the Co-op's digests where the game has them. */
+/** Where the page's notes come from: the wiki, and the Co-op's digests. */
 const sources = computed(() => {
   const digests = state.value?.game?.digests;
   return [
@@ -83,10 +85,9 @@ const sources = computed(() => {
       : []),
   ];
 });
-/** Health's finding that the game's documentation is of another version. */
+/** Health's finding that the game's documentation is stale, and its advice. */
 const staleDumps = computed(() => report.value?.patch.findings?.find((finding) => finding.code === "stale-dumps"));
-const guiding = shallowRef(false);
-const { mutate: launch } = useMutation({ mutation: () => workspaceApi.Launch() });
+const advice = computed(() => codes.value?.find((code) => code.id === "stale-dumps")?.advice);
 
 // The top bar's dot for a new version goes out once the page is shown.
 const { newest, shown: seen } = useSeenPatch();
@@ -121,15 +122,18 @@ function show(version: string): void {
             <UIcon name="i-lucide-layers" class="size-3.5" />
             Your mods
             <span class="grow" />
-            <LevelCounts v-if="report" :levels="report.patch.counts" />
+            <LevelCounts v-if="report" :levels="report.ownPatch.counts" />
           </button>
           <div class="flex h-9 shrink-0 items-center border-t border-default px-3 text-12 font-semibold">
             Versions<span class="grow" /><span class="text-11 font-normal text-dimmed">{{ notes?.length ?? 0 }}</span>
           </div>
-          <p v-if="!notes?.length" class="px-3 text-12 text-dimmed">
-            No patch notes yet. PMT reads them from the {{ gameName }} wiki when it starts, the status bar showing how
-            far it is, and they show here once read.
-          </p>
+          <UEmpty
+            v-if="!notes?.length"
+            icon="i-lucide-newspaper"
+            title="No patch notes yet"
+            :description="`PMT reads them from the ${gameName} wiki when it starts. The status bar shows how far it is.`"
+            size="sm"
+          />
           <UListbox
             v-else
             :model-value="patch || undefined"
@@ -195,23 +199,17 @@ function show(version: string): void {
             class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-default bg-muted py-2 ps-8 pe-6 text-12"
           >
             <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-warning" />
-            <p class="min-w-0 text-toned">
-              <FactText :parts="staleDumps.message" />
-              Type
-              <template v-for="(command, position) in CONSOLE_COMMANDS" :key="command">
-                {{ position ? " and " : "" }}
-                <code
-                  class="rounded-md border border-default bg-(--bg-0) px-1.5 py-0.5 font-mono text-(--syn-command)"
-                  >{{ command }}</code
-                >
-              </template>
-              in the game's console to have it write its documentation again.
-            </p>
+            <p class="min-w-0 text-toned"><FactText :parts="staleDumps.message" /> {{ advice }}</p>
             <span class="grow" />
-            <UButton label="Start the game to record its commands" icon="i-lucide-play" size="sm" @click="launch()" />
-            <UButton label="Show me how" variant="ghost" size="sm" @click="guiding = true" />
+            <UButton
+              label="Start the game to record its commands"
+              icon="i-lucide-play"
+              size="sm"
+              @click="LAUNCH?.onSelect?.($event)"
+            />
+            <UButton label="Show me how" variant="ghost" size="sm" @click="GUIDE?.onSelect?.($event)" />
           </div>
-          <PatchDetail v-if="patch" :version="patch" :find="find" />
+          <PatchDetail v-if="patch" :version="patch" :find="find" :tab="tab" :article="article" />
           <section v-else class="flex min-h-0 min-w-0 grow flex-col bg-(--bg-0)">
             <div class="flex h-13 shrink-0 items-center gap-3 border-b border-default px-6">
               <h1 class="text-16">Your mods</h1>
@@ -227,12 +225,11 @@ function show(version: string): void {
                 :to="{ name: 'health', params: { id }, query: { view: 'patch' } }"
               />
             </div>
-            <YourMods :impacts="impacts ?? []" class="min-h-0 flex-1" />
+            <YourMods class="min-h-0 flex-1" />
           </section>
         </div>
       </template>
     </USplitter>
     <StatusFacts :facts="sources" />
-    <ScriptDocsGuide v-if="guiding" v-model:open="guiding" :game="state?.game?.id ?? ''" />
   </div>
 </template>

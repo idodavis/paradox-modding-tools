@@ -73,7 +73,7 @@ On a clean Windows (Windows Sandbox or a VM) and on Ubuntu (a VM or distrobox):
 - [ ] The Visual view and Save as DDS.
 - [ ] The Event Graph.
 - [ ] Health.
-- [ ] Patch Notes.
+- [ ] The Patch Center: Your mods and a version's tabs.
 - [ ] Publish to a hidden test item, and the compare. EU5 from Linux: its install has no `libsteam_api.so`.
 - [ ] The assistant's install and MCP.
 - [ ] Pop-out windows.

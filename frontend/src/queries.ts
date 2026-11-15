@@ -1,5 +1,5 @@
 /** The queries that read Go, one per RPC, and the keys that events and mutations refresh. */
-import { defineQueryOptions, useMutation, useQueryCache, type UseQueryOptions } from "@pinia/colada";
+import { defineQueryOptions, useMutation, useQuery, useQueryCache, type UseQueryOptions } from "@pinia/colada";
 
 import * as agent from "@services/agent/service";
 import * as app from "@services/app/service";
@@ -229,6 +229,15 @@ export const reportQuery = defineQueryOptions((order: string[]) => ({
 }));
 export const codesQuery = defineQueryOptions({ key: [...keys.health, "codes"], query: () => health.ListCodes() });
 export const levelsQuery = defineQueryOptions({ key: [...keys.health, "levels"], query: () => health.ListLevels() });
+
+/**
+ * useLevels returns Health's levels and the lookup of one by its id. The
+ * lookup finds none for an id no level has.
+ */
+export function useLevels() {
+  const { data: levels } = useQuery(levelsQuery);
+  return { levels, findLevel: (id: string | undefined) => levels.value?.find((level) => level.id === id) };
+}
 export const topicsQuery = defineQueryOptions({ key: [...keys.health, "topics"], query: () => health.ListTopics() });
 export const overviewQuery = defineQueryOptions({
   key: [...keys.health, "overview"],
@@ -311,7 +320,7 @@ export const wikiSearchQuery = defineQueryOptions((term: string) => ({
   query: () => wiki.SearchPages(term),
 }));
 export const notesQuery = defineQueryOptions({ key: [...keys.patch, "notes"], query: () => patch.ListPatches() });
-export const impactsQuery = defineQueryOptions({ key: [...keys.patch, "impacts"], query: () => patch.ListImpacts() });
+export const tiesQuery = defineQueryOptions({ key: [...keys.patch, "ties"], query: () => patch.ListTies() });
 export const patchQuery = defineQueryOptions((version: string) => ({
   key: [...keys.patch, "version", version],
   query: () => patch.FindPatch(version),

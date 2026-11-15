@@ -1,6 +1,5 @@
-// comparison.go compares the dumps, the documented keys and the defined names
-// of two versions of a game, to say which keys a patch added, removed or
-// changed.
+// comparison.go compares two versions of a game by key: the keys of their
+// dumps and the names their files define.
 
 package schema
 
@@ -13,38 +12,25 @@ import (
 	"paradox-modding-tools/internal/lang"
 )
 
-// DumpChange is one key of the game's dumps that a patch added, removed or
-// changed.
-type DumpChange struct {
-	// Database is the database of lang's dumps the key is in, as "effects",
-	// and for an on_action the schema's own on_actions database. It is "" for
-	// a function of a data type, whose key is its type and name, as
-	// Character.GetName.
+// KeyChange is one key that a patch added, removed or changed: a key of the
+// game's dumps, or a name the game's files define.
+type KeyChange struct {
+	// Database is the database the key is in. A function of a data type is in
+	// lang.DataFunctions, under its type and name, as Character.GetName.
 	Database string `json:"database"`
 
 	Key    string `json:"key"`
 	Status Status `json:"status"`
 
-	// Blurb is the first line of the key's entry. For a removed key it is
-	// the old entry's, else the new one's.
-	Blurb string `json:"blurb"`
-
-	// Differences lists which facts of a changed key's entry differ, such as
-	// "sentence" or "scopes". It is empty for an added or a removed key.
+	// Blurb is the first line of a dump key's entry, the old entry's for a
+	// removed key. Differences lists which facts of a changed entry differ,
+	// such as "sentence" or "scopes". A defined name has neither.
+	Blurb       string   `json:"blurb"`
 	Differences []string `json:"differences"`
 }
 
-// KeyChange is one key of a database that a patch added or removed: a key the
-// docs document, or a name the game's files define.
-type KeyChange struct {
-	Database string `json:"database"`
-	Key      string `json:"key"`
-
-	// Status is StatusAdded or StatusRemoved. A key has no other change.
-	Status Status `json:"status"`
-}
-
-// Status says what a patch did to a key: it added, removed or changed it.
+// Status says what a patch did to a key or a file: it added, removed or
+// changed it.
 type Status string
 
 // The statuses of a key.
@@ -74,8 +60,7 @@ const (
 type fact struct{ label, value string }
 
 // entry is one key of the dumps as the comparison reads it: its first line,
-// and the facts whose change makes the key changed. A key with no facts
-// cannot change.
+// and the facts whose change makes the key changed.
 type entry struct {
 	blurb string
 	facts []fact
@@ -84,60 +69,94 @@ type entry struct {
 // entryKey is the place of an entry: the database it is in and its key.
 type entryKey struct{ database, key string }
 
-// CompareDumps returns what changed in the keys of the dumps from the old
-// version to the current one: each key only the current version has is
-// added, each key only the old one has is removed, and each key whose entry
-// says something else is changed, with the facts that differ. A key that
-// fits a star key of the given schema, such as every_country_in_*, is the
-// star key, so the generated keys the dumps of one version list and another
-// does not are no change; a star key's own entry is not compared. A key that
-// two entries share keeps the first. On_actions are left out where the
-// schema has no on_actions database. The changes are sorted by database and
-// key.
-func CompareDumps(old, current *Dumps, language *lang.Schema) []DumpChange {
-	before, after := listEntries(old, language), listEntries(current, language)
-	var changes []DumpChange
-	for place, latest := range after {
-		earlier, ok := before[place]
-		if !ok {
-			changes = append(changes, makeChange(place, StatusAdded, latest.blurb, nil))
+// Compare returns the status of each key that two maps do not hold alike:
+// added for a key only the current map has, removed for a key only the old
+// map has, and changed for a key whose two values the given test tells apart.
+func Compare[K comparable, V any](old, current map[K]V, differs func(earlier, latest V) bool) map[K]Status {
+	statuses := map[K]Status{}
+	for key, latest := range current {
+		earlier, ok := old[key]
+		switch {
+		case !ok:
+			statuses[key] = StatusAdded
+		case differs(earlier, latest):
+			statuses[key] = StatusChanged
+		}
+	}
 
+	for key := range old {
+		if _, ok := current[key]; !ok {
+			statuses[key] = StatusRemoved
+		}
+	}
+
+	return statuses
+}
+
+// CompareDumps returns what changed in the keys of the dumps from the old
+// version to the current one, sorted by database and key. A changed key lists
+// the facts that differ. It returns nothing if either dumps are nil.
+//
+// A key that fits a star key of the given schema, such as
+// every_country_in_*, is the star key, so the generated keys that one version
+// lists and another does not are no change. A key two entries share keeps the
+// first. On_actions are left out where the schema has no on_actions database.
+//
+// A kind of entry the two dumps cannot be compared in is left out, since its
+// changes would be false. That is a kind one version lists none of: the
+// oldest dumps have no data types, and their scope types are a plain list the
+// reader does not take. It is also the modifiers where one version writes
+// plain names such as beja_opinion and the other templates such as
+// $CULTURE$_opinion.
+func CompareDumps(old, current *Dumps, language *lang.Schema) []KeyChange {
+	if old == nil || current == nil {
+		return nil
+	}
+
+	compared := map[string]bool{
+		lang.DataFunctions: len(old.DataTypes) > 0 && len(current.DataTypes) > 0,
+		lang.DumpTypes:     len(old.Scopes) > 0 && len(current.Scopes) > 0,
+		lang.DumpModifiers: hasTemplate(old.Modifiers) == hasTemplate(current.Modifiers),
+	}
+	before, after := listEntries(old, language), listEntries(current, language)
+	differs := func(earlier, latest entry) bool { return len(listDifferences(earlier, latest)) > 0 }
+
+	var changes []KeyChange
+	for place, status := range Compare(before, after, differs) {
+		if isCompared, ok := compared[place.database]; ok && !isCompared {
 			continue
 		}
 
-		if differences := listDifferences(earlier, latest); len(differences) > 0 {
-			changes = append(changes, makeChange(place, StatusChanged, latest.blurb, differences))
+		change := KeyChange{Database: place.database, Key: place.key, Status: status, Blurb: after[place].blurb}
+		switch status {
+		case StatusRemoved:
+			change.Blurb = before[place].blurb
+		case StatusChanged:
+			change.Differences = listDifferences(before[place], after[place])
 		}
+
+		changes = append(changes, change)
 	}
 
-	for place, earlier := range before {
-		if _, ok := after[place]; !ok {
-			changes = append(changes, makeChange(place, StatusRemoved, earlier.blurb, nil))
-		}
-	}
-
-	slices.SortFunc(changes, func(first, second DumpChange) int {
-		return cmp.Or(strings.Compare(first.Database, second.Database), strings.Compare(first.Key, second.Key))
-	})
-
-	return changes
+	return sortChanges(changes)
 }
 
 // CompareKeys returns the keys the current version has in a database and the
-// old one does not as added, and the keys the old one has and the current
-// one does not as removed. The keys are those ListDocKeys or ListDefinedKeys
-// give. The changes are sorted by database and key.
+// old one does not as added, and the keys only the old one has as removed,
+// sorted by database and key. The keys are those ListDefinedKeys gives.
 func CompareKeys(old, current map[string][]string) []KeyChange {
+	never := func(_, _ bool) bool { return false }
+
 	var changes []KeyChange
-
-	for database, keys := range old {
-		changes = append(changes, listMissing(database, keys, current[database], StatusRemoved)...)
+	for place, status := range Compare(listKeys(old), listKeys(current), never) {
+		changes = append(changes, KeyChange{Database: place.database, Key: place.key, Status: status})
 	}
 
-	for database, keys := range current {
-		changes = append(changes, listMissing(database, keys, old[database], StatusAdded)...)
-	}
+	return sortChanges(changes)
+}
 
+// sortChanges sorts changes by database and key, and returns them.
+func sortChanges(changes []KeyChange) []KeyChange {
 	slices.SortFunc(changes, func(first, second KeyChange) int {
 		return cmp.Or(strings.Compare(first.Database, second.Database), strings.Compare(first.Key, second.Key))
 	})
@@ -145,28 +164,28 @@ func CompareKeys(old, current map[string][]string) []KeyChange {
 	return changes
 }
 
-// listMissing returns a change of the given status for each key of one list
-// that the other lacks.
-func listMissing(database string, keys, other []string, status Status) []KeyChange {
-	held := make(map[string]bool, len(other))
-	for _, key := range other {
-		held[key] = true
-	}
-
-	var changes []KeyChange
-
-	for _, key := range keys {
-		if !held[key] {
-			changes = append(changes, KeyChange{Database: database, Key: key, Status: status})
+// listKeys returns the keys of each database as one set.
+func listKeys(keys map[string][]string) map[entryKey]bool {
+	set := map[entryKey]bool{}
+	for database, names := range keys {
+		for _, name := range names {
+			set[entryKey{database, name}] = true
 		}
 	}
 
-	return changes
+	return set
 }
 
-// makeChange returns the change of one key.
-func makeChange(place entryKey, status Status, blurb string, differences []string) DumpChange {
-	return DumpChange{Database: place.database, Key: place.key, Status: status, Blurb: blurb, Differences: differences}
+// hasTemplate reports whether one of the keys is a template, which has a name
+// between dollar signs, as $CULTURE$_opinion.
+func hasTemplate(keys map[string]bool) bool {
+	for key := range keys {
+		if strings.Contains(key, "$") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // listDifferences returns the labels of the facts whose values differ
@@ -184,17 +203,17 @@ func listDifferences(earlier, latest entry) []string {
 
 // listEntries returns every key of the dumps with its entry: the effects,
 // triggers and links, the scope types, the modifiers, the on_actions and the
-// functions of the data types. A function is in no database, and its key is
-// its data type and name, as Character.GetName.
+// functions of the data types. A key that fits a star key has no facts, so
+// it cannot change.
 func listEntries(dumps *Dumps, language *lang.Schema) map[entryKey]entry {
 	entries := map[entryKey]entry{}
 	for _, command := range dumps.Commands {
 		place := entryKey{findDatabase(command.Declared), command.Name}
-		listed := entry{blurb: firstLine(command.Description)}
+		commandEntry := entry{blurb: firstLine(command.Description)}
 		if patterns := language.FindPatterns(place.database, place.key); len(patterns) > 0 {
 			place.key = patterns[0].Key
 		} else {
-			listed.facts = []fact{
+			commandEntry.facts = []fact{
 				{factSentence, command.Description},
 				{factScopes, strings.Join(slices.Sorted(slices.Values(command.Scopes)), ",")},
 				{factTarget, command.Target},
@@ -203,7 +222,7 @@ func listEntries(dumps *Dumps, language *lang.Schema) map[entryKey]entry {
 		}
 
 		if _, ok := entries[place]; !ok {
-			entries[place] = listed
+			entries[place] = commandEntry
 		}
 	}
 
@@ -227,7 +246,7 @@ func listEntries(dumps *Dumps, language *lang.Schema) map[entryKey]entry {
 
 	for _, dataType := range dumps.DataTypes {
 		for _, function := range dataType.Functions {
-			entries[entryKey{"", dataType.Name + "." + function.Name}] = entry{
+			entries[entryKey{lang.DataFunctions, dataType.Name + "." + function.Name}] = entry{
 				blurb: firstLine(function.Blurb),
 				facts: []fact{
 					{factBlurb, function.Blurb}, {factReturns, function.Returns},

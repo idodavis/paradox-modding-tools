@@ -1,6 +1,7 @@
 <!--
-  The card shown when the pointer rests on a word in the editor, with the
-  word's facts and problems.
+  The card of a word: its facts, its problems, where the mods write it and
+  what the game's patches did to it. The editor shows it at the pointer, and
+  the lexicon in an open row.
 -->
 <script setup lang="ts">
 import { computed } from "vue";
@@ -9,32 +10,31 @@ import { useQuery } from "@pinia/colada";
 import type { Card, Diagnostic } from "@services/lsp/models";
 
 import { SYNTAX } from "../lib/syntax";
-import { codesQuery, levelsQuery } from "../queries";
+import { codesQuery, useLevels } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
 import OriginChip from "./OriginChip.vue";
 import ProblemRow from "./ProblemRow.vue";
 import SourceLink from "./SourceLink.vue";
 
-const { card, problems } = defineProps<{ card: Card | null; problems: Diagnostic[] }>();
+const { card, problems = [] } = defineProps<{ card: Card | null; problems?: Diagnostic[] }>();
+defineSlots<{
+  /** The host's hints at the card's foot, such as the editor's keys. */
+  footer?: () => unknown;
+}>();
 
 const SITES_SHOWN = 4;
-const KEYS = [
-  ["F12", "definition"],
-  ["Alt F12", "peek"],
-  ["Shift F12", "references"],
-];
 
 const settings = useSettingsStore();
 const workspace = useWorkspaceStore();
 const { data: codes } = useQuery(codesQuery);
-const { data: levels } = useQuery(levelsQuery);
+const { findLevel } = useLevels();
 const short = computed(() => settings.isHidden("hover.details"));
 
 /** describeProblem returns a problem's effect in the game and its advice. */
 function describeProblem(problem: Diagnostic): [string, string][] {
   const all = [
-    ["In the game", levels.value?.find((level) => level.id === problem.level)?.cost],
+    ["In the game", findLevel(problem.level)?.cost],
     ["What to do", codes.value?.find((code) => code.id === problem.code)?.advice],
   ];
   return all.filter((row): row is [string, string] => !!row[1]);
@@ -57,7 +57,7 @@ const tint = computed(() => {
 </script>
 
 <template>
-  <div class="flex w-max max-w-198 flex-col divide-y divide-default overflow-hidden">
+  <div class="flex flex-col divide-y divide-default overflow-hidden">
     <div v-if="problems.length" class="flex flex-col py-1" :class="card && 'border-b border-accented'">
       <div v-for="(problem, index) in problems" :key="index" class="flex flex-col">
         <ProblemRow dense plain :level="problem.level" :message="problem.message" :detail="problem.label">
@@ -141,18 +141,23 @@ const tint = computed(() => {
           >+{{ (card.sites?.length ?? 0) - SITES_SHOWN }} more</span
         >
       </div>
+      <div v-if="card.history?.length" class="flex flex-col gap-1.5 px-3.5 py-2.5">
+        <span class="text-11 font-medium text-dimmed">History</span>
+        <div class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2.5 gap-y-1 text-12 text-toned">
+          <template v-for="change in card.history" :key="change.label">
+            <span class="font-mono text-11 text-dimmed">{{ change.label }}</span>
+            <span>{{ change.text }}</span>
+          </template>
+        </div>
+      </div>
       <p v-if="!short && card.inferred" class="px-3.5 py-1.5 text-end text-tiny text-dimmed">
         Learned from the game's own files
       </p>
       <div
-        v-if="!short"
+        v-if="!short && $slots.footer"
         class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-muted px-3.5 py-1.5 text-tiny whitespace-nowrap text-dimmed"
       >
-        <span v-for="[key, action] in KEYS" :key="key" class="flex items-center gap-1">
-          <UKbd :value="key" />{{ action }}
-        </span>
-        <span v-if="card.node" class="flex items-center gap-1"> <UKbd value="Ctrl Shift G" />graph </span>
-        <span class="ms-auto">Right-click for more</span>
+        <slot name="footer" />
       </div>
     </template>
   </div>

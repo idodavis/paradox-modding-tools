@@ -37,11 +37,9 @@ package wiki
 import (
 	"context"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"golang.org/x/mod/semver"
 
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/services/workspace"
@@ -122,15 +120,7 @@ func (s *Service) ListNotes() ([]Note, error) {
 	for position, version := range versions {
 		title := resolvePatch(version)
 		page, _ := client.LoadPage(title)
-		minor := strings.TrimPrefix(semver.MajorMinor("v"+strings.TrimSuffix(version, ".X")), "v")
-		parent := minor
-		if minor == version {
-			parent = ""
-		}
-
-		notes[position] = Note{
-			Version: version, Parent: parent, Released: page.Released, Title: title, Modding: page.Modding,
-		}
+		notes[position] = Note{Version: version, Released: page.Released, Title: title, Modding: page.Modding}
 	}
 
 	return notes, nil

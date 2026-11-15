@@ -6,7 +6,7 @@ import { useQuery } from "@pinia/colada";
 import { useLocalStorage } from "@vueuse/core";
 import { computed } from "vue";
 
-import { impactsQuery, notesQuery } from "../queries";
+import { notesQuery, reportQuery, tiesQuery } from "../queries";
 import { useWorkspaceStore } from "./workspace";
 
 /**
@@ -18,16 +18,15 @@ import { useWorkspaceStore } from "./workspace";
 export function useSeenPatch() {
   const workspace = useWorkspaceStore();
   const { data: notes } = useQuery(() => ({ ...notesQuery, enabled: workspace.isOpen() }));
-  const { data: impacts } = useQuery(() => ({ ...impactsQuery, enabled: workspace.isOpen() }));
+  const { data: ties } = useQuery(() => ({ ...tiesQuery, enabled: workspace.isOpen() }));
+  const { data: report } = useQuery(() => ({ ...reportQuery(workspace.listModIds()), enabled: workspace.isOpen() }));
   const shown = useLocalStorage(() => `pmt.patchCenter.shown.${workspace.activeId()}`, "");
 
   const newest = computed(() => {
-    const touching = new Set(
-      (impacts.value ?? []).flatMap(({ ties, findings }) => [
-        ...(ties ?? []).map((tie) => tie.version),
-        ...(findings ?? []).map((finding) => finding.facts?.version ?? ""),
-      ]),
-    );
+    const touching = new Set([
+      ...(ties.value ?? []).map((tie) => tie.version),
+      ...(report.value?.patch.findings ?? []).map((finding) => finding.facts?.version ?? ""),
+    ]);
     return notes.value?.find((note) => touching.has(note.version))?.version ?? "";
   });
   const isNew = computed(() => {

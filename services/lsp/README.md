@@ -119,13 +119,14 @@ the scripted ones the game and the workspace's mods define, one row for each nam
 `Defined` where that copy is. Rows are built each time they are asked for: the largest class of each game, the data
 functions, builds in 40 to 60 ms.
 
-With a start and an end version, `BuildLexicon` gives each row the `Status` and `Version` of its key's latest change in
-`Patches.ListRange(start, end)`, matching a patch's `DumpChange` by the class's own database. The data functions have
-no database, and the on_actions' is the one the schema names for the game. A key the range removed that the game no
-longer has is a row of its own, with the removed entry's blurb. `DescribeKey` returns the card of one row, made by the
-same `describeDefinition` as hover's card of a command, with the patches that changed the key as `Card.History`, each
-holding only that key's change, and the key's uses in the mods' own files as `Card.Sites`. The index already holds the
-uses of a built-in effect or trigger as inferred references.
+With a start version, `BuildLexicon` returns only the rows of the keys that `Patches.ListRange(start, end)` changed,
+each with the `Status` and `Version` of its key's latest change, matching a patch's dump changes by the class's
+database. The data functions' is `lang.DataFunctions`, and the on_actions' is the one the schema names for the game;
+`ListClasses` sends each class with its database. A key the range changed that the game no longer has is a row of its
+own, with that change's blurb. `DescribeKey` returns the card of one row, made by the same `describeDefinition` as
+hover's card of a command, with what each patch did to the key as `Card.History`, a row of the patch's version and
+its change in words, and the key's uses in the mods' own files as `Card.Sites`. The index already holds the uses of a
+built-in effect or trigger as inferred references.
 
 ## Diagnostics
 
@@ -143,16 +144,18 @@ and Health's rows both read the level from it. `SplitMessage` fills a template a
 - A file of the game has its parse errors only. A mod's file is judged with the index narrowed to its mod and the mods
   it depends on. A name nothing defines there, but a mod it does not depend on does, has an `Elsewhere` message.
 - The `patch` question holds what the game's patches changed under a mod, judged against the mod's range of versions
-  (`Session.ResolveRange`). A name that a patch of the range renamed or removed is `patch-renamed` or `patch-removed`
+  (`Session.ListModPatches`). A name that a patch of the range renamed or removed is `patch-renamed` or `patch-removed`
   in place of the `unknown-key`, `unresolved-reference` or `unknown-loc-key` the name would have, with the patch's
   version and, for a rename, the new name; a rename wins over a removal, and a name another mod defines keeps its own
   problem. A name is removed where the patch's `DumpChanges` or, for the two codes that name a definition or a text,
   its `DefinitionChanges` list it removed. The codes that a patch finding replaces are the table `patchable`. A key
-  that a patch only changed raises nothing. A mod file whose game file is one of `Session.ListStaleFiles` has one
-  `stale-copy` at its start, with the newest patch of the range that lists the file, or the end of the range where
-  only the kept copies show the change. Its fact `base` is the version of the kept copy that `Session.FindCopyFile`
-  finds for the range's start, and is left out where there is none, so the Patch Center offers the merge only where it
-  can run. A picture or other file the editor does not judge has none. The kept problems of a file are dropped when the patches are replaced.
+  that a patch only changed raises nothing. A mod file whose game file a patch of the range lists
+  (`Session.FindGameChange`) has one `stale-copy` at its start, with the newest patch that lists the file. Its fact
+  `base` is the version of the kept copy the change can be merged from, and is left out where there is none or the
+  game added or removed the file, so the Patch Center offers the merge only where it can run. The lookups are
+  [patch](../../internal/patch/README.md)'s (`FindRename`, `FindRemoval`, `FindFile`, `Changes`); lsp only picks the
+  code. A picture or other file
+  the editor does not judge has none. New patches store a new load order, which drops the kept problems of every file.
 - The parse errors and the localization checks come from `jomini` and `loc`, under the same table.
 
 **A check accuses only on firm ground.** A reference is dangling only where the walk did not mark it `Inferred`: its

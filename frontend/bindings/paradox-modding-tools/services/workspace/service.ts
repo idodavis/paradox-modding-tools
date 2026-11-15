@@ -137,17 +137,6 @@ export function DetectInstalls(gameID: string): $CancellablePromise<game$0.Detec
 }
 
 /**
- * FindCopy returns the text of the kept copy of a game file that is a valid
- * base for a three-way compare of a mod's file. The file is named by its path
- * from the game's folder. It returns false if there is no such copy, or if the
- * file is a picture or other binary file, of which only the hash is kept. It
- * returns an error if no workspace is open or the copy cannot be read.
- */
-export function FindCopy(modID: string, rel: string): $CancellablePromise<[string, boolean]> {
-    return $Call.ByID(2261933347, modID, rel);
-}
-
-/**
  * KeepFile ends a file's review and leaves the file as it is on disk. A file
  * with no review is left alone. It returns an error if no workspace is open.
  */
@@ -156,8 +145,8 @@ export function KeepFile(path: string): $CancellablePromise<void> {
 }
 
 /**
- * Launch starts the game with its debug flag. When it exits, game:exited says
- * whether it wrote fresher dumps.
+ * Launch starts the game with its debug flag, as Steam starts it. When it
+ * exits, game:exited says whether it wrote fresher dumps.
  */
 export function Launch(): $CancellablePromise<void> {
     return $Call.ByID(931374282);
@@ -236,6 +225,7 @@ export function ListWorkshopMods(installID: string): $CancellablePromise<$models
 
 /**
  * ListWorkspaces returns every recorded workspace with its install and mods.
+ * The open workspace's mods have the range its session set.
  */
 export function ListWorkspaces(): $CancellablePromise<$models.Workspace[] | null> {
     return $Call.ByID(2552451463);
@@ -252,9 +242,9 @@ export function Locate(path: string): $CancellablePromise<$models.Place> {
 /**
  * MergeGameFile applies the game's changes to a game file to the mod's file
  * that replaces it, and returns how many of the changes did not fit. The
- * changes are the lines that differ between the kept copy FindCopy gives and
- * the game's file now, each with the unchanged lines around it that make it
- * unique in the copy. A change fits where its copy's lines are in the mod's
+ * changes are the lines that differ between the kept copy of the game file
+ * and the game's file now, each with the unchanged lines around it that make
+ * it unique in the copy. A change fits where its copy's lines are in the mod's
  * file once, wherever that is, and one the mod made already fits as it is.
  * There is no looser match: a change whose lines are in the mod's file twice,
  * or that the mod edited, is left out and counted.

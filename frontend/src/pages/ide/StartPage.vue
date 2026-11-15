@@ -8,7 +8,7 @@ import type { RouteLocationRaw } from "vue-router";
 import type { Mod } from "@services/workspace/models";
 import { findCommand, findKbds } from "../../app/commands";
 import { describeDumps, findOwner, list, plural } from "../../lib/format";
-import { levelsQuery, reportQuery, repositoryWorkQuery, stateQuery } from "../../queries";
+import { reportQuery, repositoryWorkQuery, stateQuery, useLevels } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { gameIcon } from "../../stores/settings";
@@ -52,7 +52,7 @@ const mods = computed(() => workspace.listOwnMods());
 const roots = computed(() => [...new Set(mods.value.flatMap((mod) => git.findRoot({ origin: mod.id }) || []))]);
 
 const { data: state } = useQuery(stateQuery);
-const { data: levels } = useQuery(levelsQuery);
+const { levels, findLevel } = useLevels();
 const { data: report, refresh: refreshReport } = useQuery(() => ({
   ...reportQuery(workspace.listModIds()),
   enabled: workspace.isOpen(),
@@ -85,7 +85,7 @@ onActivated(() => {
 
 /** levelColor returns the color a level is painted in. It is the info color for an unknown level. */
 function levelColor(id: string | undefined): string {
-  return `var(--ui-${levels.value?.find((level) => level.id === id)?.color ?? "info"})`;
+  return `var(--ui-${findLevel(id)?.color ?? "info"})`;
 }
 
 /** describeMods names the given mods, then counts the rest. */
@@ -94,10 +94,14 @@ function describeMods(ids: string[]): string {
   return ids.length > MODS_NAMED ? `${names.join(", ")} and ${ids.length - MODS_NAMED} more…` : list(names);
 }
 
-/** describePatchNotes returns the line for the mods made for another game version, or none when the report has none. */
+/**
+ * describePatchNotes returns the line for the mods that the game's patches
+ * changed something under, or that are made for another game version. It
+ * returns none when the report's patch group has nothing about these mods.
+ */
 function describePatchNotes(): Line | undefined {
-  const findings = (report.value?.patch.findings ?? []).filter(
-    (finding) => finding.code === "supported-version" && mods.value.some((mod) => mod.id === finding.origin),
+  const findings = (report.value?.patch.findings ?? []).filter((finding) =>
+    mods.value.some((mod) => mod.id === finding.origin),
   );
   const [first] = findings;
   if (!first) return undefined;

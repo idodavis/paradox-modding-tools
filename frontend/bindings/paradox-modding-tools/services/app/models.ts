@@ -108,11 +108,17 @@ export interface Mod {
 }
 
 /**
- * Release is one published version of the app, with its notes in Markdown.
+ * Release is one published version of the app, with its notes.
  */
 export interface Release {
     "version": string;
     "date": string;
+
+    /**
+     * Notes are the release's notes as a document the pages show: a heading
+     * that reads the version and has ID as its id, then what GitHub holds.
+     */
+    "id": string;
     "notes": string;
     "running": boolean;
     "older": boolean;

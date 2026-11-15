@@ -9,7 +9,7 @@ and where each feature lives, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md), whi
 - A desktop app for Paradox modders, built with [Wails](https://v3.wails.io/) at the versions `go.mod` names: a Go
   backend, and a Vue 3, Nuxt UI, Pinia and Pinia Colada frontend. It is licensed under Apache-2.0.
 - It is built around a workspace, one game install and its mods. Its pages are Library, IDE, Event Graph, Health,
-  Patch Notes (the wiki's notes only), Publish (the Steam and Paradox Mods copy, and a compare with Steam) and
+  Patch Center (what the game's patches changed under each mod, and each version's notes), Publish (the Steam and Paradox Mods copy, and a compare with Steam) and
   Settings. It supports CK3 and Vic3, and EU5 in part.
 - It runs on Windows and Linux (traditional desktop distros, with GTK 4 and WebKitGTK 6). **macOS is not supported**:
   add no Mac downloads, Mac user docs, macOS issue-template option or macOS build files.

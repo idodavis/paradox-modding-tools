@@ -16,15 +16,21 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 	"golang.org/x/mod/semver"
+	"golang.org/x/net/html"
 )
 
-// Release is one published version of the app, with its notes in Markdown.
+// Release is one published version of the app, with its notes.
 type Release struct {
 	Version string    `json:"version"`
 	Date    time.Time `json:"date"`
-	Notes   string    `json:"notes"`
-	Running bool      `json:"running"`
-	Older   bool      `json:"older"`
+
+	// Notes are the release's notes as a document the pages show: a heading
+	// that reads the version and has ID as its id, then what GitHub holds.
+	ID    string `json:"id"`
+	Notes string `json:"notes"`
+
+	Running bool `json:"running"`
+	Older   bool `json:"older"`
 
 	// Installable is false for a release older than firstInstallable, whose
 	// zip the updater cannot install.
@@ -274,8 +280,11 @@ func (s *Service) ListReleases() ([]Release, error) {
 				continue
 			}
 
+			id := "release-" + version
+			heading := `<h1 id="` + html.EscapeString(id) + `">` + html.EscapeString(version) + "</h1>"
 			releases = append(releases, Release{
-				Version: version, Date: published.Published, Notes: published.Body,
+				Version: version, Date: published.Published, ID: id,
+				Notes:   heading + RenderMarkdown(published.Body, keepWebLink),
 				Running: version == running, Older: isOlder(version, running),
 				Installable: semver.Compare("v"+version, "v"+firstInstallable) >= 0,
 			})

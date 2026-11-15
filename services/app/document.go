@@ -1,19 +1,45 @@
-// sanitize.go cuts a wiki page's HTML down to what the pane shows.
+// document.go makes the HTML of a document the pages show: a wiki page, a
+// digest's article or a release's notes, cut down to text, lists, tables,
+// code and links.
 
-package wiki
+package app
 
 import (
-	"net/url"
+	"bytes"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
 
-// element says what a sanitized page does with one kind of HTML element. One
-// with no row gives way to its children.
+// LinkRule says what a document keeps of a link, given the link's target as
+// its source wrote it: the link's attributes, which are its href and the data
+// attributes that tell the page where it leads. A link the page cannot follow
+// gets none.
+type LinkRule func(target string) []html.Attribute
+
+// linkTarget is the attribute that holds where a link leads.
+const linkTarget = "href"
+
+// keepWebLink is the link rule of a source with no place of its own in the
+// app, as a release's notes: a link inside the document and a web address
+// stay, and any other link is dropped.
+func keepWebLink(target string) []html.Attribute {
+	isWeb := strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://")
+	if !isWeb && !strings.HasPrefix(target, "#") {
+		return nil
+	}
+
+	return []html.Attribute{{Key: linkTarget, Val: target}}
+}
+
+// element says what a document does with one kind of HTML element. One with
+// no row gives way to its children.
 type element struct {
 	// dropped is true when the element goes with everything inside it.
 	dropped    bool
@@ -35,18 +61,42 @@ var elements = map[atom.Atom]element{
 	atom.Th: {attributes: span}, atom.Td: {attributes: span},
 	atom.Pre: {}, atom.Code: {}, atom.B: {}, atom.I: {}, atom.Strong: {}, atom.Em: {}, atom.Sup: {}, atom.Sub: {},
 	atom.Small: {}, atom.Details: {}, atom.Summary: {}, atom.Br: {}, atom.Hr: {},
-	atom.A: {attributes: []string{"href"}}, atom.Span: {attributes: anchor},
+	atom.A: {attributes: []string{linkTarget}}, atom.Span: {attributes: anchor},
 	atom.Img: {dropped: true}, atom.Figure: {dropped: true}, atom.Iframe: {dropped: true},
 	atom.Script: {dropped: true}, atom.Style: {dropped: true}, atom.Noscript: {dropped: true},
 	atom.Nav: {dropped: true}, atom.Head: {dropped: true},
 }
 
-// sanitizePage cuts a parsed wiki page down to what the pane shows and
+// markdown reads markdown as GitHub writes it. Each heading gets an id made
+// from its text, so that a link inside the document finds it.
+var markdown = goldmark.New(
+	goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+)
+
+// RenderMarkdown returns the document of a markdown text, sanitized as
+// Sanitize says. It returns "" for a text that cannot be read.
+func RenderMarkdown(text string, rule LinkRule) string {
+	var rendered bytes.Buffer
+	if err := markdown.Convert([]byte(text), &rendered); err != nil {
+		return ""
+	}
+
+	return Sanitize(rendered.String(), rule)
+}
+
+// Sanitize cuts a source's HTML down to the document the pages show, and
 // returns its HTML: no chrome, citations, pictures or reference sections, long
-// tables folded, and only web links, made absolute.
-func sanitizePage(root *html.Node, origin *url.URL) string {
-	sanitize(root, origin)
+// tables folded, and of each link only what the given rule keeps. It returns
+// "" for HTML that cannot be parsed.
+func Sanitize(text string, rule LinkRule) string {
+	root, err := ParseFragment(text)
+	if err != nil {
+		return ""
+	}
+
+	sanitize(root, rule)
 	arrangeSections(root)
+
 	var sanitized strings.Builder
 	for node := root.FirstChild; node != nil; node = node.NextSibling {
 		_ = html.Render(&sanitized, node)
@@ -57,7 +107,8 @@ func sanitizePage(root *html.Node, origin *url.URL) string {
 
 var fragmentParent = &html.Node{Type: html.ElementNode, Data: atom.Div.String(), DataAtom: atom.Div}
 
-func parseFragment(text string) (*html.Node, error) {
+// ParseFragment parses a piece of HTML, and returns one node that holds it.
+func ParseFragment(text string) (*html.Node, error) {
 	nodes, err := html.ParseFragment(strings.NewReader(text), fragmentParent)
 	if err != nil {
 		return nil, err
@@ -74,27 +125,27 @@ func parseFragment(text string) (*html.Node, error) {
 // openRows is the most rows a table may have and stay unfolded.
 const openRows = 2
 
-func sanitize(parent *html.Node, origin *url.URL) {
+func sanitize(parent *html.Node, rule LinkRule) {
 	for child := parent.FirstChild; child != nil; {
 		next := child.NextSibling
-		switch _, kept := elements[child.DataAtom]; {
+		switch _, ok := elements[child.DataAtom]; {
 		case child.Type == html.TextNode:
 			// Text stays as it is.
 
 		case child.Type != html.ElementNode || isDropped(child):
 			parent.RemoveChild(child)
 
-		case kept:
-			child.Attr = resolveAttributes(child, origin)
-			sanitize(child, origin)
-			if child.DataAtom == atom.Sup && strings.TrimSpace(textOf(child)) == "" {
+		case ok:
+			child.Attr = resolveAttributes(child, rule)
+			sanitize(child, rule)
+			if child.DataAtom == atom.Sup && strings.TrimSpace(TextOf(child)) == "" {
 				parent.RemoveChild(child)
 			} else if rows := countRows(child); rows > openRows {
 				foldTable(child, rows)
 			}
 
 		default:
-			sanitize(child, origin)
+			sanitize(child, rule)
 			for inner := child.FirstChild; inner != nil; inner = child.FirstChild {
 				child.RemoveChild(inner)
 				parent.InsertBefore(inner, child)
@@ -111,7 +162,8 @@ var droppedClasses = []string{
 	"navbox", "infobox", "eu4box", "thumb", "noprint", "metadata", "reference", "references", "mw-editsection",
 }
 
-// isDropped reports whether a page loses an element with everything inside it.
+// isDropped reports whether a document loses an element with everything
+// inside it.
 func isDropped(node *html.Node) bool {
 	id := LookupAttribute(node, "id")
 	switch {
@@ -119,9 +171,9 @@ func isDropped(node *html.Node) bool {
 		return true
 	case strings.HasPrefix(id, "cite_note"), strings.HasPrefix(id, "cite_ref"):
 		return true
-	case node.DataAtom == atom.A && strings.HasSuffix(LookupAttribute(node, "href"), "#top"):
+	case node.DataAtom == atom.A && strings.HasSuffix(LookupAttribute(node, linkTarget), "#top"):
 		return true
-	case node.DataAtom == atom.Div && strings.TrimSpace(textOf(node)) == "[top]":
+	case node.DataAtom == atom.Div && strings.TrimSpace(TextOf(node)) == "[top]":
 		return true
 	}
 
@@ -157,25 +209,29 @@ func foldTable(table *html.Node, count int) {
 	fold.AppendChild(table)
 }
 
+// The sections a document loses, since the page draws its own contents and
+// follows no references, and those it shows last.
 var (
-	droppedSections = []string{"see also", "references", "external links", "further reading"}
-	lastSections    = []string{"scripting tools"}
+	droppedSections = []string{
+		"see also", "references", "external links", "further reading", "contents", "table of contents",
+	}
+	lastSections = []string{"scripting tools"}
 )
 
-// arrangeSections drops the sections a page loses and moves those it shows last
-// to its end.
+// arrangeSections drops the sections a document loses and moves those it
+// shows last to its end.
 func arrangeSections(root *html.Node) {
 	nodes := slices.Collect(root.ChildNodes())
 	var moved []*html.Node
 	for start := 0; start < len(nodes); start++ {
-		title := strings.ToLower(strings.TrimSpace(textOf(nodes[start])))
-		level := levelOf(nodes[start])
+		title := strings.ToLower(strings.TrimSpace(TextOf(nodes[start])))
+		level := LevelOf(nodes[start])
 		if level == 0 || (!slices.Contains(droppedSections, title) && !slices.Contains(lastSections, title)) {
 			continue
 		}
 
 		end := start + 1
-		for end < len(nodes) && (levelOf(nodes[end]) == 0 || levelOf(nodes[end]) > level) {
+		for end < len(nodes) && (LevelOf(nodes[end]) == 0 || LevelOf(nodes[end]) > level) {
 			end++
 		}
 
@@ -195,7 +251,9 @@ func arrangeSections(root *html.Node) {
 	}
 }
 
-func levelOf(node *html.Node) int {
+// LevelOf returns the level of a heading, as 2 for an h2, or 0 for any other
+// element.
+func LevelOf(node *html.Node) int {
 	if !elements[node.DataAtom].heading {
 		return 0
 	}
@@ -203,12 +261,11 @@ func levelOf(node *html.Node) int {
 	return int(node.Data[1] - '0')
 }
 
-// resolveAttributes returns the attributes of an element that a page keeps. A
-// link keeps only a web address, made absolute, and a link to another wiki page
-// also gets its title as data-page.
-func resolveAttributes(node *html.Node, origin *url.URL) []html.Attribute {
+// resolveAttributes returns the attributes of an element that a document
+// keeps. A link keeps what the given rule gives it.
+func resolveAttributes(node *html.Node, rule LinkRule) []html.Attribute {
 	row := elements[node.DataAtom]
-	var kept []html.Attribute
+	var attributes []html.Attribute
 	for _, attribute := range node.Attr {
 		if !slices.Contains(row.attributes, attribute.Key) {
 			continue
@@ -225,55 +282,16 @@ func resolveAttributes(node *html.Node, origin *url.URL) []html.Attribute {
 				continue
 			}
 
-		case "href":
-			target, ok := resolveLink(attribute.Val, origin)
-			if !ok {
-				continue
-			}
+		case linkTarget:
+			attributes = append(attributes, rule(attribute.Val)...)
 
-			attribute.Val = target
-			if title := resolveTitle(target, origin); title != "" {
-				kept = append(kept, html.Attribute{Key: "data-page", Val: title})
-			}
+			continue
 		}
 
-		kept = append(kept, attribute)
+		attributes = append(attributes, attribute)
 	}
 
-	return kept
-}
-
-// resolveTitle returns the title of the wiki page an address names, or "" for
-// another site or no page.
-func resolveTitle(target string, origin *url.URL) string {
-	address, err := url.Parse(target)
-	if err != nil || address.Host != origin.Host {
-		return ""
-	}
-
-	title := strings.TrimPrefix(strings.TrimPrefix(address.Path, "/"), "wiki/")
-	if title == "index.php" {
-		return ""
-	}
-
-	return strings.ReplaceAll(title, "_", " ")
-}
-
-// resolveLink makes a link absolute, or returns false if it is not a web
-// address. A link inside the page stays as it is.
-func resolveLink(target string, origin *url.URL) (string, bool) {
-	if strings.HasPrefix(target, "#") {
-		return target, true
-	}
-
-	address, err := url.Parse(target)
-	if err != nil {
-		return "", false
-	}
-
-	address = origin.ResolveReference(address)
-
-	return address.String(), address.Scheme == "http" || address.Scheme == "https"
+	return attributes
 }
 
 // LookupAttribute returns the value of an element's attribute, or "" if it has
@@ -288,7 +306,8 @@ func LookupAttribute(node *html.Node, key string) string {
 	return ""
 }
 
-func textOf(node *html.Node) string {
+// TextOf returns the text an element holds, without its markup.
+func TextOf(node *html.Node) string {
 	if node.Type == html.TextNode {
 		return node.Data
 	}

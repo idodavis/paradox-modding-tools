@@ -45,6 +45,12 @@ const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
 /** JUMP_LINES is how many lines the caret must move at once for the history to record the place it left. */
 const JUMP_LINES = 10;
+/** The keys the hover card's foot names, each with what it does. */
+const HOVER_KEYS = [
+  ["F12", "definition"],
+  ["Alt F12", "peek"],
+  ["Shift F12", "references"],
+];
 /** CARD_CONTENT places the hover card flush against the word and keeps the focus in the editor. */
 const CARD_CONTENT: PopoverProps["content"] = {
   side: "top",
@@ -121,7 +127,7 @@ const { data: report } = useQuery(() => ({
   enabled: menuOpen.value && workspace.isOpen(),
 }));
 const hasFinding = computed(() =>
-  [report.value?.compatibility, ...(report.value?.mods ?? [])].some((group) =>
+  [report.value?.compatibility, report.value?.patch, ...(report.value?.mods ?? [])].some((group) =>
     group?.findings?.some((finding) => finding.name === card.value?.title),
   ),
 );
@@ -429,7 +435,21 @@ const menu = computed(() => groups.value.filter((group) => group.length));
             @mouseenter="hovering.hold(true)"
             @mouseleave="hovering.hold(false)"
           >
-            <HoverCard :card="hovering.hover.value.card" :problems="hovering.hover.value.problems" />
+            <HoverCard
+              :card="hovering.hover.value.card"
+              :problems="hovering.hover.value.problems"
+              class="w-max max-w-198"
+            >
+              <template #footer>
+                <span v-for="[key, action] in HOVER_KEYS" :key="key" class="flex items-center gap-1">
+                  <UKbd :value="key" />{{ action }}
+                </span>
+                <span v-if="hovering.hover.value.card?.node" class="flex items-center gap-1">
+                  <UKbd value="Ctrl Shift G" />graph
+                </span>
+                <span class="ms-auto">Right-click for more</span>
+              </template>
+            </HoverCard>
           </div>
         </template>
       </UPopover>

@@ -25,7 +25,7 @@ import { useSettingsStore } from "../../stores/settings";
 import { THIS_WINDOW, useWindowsStore, type WikiLookup } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LexiconList from "../../ui/LexiconList.vue";
-import WikiArticle from "../../ui/WikiArticle.vue";
+import DocumentView from "../../ui/DocumentView.vue";
 
 const props = defineProps<{ place: Place | null }>();
 
@@ -92,12 +92,6 @@ function measureTabs(): void {
   const tabs = [...element.children] as HTMLElement[];
   const overflow = tabs.findIndex((tab) => tab.offsetLeft + tab.offsetWidth > element.clientWidth);
   fitting.value = overflow < 0 ? tabs.length : overflow;
-}
-
-/** follow shows the wiki page a clicked link in the article points to, if it points to one. */
-function follow(event: MouseEvent): void {
-  const link = event.target instanceof Element ? event.target.closest("a") : null;
-  if (link?.dataset.page) title.value = link.dataset.page;
 }
 
 // A look-up from the editor shows its page, or its lexicon entry.
@@ -225,9 +219,7 @@ const releases = computed(() =>
         </UInputMenu>
       </div>
       <template v-if="article">
-        <div class="flex min-h-0 flex-1 flex-col" @click="follow">
-          <WikiArticle :key="article.title" :page="article" />
-        </div>
+        <DocumentView :key="article.title" :html="article.html" save-id="wiki" />
         <div class="flex shrink-0 items-center gap-1 border-t border-default px-3 py-2 text-11 text-dimmed">
           <UButton
             :label="`Open on ${host}`"
@@ -243,9 +235,13 @@ const releases = computed(() =>
       </template>
       <p v-else-if="error" class="px-3.5 py-3 text-12 text-error">{{ error.message }}</p>
       <p v-else-if="!titles && file" class="px-3.5 py-3 text-12 text-dimmed">Reading the wiki…</p>
-      <p v-else class="px-3.5 py-3 text-12 text-dimmed">
-        {{ file ? "The wiki has no page for this file." : "Open a file to see its wiki pages." }}
-      </p>
+      <UEmpty
+        v-else
+        icon="i-lucide-book-open"
+        :title="file ? 'The wiki has no page for this file' : 'Open a file to see its wiki pages'"
+        size="sm"
+        class="m-auto"
+      />
     </template>
     <template v-else>
       <LexiconList

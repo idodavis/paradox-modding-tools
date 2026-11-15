@@ -105,9 +105,7 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 		application.NewService(graphService),
 		application.NewService(&search.Service{Workspace: wsp}),
 		application.NewService(wikiService),
-		application.NewService(&patch.Service{
-			Workspace: wsp, Wiki: wikiService, Health: healthService, Steam: steamService,
-		}),
+		application.NewService(&patch.Service{Workspace: wsp, Wiki: wikiService}),
 		application.NewService(mcpService),
 		application.NewService(&agent.Service{Workspace: wsp, MCP: mcpService}),
 		application.NewService(gitService),

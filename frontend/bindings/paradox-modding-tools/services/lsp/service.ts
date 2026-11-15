@@ -23,10 +23,10 @@ import * as $models from "./models.js";
 
 /**
  * BuildLexicon returns the rows of a class, sorted by name, scripted effects
- * and triggers included. With a start and an end version, each row also says
- * how the patches after the start, up to the end, last changed its key, and
- * there is a row for each key they removed that the game no longer has. It
- * returns an error if no workspace is open or the class is unknown.
+ * and triggers included. With a start version, it returns only the rows of the
+ * keys that the patches after the start, up to the end version, changed. Each
+ * says how they last changed it, and a key the game no longer has is among
+ * them. It returns an error if no workspace is open or the class is unknown.
  */
 export function BuildLexicon(id: string, start: string, end: string): $CancellablePromise<$models.LexiconRow[] | null> {
     return $Call.ByID(2974875071, id, start, end);
@@ -91,8 +91,8 @@ export function DescribeIndentation(path: string): $CancellablePromise<string> {
 
 /**
  * DescribeKey returns the card of one key of a lexicon class: what hover says
- * of the key, the patches that changed it, and where the mods use it. A key
- * the game no longer has gets a card only if a patch removed it. It returns an
+ * of the key, what each patch did to it, and where the mods use it. A key
+ * the game no longer has gets a card only if a patch changed it. It returns an
  * error if no workspace is open, the class is unknown, or the key is neither
  * in the game nor in a patch.
  */
@@ -152,7 +152,8 @@ export function ListAncestors(path: string, line: number, column: number): $Canc
 }
 
 /**
- * ListClasses returns the lexicon's classes in the order its tabs show them.
+ * ListClasses returns the lexicon's classes in the order its tabs show them,
+ * each with the database that holds its keys in the open workspace's game.
  */
 export function ListClasses(): $CancellablePromise<$models.Class[] | null> {
     return $Call.ByID(3234764497);

@@ -621,40 +621,6 @@ func WalkField(field *Field, visit func(key string, child *Field)) {
 	}
 }
 
-// ListDocKeys returns the keys the docs document, by database, each list
-// sorted. A key below another is written with its holders' keys before it, as
-// holder.key. A database whose docs document no key has no list. Which keys the
-// docs document is what a new version of the game may change, with or without
-// new dumps.
-func (s *Schema) ListDocKeys() map[string][]string {
-	keys := map[string][]string{}
-
-	for name, database := range s.Databases {
-		if documented := listDocKeys(database.Field, ""); len(documented) > 0 {
-			keys[name] = documented
-		}
-	}
-
-	return keys
-}
-
-// listDocKeys returns the keys below a field that the docs document, each
-// written after the given holders.
-func listDocKeys(field *Field, holders string) []string {
-	var keys []string
-
-	for _, key := range slices.Sorted(maps.Keys(field.Children)) {
-		child := field.Children[key]
-		if child.Source == SourceDocs {
-			keys = append(keys, holders+key)
-		}
-
-		keys = append(keys, listDocKeys(child, holders+key+".")...)
-	}
-
-	return keys
-}
-
 // BuildChild returns the field inside this one for a key, adding it if it is
 // missing. A field with no source yet takes the given one.
 func (f *Field) BuildChild(key string, source Source) *Field {

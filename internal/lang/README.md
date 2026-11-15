@@ -64,8 +64,6 @@ flowchart TD
 - **Declaration**: what is known about a database before any file is read.
 - **Nesting**: a database whose definitions are written inside another database's definitions.
 - **Field**: one key that may be written in a definition, with what it takes.
-- **Documented key**: a field whose best source is the docs. `ListDocKeys` lists them by database, a key below
-  another written `holder.key`, which is what a new version of the game may add or remove with no new dumps.
 - **Expected**, **ValueType**: what a field's value must be.
 - **Requirement**: whether a field must be written.
 - **Vanilla**: what the game's own files write at a field, counted.

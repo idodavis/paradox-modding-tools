@@ -474,7 +474,7 @@ func groupReport(findings []Finding, order []string, external map[string]bool) R
 	}
 
 	mods := make([]Group, len(order))
-	own := []Finding{}
+	own, ownPatch := []Finding{}, []Finding{}
 
 	// A finding of the workspace as a whole, as the game's documentation being
 	// of another version, has no owner.
@@ -484,6 +484,7 @@ func groupReport(findings []Finding, order []string, external map[string]bool) R
 		patch = append(patch, patches[id]...)
 		if !external[id] {
 			own = append(own, mods[position].Findings...)
+			ownPatch = append(ownPatch, patches[id]...)
 		}
 	}
 
@@ -493,6 +494,7 @@ func groupReport(findings []Finding, order []string, external map[string]bool) R
 		Patch:         makeGroup("", patch, nil),
 		Mods:          mods,
 		Own:           makeTally(own),
+		OwnPatch:      makeTally(ownPatch),
 		CheckedAt:     time.Now(),
 		Changes:       []Change{},
 	}

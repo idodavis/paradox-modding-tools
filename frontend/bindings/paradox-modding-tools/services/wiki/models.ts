@@ -8,12 +8,6 @@ export interface Note {
     "version": string;
 
     /**
-     * Parent is the version a hotfix belongs to, such as 1.14 for 1.14.2. It is
-     * "" for a release.
-     */
-    "parent": string;
-
-    /**
      * Released is the date the note gives for its release, or "" for none.
      */
     "released": string;

@@ -35,7 +35,7 @@ flowchart TD
 | `schema.go` | The package doc, `Build`, and the databases made from the game's folders and from lang's declarations. |
 | `dumps.go` | The reader of the dump files, the shipped backup filling what they lack, and the dumps' corrections. |
 | `commands.go` | The commands, their keys and the links built from the dumps. |
-| `comparison.go` | `DumpChange`, and the comparison of two versions' dumps: the keys a patch added, removed or changed. `KeyChange`, and the comparison of two versions' documented keys or defined names. |
+| `comparison.go` | `KeyChange`, and the comparison of two versions by key: the keys of their dumps and the names their files define that a patch added, removed or changed. |
 | `docs.go` | The reader of the doc files: which files are docs, and the hover text, type, default and values they give each field. |
 | `vanilla.go` | The count of the game's own files, and what the counts show about each field, each link and each star key. |
 | `shipped.go` | The backup of each game's dumps that the app ships, embedded from `shipped/*.gob`. |
@@ -54,23 +54,22 @@ flowchart TD
   backup's is the install's version that `gen` wrote it from. `SourceState.Current` is whether the dumps `Build` used
   describe that version: the install's own that are not older than the install, or any whose version is the install's.
 - **gen**: the command that writes the shipped backups, and beside each the game's shipped history of patches
-  (`services/workspace/shipped/<game>.gob`, which the workspace embeds). When it writes a newer backup it compares the
-  one before with the new dumps (`CompareDumps`), and the docs keys, defined names and file hashes it kept of the
-  version before with the install's (`CompareKeys`, `workspace.CompareHashes`), and adds that patch to the history.
-  What it kept is `gen/state/<game>.gob`, which the app neither embeds nor reads, and which stays on the machine that
-  runs gen, out of git: a run on another machine finds none and adds no patch. `gen past <game> <folder>` adds the
+  (`internal/patch/shipped/<game>.gob`, which [patch](../patch/README.md) embeds). When it writes a newer backup it
+  compares the one before with the new dumps, and the defined names and file hashes it kept of the version before with
+  the install's (`patch.CompareSnapshots`), and adds that patch to the history. What it kept is the snapshot
+  `gen/state/<game>.gob`, which the app neither embeds nor reads, and which stays on the machine that runs gen, out of
+  git: a run on another machine finds none and adds a patch of the dumps' changes alone. `gen past <game> <folder>` adds the
   dump changes of older versions from a folder of `<version>_<dump file>` files, as OldEnt's repository of Crusader
   Kings III dumps has them.
 - **Doc**: a file the game ships beside its script that describes a database's fields, such as an `.info` file.
 - **Count**: what the game's own files write at each field, added up over every file.
 - **Star key**: a command the dumps list once for each definition of a database, such as `has_relation_*`.
-- **Comparison**: what `CompareDumps` returns for two versions' dumps, a list of dump changes. A key that fits a
-  star key of the installed schema is the star key, so the generated region keys of `every_country_in_*` are no
-  change in themselves.
-- **Dump change**: one key of the game's dumps that a patch added, removed or changed. A key is changed when a fact
-  of its entry differs: its sentence, scopes, target or traits for a command, and the facts of a scope type, an
-  on_action or a data function.
-- **Key change**: one key of a database that a patch added or removed, as `CompareKeys` returns for two versions' keys:
-  the keys the docs document (`lang.Schema.ListDocKeys`) or the names the game's files define
-  (`index.Index.ListDefinedKeys`). A key has no other change.
-- **Status**: what a patch did to a key: added, removed or changed.
+- **Comparison**: `Compare` gives the status of each key two maps do not hold alike, and every comparison of two
+  versions runs on it. `CompareDumps` compares two versions' dumps. A key that fits a star key of the installed
+  schema is the star key, so the generated region keys of `every_country_in_*` are no change in themselves. A kind
+  of entry one version lists none of, or writes in another form, is left out. `CompareKeys` compares the names two
+  versions' files define (`index.Index.ListDefinedKeys`), which are only added or removed.
+- **Key change**: one key that a patch added, removed or changed. A key of the dumps is changed when a fact of its
+  entry differs: its sentence, scopes, target or traits for a command, and the facts of a scope type, an on_action or
+  a data function. A function of a data type is in the database `lang.DataFunctions`.
+- **Status**: what a patch did to a key or a file: added, removed or changed.

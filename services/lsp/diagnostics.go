@@ -18,7 +18,7 @@ import (
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/patch"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -448,16 +448,14 @@ func DiagnoseFiles(ws *workspace.Session, mods *index.Index, paths []string) [][
 	return diagnostics
 }
 
-// problems holds the problems of the files by key, judged against one index,
-// one set of patches and one load order. A scan puts a new index in place, the
-// patch service new patches, and a mod's record or descriptor a new load order,
-// which drops them.
+// problems holds the problems of the files by key, judged against one index
+// and one load order. A scan puts a new index in place, and new patches or a
+// mod's record or descriptor a new load order, which drops them.
 var problems struct {
 	sync.Mutex
-	mods    *index.Index
-	patches *workspace.Patches
-	order   *[]workspace.Mod
-	files   map[string]judged
+	mods  *index.Index
+	order *[]workspace.Mod
+	files map[string]judged
 }
 
 // DiagnoseFile returns the problems of a file, judged on the editor's text
@@ -475,11 +473,11 @@ func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diag
 		edits = ws.Edits.Load()
 	}
 
-	patches, order := ws.Patches.Load(), ws.Order.Load()
+	order := ws.Order.Load()
 
 	problems.Lock()
 	last, ok := problems.files[place.Key]
-	ok = ok && problems.mods == mods && problems.patches == patches && problems.order == order && last.edits == edits
+	ok = ok && problems.mods == mods && problems.order == order && last.edits == edits
 	problems.Unlock()
 	if ok {
 		return slices.Clone(last.diagnostics), nil
@@ -493,8 +491,8 @@ func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diag
 	diagnostics := diagnoseDocument(ws, mods, place, document)
 
 	problems.Lock()
-	if problems.mods != mods || problems.patches != patches || problems.order != order {
-		problems.mods, problems.patches, problems.order, problems.files = mods, patches, order, map[string]judged{}
+	if problems.mods != mods || problems.order != order {
+		problems.mods, problems.order, problems.files = mods, order, map[string]judged{}
 	}
 
 	problems.files[place.Key] = judged{diagnostics: diagnostics, edits: edits}
@@ -547,9 +545,8 @@ func diagnoseDocument(ws *workspace.Session, mods *index.Index, place workspace.
 		}
 	}
 
-	start, end := ws.ResolveRange(place.Origin)
-	patches := ws.Patches.Load().ListRange(start, end)
-	diagnostics = append(diagnostics, diagnoseCopy(ws, tree, place, patches, start, end)...)
+	patches := ws.ListModPatches(place.Origin)
+	diagnostics = append(diagnostics, diagnoseCopy(ws, mods, tree, place)...)
 
 	narrowed := mods
 	if place.Origin != "" {
@@ -585,7 +582,7 @@ func diagnoseDocument(ws *workspace.Session, mods *index.Index, place workspace.
 func diagnoseDescriptor(ws *workspace.Session, place workspace.Place, tree *jomini.Tree) []Diagnostic {
 	descriptor, err := workspace.ParseDescriptor(place.Path, tree.Src)
 	version := ws.Schema.Version
-	if matches, known := workspace.MatchVersion(descriptor.SupportedVersion, version); err != nil || matches || !known {
+	if matches, known := patch.MatchVersion(descriptor.SupportedVersion, version); err != nil || matches || !known {
 		return []Diagnostic{}
 	}
 
@@ -610,71 +607,46 @@ var patchable = []string{lang.ProblemUnknownKey, index.ProblemUnresolved, index.
 
 // applyPatches returns the code of the patch finding that replaces a problem,
 // and adds its version, and for a rename its replacement, to the problem's
-// facts. That is the case where a patch of the mod's range renamed the name, or
-// removed it: as a command in the dumps, or as a name the game's files defined
-// (a localization key too). A rename wins over a removal. It returns the code
-// as it was for any other problem. A key that a patch only changed is no
-// finding.
-func applyPatches(patches []workspace.Patch, code string, facts map[string]string) string {
+// facts. That is the case where a patch of the mod's range renamed the name
+// or removed it. A rename wins over a removal. A key the block does not take
+// is a command, so only a removal from the dumps counts for it. It returns the
+// code as it was for any other problem.
+func applyPatches(patches patch.Patches, code string, facts map[string]string) string {
 	if !slices.Contains(patchable, code) {
 		return code
 	}
 
 	name := facts["name"]
-	for _, patch := range patches {
-		for _, rename := range patch.KeyRenames {
-			if rename.Key == name {
-				facts["version"], facts["replacement"] = patch.Version, rename.Replacement
+	if replacement, version, ok := patches.FindRename(name); ok {
+		facts["version"], facts["replacement"] = version, replacement
 
-				return "patch-renamed"
-			}
-		}
+		return "patch-renamed"
 	}
 
-	for _, patch := range patches {
-		removedCommand := slices.ContainsFunc(patch.DumpChanges, func(change schema.DumpChange) bool {
-			return change.Key == name && change.Status == schema.StatusRemoved
-		})
-		removedName := code != lang.ProblemUnknownKey && slices.ContainsFunc(patch.DefinitionChanges, func(change schema.KeyChange) bool {
-			return change.Key == name && change.Status == schema.StatusRemoved
-		})
-		if removedCommand || removedName {
-			facts["version"] = patch.Version
+	if version, ok := patches.FindRemoval(name, code != lang.ProblemUnknownKey); ok {
+		facts["version"] = version
 
-			return "patch-removed"
-		}
+		return "patch-removed"
 	}
 
 	return code
 }
 
-// diagnoseCopy returns a problem at the start of a mod's file if it replaces a
-// game file that the game changed after the version the mod is made for. The
-// version is the newest patch of the range that lists the file, else the end
-// of the range, where only the kept copies show the change. The fact base is
-// the version of the kept copy the game's changes can be merged from, and is
-// left out where PMT keeps none for the range's start.
-func diagnoseCopy(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, patches []workspace.Patch, start, end string) []Diagnostic {
-	stale := ws.ListStaleFiles(place.Origin)
-	position := slices.IndexFunc(stale, func(file workspace.GameFile) bool { return file.Rel == place.Rel })
-	if position < 0 {
+// diagnoseCopy returns a problem at the start of a mod's file if a patch after
+// the version the mod is made for changed the game file under it. The fact
+// base is the version of the kept copy the game's changes can be merged from,
+// and is left out where there is nothing to merge.
+func diagnoseCopy(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, place workspace.Place) []Diagnostic {
+	change, version, base, ok := ws.FindGameChange(mods, place)
+	if !ok {
 		return nil
-	}
-
-	version := end
-	for _, patch := range slices.Backward(patches) {
-		if slices.ContainsFunc(patch.GameFiles, func(file workspace.GameFile) bool { return file.Rel == place.Rel }) {
-			version = patch.Version
-
-			break
-		}
 	}
 
 	// The file is the finding's name, so each file is a finding of its own.
 	facts := map[string]string{
-		"name": stale[position].Rel, "database": lang.File, "status": stale[position].Status, "version": version,
+		"name": change.Rel, "database": lang.File, "status": string(change.Status), "version": version,
 	}
-	if base, _, ok := ws.FindCopyFile(start, place.Rel); ok {
+	if base != "" {
 		facts["base"] = base
 	}
 

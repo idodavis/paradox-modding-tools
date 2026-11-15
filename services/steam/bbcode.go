@@ -12,7 +12,7 @@ import (
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 
-	"paradox-modding-tools/services/wiki"
+	"paradox-modding-tools/services/app"
 )
 
 // steamElements maps each BBCode tag Steam draws to the HTML element it is
@@ -183,14 +183,14 @@ func writeElement(bbcode *strings.Builder, node *html.Node) {
 	}
 
 	fmt.Fprintf(bbcode, "[%s", tag)
-	if argument := cmp.Or(wiki.LookupAttribute(node, "href"), wiki.LookupAttribute(node, "title")); argument != "" && !literal {
+	if argument := cmp.Or(app.LookupAttribute(node, "href"), app.LookupAttribute(node, "title")); argument != "" && !literal {
 		fmt.Fprintf(bbcode, "=%s", argument)
 	}
 	bbcode.WriteString("]")
 
 	switch {
 	case node.DataAtom == atom.Img:
-		bbcode.WriteString(wiki.LookupAttribute(node, "src"))
+		bbcode.WriteString(app.LookupAttribute(node, "src"))
 
 	case literal:
 		if block {

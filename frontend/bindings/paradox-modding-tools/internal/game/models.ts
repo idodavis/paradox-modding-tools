@@ -58,6 +58,13 @@ export interface Game {
      * own mod folder.
      */
     "fixedModFolder": boolean;
+
+    /**
+     * Digests is where the game's Modding Co-op publishes its digests of each
+     * patch, a GitHub repository as owner/name. It is "" for a game whose
+     * community publishes none.
+     */
+    "digests": string;
     "guide": Guide;
     "example": Example;
 }

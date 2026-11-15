@@ -98,6 +98,13 @@ export interface Mod {
      * against.
      */
     "external": boolean;
+
+    /**
+     * Base is the game version a patch's changes are counted from for a mod
+     * whose descriptor gives no supported version that can be read, "" for
+     * none.
+     */
+    "base": string;
 }
 
 /**

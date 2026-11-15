@@ -363,9 +363,13 @@ func ReadInstallUpdatedAt(installPath string) time.Time {
 
 // CompareVersions orders two versions part by part, as cmp.Compare does, so
 // 1.20.1.2 comes after 1.20.1. A missing part counts as 0, and a part that is
-// not a number, as the X of 1.20.X, comes before any number.
+// not a number, as the X of 1.20.X, comes before any number. An open beta,
+// a version that ends in -openbeta, is ordered by its number and comes before
+// the release of the same number: 1.14.4-openbeta is after 1.14.3 and before
+// 1.14.4.
 func CompareVersions(first, second string) int {
-	firstParts, secondParts := strings.Split(first, "."), strings.Split(second, ".")
+	firstParts := strings.Split(strings.TrimSuffix(first, betaSuffix), ".")
+	secondParts := strings.Split(strings.TrimSuffix(second, betaSuffix), ".")
 	for position := range max(len(firstParts), len(secondParts)) {
 		firstNumber, firstErr := toVersionPart(firstParts, position)
 		secondNumber, secondErr := toVersionPart(secondParts, position)
@@ -386,7 +390,32 @@ func CompareVersions(first, second string) int {
 		}
 	}
 
-	return 0
+	switch {
+	case IsBeta(first) == IsBeta(second):
+		return 0
+	case IsBeta(first):
+		return -1
+	}
+
+	return 1
+}
+
+// betaSuffix ends the version of an open beta, as in 1.14.4-openbeta, which
+// is how the Modding Co-ops' digests name its folder.
+const betaSuffix = "-openbeta"
+
+// IsBeta reports whether a version is an open beta, which is a version that
+// ends in -openbeta.
+func IsBeta(version string) bool {
+	return strings.HasSuffix(version, betaSuffix)
+}
+
+// IsInstalled reports whether a version is the one an install is on. A version
+// of an open beta is its number and -openbeta, which is how the Modding
+// Co-ops' digests name it, and the install is on it where its own version is
+// that number.
+func IsInstalled(version, installVersion string) bool {
+	return version == installVersion || IsBeta(version) && strings.HasPrefix(version, installVersion+"-")
 }
 
 // toVersionPart returns one part of a version as a number, 0 for a part the

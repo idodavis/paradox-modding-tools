@@ -19,7 +19,7 @@ problems in words.
 [jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
 [lang](../../internal/lang/README.md), [texture](../../internal/texture/README.md) · **Used by**
 [draw](../draw/README.md), [graph](../graph/README.md), [health](../health/README.md), [mcp](../mcp/README.md),
-[search](../search/), [terminal](../terminal/README.md), [wiki](../wiki/README.md).
+[search](../search/), [terminal](../terminal/README.md).
 
 ## One answer
 
@@ -68,7 +68,7 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   value that is one of the choices its key takes, such as an event's type, is named by the key, with the choices and
   the key's own text. A command's card shows the scopes the dumps give it, or says they name none. Each link of a
   chain has its own card, and so has a link written as a value: it says the scope the link leads to. A fact learned
-  only from the game's files marks the card inferred. `Classes` are the wiki lexicon's, in the order of its tabs, and
+  only from the game's files marks the card inferred. `Classes` are the lexicon's, in the order of its tabs, and
   `Card.Lexicon` names the one that lists what the card is about. `Card.Token` is the token type the editor colors
   the word by, so the page draws the card's label in the word's own color.
 - **Completion.** `Complete` returns a `CompletionList`: the candidates, and whether a limit cut them short. Only the
@@ -109,6 +109,24 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   `PresentColor` writes a color in the form the file already uses. `Signature` returns the parameters of the scripted
   definition a call names.
 
+## The lexicon
+
+`ListClasses` returns the lexicon's classes in the order the Wiki pane's Lexicon tab shows them, and `BuildLexicon`
+builds the rows of one class from the definitions the dumps fill in the [schema](../../internal/lang/README.md): the
+effects, the triggers, the links, the scope types, the modifiers, the on_actions and the data functions. A `LexiconRow`
+carries the dump's blurb and usage, the scopes it runs in and the scope it leads to. Effects and triggers also take in
+the scripted ones the game and the workspace's mods define, one row for each name the game keeps a copy of, with
+`Defined` where that copy is. Rows are built each time they are asked for: the largest class of each game, the data
+functions, builds in 40 to 60 ms.
+
+With a start and an end version, `BuildLexicon` gives each row the `Status` and `Version` of its key's latest change in
+`Patches.ListRange(start, end)`, matching a patch's `DumpChange` by the class's own database. The data functions have
+no database, and the on_actions' is the one the schema names for the game. A key the range removed that the game no
+longer has is a row of its own, with the removed entry's blurb. `DescribeKey` returns the card of one row, made by the
+same `describeDefinition` as hover's card of a command, with the patches that changed the key as `Card.History`, each
+holding only that key's change, and the key's uses in the mods' own files as `Card.Sites`. The index already holds the
+uses of a built-in effect or trigger as inferred references.
+
 ## Diagnostics
 
 A `Diagnostic` is a code, a range and its facts, with its code's level and its message filled in. `Codes` is the one
@@ -124,6 +142,17 @@ and Health's rows both read the level from it. `SplitMessage` fills a template a
   change through PMT's tools, and is not bound to the page.
 - A file of the game has its parse errors only. A mod's file is judged with the index narrowed to its mod and the mods
   it depends on. A name nothing defines there, but a mod it does not depend on does, has an `Elsewhere` message.
+- The `patch` question holds what the game's patches changed under a mod, judged against the mod's range of versions
+  (`Session.ResolveRange`). A name that a patch of the range renamed or removed is `patch-renamed` or `patch-removed`
+  in place of the `unknown-key`, `unresolved-reference` or `unknown-loc-key` the name would have, with the patch's
+  version and, for a rename, the new name; a rename wins over a removal, and a name another mod defines keeps its own
+  problem. A name is removed where the patch's `DumpChanges` or, for the two codes that name a definition or a text,
+  its `DefinitionChanges` list it removed. The codes that a patch finding replaces are the table `patchable`. A key
+  that a patch only changed raises nothing. A mod file whose game file is one of `Session.ListStaleFiles` has one
+  `stale-copy` at its start, with the newest patch of the range that lists the file, or the end of the range where
+  only the kept copies show the change. Its fact `base` is the version of the kept copy that `Session.FindCopyFile`
+  finds for the range's start, and is left out where there is none, so the Patch Center offers the merge only where it
+  can run. A picture or other file the editor does not judge has none. The kept problems of a file are dropped when the patches are replaced.
 - The parse errors and the localization checks come from `jomini` and `loc`, under the same table.
 
 **A check accuses only on firm ground.** A reference is dangling only where the walk did not mark it `Inferred`: its
@@ -147,6 +176,7 @@ has it, so it is only a note (`literal-text`), never an unknown key.
 |---|---|
 | `lsp.go` | `Service`, Monaco's ranges and their conversion, sites, and `SetText` and `CloseFile`. |
 | `hover.go` | The hover card and the lexicon classes. |
+| `lexicon.go` | The lexicon's rows and the card of one key. |
 | `complete.go` | Completion. |
 | `navigate.go` | Definitions, references, rename and symbols. |
 | `diagnostics.go` | The table of codes, levels and topics, the messages, and the checks of a file. |
@@ -163,7 +193,10 @@ has it, so it is only a note (`literal-text`), never an unknown key.
 - **Card**: a hover card: what a key or a value is, and the facts about it in the words and the order the page shows.
 - **CardRow**: one fact of a card, a label and the fact in words.
 - **CompletionList**: what can be written at a position, with whether a limit cut the list short.
-- **Class**: one class of the wiki's lexicon, which lists the commands the game declares in one way.
+- **Class**: one class of the lexicon, which lists the keys the dumps declare in one way.
+- **LexiconRow**: one effect, trigger, event target, scope, modifier, on_action or data function the dumps declare, or
+  one scripted effect or trigger, with what the range's patches last did to it.
+- **History**: the patches that changed one lexicon key, each holding only that key's change, oldest first.
 - **Completion**: one candidate in the completion list.
 - **Symbol**: one entry of a file's outline.
 - **WorkspaceSymbol**: one definition found by the symbol search across the workspace.

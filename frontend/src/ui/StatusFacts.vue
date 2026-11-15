@@ -6,9 +6,14 @@ export const STATUS_ITEM =
 </script>
 
 <script setup lang="ts">
+import { Browser } from "@wailsio/runtime";
+
 import { useShown } from "../app/pages";
 
-defineProps<{ facts: { label: string; value: string }[] }>();
+defineProps<{
+  /** The facts in order. A fact with a url opens it when clicked. */
+  facts: { label: string; value: string; url?: string }[];
+}>();
 
 // a kept-alive page stays mounted behind the others, so its facts leave with it
 const visible = useShown();
@@ -16,8 +21,13 @@ const visible = useShown();
 
 <template>
   <Teleport v-if="visible" defer to="#status-start">
-    <span v-for="fact in facts" :key="fact.label">
-      {{ fact.label }} <span class="text-toned">{{ fact.value }}</span>
-    </span>
+    <template v-for="fact in facts" :key="fact.label">
+      <button v-if="fact.url" type="button" :class="STATUS_ITEM" @click="Browser.OpenURL(fact.url)">
+        {{ fact.label }} <span class="text-toned">{{ fact.value }}</span>
+      </button>
+      <span v-else>
+        {{ fact.label }} <span class="text-toned">{{ fact.value }}</span>
+      </span>
+    </template>
   </Teleport>
 </template>

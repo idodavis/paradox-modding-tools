@@ -106,7 +106,7 @@ const { data: pages } = useQuery(() => ({
 /** lookup is the card's wiki look-up: its lexicon row, else its file's first wiki page, else undefined. */
 const lookup = computed((): WikiLookup | undefined => {
   if (card.value?.lexicon) return { class: card.value.lexicon, name: card.value.title };
-  const title = pages.value?.[0]?.title;
+  const title = pages.value?.[0];
   return title ? { title } : undefined;
 });
 const { data: copies } = useQuery(() => ({

@@ -14,6 +14,9 @@
 //   - A localization key that two or more mods define in one language.
 //   - A missing dependency, a folder outside the game's stage folders, the
 //     editor's own problems, and how far each language covers a mod.
+//   - What the game's patches changed under a mod: the version it is made for,
+//     a name a patch removed or renamed, and a game file a patch changed that
+//     the mod replaces. They are a group of their own.
 //
 // The compatibility checks judge the mods as if those the workspace leaves
 // out were not loaded. Each mod's own checks see every mod.
@@ -210,11 +213,18 @@ type Group struct {
 // Report is the findings for one load order, grouped and counted, and what
 // that order changes.
 type Report struct {
-	// Tally counts the compatibility's findings and the user's own mods'.
-	// External mods are left out, as they are not the user's to fix.
+	// Tally counts the compatibility's findings, the patch question's and the
+	// user's own mods'. External mods' own findings are left out, as they are
+	// not the user's to fix.
 	Tally
 
 	Compatibility Group `json:"compatibility"`
+
+	// Patch is the findings of the patch question: what the game's patches
+	// changed under the mods, which is each mod's made-for version, its
+	// removed or renamed names and its stale copies. They are in no mod's
+	// group.
+	Patch Group `json:"patch"`
 
 	// Mods is in load order.
 	Mods []Group `json:"mods"`

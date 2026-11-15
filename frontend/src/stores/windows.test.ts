@@ -71,6 +71,7 @@ describe("the windows", () => {
       database: "",
       readOnly: false,
       isDir: false,
+      missing: false,
       drawable: false,
       readme: "",
       language: "plaintext",

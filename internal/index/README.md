@@ -53,6 +53,9 @@ copy `FindKept` returns.
 | open: an entry mode where the database takes none | 0 | 0 | 2 |
 | files the game does not read, all shadowed | 103 | 117 | 84 |
 
+- The scan hashes 8,784 of CK3's 52,641 files, 6,350 of Vic3's 28,213 and 8,043 of EU5's 58,637: the rest are
+  pictures, meshes, sounds and the other languages' localization. Two scans of one install give the same hashes in all
+  three.
 - In EU5, 16 of the first copies have copies merged in by `INJECT:`, 22 in all, which the DLCs write into the game's
   genes, government reforms and laws. No install writes an entry mode that creates a definition or takes another
   copy's place, so those rules come from the Vic3 and EU5 wikis alone.
@@ -64,7 +67,7 @@ copy `FindKept` returns.
 |---|---|
 | `index.go` | The package doc, and the index and its parts: occurrences, tables, sites and postings, and what a site points at. |
 | `scan.go` | Scanning an install, scanning the mods on top of it, rescanning changed files, and loading the cache. |
-| `lookup.go` | Lookups by name: what a reference resolves to, what uses a name, what a database defines. |
+| `lookup.go` | Lookups by name: what a reference resolves to, what uses a name, what a database defines, and every defined key by database. |
 | `combine.go` | What the game keeps: the winning definition of a name, found by [lang](../lang/README.md)'s rule over the copies in files the game reads, and kept for each name with several copies until the next scan. |
 | `translation.go` | The game's localization in a second language, scanned once on an install's index and cached by language, and the message the game shows for a key. |
 | `problems.go` | The problems of a walked file that need every file: a name nothing defines, a text written twice or missing, a required key no copy writes, an entry mode with nothing to act on, a priority tie and an unknown data call. `ListProblems` returns them with the ones the walk recorded. |
@@ -76,6 +79,11 @@ copy `FindKept` returns.
 - **Occurrence**: the stored form of one definition, reference or message.
 - **Site**: a handle to one occurrence: a file's position and the occurrence's position in it.
 - **Role**: what an occurrence does with its name: defines it, refers to it or localizes it.
+- **Defined key**: a name some file of the index defines in a database, or a localization key under
+  `lang.Localization`. `ListDefinedKeys` lists them by database, which is what a new version of the game may add or
+  remove.
+- **Hash**: the SHA-256 of a file's bytes, which the scan takes of each script, GUI, font, GFX, table and
+  localization file it reads, into the file's `Hash`.
 - **Table**: the interned texts of one kind, each given one ordinal.
 - **Posting**: one group of occurrences: those of one role in one database.
 - **Winner**: the definition the game keeps when several share a name, and why. The reason and the cause are

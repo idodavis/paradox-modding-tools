@@ -96,17 +96,17 @@ function describeMods(ids: string[]): string {
 
 /** describePatchNotes returns the line for the mods made for another game version, or none when the report has none. */
 function describePatchNotes(): Line | undefined {
-  const findings = mods.value.flatMap(
-    (mod) => groups.value[mod.id]?.findings?.filter((finding) => finding.code === "supported-version") ?? [],
+  const findings = (report.value?.patch.findings ?? []).filter(
+    (finding) => finding.code === "supported-version" && mods.value.some((mod) => mod.id === finding.origin),
   );
   const [first] = findings;
   if (!first) return undefined;
   return {
-    id: "patch-notes",
+    id: "patch-center",
     color: levelColor(first.level),
     title: first.label,
     note: describeMods(findings.map(findOwner)),
-    action: { label: "Open Patch Notes", to: { name: "patch-notes", params: { id: workspace.activeId() } } },
+    action: { label: "Open Patch Center", to: { name: "patch-center", params: { id: workspace.activeId() } } },
   };
 }
 

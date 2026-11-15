@@ -20,7 +20,7 @@ const ROUTES = {
   "workspace-ide": { path: "", component: () => import("../pages/ide/WorkspaceIdePage.vue") },
   "event-graph": { path: "graph", component: () => import("../pages/graph/EventGraphPage.vue") },
   health: { path: "health", component: () => import("../pages/health/HealthPage.vue") },
-  "patch-notes": { path: "patch-notes", component: () => import("../pages/notes/PatchNotesPage.vue") },
+  "patch-center": { path: "patch-center", component: () => import("../pages/patch/PatchCenterPage.vue") },
   release: { path: "release", component: () => import("../pages/publish/ReleasePage.vue") },
 } satisfies Record<PageName, Pick<RouteRecordRaw, "path" | "component">>;
 

@@ -180,7 +180,7 @@ func (s *Session) WriteDescriptor(modID string, descriptor Descriptor) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.refreshMod(modID)
+	s.refreshMod(mod.Mod)
 
 	return nil
 }
@@ -514,7 +514,7 @@ func createModFolder(row *game.Game, dir, launcherDir, name, version string) (st
 		}
 	}
 
-	descriptor := Descriptor{Name: name, Version: "1.0", SupportedVersion: toSupportedVersion(version)}
+	descriptor := Descriptor{Name: name, Version: "1.0", SupportedVersion: ToSupportedVersion(version)}
 	if err := WriteDescriptor(row, folder, descriptor); err != nil {
 		return "", err
 	}
@@ -574,9 +574,9 @@ func findLocalizationFolder(row *game.Game) (string, bool) {
 
 var releaseVersion = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.|$)`)
 
-// toSupportedVersion turns a game version into the release a mod supports, such
+// ToSupportedVersion turns a game version into the release a mod supports, such
 // as 1.20.* for 1.20.1.2. It returns "" for a version without two numbers.
-func toSupportedVersion(version string) string {
+func ToSupportedVersion(version string) string {
 	match := releaseVersion.FindStringSubmatch(version)
 	if match == nil {
 		return ""

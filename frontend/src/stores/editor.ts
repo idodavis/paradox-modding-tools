@@ -133,14 +133,21 @@ export const useEditorStore = defineStore("editor", () => {
     mutation: async (path: string) => {
       const place = await loadQuery(placeQuery(path));
       if (!place) return;
+      // A file gone since the workspace was left loses its tab.
+      if (place.missing) return dropFile(place);
       await openFile(place).catch((error: unknown) => {
-        const id = tabId({ key: place.key });
-        while (find(id)) close(id);
-        places.delete(place.key);
+        dropFile(place);
         throw error;
       });
     },
   });
+
+  /** dropFile closes every tab of a file and forgets its place. */
+  function dropFile(place: Place): void {
+    const id = tabId({ key: place.key });
+    while (find(id)) close(id);
+    places.delete(place.key);
+  }
 
   /** applyFixAsync applies a quick fix: creates its file, edits the models, and shows the place it reveals. */
   async function applyFixAsync(fix: Fix): Promise<void> {

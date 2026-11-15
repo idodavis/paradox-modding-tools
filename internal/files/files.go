@@ -1,7 +1,8 @@
 // Package files lists the files of an install, a mod or a dump folder, tells
 // what format each one is, and decides which of them the game reads. It also
-// reads and writes a file's text in its own encoding, reads a table's rows,
-// compares and joins paths, unpacks a zip and applies ignore rules.
+// reads and writes a file's text in its own encoding, hashes a file's bytes,
+// reads a table's rows, compares and joins paths, unpacks a zip and applies
+// ignore rules.
 //
 // It knows no game. Which folders a game reads, and what each one holds, are
 // the rows of the game package; this one names a file by its place below a
@@ -208,6 +209,11 @@ type File struct {
 	Stage string `json:"stage"`
 
 	Format Format `json:"format"`
+
+	// Hash is the SHA-256 of the file's content in hex, taken when the index
+	// scan read the file. It is "" for a file the scan did not read, and the
+	// pages never see it.
+	Hash string `json:"-"`
 }
 
 // NewFile returns the file at a path below a root. It returns false, and a

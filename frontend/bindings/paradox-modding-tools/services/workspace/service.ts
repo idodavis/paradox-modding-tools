@@ -137,6 +137,17 @@ export function DetectInstalls(gameID: string): $CancellablePromise<game$0.Detec
 }
 
 /**
+ * FindCopy returns the text of the kept copy of a game file that is a valid
+ * base for a three-way compare of a mod's file. The file is named by its path
+ * from the game's folder. It returns false if there is no such copy, or if the
+ * file is a picture or other binary file, of which only the hash is kept. It
+ * returns an error if no workspace is open or the copy cannot be read.
+ */
+export function FindCopy(modID: string, rel: string): $CancellablePromise<[string, boolean]> {
+    return $Call.ByID(2261933347, modID, rel);
+}
+
+/**
  * KeepFile ends a file's review and leaves the file as it is on disk. A file
  * with no review is left alone. It returns an error if no workspace is open.
  */
@@ -232,9 +243,30 @@ export function ListWorkspaces(): $CancellablePromise<$models.Workspace[] | null
 
 /**
  * Locate returns the place of a file or folder, empty if no workspace is open.
+ * It reads the disk for IsDir and Missing.
  */
 export function Locate(path: string): $CancellablePromise<$models.Place> {
     return $Call.ByID(1496256747, path);
+}
+
+/**
+ * MergeGameFile applies the game's changes to a game file to the mod's file
+ * that replaces it, and returns how many of the changes did not fit. The
+ * changes are the lines that differ between the kept copy FindCopy gives and
+ * the game's file now, each with the unchanged lines around it that make it
+ * unique in the copy. A change fits where its copy's lines are in the mod's
+ * file once, wherever that is, and one the mod made already fits as it is.
+ * There is no looser match: a change whose lines are in the mod's file twice,
+ * or that the mod edited, is left out and counted.
+ * 
+ * It starts the file's review before it writes, so that the review shows each
+ * change to keep or undo. It writes nothing, and starts no review, if no change
+ * is made. It returns an error, and writes nothing, if no workspace is open,
+ * the path is not a mod's file that replaces a game file, there is no kept copy
+ * to merge from, a file is binary, or the editor holds the mod's file unsaved.
+ */
+export function MergeGameFile(path: string): $CancellablePromise<number> {
+    return $Call.ByID(1086771199, path);
 }
 
 /**
@@ -347,8 +379,9 @@ export function State(): $CancellablePromise<$models.State> {
 }
 
 /**
- * TrackEdits starts the review of a file, given each of the agent's edits to
- * it as hunks, the earliest edit first. The baseline is the file's text on
+ * TrackEdits starts the review of a file that an agent edits or a merge of the
+ * game's changes writes, given each of the agent's edits to it as hunks, the
+ * earliest edit first, and none for a merge. The baseline is the file's text on
  * disk with the edits undone, the latest edit and its last hunk first. A file
  * the agent created that is not on disk yet has the baseline "", and its
  * edits are not read. A file that has a review already is left as it is. A

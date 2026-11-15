@@ -1295,7 +1295,7 @@ func (w *walker) takeCommand(database string, parent *Context, key string, span 
 		return match{}, false
 	}
 
-	definition, patterns := w.schema.LookupDefinition(database, key), w.schema.findPatterns(database, key)
+	definition, patterns := w.schema.LookupDefinition(database, key), w.schema.FindPatterns(database, key)
 	if definition == nil && len(patterns) > 0 {
 		definition = patterns[0]
 

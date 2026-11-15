@@ -68,6 +68,11 @@ type Game struct {
 
 	SteamAppID int `json:"-"`
 
+	// Digests is where the game's Modding Co-op publishes its digests of each
+	// patch, a GitHub repository as owner/name. It is "" for a game whose
+	// community publishes none.
+	Digests string `json:"digests"`
+
 	// SteamLibrary is the game's own copy of Steam's library, from the
 	// install's folder, by GOOS. A system that is not listed has none.
 	SteamLibrary map[string]string `json:"-"`
@@ -178,6 +183,7 @@ var games = map[string]*Game{
 		ModDescriptor:  MetadataDir + "/metadata.json",
 		FixedModFolder: true,
 		SteamAppID:     529340,
+		Digests:        "Victoria-3-Modding-Co-op/Modding-Digests",
 		SteamLibrary:   steamLibrary,
 		ModFolders:     []string{"common", "events", "localization"},
 		Program: map[string]Program{
@@ -205,6 +211,7 @@ var games = map[string]*Game{
 		FixedModFolder: true,
 		ThumbnailDir:   MetadataDir,
 		SteamAppID:     3450310,
+		Digests:        "Europa-Universalis-5-Modding-Co-op/modding-digests",
 		// EU5 has no Linux build; there it runs under Proton with the Windows
 		// library
 		SteamLibrary: map[string]string{"windows": "binaries/steam_api64.dll"},

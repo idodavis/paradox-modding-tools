@@ -8,20 +8,16 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"paradox-modding-tools/services/app"
 )
 
-// Summary is one page in the listing.
-type Summary struct {
-	Title    string `json:"title"`
-	Category string `json:"category"`
-}
-
 // Listing is the modding pages and patch versions the wiki has for one game.
+// Pages holds the titles of the pages.
 type Listing struct {
-	Pages       []Summary `json:"pages"`
+	Pages       []string  `json:"pages"`
 	Versions    []string  `json:"versions"`
 	RefreshedAt time.Time `json:"refreshedAt"`
 }
@@ -40,17 +36,21 @@ const (
 	moddingCategory = "Modding"
 	patchCategory   = "Patches"
 	listingFile     = "listing.json"
-	staleAfter      = 7 * 24 * time.Hour
 	patchPrefix     = "Patch "
+
+	// titlesPerQuery is how many titles one revision query may name, which is
+	// the wiki's limit.
+	titlesPerQuery = 50
 )
 
 // patchTitle matches a patch page's title, such as "Patch 1.20.X", and holds
 // the version.
 var patchTitle = regexp.MustCompile(`^` + patchPrefix + `(\d+(?:\.\d+)*(?:\.X)?)$`)
 
-// Refresh fetches the listing and each page that is missing or stale, calling
-// progress after each page. It returns an error if the listing fails. A page
-// that fails does not stop the others.
+// Refresh fetches the listing and each page that is not cached or has a newer
+// revision on the wiki, calling progress after each page. It returns an error
+// if the listing or a revision query fails. A page that fails does not stop the
+// others.
 func (c *Client) Refresh(progress func(done, total int)) error {
 	listing, err := c.fetchListing()
 	if err != nil {
@@ -61,12 +61,16 @@ func (c *Client) Refresh(progress func(done, total int)) error {
 		return err
 	}
 
-	stale := c.listStale(listing)
+	changed, err := c.listChanged(listing)
+	if err != nil {
+		return err
+	}
+
 	var errs []error
-	for position, title := range stale {
+	for position, title := range changed {
 		_, err := c.FetchPage(title)
 		errs = append(errs, err)
-		progress(position+1, len(stale))
+		progress(position+1, len(changed))
 	}
 
 	return errors.Join(errs...)
@@ -81,17 +85,14 @@ func (c *Client) LoadListing() (Listing, bool) {
 
 func (c *Client) fetchListing() (Listing, error) {
 	listing := Listing{RefreshedAt: time.Now()}
-	titles, err := c.listCategory(moddingCategory)
+	pages, err := c.listCategory(moddingCategory)
 	if err != nil {
 		return Listing{}, err
 	}
 
-	listing.Pages = make([]Summary, len(titles))
-	for position, title := range titles {
-		listing.Pages[position] = Summary{Title: title, Category: moddingCategory}
-	}
+	listing.Pages = pages
 
-	titles, err = c.listCategory(patchCategory)
+	titles, err := c.listCategory(patchCategory)
 	if err != nil {
 		return Listing{}, err
 	}
@@ -107,7 +108,7 @@ func (c *Client) fetchListing() (Listing, error) {
 
 func (c *Client) listCategory(category string) ([]string, error) {
 	params := url.Values{
-		"action":      {"query"},
+		actionParam:   {"query"},
 		"list":        {"categorymembers"},
 		"cmtitle":     {"Category:" + category},
 		"cmnamespace": {"0"},
@@ -135,23 +136,63 @@ func (c *Client) listCategory(category string) ([]string, error) {
 	}
 }
 
-// listStale returns the titles of listed pages that are not cached or are too
-// old.
-func (c *Client) listStale(listing Listing) []string {
+// listChanged returns the titles of listed pages that are not cached or whose
+// cached revision is not the wiki's latest. A title the wiki gives no revision
+// for, such as a page it moved or deleted, is left out: it cannot be fetched,
+// and its cached copy stays readable.
+func (c *Client) listChanged(listing Listing) ([]string, error) {
 	titles := make([]string, 0, len(listing.Pages)+len(listing.Versions))
-	for _, summary := range listing.Pages {
-		titles = append(titles, summary.Title)
-	}
-
+	titles = append(titles, listing.Pages...)
 	for _, version := range listing.Versions {
 		titles = append(titles, resolvePatch(version))
 	}
 
-	return slices.DeleteFunc(titles, func(title string) bool {
-		page, ok := c.LoadPage(title)
+	var changed []string
+	for group := range slices.Chunk(titles, titlesPerQuery) {
+		revisions, err := c.fetchRevisions(group)
+		if err != nil {
+			return nil, err
+		}
 
-		return ok && time.Since(page.FetchedAt) <= staleAfter
-	})
+		for _, title := range group {
+			revision, ok := revisions[title]
+			if !ok {
+				continue
+			}
+
+			if page, ok := c.LoadPage(title); !ok || page.Revision != revision {
+				changed = append(changed, title)
+			}
+		}
+	}
+
+	return changed, nil
+}
+
+// fetchRevisions asks the wiki for the latest revision of each given page and
+// returns them by title. A page the wiki has no revision for is left out.
+func (c *Client) fetchRevisions(titles []string) (map[string]int64, error) {
+	params := url.Values{actionParam: {"query"}, "prop": {"info"}, "titles": {strings.Join(titles, "|")}}
+	var reply struct {
+		Query struct {
+			Pages []struct {
+				Title    string `json:"title"`
+				Revision int64  `json:"lastrevid"`
+			} `json:"pages"`
+		} `json:"query"`
+	}
+	if err := c.fetch(params, &reply); err != nil {
+		return nil, err
+	}
+
+	revisions := make(map[string]int64, len(titles))
+	for _, page := range reply.Query.Pages {
+		if page.Revision != 0 {
+			revisions[page.Title] = page.Revision
+		}
+	}
+
+	return revisions, nil
 }
 
 func (c *Client) resolveListing() string {

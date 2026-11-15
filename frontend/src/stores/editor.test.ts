@@ -22,6 +22,7 @@ function place(key: string, format = Format.FormatScript): Place {
     database: "",
     readOnly: false,
     isDir: false,
+    missing: false,
     drawable: false,
     readme: "",
     language: "plaintext",

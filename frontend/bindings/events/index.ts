@@ -59,6 +59,11 @@ export const InstallScanning = "install:scanning";
 export const McpShow = "mcp:show";
 
 /**
+ * Name of the custom event "patch:updated".
+ */
+export const PatchUpdated = "patch:updated";
+
+/**
  * Name of the custom event "release:changed".
  */
 export const ReleaseChanged = "release:changed";

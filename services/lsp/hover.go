@@ -62,6 +62,10 @@ type Card struct {
 
 	Sites []Site `json:"sites,omitempty"`
 
+	// History holds the patches that changed a lexicon key, oldest first, each
+	// with only that key's change. It is empty for any other card.
+	History []workspace.Patch `json:"history,omitempty"`
+
 	// Range is the word the card is about.
 	Range jomini.Range `json:"range"`
 
@@ -76,16 +80,24 @@ type CardRow struct {
 	Text  string `json:"text"`
 }
 
-// A Class is one class of the wiki's lexicon of commands.
+// A Class is one class of the lexicon of the game's commands.
 type Class struct {
 	// ID is the class's name, such as effect. Label is its tab's name, such as
 	// Effects.
 	ID    string `json:"id"`
 	Label string `json:"label"`
 
-	// Database is the dumps' database that declares the class's commands, ""
-	// for none.
+	// Database is the dumps' database that holds the class's keys, "" for
+	// none.
 	Database string `json:"-"`
+
+	// OnActions is whether the class's database is the language's on_actions
+	// one, which each game names its own way. Database is then "".
+	OnActions bool `json:"-"`
+
+	// Functions is whether the class lists the functions of the data types,
+	// which are in no database.
+	Functions bool `json:"-"`
 }
 
 // A cursor is the innermost statement at an offset, with what the walk decided
@@ -105,8 +117,10 @@ var Classes = []Class{
 	{ID: "effect", Label: "Effects", Database: lang.DumpEffects},
 	{ID: "trigger", Label: "Triggers", Database: lang.DumpTriggers},
 	{ID: "link", Label: "Event targets", Database: lang.DumpLinks},
-	{ID: "scope", Label: "Scopes"},
-	{ID: "function", Label: "Functions"},
+	{ID: "scope", Label: "Scopes", Database: lang.DumpTypes},
+	{ID: "modifier", Label: "Modifiers", Database: lang.DumpModifiers},
+	{ID: "on_action", Label: "On actions", OnActions: true},
+	{ID: "function", Label: "Functions", Functions: true},
 }
 
 // The labels of a card's rows.
@@ -415,14 +429,7 @@ func describeCommand(card *Card, cursor cursor, span jomini.Span, command *lang.
 		return
 	}
 
-	scopes := make([]string, len(command.Scopes))
-	for position, scope := range command.Scopes {
-		scopes[position] = lang.ToPhrase(scope)
-	}
-
-	class := findClass(command.Database)
-	card.What, card.Lexicon, card.Blurb = class.ID, class.ID, command.Blurb
-	card.add(rowScopes, cmp.Or(lang.JoinList(scopes, "or"), "The game does not say"))
+	describeDefinition(card, findClass(command.Database), command)
 	current := cursor.tree.Statements[cursor.statement]
 	if current.IsBlock() || span.End != current.Key.End {
 		if command.Target != "" {
@@ -435,6 +442,29 @@ func describeCommand(card *Card, cursor cursor, span jomini.Span, command *lang.
 	if !describeTakes(card, cursor.context.Parent.FindArguments(command)) && command.Target != "" {
 		card.add(rowTakes, describeExpected(lang.Expected{Type: lang.ValueTypeTarget, Scope: command.Target}))
 	}
+}
+
+// describeDefinition fills a card for a key of the dumps with its lexicon
+// class, its blurb and, for an effect, a trigger or a link, the scopes it
+// runs in. The scopes read "The game does not say" where the dumps give none.
+func describeDefinition(card *Card, class Class, definition *lang.Definition) {
+	card.What, card.Lexicon, card.Blurb = class.ID, class.ID, definition.Blurb
+	if !isCommand(definition.Database) {
+		return
+	}
+
+	scopes := make([]string, len(definition.Scopes))
+	for position, scope := range definition.Scopes {
+		scopes[position] = lang.ToPhrase(scope)
+	}
+
+	card.add(rowScopes, cmp.Or(lang.JoinList(scopes, "or"), "The game does not say"))
+}
+
+// isCommand reports whether a database holds the effects, triggers or links
+// of the dumps.
+func isCommand(database string) bool {
+	return slices.Contains(lang.CommandDatabases, database)
 }
 
 // describeScope returns "a landed title" or "an army" for a scope.
@@ -615,11 +645,17 @@ func describeFunction(card *Card, ws *workspace.Session, tree *jomini.Tree, call
 
 	step := call.Steps[position]
 	function, _ := ws.Schema.FindFunction(call, datacontext, position)
-	card.What, card.Blurb = "data function", function.Blurb
+	describeFunctionFacts(card, function)
 	card.Title, card.Range = step.Text, jomini.ToRange(tree.Src, tree.Lines, step.Span)
-	card.add(rowReturns, lang.ReturnType(function))
 
 	return true
+}
+
+// describeFunctionFacts fills a card for a function of a data type with its
+// blurb and the type it returns.
+func describeFunctionFacts(card *Card, function lang.DataFunction) {
+	card.What, card.Blurb = "data function", function.Blurb
+	card.add(rowReturns, lang.ReturnType(function))
 }
 
 func findNestedCall(call jomini.Call, offset int) (jomini.Call, bool) {

@@ -1,4 +1,6 @@
-<!-- The Health page: a rail switches between the summary and the views of compatibility, each mod and the log. -->
+<!--
+  The Health page: a rail switches between the summary and the views of compatibility, patches, each mod and the log.
+-->
 <script setup lang="ts">
 import { computed, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
@@ -20,6 +22,7 @@ import ModAvatar from "../../ui/ModAvatar.vue";
 import HealthCompatibility from "./HealthCompatibility.vue";
 import HealthLog from "./HealthLog.vue";
 import HealthMod from "./HealthMod.vue";
+import HealthPatches from "./HealthPatches.vue";
 import HealthSummary from "./HealthSummary.vue";
 
 const {
@@ -95,6 +98,7 @@ onActivated(() => {
 onDeactivated(() => (preview.value = []));
 
 const compatibility = computed(() => report.value?.compatibility.findings ?? []);
+const patches = computed(() => report.value?.patch.findings ?? []);
 /** The report's group of each mod, by mod id. */
 const groups = computed(() => keyBy(report.value?.mods ?? [], (group) => group.mod));
 const logRows = computed(() => gameLog.value?.findings ?? []);
@@ -111,6 +115,7 @@ const wanted = computed(() => name || code);
 const landing = computed(() => {
   if (!wanted.value) return { view: "summary", mod: "" };
   if (compatibility.value.some(matchFinding)) return { view: "compatibility", mod: "" };
+  if (patches.value.some(matchFinding)) return { view: "patch", mod: "" };
   const owner = mods.value.find((candidate) => groups.value[candidate.id]?.findings?.some(matchFinding));
   if (owner) return { view: "mod", mod: owner.id };
   return { view: logRows.value.some(matchLogRow) ? "log" : "summary", mod: "" };
@@ -177,6 +182,7 @@ const rail = computed((): { title: string; rows: RailRow[] }[] =>
           icon: "i-lucide-git-merge",
           levels: report.value?.compatibility.counts,
         },
+        { view: "patch", label: "Patches", icon: "i-lucide-history", levels: report.value?.patch.counts },
       ],
     },
     { title: "Your mods", rows: mods.value.filter((workspaceMod) => !workspaceMod.external).map(toModRow) },
@@ -219,6 +225,7 @@ function isShown(railRow: RailRow): boolean {
 /** listFindings returns the findings the given view lists, in row order. */
 function listFindings(view: string, modId?: string): Finding[] {
   if (view === "compatibility") return compatibility.value;
+  if (view === "patch") return patches.value;
   if (view === "log") return logRows.value;
   return view === "mod" ? (groups.value[modId ?? ""]?.findings ?? []) : [];
 }
@@ -352,6 +359,14 @@ function openRow(finding: Finding): void {
             @open="openRow"
             @save="reorder(order)"
           />
+          <HealthPatches
+            v-else-if="shown === 'patch'"
+            v-model:filter="filter"
+            v-model:checks="checks"
+            :findings="patches"
+            :opened="openFinding"
+            @open="openRow"
+          />
           <HealthMod
             v-else-if="current"
             :key="current.id"
@@ -363,9 +378,11 @@ function openRow(finding: Finding): void {
             :overview="currentOverview"
             :log="logRows"
             :compatibility="compatibility"
+            :patches="patches"
             :opened="openFinding"
             @open="openRow"
             @log="(finding) => show('log', undefined, finding)"
+            @patch="(finding) => show('patch', undefined, finding)"
             @compatibility="(finding) => show('compatibility', undefined, finding)"
           />
         </section>

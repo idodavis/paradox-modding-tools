@@ -22,6 +22,7 @@ export type {
     Hint,
     Legend,
     Level,
+    LexiconRow,
     Part,
     Signature,
     Site,

@@ -22,6 +22,17 @@ import * as jomini$0 from "../../internal/jomini/models.js";
 import * as $models from "./models.js";
 
 /**
+ * BuildLexicon returns the rows of a class, sorted by name, scripted effects
+ * and triggers included. With a start and an end version, each row also says
+ * how the patches after the start, up to the end, last changed its key, and
+ * there is a row for each key they removed that the game no longer has. It
+ * returns an error if no workspace is open or the class is unknown.
+ */
+export function BuildLexicon(id: string, start: string, end: string): $CancellablePromise<$models.LexiconRow[] | null> {
+    return $Call.ByID(2974875071, id, start, end);
+}
+
+/**
  * BuildOverride returns the fix that copies the entry at a position into a mod
  * so that the game keeps the copy, or nil if no entry is there. It returns an
  * error if the mod has the entry already, the game joins every copy, or no
@@ -79,6 +90,17 @@ export function DescribeIndentation(path: string): $CancellablePromise<string> {
 }
 
 /**
+ * DescribeKey returns the card of one key of a lexicon class: what hover says
+ * of the key, the patches that changed it, and where the mods use it. A key
+ * the game no longer has gets a card only if a patch removed it. It returns an
+ * error if no workspace is open, the class is unknown, or the key is neither
+ * in the game nor in a patch.
+ */
+export function DescribeKey(id: string, key: string): $CancellablePromise<$models.Card> {
+    return $Call.ByID(979662325, id, key);
+}
+
+/**
  * Diagnose returns the problems of a file, without the checks the user turned
  * off.
  */
@@ -127,6 +149,13 @@ export function Hover(path: string, line: number, column: number): $CancellableP
  */
 export function ListAncestors(path: string, line: number, column: number): $CancellablePromise<string[] | null> {
     return $Call.ByID(1549493091, path, line, column);
+}
+
+/**
+ * ListClasses returns the lexicon's classes in the order its tabs show them.
+ */
+export function ListClasses(): $CancellablePromise<$models.Class[] | null> {
+    return $Call.ByID(3234764497);
 }
 
 /**

@@ -43,13 +43,17 @@ flowchart TD
   judged.
 - The words, the fold, the groups and the sort are made in Go, so the page derives nothing again. Findings with the same
   code, owner, name and message are one: the first stands for them, and its `Count` adds theirs. A `Group` holds the
-  findings of the compatibility or of one mod, worst level first, and the heaviest first within a check. A `Tally`
-  counts a group's findings by level and words each count.
+  findings of the compatibility, of the patch question or of one mod, worst level first, and the heaviest first within
+  a check. A `Tally` counts a group's findings by level and words each count.
 
 ## Questions, levels and topics
 
-Every finding answers one of three questions: `compatibility` (how the mods touch the same things), `health` (each
-mod's own problems) or `log` (what the game's last run logged). A finding has a level by how much the game loses:
+Every finding answers one of four questions: `compatibility` (how the mods touch the same things), `health` (each
+mod's own problems), `patch` (what the game's patches changed under the mods: the version a mod is made for, a name a
+patch removed or renamed, a game file a patch changed that a mod replaces) or `log` (what the game's last run logged).
+The report holds the `patch` findings in a group of their own, as it holds the compatibility's: the report's tally
+counts them, and the own tally, which counts the mods' groups, leaves them out. A finding has a level by how much the
+game loses:
 `critical`, `error`, `warning` or `info`. The game log rows have none.
 
 ## Contests
@@ -83,6 +87,10 @@ A mod's declared dependencies are the ones its descriptor names that the workspa
 all the way down. One the workspace lacks is a `missing-dependency`. A mod's own problems are judged by lsp with the
 index narrowed to the mod and its dependencies, so a name only another mod defines is that mod's
 `unresolved-reference`.
+
+Where no current dumps describe the installed version (`SourceState.Current` is false), the report has one
+`stale-dumps` finding of the patch question for the workspace as a whole. It has no owner and no site, so it is in the
+`Patch` group and in no mod's.
 
 `AddIgnoredPair` and `RemoveIgnoredPair` change the workspace's record in `config.json`, each pair sorted. Each pair
 whose two mods are in the workspace becomes an `ignored-pair` finding that counts the findings whose `Pairs` hold it.
@@ -129,13 +137,14 @@ is missing or empty is first made with only its header. `ListScaffolds` gives th
 
 ## Terms
 
-- **Question**: one of the three things Health answers: compatibility, health and the game log.
+- **Question**: one of the four things Health answers: compatibility, health, patch and the game log.
 - **Level**: how much the game loses by a finding: critical, error, warning or info.
-- **Topic**: what a check is about: syntax, references, values, localization, definitions or descriptor.
+- **Topic**: what a check is about: syntax, references, values, localization, definitions, descriptor or patch.
 - **Finding**: one row of the Health page: a problem or a fact, with the places it points at.
 - **Use**: one name a finding is about, with how often the files the game reads use it and where they first do.
 - **Report**: the findings for one load order, grouped and counted, and what that order changes.
-- **Group**: the folded and sorted findings of the workspace's compatibility or of one mod, with their tally and checks.
+- **Group**: the folded and sorted findings of the workspace's compatibility, of its patch question or of one mod, with
+  their tally and checks.
 - **Tally**: how many findings there are of each level, and the worst level.
 - **Check**: one code at one level in a group, with how many findings it has.
 - **Change**: one name or path whose kept copy moves to another mod in a previewed order.

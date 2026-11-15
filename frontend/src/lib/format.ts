@@ -68,6 +68,11 @@ export function list(items: readonly string[]): string {
   return LISTS.format(items);
 }
 
+/** describeRelease returns a version's release, such as 1.15 for 1.15.1. */
+export function describeRelease(version: string): string {
+  return version.split(".").slice(0, 2).join(".");
+}
+
 /** listLeftOut returns the names of the given mods that the workspace leaves out of its checks. */
 export function listLeftOut(mods: readonly Mod[]): string[] {
   return mods.filter((mod) => mod.leftOut).map((mod) => mod.descriptor.name);
@@ -188,7 +193,10 @@ export function installLine(game: string, version: string, scannedAt: string): s
 export function describeDumps(dumps: SourceState): { current: boolean; label: string } {
   if (dumps.origin === "install" && !dumps.stale) return { current: true, label: "The game's own documentation" };
   if (dumps.origin === "install") return { current: false, label: "The game's documentation, older than the game" };
-  if (dumps.origin === "shipped") return { current: false, label: "PMT's copy of the game's documentation" };
+  if (dumps.origin === "digest") {
+    return { current: dumps.current, label: "The Modding Co-op's copy of the game's documentation" };
+  }
+  if (dumps.origin === "shipped") return { current: dumps.current, label: "PMT's copy of the game's documentation" };
   return { current: false, label: "No documentation of the game" };
 }
 

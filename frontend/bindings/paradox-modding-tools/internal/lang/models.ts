@@ -136,7 +136,9 @@ export enum Reason {
  */
 export interface SourceState {
     /**
-     * Origin is install, shipped or none.
+     * Origin is install, digest, shipped or none. It is digest where the
+     * install's dumps are missing or stale and a game's digest has the
+     * version's.
      */
     "origin": string;
     "writtenAt": string;
@@ -145,6 +147,15 @@ export interface SourceState {
      * Stale is whether a dump file is older than the install's last update.
      */
     "stale": boolean;
+
+    /**
+     * Version is the game version the dumps were written for, "" where it is
+     * not known. Current is whether they describe the installed version: the
+     * install's own dumps that are not stale, or the digest's or the shipped
+     * backup's of that version.
+     */
+    "version": string;
+    "current": boolean;
 
     /**
      * Folders are the folders read, none for the shipped backup.

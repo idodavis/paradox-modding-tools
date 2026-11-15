@@ -354,14 +354,6 @@ type Definition struct {
 	Runs bool
 }
 
-// Example is one place the game's own files call a data function.
-type Example struct {
-	Path string
-
-	// Line counts from 0.
-	Line int
-}
-
 // Database is one database: the fields its definitions may write and the
 // rules that hold for it.
 type Database struct {
@@ -418,10 +410,6 @@ type DataFunction struct {
 	// Promote is whether the dumps define it as a promote, which leads to an
 	// object rather than a value.
 	Promote bool
-
-	// Examples are the first places the game's files call it, by path and
-	// line.
-	Examples []Example
 }
 
 // DataType is one type of the data calls in localization and GUI text.
@@ -503,13 +491,22 @@ type modScripted struct {
 
 // SourceState says where one source's data came from and how fresh it is.
 type SourceState struct {
-	// Origin is install, shipped or none.
+	// Origin is install, digest, shipped or none. It is digest where the
+	// install's dumps are missing or stale and a game's digest has the
+	// version's.
 	Origin string `json:"origin"`
 
 	WrittenAt time.Time `json:"writtenAt"`
 
 	// Stale is whether a dump file is older than the install's last update.
 	Stale bool `json:"stale"`
+
+	// Version is the game version the dumps were written for, "" where it is
+	// not known. Current is whether they describe the installed version: the
+	// install's own dumps that are not stale, or the digest's or the shipped
+	// backup's of that version.
+	Version string `json:"version"`
+	Current bool   `json:"current"`
 
 	// Folders are the folders read, none for the shipped backup.
 	Folders []string `json:"folders"`
@@ -622,6 +619,40 @@ func WalkField(field *Field, visit func(key string, child *Field)) {
 		visit(key, child)
 		WalkField(child, visit)
 	}
+}
+
+// ListDocKeys returns the keys the docs document, by database, each list
+// sorted. A key below another is written with its holders' keys before it, as
+// holder.key. A database whose docs document no key has no list. Which keys the
+// docs document is what a new version of the game may change, with or without
+// new dumps.
+func (s *Schema) ListDocKeys() map[string][]string {
+	keys := map[string][]string{}
+
+	for name, database := range s.Databases {
+		if documented := listDocKeys(database.Field, ""); len(documented) > 0 {
+			keys[name] = documented
+		}
+	}
+
+	return keys
+}
+
+// listDocKeys returns the keys below a field that the docs document, each
+// written after the given holders.
+func listDocKeys(field *Field, holders string) []string {
+	var keys []string
+
+	for _, key := range slices.Sorted(maps.Keys(field.Children)) {
+		child := field.Children[key]
+		if child.Source == SourceDocs {
+			keys = append(keys, holders+key)
+		}
+
+		keys = append(keys, listDocKeys(child, holders+key+".")...)
+	}
+
+	return keys
 }
 
 // BuildChild returns the field inside this one for a key, adding it if it is

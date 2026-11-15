@@ -12,7 +12,37 @@ import * as game$0 from "../../internal/game/models.js";
 import * as lang$0 from "../../internal/lang/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as schema$0 from "../../internal/schema/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as app$0 from "../app/models.js";
+
+/**
+ * Article is one titled part of the written notes of a digest.
+ */
+export interface Article {
+    "title": string;
+
+    /**
+     * Markdown is the article as the digest writes it.
+     */
+    "markdown": string;
+
+    /**
+     * Breaking is whether the article is one of the digest's breaking
+     * changes, and New whether it is a new feature.
+     */
+    "breaking": boolean;
+    "new": boolean;
+
+    /**
+     * Folders are the folders of the game's script the article links to a
+     * type doc of, and Keys the definitions and commands it writes in
+     * backticks. They are what ties the article to a mod.
+     */
+    "folders": string[] | null;
+    "keys": string[] | null;
+}
 
 /**
  * Dependency is one mod a descriptor says its mod needs.
@@ -79,7 +109,23 @@ export interface FileText {
 }
 
 /**
- * A Hunk is one run of lines an agent's edit changed in a file.
+ * GameFile is a file of the game that a patch added, modified or deleted.
+ */
+export interface GameFile {
+    /**
+     * Rel is the file's path from the game's folder.
+     */
+    "rel": string;
+
+    /**
+     * Status is FileAdded, FileModified or FileDeleted.
+     */
+    "status": string;
+}
+
+/**
+ * A Hunk is one run of lines an edit changed in a file, an agent's or the
+ * game's.
  */
 export interface Hunk {
     /**
@@ -88,6 +134,17 @@ export interface Hunk {
      */
     "before": string[] | null;
     "after": string[] | null;
+}
+
+/**
+ * KeyRename is a key that a patch gave a new key.
+ */
+export interface KeyRename {
+    /**
+     * Key is the old key, and Replacement the key that took its place.
+     */
+    "key": string;
+    "replacement": string;
 }
 
 /**
@@ -118,6 +175,13 @@ export interface Mod {
      * against.
      */
     "external": boolean;
+
+    /**
+     * Base is the game version a patch's changes are counted from for a mod
+     * whose descriptor gives no supported version that can be read, "" for
+     * none.
+     */
+    "base": string;
     "descriptor": Descriptor;
 
     /**
@@ -146,6 +210,43 @@ export interface ModFolder {
      */
     "path": string;
     "problem": string;
+}
+
+/**
+ * Patch is what one version of a game changed against its base version.
+ */
+export interface Patch {
+    "version": string;
+
+    /**
+     * Base is the version this one is compared against, "" for none.
+     */
+    "base": string;
+
+    /**
+     * Local is whether PMT compared the dumps itself, when the game updated or
+     * when the history the app ships was made. It is false for a patch from a
+     * digest.
+     */
+    "local": boolean;
+
+    /**
+     * DumpChanges, KeyRenames, GameFiles and Articles are what the version
+     * changed. A patch PMT compared itself has no Articles.
+     */
+    "dumpChanges": schema$0.DumpChange[] | null;
+    "keyRenames": KeyRename[] | null;
+    "gameFiles": GameFile[] | null;
+    "articles": Article[] | null;
+
+    /**
+     * DocChanges are the keys the game's docs began or stopped to document,
+     * and DefinitionChanges the names the game's files began or stopped to
+     * define, localization keys included. A digest lists neither, so a
+     * version the digest has takes them from the shipped or PMT's own patch.
+     */
+    "docChanges": schema$0.KeyChange[] | null;
+    "definitionChanges": schema$0.KeyChange[] | null;
 }
 
 /**
@@ -182,6 +283,12 @@ export interface Place {
     "database": string;
     "readOnly": boolean;
     "isDir": boolean;
+
+    /**
+     * Missing is true for a path that is not on disk. Only Service.Locate
+     * sets it.
+     */
+    "missing": boolean;
 
     /**
      * Drawable is true for a file the Visual view draws.
@@ -239,6 +346,12 @@ export interface Review {
     "database": string;
     "readOnly": boolean;
     "isDir": boolean;
+
+    /**
+     * Missing is true for a path that is not on disk. Only Service.Locate
+     * sets it.
+     */
+    "missing": boolean;
 
     /**
      * Drawable is true for a file the Visual view draws.

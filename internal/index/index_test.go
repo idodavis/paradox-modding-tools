@@ -33,7 +33,7 @@ func scanInstall(t *testing.T, gameID, install string) (*lang.Schema, *Index, ti
 		t.Fatal(err)
 	}
 
-	built, err := schema.Build(lang.LookupDialect(gameID), row.FindDumpDirs(install), install, mounts.Files, ParseFile)
+	built, _, err := schema.Build(lang.LookupDialect(gameID), row.FindDumpDirs(install), nil, install, "", mounts.Files, ParseFile)
 	if err != nil {
 		t.Fatal(err)
 	}

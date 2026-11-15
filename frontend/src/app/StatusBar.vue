@@ -181,9 +181,9 @@ watch(
         icon: "i-lucide-refresh-cw",
         actions: [
           {
-            label: "Open Patch Notes",
+            label: "Open Patch Center",
             color: "warning",
-            onClick: () => void router.push({ name: "patch-notes", params: { id: current.id } }),
+            onClick: () => void router.push({ name: "patch-center", params: { id: current.id } }),
           },
         ],
       });

@@ -307,7 +307,7 @@ func (i *Index) buildFile(lock *sync.RWMutex, schema *lang.Schema, position int3
 
 	switch format := i.Files[position].Format; {
 	case format == files.FormatLocalization:
-		source, _ := files.ReadText(i.Files[position].Path)
+		source := i.readSource(position)
 		occurrences, texts = tables.buildMessages(schema, position, source.Text)
 		lock.Lock()
 		if source.Encoding == files.EncodingUTF8BOM {
@@ -318,10 +318,10 @@ func (i *Index) buildFile(lock *sync.RWMutex, schema *lang.Schema, position int3
 		lock.Unlock()
 
 	case format == files.FormatTable:
-		occurrences = tables.buildRows(schema, position, i.readSource(position))
+		occurrences = tables.buildRows(schema, position, i.readSource(position).Text)
 	case format.IsScript():
 		collector := &collector{schema: schema, index: tables}
-		occurrences = collector.collect(jomini.Parse(i.readSource(position)), i.Files[position])
+		occurrences = collector.collect(jomini.Parse(i.readSource(position).Text), i.Files[position])
 	default:
 		return
 	}
@@ -330,12 +330,20 @@ func (i *Index) buildFile(lock *sync.RWMutex, schema *lang.Schema, position int3
 	i.internFile(lock, tables, occurrences)
 }
 
-// readSource returns the text of a file, given by its position in Files. A
-// file that cannot be read gives "".
-func (i *Index) readSource(position int32) string {
-	text, _ := files.ReadText(i.Files[position].Path)
+// readSource returns the text of a file, given by its position in Files, and
+// sets the file's Hash to the hash of the bytes it read. A file that cannot be
+// read gives no text and keeps no hash.
+func (i *Index) readSource(position int32) files.Text {
+	content, err := files.ReadContent(i.Files[position].Path)
+	if err != nil {
+		i.Files[position].Hash = ""
 
-	return text.Text
+		return files.Text{}
+	}
+
+	i.Files[position].Hash = files.HashContent(content)
+
+	return files.DecodeText(content)
 }
 
 // buildMessages builds the occurrences of a localization file: each message,

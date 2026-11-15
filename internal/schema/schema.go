@@ -9,6 +9,9 @@
 //     scope types, the modifiers, the on_actions, the data types and the
 //     customizable localizations. A part the install's dumps lack is taken
 //     whole from the backup the app ships.
+//   - Where the install's dump files are missing, or older than the install's
+//     last update, the dumps of the same version that a game's digest holds
+//     are used in their place, and the backup fills what they lack.
 //   - A dump correction replaces the scopes of a command whose dump entry
 //     contradicts its own sentence about the command.
 //   - The effects, the triggers, the links and the scope types are four
@@ -134,16 +137,23 @@ type builder struct {
 // Build returns the schema of one game version from its dumps, its docs and
 // the game's own files. DLC files are left out of the listing, since the
 // game's own folders list them too.
+//
+// The version is the install's, "" where it is not known. The digest is the
+// dumps of this version that a game's digest holds, nil for none. The schema
+// takes them in place of the install's own dumps where those are missing or
+// older than the install. Build also returns the install's own dumps when the
+// schema used them and they are not older than the install, else nil.
 func Build(
-	dialect *lang.Dialect, dumpDirs []string, installPath string, listing []files.File,
+	dialect *lang.Dialect, dumpDirs []string, digest *Dumps, installPath, version string, listing []files.File,
 	parse func(path string) (*jomini.Tree, error),
-) (*lang.Schema, error) {
+) (*lang.Schema, *Dumps, error) {
 	listing = slices.DeleteFunc(slices.Clone(listing), func(file files.File) bool {
 		return strings.HasPrefix(file.Rel, game.DLCFolder+"/")
 	})
 
 	schema := &builder{Schema: &lang.Schema{
 		Game:            dialect.ID,
+		Version:         version,
 		Databases:       map[string]*lang.Database{},
 		Callees:         map[string][]string{},
 		TypeDatabases:   map[string]string{},
@@ -156,25 +166,26 @@ func Build(
 
 	schema.buildDatabases(dialect, folders)
 	schema.buildFields()
-	if err := schema.buildDumps(dialect, dumpDirs, installPath); err != nil {
-		return nil, err
+	own, err := schema.buildDumps(dialect, dumpDirs, digest, installPath, version)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	if err := schema.buildDocs(installPath, listing, folders); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// the count reads the keys an effect and a trigger of one name share, and
 	// then adds to both, so the two are united before the count and after it
 	schema.buildUnions()
 	if err := schema.countVanilla(listing, parse); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	schema.buildUnions()
 	schema.buildDocBlurbs()
 
-	return schema.Schema, nil
+	return schema.Schema, own, nil
 }
 
 // listSetups returns the folders the game's bookmarks name for their start

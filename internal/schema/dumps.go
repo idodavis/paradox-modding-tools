@@ -55,6 +55,10 @@ type DumpCommand struct {
 
 // Dumps is everything the dump files of one game declare.
 type Dumps struct {
+	// Version is the game version the dumps were written for, "" where it is
+	// not known.
+	Version string `json:"version"`
+
 	// Commands are the effects, triggers and links in the order the files
 	// list them. Two files may list the same name.
 	Commands []DumpCommand
@@ -120,14 +124,36 @@ func FindDumpsAt(dirs []string) (time.Time, error) {
 	return newest, nil
 }
 
+// NewDumps returns dumps with nothing in them, ready for ParseFile.
+func NewDumps() *Dumps {
+	return &Dumps{
+		Scopes: map[string]lang.ScopeType{}, Modifiers: map[string]bool{}, OnActions: map[string]lang.OnAction{},
+		DataTypes: map[string]lang.DataType{}, Customs: map[string]bool{},
+	}
+}
+
+// IsDumpFile reports whether a file name is one the game writes when asked to
+// dump its script language, as effects.log or data_types_common.txt.
+func IsDumpFile(file string) bool {
+	return strings.HasSuffix(file, ".log") || strings.HasPrefix(file, "data_types_") && strings.HasSuffix(file, ".txt")
+}
+
+// ParseDumps reads the texts of the dump files, by file name, into dumps. The
+// files are read in name order, so the same texts always give the same dumps.
+func ParseDumps(texts map[string]string) *Dumps {
+	dumps := NewDumps()
+	for _, file := range slices.Sorted(maps.Keys(texts)) {
+		dumps.ParseFile(file, texts[file])
+	}
+
+	return dumps
+}
+
 // ReadDumps reads the newest copy of each dump file in the folders. A file
 // that is missing or cannot be read as text is left out, for the shipped
 // backup to fill. It fails only if a file's time cannot be read.
 func ReadDumps(dirs []string) (*Dumps, error) {
-	dumps := &Dumps{
-		Scopes: map[string]lang.ScopeType{}, Modifiers: map[string]bool{}, OnActions: map[string]lang.OnAction{},
-		DataTypes: map[string]lang.DataType{}, Customs: map[string]bool{},
-	}
+	dumps := NewDumps()
 
 	for _, file := range dumpFiles {
 		path, fileAt, err := findDump(dirs, file)
@@ -152,7 +178,7 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 			dumps.OldestAt = fileAt
 		}
 
-		dumps.parseFile(path, text.Text)
+		dumps.ParseFile(path, text.Text)
 		if dir := filepath.Dir(path); !slices.Contains(dumps.Folders, dir) {
 			dumps.Folders = append(dumps.Folders, dir)
 		}
@@ -180,7 +206,10 @@ func findDump(dirs []string, file string) (string, time.Time, error) {
 	return newest, newestAt, nil
 }
 
-func (d *Dumps) parseFile(path, text string) {
+// ParseFile reads the text of one dump file into the dumps. The file's name
+// says which dump it is, and the entries it lists take the given path as
+// their place. A name that is no dump file's is read as a data types file.
+func (d *Dumps) ParseFile(path, text string) {
 	switch filepath.Base(path) {
 	case "effects.log":
 		d.parseCommands(path, text, declaredEffect)
@@ -223,7 +252,13 @@ func (d *Dumps) parseCommands(path, text, declared string) {
 			offset += start
 		}
 
-		title, first, _ := strings.Cut(head, " - ")
+		// A name with no description on its line ends in " - " and the line's
+		// trailing space is gone, as in "every_activity_type - ".
+		title, first, described := strings.Cut(head, " - ")
+		if !described {
+			title, _ = strings.CutSuffix(head, " -")
+		}
+
 		command := DumpCommand{Name: strings.TrimSpace(title), Declared: declared, Path: path, Line: number}
 		lines := []string{first}
 

@@ -281,6 +281,14 @@ export interface Report {
     "compatibility": Group;
 
     /**
+     * Patch is the findings of the patch question: what the game's patches
+     * changed under the mods, which is each mod's made-for version, its
+     * removed or renamed names and its stale copies. They are in no mod's
+     * group.
+     */
+    "patch": Group;
+
+    /**
      * Mods is in load order.
      */
     "mods": Group[] | null;

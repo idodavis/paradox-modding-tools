@@ -71,6 +71,11 @@ type Mod struct {
 	// External is someone else's mod, which the workspace checks its own mods
 	// against.
 	External bool `json:"external"`
+
+	// Base is the game version a patch's changes are counted from for a mod
+	// whose descriptor gives no supported version that can be read, "" for
+	// none.
+	Base string `json:"base"`
 }
 
 // Workspace is one recorded workspace: a game install and its mods.
@@ -219,7 +224,7 @@ var Catalog = []Setting{
 		Help:  "The size of the whole interface, as a percentage.",
 		Words: "zoom size percent"},
 	{Key: "appearance.pages", Label: "Pages a workspace shows",
-		Section: "appearance", Type: "text", Default: "workspace-ide,event-graph,health,patch-notes,release",
+		Section: "appearance", Type: "text", Default: "workspace-ide,event-graph,health,patch-center,release",
 		Help:  "The pages the top bar shows, in order.",
 		Words: "sidebar navigation hide"},
 	{Key: "guidance.newModders", Label: "Guidance for new modders",

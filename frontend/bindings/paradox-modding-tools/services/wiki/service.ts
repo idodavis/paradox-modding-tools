@@ -12,34 +12,15 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as lsp$0 from "../lsp/models.js";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
- * BuildLexicon returns the rows of a class, sorted by name, scripted effects
- * and triggers included. It returns an error if no workspace is open or the
- * class is unknown.
- */
-export function BuildLexicon($class: string): $CancellablePromise<$models.LexiconRow[] | null> {
-    return $Call.ByID(2321752544, $class);
-}
-
-/**
  * FindPages returns the wiki pages that belong to a file, best match first. It
- * returns an error if no workspace is open or the listing has not been fetched.
+ * returns nil, with no error, until a refresh has fetched the listing, and an
+ * error if no workspace is open. A file with no page gets an empty slice.
  */
-export function FindPages(path: string): $CancellablePromise<$models.Summary[] | null> {
+export function FindPages(path: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(2861154981, path);
-}
-
-/**
- * ListClasses returns the lexicon's classes in the order its tabs show them.
- */
-export function ListClasses(): $CancellablePromise<lsp$0.Class[] | null> {
-    return $Call.ByID(3673744072);
 }
 
 /**
@@ -59,9 +40,9 @@ export function ReadPage(title: string): $CancellablePromise<$models.Page> {
 }
 
 /**
- * Refresh fetches the listing and every missing or stale page, sending
- * wiki:progress for each page and wiki:updated at the end. It returns an error
- * if no workspace is open or a fetch fails.
+ * Refresh fetches the listing and every page that is not cached or has changed
+ * on the wiki, sending wiki:progress for each page and wiki:updated at the end.
+ * It returns an error if no workspace is open or a fetch fails.
  */
 export function Refresh(): $CancellablePromise<void> {
     return $Call.ByID(2930339879);
@@ -69,8 +50,10 @@ export function Refresh(): $CancellablePromise<void> {
 
 /**
  * SearchPages returns the modding pages that hold a text, title matches first.
- * A page that is not cached is searched by its title alone.
+ * A page that is not cached is searched by its title alone. It returns nil,
+ * with no error, until a refresh has fetched the listing, and an error if no
+ * workspace is open.
  */
-export function SearchPages(term: string): $CancellablePromise<$models.Summary[] | null> {
+export function SearchPages(term: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(217338472, term);
 }

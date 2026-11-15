@@ -1,6 +1,7 @@
 // Package lsp is the editor's language service. It answers what the editor
 // asks about a file: hover cards, completions, definitions, renames, problems,
-// tokens, folds, hints, colors, signatures, formatting and quick fixes.
+// tokens, folds, hints, colors, signatures, formatting and quick fixes. It also
+// builds the lexicon of the game's commands.
 //
 // Every range is in Monaco's form: lines and columns count from 1, the column
 // in UTF-16 code units, and the end is exclusive. Every other package keeps
@@ -9,7 +10,7 @@
 // The package decides nothing about the language. The schema says what a key
 // means, the index where a name is defined, and the workspace service holds the
 // open session. An answer is computed when asked, from the editor's text if the
-// file is open, else from the disk.
+// file is open, else from the disk. Nothing is kept between calls.
 //
 // It applies these rules:
 //

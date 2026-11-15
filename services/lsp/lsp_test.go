@@ -562,6 +562,74 @@ func TestHoverReadsLocalizationFiles(t *testing.T) {
 	}
 }
 
+// TestBuildLexiconListsEffectsAndFunctions checks the effect, scope and
+// function rows over the CK3 fixture install, and the error for an unknown
+// class.
+func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
+	ide := openService(t, ck3, resolveFixture(t, ck3))
+	ws, err := ide.Workspace.Session()
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects, err := ide.BuildLexicon("effect", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := len(ws.Schema.ListKeys(lang.DumpEffects))
+	mods, scripted := ws.Mods.Load(), map[string]bool{}
+	for _, site := range mods.ListDefinitions(ws.Schema.Effects) {
+		scripted[mods.ToReference(site).Name] = true
+	}
+	if len(effects) == 0 || len(effects) != declared+len(scripted) || !slices.IsSortedFunc(effects, func(first, second LexiconRow) int {
+		return strings.Compare(first.Name, second.Name)
+	}) {
+		t.Fatalf("%d effect rows for %d declared and %d scripted effects, sorted by name", len(effects), declared, len(scripted))
+	}
+	for _, row := range effects {
+		if row.Defined != nil {
+			if !scripted[row.Name] || row.Usage != "" && !strings.HasPrefix(row.Usage, row.Name+" = { ") {
+				t.Errorf("scripted row %+v", row)
+			}
+			continue
+		}
+		command := ws.Schema.LookupDefinition(lang.DumpEffects, row.Name)
+		if row.Class != "effect" || row.Usage != command.Usage || row.Blurb != command.Blurb {
+			t.Errorf("row %+v does not match command %+v", row, command)
+		}
+	}
+	checkFunctions(t, ide, ws)
+	if scopes, err := ide.BuildLexicon("scope", "", ""); err != nil || len(scopes) != len(ws.Schema.ListKeys(lang.DumpTypes)) {
+		t.Errorf("%d scope rows for %d scopes, %v", len(scopes), len(ws.Schema.ListKeys(lang.DumpTypes)), err)
+	}
+	if _, err := ide.BuildLexicon("nothing", "", ""); err == nil {
+		t.Error("BuildLexicon accepted a class the lexicon does not have")
+	}
+}
+
+// checkFunctions checks that there is a function row for each data function of
+// the schema.
+func checkFunctions(t *testing.T, ide *Service, ws *workspace.Session) {
+	t.Helper()
+	rows, err := ide.BuildLexicon("function", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, dataType := range ws.Schema.DataTypes {
+		count += len(dataType.Functions)
+	}
+	if len(rows) == 0 || len(rows) != count {
+		t.Fatalf("%d function rows for %d data functions", len(rows), count)
+	}
+	for _, row := range rows {
+		typeName, functionName, ok := strings.Cut(row.Name, ".")
+		function := ws.Schema.DataTypes[typeName].Functions[functionName]
+		if !ok || row.Class != "function" || row.Target != lang.ReturnType(function) || row.Blurb != function.Blurb {
+			t.Fatalf("row %+v does not match function %+v of %s", row, function, typeName)
+		}
+	}
+}
+
 // A problem is one diagnostic with the file it was found in.
 type problem struct {
 	code, rel string

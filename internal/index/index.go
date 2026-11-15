@@ -34,6 +34,9 @@
 //     ranks first.
 //   - A database whose names match in any letter case stores its names in
 //     lower case.
+//   - Each file the scan reads, which is each script, GUI, asset, font, GFX,
+//     table and localization file, gets the SHA-256 of its bytes as its Hash.
+//     A file it does not read, as a picture, has none.
 //
 // # Which copy the game keeps
 //

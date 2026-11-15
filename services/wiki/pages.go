@@ -29,7 +29,9 @@ type Note struct {
 	Modding  bool   `json:"modding"`
 }
 
-var errNoListing = errors.New("the wiki's listing has not been fetched yet")
+// ErrNoListing is the error of ListNotes before a refresh has fetched the
+// wiki's listing.
+var ErrNoListing = errors.New("the wiki's listing has not been fetched yet")
 
 // pageTopics are the words the games' wikis put in the titles of the pages
 // about a format's files or a folder's, beside the format's own name. A row
@@ -39,7 +41,7 @@ var pageTopics = []struct {
 	Folder string
 	Terms  []string
 }{
-	{Format: files.FormatGUI, Terms: []string{"interface"}},
+	{Format: files.FormatGUI, Terms: []string{"interface", "gui script", "scripted gui"}},
 	{Folder: "gfx/interface", Terms: []string{"interface"}},
 	{Format: files.FormatAsset, Terms: []string{"model"}},
 	{Folder: "gfx/models", Terms: []string{"model"}},
@@ -48,8 +50,9 @@ var pageTopics = []struct {
 }
 
 // FindPages returns the wiki pages that belong to a file, best match first. It
-// returns an error if no workspace is open or the listing has not been fetched.
-func (s *Service) FindPages(path string) ([]Summary, error) {
+// returns nil, with no error, until a refresh has fetched the listing, and an
+// error if no workspace is open. A file with no page gets an empty slice.
+func (s *Service) FindPages(path string) ([]string, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
 		return nil, err
@@ -57,13 +60,14 @@ func (s *Service) FindPages(path string) ([]Summary, error) {
 
 	listing, ok := s.resolveClient(ws).LoadListing()
 	if !ok {
-		return nil, errNoListing
+		return nil, nil
 	}
 
 	place := ws.Locate(ws.Mods.Load(), path)
 	singular := strings.ToLower(lang.DescribeDefinition(place.Database, false))
 	plural := strings.ToLower(lang.DescribeDefinition(place.Database, true))
-	topics := []string{strings.ToLower(string(place.Format))}
+	format := strings.ToLower(string(place.Format))
+	var topics []string
 	for _, topic := range pageTopics {
 		inFolder := topic.Folder == "" || strings.HasPrefix(strings.ToLower(place.Rel), topic.Folder+"/")
 		if (topic.Format == "" || topic.Format == place.Format) && inFolder {
@@ -72,6 +76,8 @@ func (s *Service) FindPages(path string) ([]Summary, error) {
 	}
 
 	// rank orders the titles that belong to the file, and is -1 for the rest.
+	// The format's name ranks a page only as its whole title: "script" is in
+	// the title of every page about scripting, and so of none about this file.
 	holds := func(title, term string) bool { return term != "" && strings.Contains(title, term) }
 	rank := func(title string) int {
 		title = strings.ToLower(title)
@@ -82,7 +88,7 @@ func (s *Service) FindPages(path string) ([]Summary, error) {
 			return 1
 		case holds(title, singular) || holds(title, plural):
 			return 2
-		case slices.Contains(topics, title):
+		case title == format || slices.Contains(topics, title):
 			return 3
 		case slices.ContainsFunc(topics, func(term string) bool { return holds(title, term) }):
 			return 4
@@ -91,23 +97,23 @@ func (s *Service) FindPages(path string) ([]Summary, error) {
 		return -1
 	}
 
-	pages := make([]Summary, 0, len(listing.Pages))
-	for _, summary := range listing.Pages {
-		if rank(summary.Title) >= 0 {
-			pages = append(pages, summary)
+	pages := make([]string, 0, len(listing.Pages))
+	for _, title := range listing.Pages {
+		if rank(title) >= 0 {
+			pages = append(pages, title)
 		}
 	}
 
-	slices.SortStableFunc(pages, func(first, second Summary) int {
-		return cmp.Compare(rank(first.Title), rank(second.Title))
-	})
+	slices.SortStableFunc(pages, func(first, second string) int { return cmp.Compare(rank(first), rank(second)) })
 
 	return pages, nil
 }
 
 // SearchPages returns the modding pages that hold a text, title matches first.
-// A page that is not cached is searched by its title alone.
-func (s *Service) SearchPages(term string) ([]Summary, error) {
+// A page that is not cached is searched by its title alone. It returns nil,
+// with no error, until a refresh has fetched the listing, and an error if no
+// workspace is open.
+func (s *Service) SearchPages(term string) ([]string, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
 		return nil, err
@@ -116,23 +122,23 @@ func (s *Service) SearchPages(term string) ([]Summary, error) {
 	client := s.resolveClient(ws)
 	listing, ok := client.LoadListing()
 	if !ok {
-		return nil, errNoListing
+		return nil, nil
 	}
 
 	term = strings.ToLower(term)
-	pages := make([]Summary, 0, len(listing.Pages))
-	var rest []Summary
-	for _, summary := range listing.Pages {
-		if strings.Contains(strings.ToLower(summary.Title), term) {
-			pages = append(pages, summary)
+	pages := make([]string, 0, len(listing.Pages))
+	var rest []string
+	for _, title := range listing.Pages {
+		if strings.Contains(strings.ToLower(title), term) {
+			pages = append(pages, title)
 		} else {
-			rest = append(rest, summary)
+			rest = append(rest, title)
 		}
 	}
 
-	for _, summary := range rest {
-		if text, ok := client.loadText(summary.Title); ok && strings.Contains(text, term) {
-			pages = append(pages, summary)
+	for _, title := range rest {
+		if text, ok := client.loadText(title); ok && strings.Contains(text, term) {
+			pages = append(pages, title)
 		}
 	}
 

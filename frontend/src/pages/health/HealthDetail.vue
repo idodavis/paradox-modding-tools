@@ -168,10 +168,10 @@ function describeSite(site: Site): string {
       <p v-if="isPatched" class="max-w-[74ch] text-12 leading-5 text-dimmed">
         The mod is made for game {{ outdated?.facts?.supported }}; the game is {{ outdated?.facts?.version }}.
         <RouterLink
-          :to="{ name: 'patch-notes', params: { id: workspace.activeId() } }"
+          :to="{ name: 'patch-center', params: { id: workspace.activeId() } }"
           class="text-secondary hover:underline"
         >
-          Patch Notes
+          Patch Center
         </RouterLink>
       </p>
       <p v-if="!sites.length" class="text-12 text-dimmed">This finding points at no place.</p>

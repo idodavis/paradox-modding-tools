@@ -31,7 +31,7 @@ flowchart TD
 | file | what it holds |
 |---|---|
 | `game.go` | The package doc, the `Game` type, the three games' rows, `LookupGame` and `ListGames`. |
-| `install.go` | Finding an install, its version, the folders it mounts, its user-data, dump and Workshop folders, and the program that starts it. |
+| `install.go` | Finding an install, its version, the folders it mounts, its user-data, dump and Workshop folders, and the program that starts it; ordering versions, open betas included. |
 
 ## Terms
 
@@ -45,3 +45,9 @@ flowchart TD
 - **Guide**: the sentences that tell a modder how a game picks which copy of a file or a definition it keeps.
 - **Example**: three definitions the game ships in one database, which the app shows where it explains how a mod
   changes the game.
+- **Digests**: the GitHub repository, as owner/name, where a game's Modding Co-op publishes its notes on each patch.
+  CK3 has none.
+- **Open beta**: a version the digests name with a `-openbeta` ending, as `1.14.4-openbeta`. `IsBeta` says whether a
+  version is one, and `CompareVersions` puts it after the versions of lower numbers and before the release of its
+  number. `IsInstalled` says whether a version is the one an install is on, which for a beta is the install's own
+  number.

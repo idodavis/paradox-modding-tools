@@ -64,13 +64,15 @@ Measured on the three installs, over the roots `Game.ListInstallRoots` gives:
 |---|---|
 | `files.go` | The package doc, formats and how a file gets one, roots and files, stages, the walk, and ignore rules. |
 | `mounts.go` | The mounts: the files of a list of roots, which one the game reads at a path, why it does not read another (`Hiding`), and their load order. |
-| `contents.go` | Text and its encodings, atomic writes, gob caches, a table's rows, unzipping, and the lines a change of text adds and removes. |
+| `contents.go` | Text and its encodings, a file's hash, atomic writes, gob caches, a table's rows, unzipping, and the lines a change of text adds and removes. |
 | `paths.go` | Keys, relative paths and slugs, and whether a path is a file or a folder. |
 
 ## Terms
 
 - **Root**: one folder laid out like the game's own: the game's folder, a DLC's or a mod's.
-- **File**: one file below a root: its path, key, rel, origin, stage and format.
+- **File**: one file below a root: its path, key, rel, origin, stage, format and hash.
+- **Hash**: the SHA-256 of a file's bytes in hex, set by the index scan for each file it reads and "" for one it
+  does not. It is never sent to a page.
 - **Rel**: a file's path from its root, with forward slashes.
 - **Key**: the path cleaned, lower-cased and with forward slashes. It is what two paths are compared by.
 - **Origin**: whose a root is: `OriginVanilla`, or a mod's id.

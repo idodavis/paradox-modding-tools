@@ -18,6 +18,7 @@ import (
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
+	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -110,6 +111,7 @@ const (
 	QuestionCompatibility = "compatibility"
 	QuestionHealth        = "health"
 	QuestionLog           = "log"
+	QuestionPatch         = "patch"
 
 	LevelCritical = "critical"
 	LevelError    = "error"
@@ -281,11 +283,34 @@ var Codes = []Code{
 		Message: "This folder is outside the in_game, main_menu and loading_screen folders, " +
 			"so the game never reads the files in it: {count}.",
 		Advice: "Move the files into one of those folders."},
-	{ID: "supported-version", Question: QuestionHealth, Level: LevelWarning, Topic: "descriptor",
+	{ID: "supported-version", Question: QuestionPatch, Level: LevelWarning, Topic: "descriptor",
 		Label:       "Made for another game version",
 		Description: "A mod made for another game version than the installed one.",
 		Message:     "{mod} is made for game {supported}; the game is {version}.",
 		Advice:      "Test the mod in this version, then set the version it supports to match."},
+	{ID: "patch-removed", Question: QuestionPatch, Level: LevelError, Topic: "patch",
+		Label:       "Removed by a game patch",
+		Description: "A command, a definition or a text the game removed in a patch after the version the mod is made for.",
+		Message:     "{name} was removed in {version}.",
+		Advice:      "Use what the game has instead; the Patch Center shows what that version changed."},
+	{ID: "patch-renamed", Question: QuestionPatch, Level: LevelError, Topic: "patch",
+		Label:       "Renamed by a game patch",
+		Description: "A definition the game gave a new name in a patch after the version the mod is made for.",
+		Message:     "{name} was renamed {replacement} in {version}.",
+		Advice:      "Write the new name instead."},
+	{ID: "stale-dumps", Question: QuestionPatch, Level: LevelWarning, Topic: "patch", HealthOnly: true,
+		Label: "Game documentation of another version",
+		Description: "No copy of the game's own documentation describes the installed version, so PMT cannot " +
+			"tell what the last update changed.",
+		Message: "The game's documentation that PMT has is for {dumps}, and the game is {version}.",
+		Advice: "Start the game from PMT, then type script_docs and dump_data_types in its console to have it " +
+			"write its documentation again."},
+	{ID: "stale-copy", Question: QuestionPatch, Level: LevelWarning, Topic: "patch",
+		Label: "Game file changed under the mod's copy",
+		Description: "A game file the mod replaces with its own copy, which the game changed in a patch after the " +
+			"version the mod is made for.",
+		Message: "The game's own copy was {status} in {version}.",
+		Advice:  "Compare the copy with the game's file in the Patch Center and carry the game's changes over."},
 	{ID: "contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions", HealthOnly: true,
 		Label:       "Contested definition",
 		Description: "A name that two or more mods define, of which the game keeps one copy.",
@@ -348,6 +373,7 @@ var Topics = []Topic{
 	{ID: "syntax", Label: "Syntax"}, {ID: "references", Label: "References"},
 	{ID: "values", Label: "Scopes and values"}, {ID: "localization", Label: "Localization"},
 	{ID: "definitions", Label: "Definitions"}, {ID: "descriptor", Label: "Descriptor"},
+	{ID: "patch", Label: "Patches"},
 }
 
 // keyFacts holds the fact that names the key, for each code of a missing text.
@@ -422,12 +448,16 @@ func DiagnoseFiles(ws *workspace.Session, mods *index.Index, paths []string) [][
 	return diagnostics
 }
 
-// problems holds the problems of the files by key, judged against one index.
-// A scan puts a new index in place, which drops them.
+// problems holds the problems of the files by key, judged against one index,
+// one set of patches and one load order. A scan puts a new index in place, the
+// patch service new patches, and a mod's record or descriptor a new load order,
+// which drops them.
 var problems struct {
 	sync.Mutex
-	mods  *index.Index
-	files map[string]judged
+	mods    *index.Index
+	patches *workspace.Patches
+	order   *[]workspace.Mod
+	files   map[string]judged
 }
 
 // DiagnoseFile returns the problems of a file, judged on the editor's text
@@ -445,9 +475,11 @@ func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diag
 		edits = ws.Edits.Load()
 	}
 
+	patches, order := ws.Patches.Load(), ws.Order.Load()
+
 	problems.Lock()
 	last, ok := problems.files[place.Key]
-	ok = ok && problems.mods == mods && last.edits == edits
+	ok = ok && problems.mods == mods && problems.patches == patches && problems.order == order && last.edits == edits
 	problems.Unlock()
 	if ok {
 		return slices.Clone(last.diagnostics), nil
@@ -461,8 +493,8 @@ func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diag
 	diagnostics := diagnoseDocument(ws, mods, place, document)
 
 	problems.Lock()
-	if problems.mods != mods {
-		problems.mods, problems.files = mods, map[string]judged{}
+	if problems.mods != mods || problems.patches != patches || problems.order != order {
+		problems.mods, problems.patches, problems.order, problems.files = mods, patches, order, map[string]judged{}
 	}
 
 	problems.files[place.Key] = judged{diagnostics: diagnostics, edits: edits}
@@ -515,6 +547,10 @@ func diagnoseDocument(ws *workspace.Session, mods *index.Index, place workspace.
 		}
 	}
 
+	start, end := ws.ResolveRange(place.Origin)
+	patches := ws.Patches.Load().ListRange(start, end)
+	diagnostics = append(diagnostics, diagnoseCopy(ws, tree, place, patches, start, end)...)
+
 	narrowed := mods
 	if place.Origin != "" {
 		narrowed = mods.Narrow(append([]string{place.Origin}, ws.ListDependencies(place.Origin)...))
@@ -525,7 +561,12 @@ func diagnoseDocument(ws *workspace.Session, mods *index.Index, place workspace.
 			problem.Facts["expected"] = describeExpected(problem.Expected)
 		}
 
-		diagnostic := makeDiagnostic(tree, problem.Span, problem.Code, problem.Facts)
+		code := problem.Code
+		if problem.Elsewhere == nil {
+			code = applyPatches(patches, code, problem.Facts)
+		}
+
+		diagnostic := makeDiagnostic(tree, problem.Span, code, problem.Facts)
 		if site := problem.Elsewhere; site != nil {
 			file := mods.File(*site)
 			diagnostic.Facts["mod"], diagnostic.Facts["other"] = ws.DescribeMod(place.Origin), ws.DescribeMod(file.Origin)
@@ -560,6 +601,84 @@ func diagnoseDescriptor(ws *workspace.Session, place workspace.Place, tree *jomi
 	facts["mod"], facts["supported"], facts["version"] = facts["name"], descriptor.SupportedVersion, version
 
 	return []Diagnostic{makeDiagnostic(tree, span, "supported-version", facts)}
+}
+
+// patchable holds the codes of the problems that a patch finding replaces: a
+// name that nothing defines, a localization key that nothing defines, or a key
+// the block does not take, where a patch removed or renamed the name.
+var patchable = []string{lang.ProblemUnknownKey, index.ProblemUnresolved, index.ProblemLocKey}
+
+// applyPatches returns the code of the patch finding that replaces a problem,
+// and adds its version, and for a rename its replacement, to the problem's
+// facts. That is the case where a patch of the mod's range renamed the name, or
+// removed it: as a command in the dumps, or as a name the game's files defined
+// (a localization key too). A rename wins over a removal. It returns the code
+// as it was for any other problem. A key that a patch only changed is no
+// finding.
+func applyPatches(patches []workspace.Patch, code string, facts map[string]string) string {
+	if !slices.Contains(patchable, code) {
+		return code
+	}
+
+	name := facts["name"]
+	for _, patch := range patches {
+		for _, rename := range patch.KeyRenames {
+			if rename.Key == name {
+				facts["version"], facts["replacement"] = patch.Version, rename.Replacement
+
+				return "patch-renamed"
+			}
+		}
+	}
+
+	for _, patch := range patches {
+		removedCommand := slices.ContainsFunc(patch.DumpChanges, func(change schema.DumpChange) bool {
+			return change.Key == name && change.Status == schema.StatusRemoved
+		})
+		removedName := code != lang.ProblemUnknownKey && slices.ContainsFunc(patch.DefinitionChanges, func(change schema.KeyChange) bool {
+			return change.Key == name && change.Status == schema.StatusRemoved
+		})
+		if removedCommand || removedName {
+			facts["version"] = patch.Version
+
+			return "patch-removed"
+		}
+	}
+
+	return code
+}
+
+// diagnoseCopy returns a problem at the start of a mod's file if it replaces a
+// game file that the game changed after the version the mod is made for. The
+// version is the newest patch of the range that lists the file, else the end
+// of the range, where only the kept copies show the change. The fact base is
+// the version of the kept copy the game's changes can be merged from, and is
+// left out where PMT keeps none for the range's start.
+func diagnoseCopy(ws *workspace.Session, tree *jomini.Tree, place workspace.Place, patches []workspace.Patch, start, end string) []Diagnostic {
+	stale := ws.ListStaleFiles(place.Origin)
+	position := slices.IndexFunc(stale, func(file workspace.GameFile) bool { return file.Rel == place.Rel })
+	if position < 0 {
+		return nil
+	}
+
+	version := end
+	for _, patch := range slices.Backward(patches) {
+		if slices.ContainsFunc(patch.GameFiles, func(file workspace.GameFile) bool { return file.Rel == place.Rel }) {
+			version = patch.Version
+
+			break
+		}
+	}
+
+	// The file is the finding's name, so each file is a finding of its own.
+	facts := map[string]string{
+		"name": stale[position].Rel, "database": lang.File, "status": stale[position].Status, "version": version,
+	}
+	if base, _, ok := ws.FindCopyFile(start, place.Rel); ok {
+		facts["base"] = base
+	}
+
+	return []Diagnostic{makeDiagnostic(tree, jomini.Span{}, "stale-copy", facts)}
 }
 
 func toDiagnostics(tree *jomini.Tree, problems []jomini.Problem) []Diagnostic {
@@ -670,7 +789,7 @@ func (c Code) Template(facts map[string]string) string {
 // factStyles holds the style of each fact a message draws apart, by key.
 var factStyles = map[string]string{
 	"mod": "mod", "other": "mod", "winner": "mod", "beaten": "mod",
-	"name": "code", "key": "code", "callee": "code", "namespace": "code",
+	"name": "code", "key": "code", "callee": "code", "namespace": "code", "replacement": "code",
 	"file": "path", "folder": "path", "beatenFile": "path",
 	"count": "count", "have": "count", "of": "count", "uses": "count", "removed": "count", "total": "count",
 }

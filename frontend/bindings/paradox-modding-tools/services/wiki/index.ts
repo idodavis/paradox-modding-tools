@@ -7,9 +7,7 @@ export {
 };
 
 export type {
-    LexiconRow,
     Note,
     Page,
-    Progress,
-    Summary
+    Progress
 } from "./models.js";

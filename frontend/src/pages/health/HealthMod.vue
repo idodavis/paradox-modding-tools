@@ -33,6 +33,7 @@ const {
   overview = undefined,
   log,
   compatibility,
+  patches,
   opened = undefined,
 } = defineProps<{
   mod: Mod;
@@ -45,10 +46,17 @@ const {
   log: Finding[];
   /** The findings of workspace compatibility. */
   compatibility: Finding[];
+  /** The findings of the patch question. */
+  patches: Finding[];
   /** The open finding, or undefined for none. */
   opened?: Finding;
 }>();
-const emit = defineEmits<{ open: [finding: Finding]; log: [finding: Finding]; compatibility: [finding: Finding] }>();
+const emit = defineEmits<{
+  open: [finding: Finding];
+  log: [finding: Finding];
+  compatibility: [finding: Finding];
+  patch: [finding: Finding];
+}>();
 const filter = defineModel<string>("filter", { default: "" });
 const checks = defineModel<string[]>("checks", { default: () => [] });
 
@@ -77,7 +85,9 @@ const subtitle = computed(() => {
     .join(" · ");
 });
 /** The finding that the mod is made for another game version, or undefined if it is made for this one. */
-const outdated = computed(() => findings.find((finding) => finding.code === "supported-version"));
+const outdated = computed(() =>
+  patches.find((finding) => finding.code === "supported-version" && finding.origin === mod.id),
+);
 /** The mod's counts by database, the largest first. */
 const databases = computed(() =>
   sortBy(
@@ -198,7 +208,7 @@ function listHits(finding: Finding): Finding[] {
             label: 'Show the version',
             variant: 'ghost',
             color: 'warning',
-            onClick: () => outdated && emit('open', outdated),
+            onClick: () => outdated && emit('patch', outdated),
           },
         ]"
         orientation="horizontal"

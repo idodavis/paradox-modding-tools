@@ -93,19 +93,21 @@ Arrows point to what a package imports. An import that follows from others is le
 | [index](../internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy of a definition the game keeps. |
 | [terminal](../internal/terminal/README.md) | Runs shells under Windows' pseudo console or a Linux pty. |
 
-[`schema/gen`](../internal/schema/gen/) writes the shipped backup schemas, the only game data the app embeds.
+[`schema/gen`](../internal/schema/gen/) writes the shipped backup schemas and each game's shipped history of patches,
+the only game data the app embeds.
 
 ### The services
 
 ```mermaid
 flowchart TD
   steam --> agent & git & wiki
+  patch --> wiki
   agent --> mcp
   terminal --> mcp
   mcp --> draw & eventgraph["graph"] & health & search & wiki
   terminal --> lsp
-  draw & eventgraph & health & search & wiki --> lsp
-  lsp --> workspace
+  draw & eventgraph & health & search --> lsp
+  lsp & wiki & patch --> workspace
   git --> workspace
   workspace --> app
   workspace --> engine["the engine"]
@@ -115,13 +117,14 @@ flowchart TD
 |---|---|
 | [app](../services/app/README.md) | The app itself: `config.json`, settings, the log, windows and updates. |
 | [workspace](../services/workspace/README.md) | The one open workspace: its schema and indexes, its files, and the watcher on its mods. |
-| [lsp](../services/lsp/README.md) | The editor's language features: hover cards, completion, checks, go-to and references. |
+| [lsp](../services/lsp/README.md) | The editor's language features: hover cards, completion, checks, go-to and references, and the lexicon of the game's commands. |
 | [draw](../services/draw/README.md) | The Visual view: GUI windows as widgets, and coats of arms. |
 | [graph](../services/graph/README.md) | The Event Graph: what fires what, from one root. |
 | [health](../services/health/README.md) | The Health report: what is wrong in the workspace's mods, and the game's error log. |
 | [search](../services/search/) | Text search and replace over the workspace, and the file search behind Ctrl P. |
 | [git](../services/git/README.md) | Source control, through the git installed on the machine. |
 | [wiki](../services/wiki/README.md) | The community wiki: cached pages, patch notes, and the Wiki pane's pages for a file. |
+| [patch](../services/patch/README.md) | The Modding Co-ops' digests: what each version of Vic3 and EU5 changed, read into the game's patches, and the versions the Patch Center lists. |
 | [steam](../services/steam/README.md) | Publishing to the Steam Workshop, and the compare with Steam. |
 | [terminal](../services/terminal/README.md) | The IDE's Terminal: its shells, streamed to the window that shows them. |
 | [mcp](../services/mcp/README.md) | PMT's tool server for coding agents. |
@@ -137,6 +140,7 @@ flowchart TD
   runs with its debug flag, in the game's folder under Documents.
 - **The mods:** each mod's folder and its descriptor, CK3's `.mod` file or Vic3's and EU5's `metadata.json`.
 - **The community wiki**, for the Wiki pane and Patch Notes.
+- **The Modding Co-ops' digests** of Vic3 and EU5, one GitHub repository each, read for what each version changed.
 - **Steam**, through the game's own copy of Steam's library, for publishing.
 
 ### What PMT builds
@@ -233,7 +237,7 @@ read that section refresh. Each package README lists the events its service send
 | Search, command palette | `pages/ide/SearchView.vue`, `app/CommandPalette.vue` | search, lsp | index |
 | Visual view, images, Save as DDS | `pages/ide/draw`, `ImageView.vue`, `SaveDdsModal.vue` | draw, workspace | texture, lang, index |
 | Source control | `SourceControlView.vue`, `stores/git.ts` | git | |
-| Wiki pane | `pages/ide/WikiPane.vue` | wiki | |
+| Wiki pane | `pages/ide/WikiPane.vue` | wiki, lsp | |
 | Terminal | `pages/ide/terminal`, `stores/terminal.ts` | terminal | terminal |
 | Assistant | `app/agent/`, `stores/agent.ts` | agent, mcp | |
 | Event Graph | `pages/graph` | graph | index, lang |

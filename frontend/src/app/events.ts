@@ -26,6 +26,7 @@ const WORKSPACE_KEYS = [
   keys.health,
   keys.graph,
   keys.wiki,
+  keys.patch,
   keys.gits,
   keys.releases,
   keys.reviews,
@@ -36,7 +37,7 @@ const WORKSPACE_KEYS = [
 /** SECTIONS holds the queries each section of config.json feeds. */
 const SECTIONS: Record<string, readonly (readonly unknown[])[]> = {
   settings: [keys.settings, keys.folders],
-  workspaces: [keys.workspaces, keys.state, keys.health, keys.gits, keys.releases],
+  workspaces: [keys.workspaces, keys.state, keys.health, keys.patch, keys.gits, keys.releases],
   installs: [keys.installs, keys.state],
   agents: [keys.agents],
 };
@@ -54,6 +55,7 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
       keys.place(path),
       keys.draws,
       keys.health,
+      keys.patch,
       ...(descriptor ? [keys.workspaces] : []),
       ...useQueryCache()
         .getEntries({ key: keys.gits })
@@ -66,7 +68,8 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
   "git:changed": { stale: (dir) => [keys.git(dir), keys.repositoryWork] },
   "release:changed": { stale: (modId) => [keys.release(modId), keys.ownListings] },
   "review:changed": { stale: (path) => [reviewsQuery.key, keys.baseline(path)] },
-  "wiki:updated": { stale: () => [keys.wiki] },
+  "wiki:updated": { stale: () => [keys.wiki, keys.patch] },
+  "patch:updated": { stale: () => [keys.patch, keys.health, keys.lsp] },
   "errorlog:changed": { stale: () => [errorLogQuery.key] },
   "game:exited": { stale: () => [keys.state] },
   "shell:started": { stale: () => [keys.shells] },

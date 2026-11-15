@@ -17,7 +17,6 @@ import (
 	"golang.org/x/time/rate"
 
 	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
@@ -71,7 +70,7 @@ func keepPage(t *testing.T, client *Client, html, title string) {
 	t.Helper()
 	root, _ := parseFragment(html)
 	page := Page{
-		Title: title, HTML: html, FetchedAt: time.Now(), Modding: hasModding(root), Released: resolveReleased(root),
+		Title: title, HTML: html, FetchedAt: time.Now(), Revision: 7, Modding: hasModding(root), Released: resolveReleased(root),
 	}
 	if err := app.SaveJSON(client.resolvePath(title), page); err != nil {
 		t.Fatal(err)
@@ -121,10 +120,7 @@ func TestFindPagesRanksTitles(t *testing.T) {
 		"Event modding", "Scripting", "Scripted effects", "GUI modding", "Script", "Advanced scripted effects tips",
 		"Scripted effect", "GUI",
 	}
-	listing := Listing{RefreshedAt: time.Now()}
-	for _, title := range titles {
-		listing.Pages = append(listing.Pages, Summary{Title: title, Category: "Modding"})
-	}
+	listing := Listing{Pages: titles, RefreshedAt: time.Now()}
 	client := wik.resolveClient(ws)
 	if err := app.SaveJSON(client.resolveListing(), listing); err != nil {
 		t.Fatal(err)
@@ -135,16 +131,12 @@ func TestFindPagesRanksTitles(t *testing.T) {
 	}{
 		{
 			filepath.Join(resolveFixture(t, "ck3"), "game", "common", "scripted_effects", "v_effects.txt"),
-			[]string{"Scripted effect", "Scripted effects", "Advanced scripted effects tips", "Script", "Scripting"},
+			[]string{"Scripted effect", "Scripted effects", "Advanced scripted effects tips", "Script"},
 		},
-		{filepath.Join(resolveFixture(t, "ck3"), "game", "gui", "window.gui"), []string{"GUI", "GUI modding"}},
+		{filepath.Join(resolveFixture(t, "ck3"), "game", "gui", "window.gui"), []string{"GUI"}},
 	}
 	for _, test := range tests {
-		pages, err := wik.FindPages(test.path)
-		var got []string
-		for _, page := range pages {
-			got = append(got, page.Title)
-		}
+		got, err := wik.FindPages(test.path)
 		if err != nil || !slices.Equal(got, test.want) {
 			t.Errorf("FindPages(%s) = %q, %v, want %q", filepath.Base(test.path), got, err, test.want)
 		}
@@ -199,6 +191,12 @@ func TestClientRefreshesFromServer(t *testing.T) {
 		switch {
 		case query.Get("action") == "parse" && query.Get("page") == "Missing":
 			_, _ = writer.Write([]byte(`{"error":{"code":"missingtitle","info":"no such page"}}`))
+		case query.Get("prop") == "info":
+			var pages []string
+			for _, title := range strings.Split(query.Get("titles"), "|") {
+				pages = append(pages, fmt.Sprintf(`{"title":%q,"lastrevid":7}`, title))
+			}
+			_, _ = fmt.Fprintf(writer, `{"query":{"pages":[%s]}}`, strings.Join(pages, ","))
 		case query.Get("action") == "parse":
 			text := `<script>x</script><h2>Modding</h2><p>` + query.Get("page") + `</p><a href="/wiki/Foo">link</a>`
 			_, _ = fmt.Fprintf(writer, `{"parse":{"title":%q,"text":%q}}`, query.Get("page"), text)
@@ -230,7 +228,7 @@ func TestClientRefreshesFromServer(t *testing.T) {
 		t.Errorf("progress ended at %d of %d, want 3 of 3", lastDone, lastTotal)
 	}
 	listing, ok := client.LoadListing()
-	if !ok || len(listing.Pages) != 2 || listing.Pages[1] != (Summary{Title: "Decisions", Category: "Modding"}) ||
+	if !ok || len(listing.Pages) != 2 || listing.Pages[1] != "Decisions" ||
 		!slices.Equal(listing.Versions, []string{"1.20", "1.1.X"}) {
 		t.Errorf("listing = %+v, %v", listing, ok)
 	}
@@ -261,82 +259,6 @@ func TestRefreshEmitsUpdatedWithoutWorkspace(t *testing.T) {
 	case <-sent:
 	case <-time.After(5 * time.Second):
 		t.Error("Refresh did not send wiki:updated")
-	}
-}
-
-// TestBuildLexiconListsEffectsAndFunctions checks the effect, scope and
-// function rows over the CK3 fixture install, and the error for an unknown
-// class.
-func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
-	wik, ws := openService(t)
-	effects, err := wik.BuildLexicon("effect")
-	if err != nil {
-		t.Fatal(err)
-	}
-	declared := len(ws.Schema.ListKeys(lang.DumpEffects))
-	mods, scripted := ws.Mods.Load(), map[string]bool{}
-	for _, site := range mods.ListDefinitions(ws.Schema.Effects) {
-		scripted[mods.ToReference(site).Name] = true
-	}
-	if len(effects) == 0 || len(effects) != declared+len(scripted) || !slices.IsSortedFunc(effects, func(first, second LexiconRow) int {
-		return strings.Compare(first.Name, second.Name)
-	}) {
-		t.Fatalf("%d effect rows for %d declared and %d scripted effects, sorted by name", len(effects), declared, len(scripted))
-	}
-	examples := 0
-	for _, row := range effects {
-		if row.Defined != nil {
-			if !scripted[row.Name] || row.Usage != "" && !strings.HasPrefix(row.Usage, row.Name+" = { ") {
-				t.Errorf("scripted row %+v", row)
-			}
-			continue
-		}
-		command := ws.Schema.LookupDefinition(lang.DumpEffects, row.Name)
-		if row.Class != "effect" || row.Usage != command.Usage || row.Blurb != command.Blurb ||
-			len(row.Examples) > len(mods.ListUses(lang.DumpEffects, row.Name)) {
-			t.Errorf("row %+v does not match command %+v", row, command)
-		}
-		examples += len(row.Examples)
-	}
-	if examples == 0 {
-		t.Error("no effect has an example")
-	}
-	checkFunctions(t, wik, ws)
-	if scopes, err := wik.BuildLexicon("scope"); err != nil || len(scopes) != len(ws.Schema.ListKeys(lang.DumpTypes)) {
-		t.Errorf("%d scope rows for %d scopes, %v", len(scopes), len(ws.Schema.ListKeys(lang.DumpTypes)), err)
-	}
-	if _, err := wik.BuildLexicon("modifier"); err == nil {
-		t.Error("BuildLexicon accepted a class the lexicon does not have")
-	}
-}
-
-// checkFunctions checks that there is a function row for each data function of
-// the schema.
-func checkFunctions(t *testing.T, wik *Service, ws *workspace.Session) {
-	t.Helper()
-	rows, err := wik.BuildLexicon("function")
-	if err != nil {
-		t.Fatal(err)
-	}
-	count := 0
-	for _, dataType := range ws.Schema.DataTypes {
-		count += len(dataType.Functions)
-	}
-	if len(rows) == 0 || len(rows) != count {
-		t.Fatalf("%d function rows for %d data functions", len(rows), count)
-	}
-	for _, row := range rows {
-		typeName, functionName, ok := strings.Cut(row.Name, ".")
-		function := ws.Schema.DataTypes[typeName].Functions[functionName]
-		if !ok || row.Class != "function" || row.Target != lang.ReturnType(function) || row.Blurb != function.Blurb ||
-			len(row.Examples) != len(function.Examples) {
-			t.Fatalf("row %+v does not match function %+v of %s", row, function, typeName)
-		}
-		for i, example := range function.Examples {
-			if row.Examples[i].Line != example.Line+1 || row.Examples[i].Place.Path != example.Path {
-				t.Errorf("%s example %d = %+v, want %+v", row.Name, i, row.Examples[i], example)
-			}
-		}
 	}
 }
 

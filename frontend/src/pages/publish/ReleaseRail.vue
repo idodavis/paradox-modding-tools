@@ -9,6 +9,7 @@ import {
   day,
   describeAge,
   describeCount,
+  describeRelease,
   MARKS,
   parseTime,
   plural,
@@ -60,7 +61,7 @@ const bumps = computed(() => {
 // The game's major and minor version when Steam lists no tag for it, else "".
 const untaggedVersion = computed(() => {
   if (listing.value.versionTag || !tags.value?.versions?.length || !listing.value.supportedVersion) return "";
-  return listing.value.supportedVersion.split(".").slice(0, 2).join(".");
+  return describeRelease(listing.value.supportedVersion);
 });
 // The draft the change note was filled from, if it is unedited.
 const filledNote = computed(() =>

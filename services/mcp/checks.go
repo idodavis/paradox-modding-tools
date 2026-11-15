@@ -16,7 +16,6 @@ import (
 	"paradox-modding-tools/services/draw"
 	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/lsp"
-	"paradox-modding-tools/services/wiki"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -41,12 +40,13 @@ var queryKeys = []queryKey{
 	{Page: "event-graph", Key: "filters", Help: "an Event Graph filter as JSON, as build_graph takes it, its parts " +
 		"left out at the defaults", Check: (*Service).checkFilter},
 	{Page: "health", Key: "view", Help: "the view shown; left out, the first with a row for code or name",
-		Values: []string{"summary", "compatibility", "mod", "log"}},
+		Values: []string{"summary", "compatibility", "patch", "mod", "log"}},
 	{Page: "health", Key: "mod", Help: "the mod the mod view shows, by its id", Check: (*Service).checkMod},
 	{Page: "health", Key: "code", Help: "a check's id from list_codes, whose rows are shown", Check: (*Service).checkCode},
 	{Page: "health", Key: "name", Help: "a name, whose rows are shown"},
-	{Page: "patch-notes", Key: "patch", Help: "the version whose notes are shown", Check: (*Service).checkPatch},
-	{Page: "patch-notes", Key: "find", Help: "a text found in them"},
+	{Page: "patch-center", Key: "patch", Help: "the version shown, left out for Your mods",
+		Check: (*Service).checkPatch},
+	{Page: "patch-center", Key: "find", Help: "a text found in the version's notes"},
 	{Page: "release", Key: "mod", Help: "the mod shown, by its id", Check: (*Service).checkMod},
 	{Page: "release", Key: "compare", Help: "the compare of the mod with its Steam item", Values: []string{"steam"}},
 }
@@ -351,12 +351,12 @@ func (s *Service) checkLookUp(lookUp *Lookup) error {
 		return errors.New("a look-up names a wiki page's title, or a Lexicon entry's class and name")
 	}
 
-	rows, err := s.Wiki.BuildLexicon(lookUp.Class)
+	rows, err := s.LSP.BuildLexicon(lookUp.Class, "", "")
 	if err != nil {
 		return err
 	}
 
-	if !slices.ContainsFunc(rows, func(row wiki.LexiconRow) bool { return row.Name == lookUp.Name }) {
+	if !slices.ContainsFunc(rows, func(row lsp.LexiconRow) bool { return row.Name == lookUp.Name }) {
 		return fmt.Errorf("the Lexicon has no %s %q; build_lexicon lists them", lookUp.Class, lookUp.Name)
 	}
 

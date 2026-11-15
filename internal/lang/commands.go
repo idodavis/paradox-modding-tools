@@ -109,11 +109,11 @@ func (d *Definition) findStar(key string) (start, end int, fits bool) {
 		strings.HasSuffix(key, suffix)
 }
 
-// findPatterns returns the star keys of a database that a key fits, as
+// FindPatterns returns the star keys of a database that a key fits, as
 // has_relation_* for has_relation_rival. A key the dumps declare has them
 // listed. For any other key they are the ones whose star the fewest letters
 // fill, ties going to the first key.
-func (s *Schema) findPatterns(database, key string) []*Definition {
+func (s *Schema) FindPatterns(database, key string) []*Definition {
 	owner := s.Databases[database]
 	key = strings.ToLower(key)
 	if owner == nil || !strings.Contains(key, "_") {

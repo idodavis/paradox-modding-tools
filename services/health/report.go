@@ -180,6 +180,7 @@ func (s *Service) makeReport(ws *workspace.Session, order []string) (Report, err
 		},
 		func() []Finding { return listSharedMessages(ws, compatible, shared) },
 		func() []Finding { return listDescriptors(ws, mods) },
+		func() []Finding { return listStaleDumps(ws, mods) },
 		func() []Finding { return listUnmounted(ws, mods) },
 		func() []Finding { return listDiagnostics(ws, base, mods) },
 		func() []Finding { return listCoverage(ws, mods, messages) },
@@ -278,6 +279,20 @@ func listDescriptors(ws *workspace.Session, mods *index.Index) []Finding {
 	}
 
 	return findings
+}
+
+// listStaleDumps lists one finding for the workspace if no current dumps
+// describe the installed version, and none if some do. The version of dumps
+// that are not known to be of any version is worded as not known.
+func listStaleDumps(ws *workspace.Session, mods *index.Index) []Finding {
+	dumps := ws.Schema.Dumps
+	if dumps.Current {
+		return nil
+	}
+
+	facts := map[string]string{"dumps": cmp.Or(dumps.Version, "a version PMT does not know"), "version": ws.Schema.Version}
+
+	return []Finding{makeFinding(mods, "stale-dumps", facts, nil)}
 }
 
 // listUnmounted lists each top folder of a mod that lies outside the stage
@@ -430,9 +445,9 @@ func (s *Service) listExternal() map[string]bool {
 }
 
 // groupReport words the findings, folds the repeats and groups them into the
-// compatibility and each mod of the load order. A finding about a mod
-// outside the order is dropped, and the own tally leaves out the given
-// external mods.
+// compatibility, the patch question and each mod of the load order. A finding
+// about a mod outside the order is dropped, and the own tally leaves out the
+// given external mods.
 func groupReport(findings []Finding, order []string, external map[string]bool) Report {
 	for position := range findings {
 		describeFinding(&findings[position])
@@ -442,13 +457,15 @@ func groupReport(findings []Finding, order []string, external map[string]bool) R
 		return [4]string{finding.Code, findOwner(finding), finding.Name, lsp.JoinParts(finding.Message)}
 	}, func(first *Finding, repeat Finding) { first.Repeats = append(first.Repeats, repeat.Sites...) })
 
-	var compatibility []Finding
-	problems, languages := map[string][]Finding{}, map[string][]Finding{}
+	var compatibility, patch []Finding
+	problems, languages, patches := map[string][]Finding{}, map[string][]Finding{}, map[string][]Finding{}
 	for _, finding := range folded {
 		owner := findOwner(finding)
 		switch {
 		case finding.Question == lsp.QuestionCompatibility:
 			compatibility = append(compatibility, finding)
+		case finding.Question == lsp.QuestionPatch:
+			patches[owner] = append(patches[owner], finding)
 		case finding.Code == coverageCode:
 			languages[owner] = append(languages[owner], finding)
 		default:
@@ -458,16 +475,22 @@ func groupReport(findings []Finding, order []string, external map[string]bool) R
 
 	mods := make([]Group, len(order))
 	own := []Finding{}
+
+	// A finding of the workspace as a whole, as the game's documentation being
+	// of another version, has no owner.
+	patch = append(patch, patches[""]...)
 	for position, id := range order {
 		mods[position] = makeGroup(id, problems[id], languages[id])
+		patch = append(patch, patches[id]...)
 		if !external[id] {
 			own = append(own, mods[position].Findings...)
 		}
 	}
 
 	return Report{
-		Tally:         makeTally(slices.Concat(compatibility, own)),
+		Tally:         makeTally(slices.Concat(compatibility, patch, own)),
 		Compatibility: makeGroup("", compatibility, nil),
+		Patch:         makeGroup("", patch, nil),
 		Mods:          mods,
 		Own:           makeTally(own),
 		CheckedAt:     time.Now(),

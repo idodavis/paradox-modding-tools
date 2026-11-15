@@ -86,7 +86,7 @@ func buildFixture(t *testing.T) (*lang.Schema, string) {
 	}
 
 	row := game.LookupGame("ck3")
-	built, err := Build(lang.LookupDialect(row.ID), row.FindDumpDirs(install), install, listInstall(t, row, install), parseFile)
+	built, _, err := Build(lang.LookupDialect(row.ID), row.FindDumpDirs(install), nil, install, "", listInstall(t, row, install), parseFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +336,7 @@ func TestBuildInstalls(t *testing.T) {
 			row := game.LookupGame(gameID)
 			paths := listInstall(t, row, install)
 			start := time.Now()
-			built, err := Build(lang.LookupDialect(gameID), row.FindDumpDirs(install), install, paths, parseFile)
+			built, _, err := Build(lang.LookupDialect(gameID), row.FindDumpDirs(install), nil, install, "", paths, parseFile)
 			if err != nil {
 				t.Fatal(err)
 			}

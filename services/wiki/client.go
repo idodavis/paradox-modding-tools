@@ -26,6 +26,10 @@ type Page struct {
 	HTML      string    `json:"html"`
 	FetchedAt time.Time `json:"fetchedAt"`
 
+	// Revision is the wiki's revision of the page as it was fetched. It is 0
+	// for a page cached without one, which a refresh fetches again.
+	Revision int64 `json:"revision"`
+
 	// Modding is true when a heading of the page holds the word Modding.
 	Modding bool `json:"modding"`
 
@@ -57,6 +61,9 @@ type Client struct {
 const (
 	requestTimeout    = 30 * time.Second
 	requestsPerSecond = 2
+
+	// actionParam is the API parameter that names what a request asks for.
+	actionParam = "action"
 )
 
 func newClient(cacheDir string, row *game.Game) *Client {
@@ -70,14 +77,15 @@ func newClient(cacheDir string, row *game.Game) *Client {
 	}
 }
 
-// FetchPage fetches a page and caches it sanitized. It returns an error if the
-// fetch fails or the wiki has no such page.
+// FetchPage fetches a page and caches it sanitized, with the revision the wiki
+// gave. It returns an error if the fetch fails or the wiki has no such page.
 func (c *Client) FetchPage(title string) (Page, error) {
-	params := url.Values{"action": {"parse"}, "page": {title}, "prop": {"text"}}
+	params := url.Values{actionParam: {"parse"}, "page": {title}, "prop": {"text|revid"}}
 	var response struct {
 		Parse struct {
-			Title string `json:"title"`
-			Text  string `json:"text"`
+			Title    string `json:"title"`
+			Text     string `json:"text"`
+			Revision int64  `json:"revid"`
 		} `json:"parse"`
 		Error struct {
 			Code string `json:"code"`
@@ -101,7 +109,8 @@ func (c *Client) FetchPage(title string) (Page, error) {
 	sanitized := sanitizePage(root, c.origin)
 	page := Page{
 		Title: response.Parse.Title, URL: c.origin.JoinPath(strings.ReplaceAll(response.Parse.Title, " ", "_")).String(),
-		HTML: sanitized, FetchedAt: time.Now(), Modding: hasModding(root), Released: resolveReleased(root),
+		HTML: sanitized, FetchedAt: time.Now(), Revision: response.Parse.Revision, Modding: hasModding(root),
+		Released: resolveReleased(root),
 	}
 	if err := app.SaveJSON(c.resolvePath(title), page); err != nil {
 		return Page{}, fmt.Errorf("wiki page %q: %w", title, err)

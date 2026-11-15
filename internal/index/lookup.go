@@ -126,6 +126,33 @@ func (i *Index) ListDefinitions(database string) []Site {
 	return append(sites, own...)
 }
 
+// ListDefinedKeys returns the names the index's own files define, by database,
+// each list sorted. The keys of the localization are under lang.Localization,
+// defined by their messages. A mods' index lists its own files only, since
+// the install's are the install's index's.
+func (i *Index) ListDefinedKeys() map[string][]string {
+	keys := map[string][]string{}
+
+	for posting, names := range i.postings {
+		database := i.Databases.Texts[posting.Database]
+		if posting.Role != toRole(database) {
+			continue
+		}
+
+		for name, sites := range names {
+			if len(i.narrowSites(sites)) > 0 {
+				keys[database] = append(keys[database], i.Names.Texts[name])
+			}
+		}
+	}
+
+	for _, list := range keys {
+		slices.Sort(list)
+	}
+
+	return keys
+}
+
 // ListMessages returns every message with the given key, one per language and
 // file, in load order.
 func (i *Index) ListMessages(key string) []Site {

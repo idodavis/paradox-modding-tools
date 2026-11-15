@@ -15,37 +15,60 @@ import (
 	"paradox-modding-tools/internal/lang"
 )
 
-// The origins of the dumps' data: none, the install, or the shipped backup.
+// The origins of the dumps' data: none, the install, the digest or the shipped
+// backup.
 const (
 	originNone    = "none"
 	originInstall = "install"
+	originDigest  = "digest"
 	originShipped = "shipped"
 )
 
 // buildDumps builds the schema's commands, scope types, modifiers,
 // on_actions and data types from the install's dumps, with the shipped
-// backup filling what they lack. It records where the data came from and
-// whether it is older than the install.
-func (b *builder) buildDumps(dialect *lang.Dialect, dumpDirs []string, installPath string) error {
+// backup filling what they lack. It records where the data came from, whether
+// it is older than the install, and whether it describes the installed
+// version.
+//
+// The install's own dumps are used unless they are missing or older than the
+// install, and then the digest's are, if there are any. It returns the
+// install's own dumps when they were used and are not older than the install,
+// else nil. Those carry the installed version. The version of dumps that are
+// older than the install is not known, since the files do not say which game
+// wrote them.
+func (b *builder) buildDumps(
+	dialect *lang.Dialect, dumpDirs []string, digest *Dumps, installPath, version string,
+) (*Dumps, error) {
 	dumps, err := ReadDumps(dumpDirs)
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	state := lang.SourceState{Origin: originNone, WrittenAt: dumps.WrittenAt, Folders: dumps.Folders}
+	if !dumps.WrittenAt.IsZero() {
+		state.Origin = originInstall
+		state.Stale = dumps.OldestAt.Before(game.ReadInstallUpdatedAt(installPath))
+		if !state.Stale {
+			dumps.Version = version
+		}
+	}
+
+	if digest != nil && (state.Origin == originNone || state.Stale) {
+		dumps, state = digest, lang.SourceState{Origin: originDigest}
 	}
 
 	backup, hasBackup := LoadShipped(dialect.ID)
 	isFilled := hasBackup && dumps.resolveMissing(backup)
 	dumps.applyCorrections(dialect)
 
-	state := lang.SourceState{Origin: originNone, WrittenAt: dumps.WrittenAt, Folders: dumps.Folders}
-	switch {
-	case !dumps.WrittenAt.IsZero():
-		state.Origin = originInstall
-		state.Stale = dumps.OldestAt.Before(game.ReadInstallUpdatedAt(installPath))
-
-	case isFilled:
+	if isFilled && state.Origin == originNone {
 		state.Origin = originShipped
+		dumps.Version = backup.Version
 	}
 
+	state.Version = dumps.Version
+	state.Current = state.Origin == originInstall && !state.Stale ||
+		state.Version != "" && game.IsInstalled(state.Version, version)
 	b.Dumps = state
 	b.Customs, b.DataTypes = dumps.Customs, dumps.DataTypes
 	b.buildTypes(dumps)
@@ -59,7 +82,11 @@ func (b *builder) buildDumps(dialect *lang.Dialect, dumpDirs []string, installPa
 		database.Keys = slices.Sorted(maps.Keys(database.Definitions))
 	}
 
-	return nil
+	if state.Origin != originInstall || state.Stale {
+		return nil, nil
+	}
+
+	return dumps, nil
 }
 
 // buildTypes makes the databases the dumps fill, and in them a definition

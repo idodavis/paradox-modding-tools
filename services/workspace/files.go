@@ -43,6 +43,10 @@ type Place struct {
 	Position int32 `json:"-"`
 	IsDir    bool  `json:"isDir"`
 
+	// Missing is true for a path that is not on disk. Only Service.Locate
+	// sets it.
+	Missing bool `json:"missing"`
+
 	// Drawable is true for a file the Visual view draws.
 	Drawable bool `json:"drawable"`
 
@@ -117,6 +121,7 @@ func (s *Session) Locate(mods *index.Index, path string) Place {
 }
 
 // Locate returns the place of a file or folder, empty if no workspace is open.
+// It reads the disk for IsDir and Missing.
 func (s *Service) Locate(path string) Place {
 	ws, err := s.Session()
 	if err != nil {
@@ -124,7 +129,8 @@ func (s *Service) Locate(path string) Place {
 	}
 
 	place := ws.Locate(ws.Mods.Load(), path)
-	place.IsDir = files.IsFolder(path)
+	stat, err := os.Stat(path)
+	place.IsDir, place.Missing = err == nil && stat.IsDir(), errors.Is(err, os.ErrNotExist)
 
 	return place
 }

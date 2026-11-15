@@ -1,11 +1,12 @@
 // Package wiki reads the community wiki of the open workspace's game. It caches
-// the wiki's pages, lists the patch notes, finds the pages that belong to a
-// file, and builds the lexicon of the game's script commands.
+// the wiki's pages, lists the patch notes and finds the pages that belong to a
+// file.
 //
 // A client asks the wiki's API at most twice a second. Each page is cached as
 // one JSON file with its HTML sanitized, and a client keeps the pages it has
-// read in memory. A refresh fetches the pages that are not cached or are over
-// seven days old.
+// read in memory. A refresh asks the wiki for the latest revision of each
+// listed page, 50 titles to a query, and fetches the pages that are not cached
+// or whose cached revision differs.
 //
 // The wiki's rules, as the package applies them:
 //
@@ -22,13 +23,15 @@
 // # Robustness
 //
 // FetchPage refuses a page the wiki answers with an error, and an answer that
-// is not JSON. A refresh stops if the listing fails, but not for a page that
-// fails. FindPages, SearchPages and ListNotes refuse until a refresh has
-// fetched the listing.
+// is not JSON. A refresh stops if the listing or a revision query fails, but
+// not for a page that fails. ListNotes refuses until a refresh has fetched the
+// listing, and FindPages and SearchPages return nil until then.
 //
 // A cached file that is missing or does not decode reads as not cached, and a
-// note whose page is not cached has no release date. Sanitizing reads past
-// elements and attributes it does not keep.
+// note whose page is not cached has no release date. A page cached without a
+// revision is fetched again by the next refresh. A refresh reads past a listed
+// title the wiki gives no revision for: it does not fetch it, and any cached
+// copy stays. Sanitizing reads past elements and attributes it does not keep.
 package wiki
 
 import (
@@ -41,7 +44,6 @@ import (
 	"golang.org/x/mod/semver"
 
 	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -57,11 +59,6 @@ type Service struct {
 
 	mu     sync.Mutex
 	client *Client
-
-	// lexicon caches each class's rows for the mods index they were built
-	// from.
-	lexicon map[string][]LexiconRow
-	mods    *index.Index
 }
 
 const (
@@ -116,7 +113,7 @@ func (s *Service) ListNotes() ([]Note, error) {
 	client := s.resolveClient(ws)
 	listing, ok := client.LoadListing()
 	if !ok {
-		return nil, errNoListing
+		return nil, ErrNoListing
 	}
 
 	versions := slices.Clone(listing.Versions)
@@ -139,9 +136,9 @@ func (s *Service) ListNotes() ([]Note, error) {
 	return notes, nil
 }
 
-// Refresh fetches the listing and every missing or stale page, sending
-// wiki:progress for each page and wiki:updated at the end. It returns an error
-// if no workspace is open or a fetch fails.
+// Refresh fetches the listing and every page that is not cached or has changed
+// on the wiki, sending wiki:progress for each page and wiki:updated at the end.
+// It returns an error if no workspace is open or a fetch fails.
 func (s *Service) Refresh() error {
 	ws, err := s.Workspace.Session()
 	if err == nil {

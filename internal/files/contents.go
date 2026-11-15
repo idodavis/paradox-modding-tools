@@ -6,7 +6,9 @@ package files
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"encoding/gob"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -58,32 +60,51 @@ var ErrBinary = errors.New("binary")
 // ReadText reads a text file. It returns an error wrapping ErrBinary for a
 // binary file or one over TextLimit.
 func ReadText(path string) (Text, error) {
-	file, err := os.Open(path)
+	content, err := ReadContent(path)
 	if err != nil {
 		return Text{}, err
+	}
+
+	return DecodeText(content), nil
+}
+
+// ReadContent reads the bytes of a text file. It returns an error wrapping
+// ErrBinary for a binary file or one over TextLimit.
+func ReadContent(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = file.Close() }()
 
 	stat, err := file.Stat()
 	if err != nil {
-		return Text{}, err
+		return nil, err
 	}
 
 	if stat.Size() > TextLimit {
-		return Text{}, fmt.Errorf("%s is %d bytes, over the %d-byte limit for text, so it is %w",
+		return nil, fmt.Errorf("%s is %d bytes, over the %d-byte limit for text, so it is %w",
 			path, stat.Size(), TextLimit, ErrBinary)
 	}
 
 	content, err := io.ReadAll(file)
 	if err != nil {
-		return Text{}, err
+		return nil, err
 	}
 
 	if IsBinary(content) {
-		return Text{}, fmt.Errorf("%s is %w", path, ErrBinary)
+		return nil, fmt.Errorf("%s is %w", path, ErrBinary)
 	}
 
-	return DecodeText(content), nil
+	return content, nil
+}
+
+// HashContent returns the SHA-256 of a file's bytes in hex. It is the name of
+// the copy PMT keeps of a game file, and how it tells that a file changed.
+func HashContent(content []byte) string {
+	sum := sha256.Sum256(content)
+
+	return hex.EncodeToString(sum[:])
 }
 
 // LoadText is ReadText, but a missing file gives empty text and no error.

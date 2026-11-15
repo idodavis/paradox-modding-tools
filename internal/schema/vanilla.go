@@ -29,10 +29,8 @@ type counter struct {
 	contexts []lang.Context
 	holders  []holder
 
-	// path is the file being counted. colorSuffix is how a key of that file
-	// ends when its block of plain numbers is a color, "" if it has no such
-	// keys.
-	path        string
+	// colorSuffix is how a key of the file being counted ends when its block
+	// of plain numbers is a color, "" if it has no such keys.
 	colorSuffix string
 
 	// isGUI is whether the file being counted is a GUI file.
@@ -65,10 +63,6 @@ type counter struct {
 	// prefixed counts, for each link that takes a name after a colon, each
 	// name written after it.
 	prefixed map[string]map[string]int
-
-	// examples holds the first places each data function is called, by
-	// Type.Function.
-	examples map[string][]lang.Example
 }
 
 // holder says where the keys written inside one statement are counted.
@@ -134,7 +128,7 @@ func (b *builder) countVanilla(listing []files.File, parse func(path string) (*j
 			builder: b, fields: map[*lang.Field]*lang.Field{}, tallies: map[*lang.Field]*tally{},
 			arguments: map[*lang.Definition]*lang.Field{}, definitions: map[string]*lang.Field{},
 			defined: map[string]map[string]bool{}, messages: map[string]bool{}, unlisted: map[string]bool{},
-			prefixed: map[string]map[string]int{}, examples: map[string][]lang.Example{},
+			prefixed: map[string]map[string]int{},
 		}
 	}
 
@@ -158,7 +152,7 @@ func (b *builder) countVanilla(listing []files.File, parse func(path string) (*j
 
 	failures := lang.EachParsed(listing, parse, func(worker, index int, tree *jomini.Tree) {
 		counter, file := counters[worker], listing[index]
-		counter.path, counter.isGUI = file.Path, file.Format == files.FormatGUI
+		counter.isGUI = file.Format == files.FormatGUI
 		counter.colorSuffix = lang.FileTypes[strings.ToLower(path.Ext(file.Rel))].ColorSuffix
 		counter.count(tree, file)
 	})
@@ -210,7 +204,6 @@ func (c *counter) countStatement(tree *jomini.Tree, statement int32, context *la
 
 	c.countDefinition(context)
 	c.countPrefixes(tree, current)
-	c.countCalls(tree, statement, context)
 	if value := tree.Unquoted(current.Value); c.isGUI && strings.Contains(value, "[") {
 		c.countUnlisted(loc.Segments(value, 0), context.Datacontext)
 	}
@@ -315,46 +308,6 @@ func addCounts[K comparable](total, added map[K]int) map[K]int {
 	}
 
 	return total
-}
-
-// countCalls keeps the places a statement's value calls data functions, as
-// [Character.GetName] does, as examples of each function.
-func (c *counter) countCalls(tree *jomini.Tree, statement int32, context *lang.Context) {
-	call := context.Call
-	if call == nil {
-		return
-	}
-
-	value := tree.Statements[statement].Value
-	example := lang.Example{Path: c.path, Line: tree.Lines.ToPosition(value.Start).Line}
-	owners, _ := c.builder.ListCallOwners(*call, context.Datacontext)
-	for i, owner := range owners {
-		if owner != "" {
-			name := owner + "." + call.Steps[i].Text
-			c.examples[name] = keepExample(c.examples[name], example)
-		}
-	}
-}
-
-// ExampleCount is how many places are kept as the examples of one data
-// function.
-const ExampleCount = 5
-
-// keepExample adds a place to the examples kept for one data function. Only
-// the first ExampleCount by path and line are kept.
-func keepExample(examples []lang.Example, example lang.Example) []lang.Example {
-	// the list is sorted, so the result is the same whichever worker read
-	// which file
-	position, exists := slices.BinarySearchFunc(examples, example, func(kept, added lang.Example) int {
-		return cmp.Or(strings.Compare(kept.Path, added.Path), cmp.Compare(kept.Line, added.Line))
-	})
-	if exists || position == ExampleCount {
-		return examples
-	}
-
-	examples = slices.Insert(examples, position, example)
-
-	return examples[:min(len(examples), ExampleCount)]
 }
 
 // countUnlisted records the steps of a text's data calls that no dump
@@ -641,12 +594,6 @@ func (c *counter) add(other *counter) {
 	for prefix, labels := range other.prefixed {
 		c.prefixed[prefix] = addCounts(c.prefixed[prefix], labels)
 	}
-
-	for name, examples := range other.examples {
-		for _, example := range examples {
-			c.examples[name] = keepExample(c.examples[name], example)
-		}
-	}
 }
 
 // addField adds what was counted at one field, and at every field inside
@@ -684,13 +631,6 @@ func (c *counter) resolveCounts() {
 
 	for field, counted := range c.fields {
 		c.addField(field, counted, c)
-	}
-
-	for typeName, dataType := range c.builder.DataTypes {
-		for name, function := range dataType.Functions {
-			function.Examples = c.examples[typeName+"."+name]
-			dataType.Functions[name] = function
-		}
 	}
 
 	for command, counted := range c.arguments {

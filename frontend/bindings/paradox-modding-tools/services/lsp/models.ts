@@ -12,6 +12,9 @@ import * as jomini$0 from "../../internal/jomini/models.js";
 import * as lang$0 from "../../internal/lang/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as schema$0 from "../../internal/schema/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
 
 /**
@@ -71,6 +74,12 @@ export interface Card {
     "sites"?: Site[] | null;
 
     /**
+     * History holds the patches that changed a lexicon key, oldest first, each
+     * with only that key's change. It is empty for any other card.
+     */
+    "history"?: workspace$0.Patch[] | null;
+
+    /**
      * Range is the word the card is about.
      */
     "range": jomini$0.Range;
@@ -91,7 +100,7 @@ export interface CardRow {
 }
 
 /**
- * A Class is one class of the wiki's lexicon of commands.
+ * A Class is one class of the lexicon of the game's commands.
  */
 export interface Class {
     /**
@@ -320,6 +329,34 @@ export interface Level {
     "problem": boolean;
     "fix": boolean;
     "cost": string;
+}
+
+/**
+ * LexiconRow is one key of the dumps: an effect, a trigger, an event target, a
+ * scope, a modifier, an on_action or a data function. It is also one scripted
+ * effect or trigger.
+ */
+export interface LexiconRow {
+    "class": string;
+    "name": string;
+    "blurb": string;
+    "usage": string;
+    "scopes"?: string[] | null;
+    "target"?: string;
+
+    /**
+     * Status is what the latest patch of the range did to the key, and
+     * Version is that patch's version. Both are "" for a key the range did
+     * not change, and for a lexicon built with no range.
+     */
+    "status": schema$0.Status;
+    "version": string;
+
+    /**
+     * Defined is where the game's copy of a scripted effect or trigger is. It
+     * is nil for what the dumps declare.
+     */
+    "defined"?: Site | null;
 }
 
 /**

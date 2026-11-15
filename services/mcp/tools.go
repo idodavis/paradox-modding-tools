@@ -69,7 +69,7 @@ type pageTitle struct {
 }
 
 type lexiconFilter struct {
-	Class string `json:"class" jsonschema:"effect, trigger, link, scope or function"`
+	Class string `json:"class" jsonschema:"effect, trigger, link, scope, modifier, on_action or function"`
 	Query string `json:"query,omitempty" jsonschema:"text the row's name holds"`
 	Limit int    `json:"limit,omitempty" jsonschema:"the most rows wanted; 50 if left out"`
 }
@@ -177,7 +177,8 @@ func (s *Service) addPageTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "build_report", Title: "Get Health's findings", Annotations: readsOnly,
 		Description: "Gives Health's findings for the workspace's load order: how the mods touch the same things, " +
 			"each mod's own problems, and each language's localization coverage (the coverage check). The findings " +
-			"come in groups, the compatibility and each mod, with the counts of each level and check; a finding's " +
+			"come in groups, the compatibility, what the game's patches changed under the mods, and each mod, with " +
+			"the counts of each level and check; a finding's " +
 			"count says how many it folds."}, answer(s.buildReport))
 	sdk.AddTool(server, &sdk.Tool{Name: "list_overview", Title: "Count what each mod holds", Annotations: readsOnly,
 		Description: "Counts what each mod holds: its definitions by kind, its files and its localization keys."},
@@ -214,7 +215,7 @@ func (s *Service) addPageTools(server *sdk.Server) {
 			"rules it reads, the game's copy it replaces, and its script."}, answer(s.buildDetail))
 	sdk.AddTool(server, &sdk.Tool{Name: "search_pages", Title: "Search the game's wiki", Annotations: readsOnly,
 		Description: "Finds the game wiki's modding pages that hold a text."},
-		answer(func(request textQuery) ([]wiki.Summary, error) {
+		answer(func(request textQuery) ([]string, error) {
 			pages, err := s.Wiki.SearchPages(request.Query)
 
 			return pages[:min(len(pages), resolveLimit(request.Limit, defaultLimit))], err
@@ -224,7 +225,7 @@ func (s *Service) addPageTools(server *sdk.Server) {
 		answer(func(request pageTitle) (wiki.Page, error) { return s.Wiki.ReadPage(request.Title) }))
 	sdk.AddTool(server, &sdk.Tool{Name: "build_lexicon", Title: "Look up the game's effects and triggers",
 		Annotations: readsOnly, Description: "Lists the game's effects, triggers, links, scopes or functions, each " +
-			"with what it does, where it runs and examples from the game's files."}, answer(s.buildLexicon))
+			"with what it does, where it runs."}, answer(s.buildLexicon))
 }
 
 func (s *Service) addAppTools(server *sdk.Server) {
@@ -331,6 +332,7 @@ func (s *Service) buildReport(filter findingFilter) (health.Report, error) {
 
 	// Health keeps the report it built, so the groups are cut on a copy.
 	report.Compatibility.Findings = pick(report.Compatibility.Findings)
+	report.Patch.Findings = pick(report.Patch.Findings)
 	report.Mods = slices.Clone(report.Mods)
 	for position := range report.Mods {
 		group := &report.Mods[position]
@@ -341,11 +343,11 @@ func (s *Service) buildReport(filter findingFilter) (health.Report, error) {
 }
 
 // buildLexicon returns the rows of a class whose name holds the filter's text.
-func (s *Service) buildLexicon(filter lexiconFilter) ([]wiki.LexiconRow, error) {
-	rows, err := s.Wiki.BuildLexicon(filter.Class)
+func (s *Service) buildLexicon(filter lexiconFilter) ([]lsp.LexiconRow, error) {
+	rows, err := s.LSP.BuildLexicon(filter.Class, "", "")
 	query := strings.ToLower(filter.Query)
 
-	matches := make([]wiki.LexiconRow, 0, len(rows))
+	matches := make([]lsp.LexiconRow, 0, len(rows))
 	for _, row := range rows {
 		if strings.Contains(strings.ToLower(row.Name), query) {
 			matches = append(matches, row)
@@ -367,8 +369,8 @@ const (
 		`references follow a name; list_symbols lists a file's entries; search_text searches the files' text. ` +
 		`read_file reads any file of the workspace or the game, with the user's unsaved text as its draft.
 2. Learn what is valid. hover says what a key or a value is, complete lists what fits at a position, and signature ` +
-		`what an effect or a macro takes. build_lexicon lists the game's effects, triggers, links, scopes and ` +
-		`functions; search_pages and read_page read the game's wiki.
+		`what an effect or a macro takes. build_lexicon lists the game's effects, triggers, links, scopes, ` +
+		`modifiers, on_actions and functions; search_pages and read_page read the game's wiki.
 3. Write it in the mod that should own it, never in the game's files: with your own file tools, or with ` +
 		`apply_edit, rename and write_scaffold, which preview first.
 4. Check it. diagnose the file, or your text before you write it. build_report gives Health's findings: how the ` +

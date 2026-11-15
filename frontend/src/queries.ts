@@ -9,6 +9,7 @@ import * as graph from "@services/graph/service";
 import * as health from "@services/health/service";
 import * as lsp from "@services/lsp/service";
 import * as mcp from "@services/mcp/service";
+import * as patch from "@services/patch/service";
 import * as search from "@services/search/service";
 import * as steam from "@services/steam/service";
 import * as terminal from "@services/terminal/service";
@@ -68,6 +69,7 @@ export const keys = {
   health: ["health"] as const,
   graph: ["graph"] as const,
   wiki: ["wiki"] as const,
+  patch: ["patch"] as const,
   git: (dir: string) => [...KINDS.gits, dir] as const,
   repositoryWork: [...KINDS.gits, "repository-work"] as const,
   ownListings: [...KINDS.releases, "own"] as const,
@@ -308,12 +310,23 @@ export const wikiSearchQuery = defineQueryOptions((term: string) => ({
   key: [...keys.wiki, "search", term],
   query: () => wiki.SearchPages(term),
 }));
-export const notesQuery = defineQueryOptions({ key: [...keys.wiki, "notes"], query: () => wiki.ListNotes() });
-export const lexiconQuery = defineQueryOptions((cls: string) => ({
-  key: [...keys.wiki, "lexicon", cls],
-  query: () => wiki.BuildLexicon(cls),
+export const notesQuery = defineQueryOptions({ key: [...keys.patch, "notes"], query: () => patch.ListPatches() });
+export const impactsQuery = defineQueryOptions({ key: [...keys.patch, "impacts"], query: () => patch.ListImpacts() });
+export const patchQuery = defineQueryOptions((version: string) => ({
+  key: [...keys.patch, "version", version],
+  query: () => patch.FindPatch(version),
 }));
-export const classesQuery = defineQueryOptions({ key: [...keys.wiki, "classes"], query: () => wiki.ListClasses() });
+export const lexiconQuery = defineQueryOptions(
+  ({ kind, start = "", end = "" }: { kind: string; start?: string; end?: string }) => ({
+    key: [...keys.lsp, "lexicon", kind, start, end],
+    query: () => lsp.BuildLexicon(kind, start, end),
+  }),
+);
+export const lexiconKeyQuery = defineQueryOptions(({ kind, name }: { kind: string; name: string }) => ({
+  key: [...keys.lsp, "lexicon-key", kind, name],
+  query: () => lsp.DescribeKey(kind, name),
+}));
+export const classesQuery = defineQueryOptions({ key: [...keys.lsp, "classes"], query: () => lsp.ListClasses() });
 
 export const gitInstalledQuery = defineQueryOptions({
   key: ["app", "git"],

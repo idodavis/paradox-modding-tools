@@ -247,7 +247,7 @@ func TestBuildReportFindsContestsOverridesAndProblems(t *testing.T) {
 // listFindings returns the findings of a report's groups, the mods' languages
 // too.
 func listFindings(report Report) []Finding {
-	findings := report.Compatibility.Findings
+	findings := slices.Concat(report.Compatibility.Findings, report.Patch.Findings)
 	for _, group := range report.Mods {
 		findings = slices.Concat(findings, group.Findings, group.Languages)
 	}
@@ -268,7 +268,7 @@ func assertGroups(t *testing.T, report Report, order []string, external map[stri
 		t.Fatalf("the mods' groups are %v, want %v", ids, order)
 	}
 	var own []Finding
-	for _, group := range slices.Concat([]Group{report.Compatibility}, report.Mods) {
+	for _, group := range slices.Concat([]Group{report.Compatibility, report.Patch}, report.Mods) {
 		want := makeTally(group.Findings)
 		if !maps.Equal(group.Counts, want.Counts) || group.Worst != want.Worst || len(group.Counts) != len(lsp.Levels) {
 			t.Errorf("group %q: tally %+v, want %+v", group.Mod, group.Tally, want)
@@ -294,7 +294,8 @@ func assertGroups(t *testing.T, report Report, order []string, external map[stri
 	if want := makeTally(own); report.Own.Worst == "" || !maps.Equal(report.Own.Counts, want.Counts) {
 		t.Errorf("the own mods' tally is %+v, want %+v", report.Own, want)
 	}
-	if want := makeTally(slices.Concat(report.Compatibility.Findings, own)); !maps.Equal(report.Counts, want.Counts) {
+	want := makeTally(slices.Concat(report.Compatibility.Findings, report.Patch.Findings, own))
+	if !maps.Equal(report.Counts, want.Counts) {
 		t.Errorf("the report's tally is %+v, want %+v", report.Tally, want)
 	}
 }

@@ -17,7 +17,8 @@ import (
 	"paradox-modding-tools/internal/jomini"
 )
 
-// A Hunk is one run of lines an agent's edit changed in a file.
+// A Hunk is one run of lines an edit changed in a file, an agent's or the
+// game's.
 type Hunk struct {
 	// Before holds the run's lines before the edit and After its lines after
 	// it.
@@ -54,8 +55,9 @@ const unsavedText = "it has unsaved text in the editor: save or revert it first"
 // file's line.
 const tabSpaces = "  "
 
-// TrackEdits starts the review of a file, given each of the agent's edits to
-// it as hunks, the earliest edit first. The baseline is the file's text on
+// TrackEdits starts the review of a file that an agent edits or a merge of the
+// game's changes writes, given each of the agent's edits to it as hunks, the
+// earliest edit first, and none for a merge. The baseline is the file's text on
 // disk with the edits undone, the latest edit and its last hunk first. A file
 // the agent created that is not on disk yet has the baseline "", and its
 // edits are not read. A file that has a review already is left as it is. A
@@ -205,13 +207,9 @@ func (s *Service) UndoFile(path string) error {
 		return err
 	}
 
-	text, err := files.ReadText(path)
+	text, err := ws.readSaved(path)
 	if err != nil {
 		return err
-	}
-
-	if draft, isOpen := ws.LookupBuffer(path); isOpen && draft != text.Text {
-		return errors.New(unsavedText)
 	}
 
 	if review.isNew {
@@ -226,6 +224,21 @@ func (s *Service) UndoFile(path string) error {
 	ws.endReview(path)
 
 	return nil
+}
+
+// readSaved returns a file's text on disk. It returns an error if the editor
+// holds other text for the file, which is unsaved.
+func (s *Session) readSaved(path string) (files.Text, error) {
+	text, err := files.ReadText(path)
+	if err != nil {
+		return files.Text{}, err
+	}
+
+	if draft, isOpen := s.LookupBuffer(path); isOpen && draft != text.Text {
+		return files.Text{}, errors.New(unsavedText)
+	}
+
+	return text, nil
 }
 
 // isSettled reports whether the review is over: the file's lines on disk are

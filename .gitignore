@@ -23,3 +23,7 @@ frontend/.bindings-tmp-*/
 
 # the machine's own variables for the tasks, such as the game installs
 .env
+
+# what schema/gen kept of the installs it last read, which only that machine's
+# next run compares with
+internal/schema/gen/state/

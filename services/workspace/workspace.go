@@ -1,6 +1,7 @@
 // Package workspace holds the one open workspace: a game install and the mods
 // being edited, in load order. It also keeps the records of installs,
-// workspaces and mods, and reads, writes and moves the files in the mods.
+// workspaces and mods, reads, writes and moves the files in the mods, and
+// keeps a game's patches: what each version of the game changed.
 //
 // Opening a workspace loads the install's schema and index from a cache
 // folder, or builds and saves them, then scans the mods on top and watches
@@ -401,8 +402,9 @@ func (s *Service) UpdateWorkspace(workspace app.Workspace) error {
 	})
 }
 
-// UpdateRecord applies a change to a workspace's record, and opens the
-// workspace again if the change alters what it opens from.
+// UpdateRecord applies a change to a workspace's record. It opens the
+// workspace again if the change alters what it opens from. If not, and the
+// workspace is open, the session reads again each mod whose record changed.
 //
 //wails:ignore
 func (s *Service) UpdateRecord(workspaceID string, change func(record *app.Workspace) error) error {
@@ -422,11 +424,31 @@ func (s *Service) UpdateRecord(workspaceID string, change func(record *app.Works
 
 		return nil
 	})
-	if err == nil && reopens {
-		s.reopen(func(record app.Workspace) bool { return record.ID == workspaceID })
+	if err != nil {
+		return err
 	}
 
-	return err
+	if reopens {
+		s.reopen(func(record app.Workspace) bool { return record.ID == workspaceID })
+	} else {
+		s.refreshMods(workspaceID)
+	}
+
+	return nil
+}
+
+// refreshMods has the open workspace's session read again the mods whose
+// records changed in the record of the given workspace. It does nothing if
+// another workspace is open, or none.
+func (s *Service) refreshMods(workspaceID string) {
+	ws, err := s.Session()
+	if err != nil || ws.ID != workspaceID {
+		return
+	}
+
+	if record, _, _, err := findRecords(s.Config.Config(), workspaceID); err == nil {
+		ws.refreshChanged(record.Mods)
+	}
 }
 
 // makeOpenKey joins the parts of a workspace's record that opening it reads,

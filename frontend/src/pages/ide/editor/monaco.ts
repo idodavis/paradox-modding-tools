@@ -62,6 +62,10 @@ export function setupMonaco(): void {
       {
         textModelService: {
           createModelReference: async (uri: monaco.Uri) => {
+            // A compare's or a baseline's model is held, and is no file.
+            const held = uri.scheme === "file" ? null : monaco.editor.getModel(uri);
+            if (held) return { object: { textEditorModel: held }, dispose: () => undefined };
+
             const place = await loadQuery(placeQuery(uri.fsPath));
             if (!place) throw new Error(`${uri.fsPath} could not be read`);
             return { object: { textEditorModel: (await openModel(place)).model }, dispose: () => undefined };

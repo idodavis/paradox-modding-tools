@@ -146,7 +146,7 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 	}
 	dumpsAt := ws.Schema.Dumps.WrittenAt.Unix()
 	checksum := game.LoadChecksum(resolveFixture(t, ck3))
-	folder := filepath.Join(config.Dirs.Cache, ck3, fmt.Sprintf("%s-%s-%d-test", ws.Schema.Version, checksum, dumpsAt))
+	folder := filepath.Join(config.Dirs.Cache, ck3, fmt.Sprintf("%s-%s-%d-0-test", ws.Schema.Version, checksum, dumpsAt))
 	for _, name := range []string{schemaFile, indexFile} {
 		if _, err := os.Stat(filepath.Join(folder, name)); err != nil {
 			t.Errorf("no cache: %v", err)
@@ -619,7 +619,7 @@ func TestCreateModFolderMakesSkeleton(t *testing.T) {
 		}
 	}
 	for version, want := range map[string]string{"1.3.11": "1.3.*", "1.20": "1.20.*", "build 7": "", "1.x": "", "": ""} {
-		if got := toSupportedVersion(version); got != want {
+		if got := ToSupportedVersion(version); got != want {
 			t.Errorf("supported version of %q: %q, want %q", version, got, want)
 		}
 	}

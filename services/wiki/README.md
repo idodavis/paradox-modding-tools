@@ -4,7 +4,7 @@
 
 The wiki service reads the community wiki of the open workspace's game. It caches the wiki's pages, lists the patch
 notes and finds the pages that belong to a file. The game's row names its wiki. The
-[Wiki pane](../../frontend/src/README.md) shows the pages, and the Patch Notes page shows the notes. The Wiki pane's
+[Wiki pane](../../frontend/src/README.md) shows the pages, and the Patch Center shows the notes. The Wiki pane's
 lexicon is the [lsp](../lsp/README.md) service's.
 
 **Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),

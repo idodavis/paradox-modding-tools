@@ -1,34 +1,25 @@
-// Package patch holds what each version of a game changed, as plain data. It
-// keeps a game's patches in one folder of the app's cache, puts the versions
-// in order and in ranges, answers what the patches of a range did to a name
-// or a file, and compares what PMT keeps of two versions.
+// Package patch holds what each version of a game changed. It keeps a game's
+// patches in a folder of the app's cache, orders the versions, and answers
+// what the patches of a range did to a name or a file.
 //
-// A patch comes from one of three places: the game's Modding Co-op wrote it in
-// its digest, the app ships it in the game's history, or PMT compared two
-// versions itself when the game updated. The game's rules, as the package
-// applies them:
+// A patch comes from the game's Modding Co-op digest, from the history the
+// app ships, or from PMT comparing two versions itself. The rules it applies:
 //
-//   - A version is compared against its base, the latest earlier version that
-//     is not an open beta. So a release's changes are the sum of the betas'
-//     before it.
+//   - A version is compared against its base: the latest earlier version
+//     that is not an open beta.
 //   - An open beta's version ends in -openbeta. Open betas count in a range
-//     only where the range ends at one, which is where an install on a beta
-//     is.
-//   - A mod whose supported version matches the game's version is made for
-//     it, and its range is empty. Else the range starts at the oldest version
-//     the supported version matches, as 1.13.0 for 1.13.*. The patch of that
-//     version is not in the range, since a mod made for it already holds its
-//     changes.
-//   - Where several sources have a version, the digest's patch is kept, then
-//     the shipped one, then PMT's own. A part the kept patch lacks is taken
-//     from the next that has it.
+//     only when the range ends at one.
+//   - A mod whose supported version matches the game's version has an empty
+//     range. Else the range starts at the oldest version the supported
+//     version matches, as 1.13.0 for 1.13.*, and leaves that version out.
+//   - Where several sources have a version, the digest's patch wins, then
+//     the shipped one, then PMT's own. An empty part is filled from the next.
 //
 // # Robustness
 //
-// A file of the folder that is missing or cannot be read holds nothing: no
-// patches, no snapshot, no copy. A supported version the launcher's reading of
-// is not known, as 1.13*, decides no range. A version between two patches
-// that no patch covers is not known, and is read as having changed nothing.
+// A file of the folder that is missing or unreadable holds nothing. A
+// supported version that cannot be judged, as 1.13*, decides no range. A
+// version no patch covers is read as having changed nothing.
 package patch
 
 import (
@@ -49,15 +40,12 @@ type Patch struct {
 	// Base is the version this one is compared against, "" for none.
 	Base string `json:"base"`
 
-	// Local is whether PMT compared the two versions itself, when the game
-	// updated or when the history the app ships was made. It is false for a
-	// patch from a digest.
+	// Local is true where PMT compared the two versions itself.
 	Local bool `json:"local"`
 
-	// DumpChanges are the keys of the dumps the version changed, and
-	// DefinitionChanges the names the game's files began or stopped to
-	// define, localization keys included. A digest lists no defined names,
-	// so its version takes them from the shipped or PMT's own patch.
+	// DumpChanges are the changed keys of the dumps. DefinitionChanges are
+	// the names the game's files began or stopped defining, which no digest
+	// lists.
 	DumpChanges       []schema.KeyChange `json:"dumpChanges"`
 	DefinitionChanges []schema.KeyChange `json:"definitionChanges"`
 
@@ -66,8 +54,7 @@ type Patch struct {
 	// GameFiles are the game's files the version changed, sorted by path.
 	GameFiles []GameFile `json:"gameFiles"`
 
-	// Articles are the written notes of a digest. A patch PMT compared
-	// itself has none.
+	// Articles are a digest's written notes.
 	Articles []Article `json:"articles"`
 }
 
@@ -84,24 +71,21 @@ type GameFile struct {
 	Status schema.Status `json:"status"`
 }
 
-// Article is one titled part of the written notes of a digest.
+// Article is one titled part of a digest's written notes.
 type Article struct {
-	// ID names the article within its patch, and is the id of its heading.
+	// ID is the id of the article's heading.
 	ID    string `json:"id"`
 	Title string `json:"title"`
 
-	// HTML is the article as a document the pages show: its heading, then
-	// what the digest writes under it.
+	// HTML is the article's heading and body.
 	HTML string `json:"html"`
 
-	// Breaking is whether the article is one of the digest's breaking
-	// changes, and New whether it is a new feature.
+	// Breaking and New mark a breaking change and a new feature.
 	Breaking bool `json:"breaking"`
 	New      bool `json:"new"`
 
-	// Folders are the folders of the game's script the article links a type
-	// doc of, and Keys the names it writes in backticks. They are what ties
-	// the article to a mod.
+	// Folders are the script folders the article links, and Keys the names
+	// it writes in backticks. They tie the article to a mod.
 	Folders []string `json:"folders"`
 	Keys    []string `json:"keys"`
 }
@@ -110,12 +94,9 @@ type Article struct {
 // version first.
 type Patches []Patch
 
-// Merge returns the patches of a digest, the ones the app ships and the ones
-// PMT compared itself, one per version, oldest version first. Where several
-// have a version, the digest's patch is kept, since a person wrote it down
-// with the whole of the version's notes, then the shipped one. Each part of
-// the kept patch that is empty is taken from the next patch that has it, such
-// as the defined names, which no digest lists.
+// Merge returns one patch per version, oldest first, from the three sources.
+// The digest's patch wins, then the shipped one, and an empty part of the
+// winner is filled from the next.
 func Merge(digest, shipped, local []Patch) Patches {
 	var merged Patches
 	for _, patches := range [][]Patch{digest, shipped, local} {
@@ -143,16 +124,15 @@ func Merge(digest, shipped, local []Patch) Patches {
 	return merged
 }
 
-// fillPart gives an empty part of a patch the same part of another patch of
-// the version.
+// fillPart sets an empty part of a patch from another patch.
 func fillPart[T any](part *[]T, other []T) {
 	if len(*part) == 0 {
 		*part = other
 	}
 }
 
-// Put returns the patches with one added, in place of the patch of the same
-// version where they have one.
+// Put returns the patches with one added, replacing the patch of the same
+// version.
 func Put(patches []Patch, patch Patch) []Patch {
 	patches = slices.DeleteFunc(patches, func(other Patch) bool { return other.Version == patch.Version })
 
@@ -160,9 +140,8 @@ func Put(patches []Patch, patch Patch) []Patch {
 }
 
 // MatchVersion reports whether a mod made for a supported version runs on a
-// game version. It compares part by part, and a * matches the rest. judged is
-// false where it is not known how the games compare, such as for a * inside a
-// part or a build id.
+// game version. A * matches the rest. judged is false where the comparison
+// is not known, as for 1.13* or a build id.
 func MatchVersion(supported, version string) (matches, judged bool) {
 	wanted, actual := strings.Split(supported, "."), strings.Split(version, ".")
 	notNumber := func(part string) bool { return jomini.Classify(part) != jomini.ClassNumber }
@@ -181,17 +160,11 @@ func MatchVersion(supported, version string) (matches, judged bool) {
 	return len(wanted) == len(actual), judged
 }
 
-// ResolveStart returns the version the range of a mod starts at when it ends
-// at the given version, and whether the mod's supported version decides it.
-// A supported version that matches the end gives the end, as 1.15.* does for
-// 1.15.1: the mod is made for the game as it is, so no patch counts. Else the
-// start is the oldest version the supported version matches, as 1.13.0 for
-// 1.13.*, among the patches' versions and the versions they are compared
-// against. A supported version that is blank, or that cannot be judged, as
-// 1.13* cannot, gives the mod's base version, which the user picks. One that
-// matches only open betas, which count only where the range ends at one,
-// gives the latest release before them. The start is "" if there is none of
-// these. A version past the end is never matched.
+// ResolveStart returns the version a mod's range starts at, for a range that
+// ends at the given version, and whether the mod's supported version decided
+// it. A supported version that matches the end gives the end. Else the start
+// is the oldest version it matches, as 1.13.0 for 1.13.*. A blank or unjudged
+// supported version gives the mod's base version. The start is "" for none.
 func (p Patches) ResolveStart(supported, base, end string) (start string, judged bool) {
 	switch matches, judged := MatchVersion(supported, end); {
 	case !judged:
@@ -200,9 +173,8 @@ func (p Patches) ResolveStart(supported, base, end string) (start string, judged
 		return end, true
 	}
 
-	// A version a patch is compared against counts as much as the patch's own:
-	// PMT's first patch of an update is compared against a version that no
-	// patch of its own holds.
+	// A patch's base counts too: PMT's first patch of an update is compared
+	// against a version that no patch holds.
 	skipBetas := !p.IsBeta(end)
 	beta := ""
 	for _, patch := range p {
@@ -223,9 +195,8 @@ func (p Patches) ResolveStart(supported, base, end string) (start string, judged
 	return p.ResolveBase(beta), true
 }
 
-// IsBeta reports whether a version is an open beta. That is a version that
-// game.IsBeta says is one, and a number the patches hold only as an open
-// beta, since the digests never list one number as a release and as a beta.
+// IsBeta reports whether a version is an open beta: one game.IsBeta names, or
+// a number the patches hold only as an open beta.
 func (p Patches) IsBeta(version string) bool {
 	if game.IsBeta(version) {
 		return true
@@ -238,9 +209,8 @@ func (p Patches) IsBeta(version string) bool {
 	})
 }
 
-// ResolveBase returns the version the patch of a version is compared
-// against: the latest earlier version that is not an open beta. It returns
-// "" if there is none.
+// ResolveBase returns the latest version before the given one that is not an
+// open beta, "" for none.
 func (p Patches) ResolveBase(version string) string {
 	base := ""
 	for _, patch := range p {
@@ -258,7 +228,7 @@ func (p Patches) ResolveBase(version string) string {
 
 // ListRange returns the patches after a start version, up to and including
 // an end version. Open betas are left out unless the end is one. It returns
-// none if the start or the end is "".
+// none if either version is "".
 func (p Patches) ListRange(start, end string) Patches {
 	if start == "" || end == "" {
 		return nil
@@ -279,8 +249,8 @@ func (p Patches) ListRange(start, end string) Patches {
 	return patches
 }
 
-// Changes yields each change the patches made to a key of the dumps in one
-// database, with the version of its patch, oldest patch first.
+// Changes yields each change the patches made to a key of one database of
+// the dumps, with its patch's version, oldest patch first.
 func (p Patches) Changes(database string) iter.Seq2[string, schema.KeyChange] {
 	return func(yield func(string, schema.KeyChange) bool) {
 		for _, patch := range p {
@@ -293,7 +263,7 @@ func (p Patches) Changes(database string) iter.Seq2[string, schema.KeyChange] {
 	}
 }
 
-// FindRename returns the key that the patches gave in place of a key, and the
+// FindRename returns the key the patches gave in place of a key, and the
 // version of the oldest patch that did. It returns false if none renamed it.
 func (p Patches) FindRename(key string) (replacement, version string, ok bool) {
 	for _, patch := range p {
@@ -307,10 +277,9 @@ func (p Patches) FindRename(key string) (replacement, version string, ok bool) {
 	return "", "", false
 }
 
-// FindRemoval returns the version of the oldest patch that removed a name: a
-// key of the dumps, as a command is, or, where defined names count too, a name
-// the game's files defined, a localization key included. It returns false if
-// none removed it. A key that a patch only changed is not removed.
+// FindRemoval returns the version of the oldest patch that removed a name.
+// It looks among the keys of the dumps, and with countDefined among the
+// names the game's files defined too.
 func (p Patches) FindRemoval(name string, countDefined bool) (string, bool) {
 	isRemoved := func(change schema.KeyChange) bool {
 		return change.Key == name && change.Status == schema.StatusRemoved
@@ -326,8 +295,7 @@ func (p Patches) FindRemoval(name string, countDefined bool) (string, bool) {
 }
 
 // FindFile returns what the newest patch that lists a game file did to it,
-// and that patch's version. The file is given by its path from the game's
-// folder. It returns false if no patch lists it.
+// and that patch's version. It returns false if no patch lists the file.
 func (p Patches) FindFile(rel string) (GameFile, string, bool) {
 	for _, patch := range slices.Backward(p) {
 		if position, ok := slices.BinarySearchFunc(patch.GameFiles, GameFile{Rel: rel}, CompareFiles); ok {

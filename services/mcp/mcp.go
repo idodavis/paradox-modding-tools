@@ -54,6 +54,7 @@ import (
 	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
+	"paradox-modding-tools/services/patch"
 	"paradox-modding-tools/services/wiki"
 	"paradox-modding-tools/services/workspace"
 )
@@ -65,6 +66,7 @@ type Service struct {
 	Health    *health.Service
 	Graph     *graph.Service
 	Wiki      *wiki.Service
+	Patch     *patch.Service
 	Draw      *draw.Service
 
 	// Build is the app's version.
@@ -91,6 +93,9 @@ type Task struct {
 
 	// Chip is file, page, mod or event.
 	Chip string `json:"chip"`
+
+	// Pages are the pages that offer the task, every page if there are none.
+	Pages []string `json:"pages"`
 
 	// Edits is true for a task that changes the file it is about.
 	Edits bool `json:"edits"`
@@ -121,10 +126,17 @@ var Tasks = []Task{
 	{Name: "explain-page", Title: "Explain this page", Chip: "page",
 		Text: "Explain the PMT page I have in front of me: what it shows here and what its controls do. " +
 			"describe_view says which page and what it shows, and read_guide's pages topic describes each page."},
-	{Name: "localize", Title: "Write the missing localization", Chip: "mod",
+	{Name: "localize", Title: "Write the missing localization", Chip: "mod", Pages: []string{"workspace-ide", "health"},
 		Text: "Write the localization my mod is missing: the attached mod, or the one describe_view names. " +
 			"build_report's coverage and missing-message findings say which keys and languages lack text. Write " +
 			"the text in the mod's own localization files, then diagnose them."},
+	{Name: "update-mod", Title: "Update my mods for the latest patch", Chip: "mod",
+		Pages: []string{"workspace-ide", "health", "patch-center"},
+		Text: "Bring my mods up to date with the game's latest patch: the mod of the attached file, else every mod " +
+			"of mine in the workspace. build_report's patch findings list the names a mod uses that a patch removed " +
+			"or renamed, and the game files it replaces that a patch changed. list_patches and read_patch say what " +
+			"each version changed and what replaced a name. Fix each one in the mod, diagnose the files you " +
+			"changed, and tell me what you could not settle."},
 	{Name: "trace-event", Title: "Why does this event fire?", Chip: "event",
 		Text: "Why does this event fire? Take the attached event, or the one describe_view names. Draw its Event " +
 			"Graph with build_graph, follow what fires it back to where it starts, and tell me in plain words. " +
@@ -233,17 +245,30 @@ func (s *Service) newHandler() http.Handler {
 	return mux
 }
 
-// instructions is what the server tells an agent on connecting. Its first
-// paragraph stands alone, since Codex may read no more.
-const instructions = `PMT (Paradox Modding Tools) is the user's IDE for modding Crusader Kings III, Victoria 3 and ` +
+// Summary says what PMT is and the rules that matter most, in one paragraph.
+// It opens the instructions and stands alone, since Codex may read no more
+// of them, and the assistant pane says it to an agent that is given none.
+const Summary = `PMT (Paradox Modding Tools) is the user's IDE for modding Crusader Kings III, Victoria 3 and ` +
 	`Europa Universalis V. Their workspace is open in it: one game install and the mods loaded with it. PMT's tools ` +
 	`answer from PMT's own reading of the game's script, the one behind its editor and its Health page. Find a name ` +
-	`with them and never invent one; diagnose a file before calling a change done; write only in the workspace's mods.
+	`with them and never invent one; diagnose a file before calling a change done; write only in the workspace's mods. ` +
+	`For a game update or its patch notes, read list_patches and read_patch, not the web.`
+
+// instructions is what the server tells an agent on connecting.
+const instructions = Summary + `
 
 Working rules:
 - Names: definition, references, find_symbols and complete say what exists and where. A name they cannot find does ` +
 	`not exist in this workspace.
 - Problems: diagnose a file, or your own text before you write it, and fix the problems you brought in.
+- Game updates: PMT holds what each game version changed. Use it, not the web, when the user asks about a patch or ` +
+	`an update, wants the latest changes, or wants a mod brought up to date. list_patches lists the versions, ` +
+	`newest first, so its first row is the latest PMT knows. read_patch gives what one changed for modders: the ` +
+	`Modding Co-op's notes, renamed and removed names, changed game files. read_page reads that version's patch ` +
+	`notes from the wiki.
+- Updating a mod after a patch: build_report with the mod's id lists the names it uses that a patch removed or ` +
+	`renamed and the game files it replaces that a patch changed. read_patch says what replaced each. Fix them, ` +
+	`then diagnose.
 - Writing: only the workspace's mods change; the game's files are read only. rename, apply_edit and write_scaffold ` +
 	`answer with a preview and a token, and change the files when called again with that token. A file with ` +
 	`changes the user has not saved is left alone.

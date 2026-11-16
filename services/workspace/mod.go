@@ -65,8 +65,7 @@ type Mod struct {
 
 	// Start is the game version the patches' changes are counted from for the
 	// mod, "" for none. Judged is whether the mod's supported version decides
-	// it. Where it does not, as for a blank one or 1.13*, Start is the base
-	// version of the mod's record. The session's load order sets both.
+	// it. Where it does not, Start is the mod's base version.
 	Start  string `json:"start"`
 	Judged bool   `json:"judged"`
 }

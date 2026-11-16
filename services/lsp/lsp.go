@@ -7,10 +7,9 @@
 // in UTF-16 code units, and the end is exclusive. Every other package keeps
 // UTF-8 byte offsets.
 //
-// The package decides nothing about the language. The schema says what a key
-// means, the index where a name is defined, and the workspace service holds the
-// open session. An answer is computed when asked, from the editor's text if the
-// file is open, else from the disk. Nothing is kept between calls.
+// The package decides nothing about the language: the schema says what a key
+// means, and the index where a name is defined. An answer is computed when
+// asked, from the editor's text if the file is open, else from the disk.
 //
 // It applies these rules:
 //

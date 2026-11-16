@@ -13,9 +13,8 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Tie is one article of a patch that touches a mod, because it links the type
-// doc of a folder the mod writes files in or writes a key in backticks that
-// the mod defines or uses.
+// Tie is one article of a patch that touches a mod: it links the type doc of
+// a folder the mod has files in, or writes a key the mod defines or uses.
 type Tie struct {
 	ModID   string `json:"modId"`
 	Version string `json:"version"`
@@ -32,10 +31,9 @@ type Tie struct {
 }
 
 // ListTies returns the articles that touch each mod of the open workspace,
-// among the patches after the version the mod is made for. The mods are in
-// load order, and a mod's ties oldest version first. A mod with no version to
-// count from has none, and a tie is made only by an exact link or key, never
-// by a likeness of words. It returns an error if no workspace is open.
+// among the patches of the mod's range. The mods are in load order, and a
+// mod's ties oldest version first. A tie needs an exact link or key. It
+// returns an error if no workspace is open.
 func (s *Service) ListTies() ([]Tie, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -79,10 +77,8 @@ func (s *Service) ListTies() ([]Tie, error) {
 // lookup of the index's definitions names them.
 var commandDatabases = []string{lang.DumpEffects, lang.DumpTriggers}
 
-// countUses returns, by the mod's id, how many times each mod defines or uses a
-// key: in every database that defines the key, and as a built-in effect or
-// trigger. A key nothing defines or uses has none. Each key's counts are kept
-// in the given map, so a key is counted once.
+// countUses returns how many times each mod defines or uses a key, by the
+// mod's id. The given map keeps each key's counts, so a key is counted once.
 func countUses(mods *index.Index, uses map[string]map[string]int, key string) map[string]int {
 	if counts, ok := uses[key]; ok {
 		return counts
@@ -113,11 +109,10 @@ func countFiles(rels, folders []string) int {
 	return count
 }
 
-// UpdateSupportedVersion makes a mod of the user's own made for the install's
-// release, as 1.15.* for 1.15.1. It writes that version into the mod's
-// descriptor and changes nothing else the descriptor says. It returns an
-// error if no workspace is open, the mod is not in it or is someone else's,
-// or the install's version names no release.
+// UpdateSupportedVersion writes the install's release, as 1.15.* for 1.15.1,
+// into the descriptor of one of the user's own mods. It returns an error if
+// no workspace is open, the mod is not the user's, or the install's version
+// names no release.
 func (s *Service) UpdateSupportedVersion(modID string) error {
 	ws, err := s.Workspace.Session()
 	if err != nil {

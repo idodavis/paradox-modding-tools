@@ -28,8 +28,7 @@ flowchart TD
   fresh -->|no| build["Build the schema, scan the install,<br/>save both"]
   load --> mods["Scan the mods on top of the install's index"]
   build --> mods
-  mods --> copies["Keep a copy of each game file a mod replaces"]
-  copies --> watch["Watch the mods' folders"]
+  mods --> watch["Watch the mods' folders"]
   watch --> opened(["workspace:opened"])
 ```
 
@@ -45,21 +44,14 @@ flowchart TD
   stored with each mod's range (`storeOrder`): `Mod.Start`, the version its patches are counted from, and
   `Mod.Judged`, whether its supported version decides that. `LoadPatches` stores the order again, so every answer
   kept for a load order (lsp's problems, Health's report) is made again when the patches change.
-- After the mods are scanned, the open keeps the game files they replace (`keepCopies`), which is the next section.
 - Changing what the open read (the install, the language, or the mods and their order) opens the workspace again. So
   does moving or rescanning its install.
 
 ## Game files under a mod's files
 
 A mod's file at the path of a game file replaces it (`findReplaced`; a DLC's file is read over the base game's, so the
-last one in load order is the game's). The session ties the mods to what [patch](../../internal/patch/README.md)
-keeps:
-
-- **`keepCopies`** hands each replaced game file to `patch.KeepCopy`, and tells `patch.DeleteCopies` which versions
-  the mods of every workspace of the game still need, since the copies are shared.
-- **`FindGameChange`** says what the patches of a mod's range did to the game file under one of the mod's files, in
-  which version, and from which kept copy the change can be merged, if any. A change no patch lists is not known.
-- **`MergeGameFile`** applies the game's changes since that copy to the mod's file and starts the file's review.
+last one in load order is the game's). `FindGameChange` says what the patches of a mod's range did to the game file
+under one of the mod's files, and in which version. A change no patch lists is not known.
 
 ## The session
 
@@ -89,14 +81,7 @@ place, and the page shows its fields as they are. The game's own files and a Wor
 - Writes are refused outside the workspace's mods. A write is atomic and keeps the file's encoding.
 - `CreateCopy` copies a file of the game or of another mod to the same path in a mod, where it overrides the original.
 - `Delete` moves a file into PMT's trash, which empties at the next start, so `Restore` can bring it back.
-- `MergeGameFile` applies the game's changes to a game file to the mod's file that replaces it. It diffs the kept copy
-  (`patch.FindCopy`) against the game's file now by lines and gives each run of changed lines as a `Hunk`, with the unchanged
-  lines around it as its anchors. The anchors grow a line on each side at a time until the hunk's lines are in the copy
-  once, and hunks whose anchors share or touch a line are one. A hunk lands where its copy's lines are in the mod's
-  file once, through `revertHunk` with its sides swapped; one the mod made already fits as it is. Any other is counted
-  and left out: an earlier hunk's lines can make a later one's appear twice. It starts the review first, and returns
-  how many hunks did not fit.
-- `TrackEdits` starts the review of a file a coding agent edits or a merge writes, once. The review's baseline is the file's text on
+- `TrackEdits` starts the review of a file a coding agent edits, once. The review's baseline is the file's text on
   disk with the agent's edits undone, in the file's own line endings. A file the agent created that is not on disk
   yet has the baseline "". It is refused if an edit's lines are not in the file once.
 - `ListReviews` lists the files under review, each a `Review`: its place and the lines its text adds and removes
@@ -164,7 +149,6 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 | `session.go` | The open session: its documents, buffers, texts and rescans. |
 | `mod.go` | Mods, their descriptors, and a new mod's skeleton. |
 | `locate.go` | Places: where a file sits, and every copy of a path in load order. |
-| `copies.go` | Which game files the mods replace, what the patches of a mod's range did to them, and the merge of the game's changes into a mod's file. |
 | `review.go` | The review of a coding agent's edits, and the matching of its hunks to a file's lines. |
 | `watcher.go` | The watcher on the mods' folders. |
 
@@ -204,7 +188,7 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 - **Range**: the versions a mod's patches run from and to. The end is the install's version, and the start is
   `Mod.Start`, as `patch.ResolveStart` gives it. `ListModPatches` gives the range's patches.
 - **Install versions**: the version each recorded install of a game is on, once each (`ListInstallVersions`), which
-  the digest's dumps, the snapshots and the copies are kept for.
+  the digest's dumps and the snapshots are kept for.
 - **Mod base**: the game version a mod with no readable supported version is compared from, kept in the mod's
   record and written by `UpdateMod`.
 - **Scanning**: one stage of an install's scan, in words, with the percent of its files done, or -1 for a stage that

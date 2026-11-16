@@ -33,7 +33,6 @@ const {
   id: string;
   /** The version shown, as the route names it. Without one, Your mods. */
   patch?: string;
-  /** Text to find in the notes shown. */
   find?: string;
   /** The version's tab and the digest's article to open at. */
   tab?: string;
@@ -45,7 +44,6 @@ type Row = Note & { label: string; type?: "label" };
 
 const LAUNCH = findCommand("game.launch");
 const GUIDE = findCommand("docs.guide");
-/** How many mods made for a version its row shows before it counts the rest. */
 const MODS_SHOWN = 3;
 const PANES = [{ slot: "versions", defaultSize: 18, minSize: 14, maxSize: 30 }, { slot: "shown" }];
 
@@ -59,10 +57,7 @@ const { data: report } = useQuery(() => ({
   enabled: workspace.isOpen(),
 }));
 
-/**
- * The list's groups: each release's versions under a heading for it. A group
- * that the filter leaves no version in is hidden.
- */
+/** The list's groups: each release's versions under a heading for it. */
 const groups = computed(() =>
   (notes.value ?? []).reduce<Row[][]>((all, note) => {
     const row = { ...note, label: note.version };
@@ -74,6 +69,14 @@ const groups = computed(() =>
   }, []),
 );
 const latest = computed(() => notes.value?.find((note) => !note.beta)?.version);
+/**
+ * The newest version whose changes PMT has, where it has none for the
+ * version the game is on. Your mods then counts no further than it.
+ */
+const knownUntil = computed(() => {
+  const known = (notes.value ?? []).filter((note) => note.known);
+  return known.some((note) => note.installed) ? undefined : known.find((note) => !note.beta)?.version;
+});
 const gameName = computed(() => state.value?.game?.name ?? "");
 /** Where the page's notes come from: the wiki, and the Co-op's digests. */
 const sources = computed(() => {
@@ -170,7 +173,11 @@ function show(version: string): void {
                 class="size-2 shrink-0 rounded-full border-2 border-(--link)"
                 title="Has a modding section"
               />
-              <span v-if="item.known" class="size-2 shrink-0 rounded-xs bg-(--purple)" title="Its changes are known" />
+              <span
+                v-if="item.known"
+                class="size-2 shrink-0 rounded-xs bg-(--purple)"
+                title="Its code changes are known"
+              />
             </template>
           </UListbox>
           <div class="flex flex-col gap-0.5 border-t border-default px-3 py-2 text-11 text-dimmed">
@@ -179,7 +186,7 @@ function show(version: string): void {
               section
             </span>
             <span class="flex items-center gap-1.5">
-              <span class="size-2 shrink-0 rounded-xs bg-(--purple)" />Its changes are known
+              <span class="size-2 shrink-0 rounded-xs bg-(--purple)" />Its code changes are known
             </span>
             <span class="flex items-center gap-1.5">
               <span class="flex shrink-0 gap-0.5">
@@ -225,6 +232,14 @@ function show(version: string): void {
                 :to="{ name: 'health', params: { id }, query: { view: 'patch' } }"
               />
             </div>
+            <p
+              v-if="knownUntil"
+              class="flex shrink-0 items-center gap-3 border-b border-default bg-muted py-2 ps-8 pe-6 text-12 text-toned"
+            >
+              <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-warning" />
+              PMT does not know what {{ state?.install.version }} changed. The newest changes it knows are
+              {{ knownUntil }}'s, and nothing after that is counted here.
+            </p>
             <YourMods class="min-h-0 flex-1" />
           </section>
         </div>

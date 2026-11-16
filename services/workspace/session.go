@@ -150,9 +150,6 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 
 	ws.Mods.Store(mods)
 
-	// A copy that cannot be kept is taken at a later open.
-	_ = ws.keepCopies(s.Config.Config())
-
 	ws.watcher, err = startWatcher(dirs, func(changes []FileChange) {
 		// A file that cannot be scanned keeps its old entries.
 		_ = ws.Rescan(changes)
@@ -350,6 +347,38 @@ func (s *Session) ListModPatches(modID string) patch.Patches {
 	mod, _ := findMod(*s.Order.Load(), modID)
 
 	return s.Patches.Load().ListRange(mod.Start, s.Schema.Version)
+}
+
+// FindGameChange returns what the patches of a mod's range did to the game
+// file under one of the mod's files, and the version of the newest patch that
+// lists it. The game file is the one the mod's file replaces, else the one at
+// the same path, which a patch may have removed. It returns false if no patch
+// of the range lists the file.
+func (s *Session) FindGameChange(mods *index.Index, place Place) (patch.GameFile, string, bool) {
+	rel := place.Rel
+	if replaced, ok := findReplaced(mods, place.File); ok {
+		rel = replaced.Rel
+	}
+
+	return s.ListModPatches(place.Origin).FindFile(rel)
+}
+
+// findReplaced returns the game's file that a mod's file replaces: the last
+// file of the game at the same path in load order, as a DLC's file is read
+// over the base game's. It returns false if the game has no file there.
+func findReplaced(mods *index.Index, file files.File) (files.File, bool) {
+	loaded, hidden, ok := mods.FindLoaded(file.Rel)
+	if ok {
+		hidden = append(hidden, loaded)
+	}
+
+	for _, other := range slices.Backward(hidden) {
+		if other.Origin == files.OriginVanilla {
+			return other, true
+		}
+	}
+
+	return files.File{}, false
 }
 
 // loadTranslation adds the workspace's language to the install's index, unless

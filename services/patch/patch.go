@@ -1,60 +1,45 @@
 // Package patch is the Patch Center's service. It fetches the Modding Co-ops'
 // digests of a game's updates and reads them into the game's patches, lists
-// the versions the Patch Center shows, and says which of the digests' articles
-// touch each mod of the open workspace. What a patch is, and where a game's
-// patches are kept, is the engine's patch package.
+// the versions the Patch Center shows, and says which digest articles touch
+// each mod of the open workspace. What a patch is, and where patches are
+// kept, is the engine's patch package.
 //
-// A game's Co-op keeps one repository of digests, each version in a folder of
-// its own. A refresh asks GitHub for the repository's newest commit, and only
-// a commit it has not read before downloads the repository as one zip, which
-// is read in memory and never written to disk. The patches are saved in the
-// game's folder of patches, with the dumps of each version an install is on.
-//
-// GitHub is asked at most once every 6 hours for a game. While the digest has
-// no patch of the installed version, a workspace that stays open asks again
-// every 6 hours. A game with no digest is never asked.
+// A Co-op keeps one repository of digests, a folder for each version. A
+// refresh asks GitHub for the newest commit and downloads the repository as
+// one zip only for a commit it has not read. GitHub is asked at most once a
+// day for a game, and never for a game with no digest.
 //
 // The Co-ops' layout, as the package reads it:
 //
-//   - A version's folder is the one that holds a docs folder. It is flat, as
-//     1.15.1, or under a major version's folder, as 1.4/1.4.7, and an open
-//     beta's ends in -openbeta. The top folders documentation, current_docs,
-//     image and script hold no version.
+//   - A version's folder is the one that holds a docs folder: flat, as
+//     1.15.1, or under a major version's folder, as 1.4/1.4.7. An open
+//     beta's ends in -openbeta.
 //   - A version's dump files are the docs folder's .log files and its
 //     data_types_*.txt files. A file the folder lacks did not change, so the
-//     version takes the newest earlier version's copy.
-//   - A version is compared against its base, the latest earlier version that
-//     is not an open beta. Vic3's 1.15.0 digest is made against 1.13.11, which
-//     is what that rule gives.
-//   - changes_files.md lists the files of the game's folder a version added,
-//     modified or deleted, one in each line as " - **M** game/common/x.txt".
+//     version takes the newest earlier copy.
+//   - A version is compared against its base, the latest earlier version
+//     that is not an open beta.
+//   - changes_files.md lists the game files a version added, modified or
+//     deleted, as " - **M** game/common/x.txt".
 //   - The notes are breaking_changes.md or changes_breaking.md, features.md,
-//     major_features.md or changes_features.md, and discord.md. A file is
-//     split at its ## headings, one article each. A heading whose lines only
-//     point into the digest's other files is no article. An article is a
-//     breaking change if its file is one of them, or if its heading is
-//     "Breaking Changes", which is where discord.md writes them for a
-//     version that has no file of them.
-//   - An article's folders are its links to a type doc, as types/x.md, named
-//     by discord.md's list of the type docs, else by the one database of the
-//     game's schema whose folder ends in /x. Its keys are the words it writes
-//     in backticks outside a code block. A line "- `A` -> `B`" after
-//     **Renamed** renames key A to B.
+//     major_features.md or changes_features.md, and discord.md. Each ##
+//     heading is one article. A heading whose lines only point into the
+//     digest's other files is no article. An article is a breaking change if
+//     its file is one of them, or its heading is "Breaking Changes".
+//   - An article's folders are its links to a type doc, as types/x.md. Its
+//     keys are the words it writes in backticks outside a code block. A line
+//     "- `A` -> `B`" after **Renamed** renames key A to B.
 //
 // # Robustness
 //
-// A refresh stops if GitHub does not answer, the zip does not open or the
-// repository has no version, and the files it saved before stay. A file of a
-// version that cannot be read is left out and named in the error the refresh
-// returns after it saved the rest, and a version keeps the older copy of a
-// dump file it cannot read. A version with no changes_files.md has no game
-// files. A note file under a name the Co-ops have not used before is read as
-// plain notes, unless its name starts with changes_. A line of a list of
-// changed files that does not read is left out.
+// A refresh that cannot reach GitHub, open the zip or find a version stops,
+// and the files saved before stay. A file of a version that cannot be read
+// is left out and named in the error, after the rest is saved. A note file
+// under a name the Co-ops have not used before is read as plain notes, unless
+// its name starts with changes_.
 //
-// An article ties to a mod only through an exact link or key: a folder its type
-// docs link that the mod writes files in, or a key it writes in backticks that
-// the mod defines or uses. An article that names neither ties to no mod.
+// An article ties to a mod only through an exact link or key. An article that
+// names neither ties to no mod.
 package patch
 
 import (
@@ -82,26 +67,23 @@ type Service struct {
 	// mu keeps two refreshes from running at once.
 	mu sync.Mutex
 
-	// stop ends the recheck of the open workspace. It holds nil while none
-	// runs.
+	// stop ends the recheck of the open workspace, nil while none runs.
 	stop atomic.Pointer[context.CancelFunc]
 }
 
 // EventUpdated is sent when a refresh saved new patches or failed. Its data is
-// the error's text, or "" if it worked.
+// the error's text, "" for none.
 const EventUpdated = "patch:updated"
 
-// recheck is how long the digest is left alone after GitHub was asked for its
-// newest commit.
-const recheck = 6 * time.Hour
+// recheck is the shortest time between two asks of GitHub for a game.
+const recheck = 24 * time.Hour
 
 func init() {
 	application.RegisterEvent[string](EventUpdated)
 }
 
-// ServiceStartup refreshes the patches in the background each time a workspace
-// opens, and again every recheck while the workspace stays open and the
-// digest has no patch of the installed version.
+// ServiceStartup refreshes the patches in the background when a workspace
+// opens, and keeps rechecking while it stays open.
 func (s *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	events := application.Get().Event
 	events.On(workspace.EventOpened, func(*application.CustomEvent) {
@@ -115,17 +97,16 @@ func (s *Service) ServiceStartup(ctx context.Context, options application.Servic
 	return nil
 }
 
-// setStop ends the running recheck, if any, and keeps the given function to
-// end the next one.
+// setStop ends the running recheck, if any, and keeps the function that ends
+// the next.
 func (s *Service) setStop(stop context.CancelFunc) {
 	if running := s.stop.Swap(&stop); running != nil && *running != nil {
 		(*running)()
 	}
 }
 
-// watchDigest refreshes the patches, and again every recheck for as long as the
-// context lives and the digest of the open workspace's game has no patch of
-// the installed version.
+// watchDigest refreshes the patches, then again every recheck until the
+// digest has a patch of the installed version or the context ends.
 func (s *Service) watchDigest(ctx context.Context) {
 	for {
 		_ = s.Refresh()
@@ -150,13 +131,10 @@ func (s *Service) watchDigest(ctx context.Context) {
 	}
 }
 
-// Refresh reads the digests of the open workspace's game again if its
-// repository has a new commit. If it saved new patches, the session loads
-// them, and it sends patch:updated then and when it fails. It does nothing
-// for a game that has no digests, and asks GitHub no sooner than recheck after
-// it last did. It returns an error if no workspace is open or the fetch fails,
-// and the files saved before stay. Where a part of the digest could not be
-// read, it saves the rest and returns what it left out.
+// Refresh reads the digests of the open workspace's game again if their
+// repository has a new commit. The session loads new patches, and
+// patch:updated is sent when it saved some or failed. Where part of the
+// digest could not be read, it saves the rest and returns what it left out.
 func (s *Service) Refresh() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -187,10 +165,9 @@ func (s *Service) Refresh() error {
 	return err
 }
 
-// fetchPatches reads the repository of a session's game into the game's folder
-// of patches, and reports whether it saved new patches. It saves nothing if
-// GitHub was asked less than recheck ago, or the folder is current with the
-// newest commit.
+// fetchPatches reads the game's digest repository into its folder of patches,
+// and reports whether it saved new patches. It saves nothing if GitHub was
+// asked less than recheck ago or the folder is current.
 func (s *Service) fetchPatches(ws *workspace.Session) (bool, error) {
 	records := s.Workspace.Config
 	dir := patch.ResolveDir(records.Dirs.Cache, ws.Game)

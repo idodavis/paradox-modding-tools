@@ -150,10 +150,8 @@ What the game's patches changed, for the game of the open workspace, and what th
 
 - **Your mods** counts, for each mod, what changed between the version it is made for and the game's version now:
   names the game renamed or removed that the mod still uses, game files that changed under the mod's copies, and
-  the notes that name what the mod holds. Open a name where the mod uses it, or compare a copy with the game's file.
-  The same findings show in the editor and in Health.
-- **Merge** carries the game's changes into your copy of a game file. PMT keeps the game's files your mods replace
-  each time the game updates, so a merge is offered for the updates PMT has seen.
+  the notes that name what the mod holds. Open a name where the mod uses it. The same findings show in the editor
+  and in Health.
 - A mod that names no game version asks which version to compare from. **Mark as made for** writes the game's
   version into the mod once you have brought it up to date. Mods that are not yours are listed and never changed.
 - **A version** shows its patch notes from the wiki, the Modding Co-op's digest, the script keys and data functions
@@ -280,7 +278,8 @@ and signs in to its own account. PMT never sees it. PMT installs the agent for y
 registry into its own folder, with Node if your system has none new enough.
 
 - The agent is given PMT's tools, so it finds names, problems, Health's findings and the Event Graph as PMT does, with
-  your unsaved text. The same tools can be added to an agent you run yourself.
+  your unsaved text. It can also read what each game version changed, which is what it needs to bring a mod up to date
+  after a patch. The same tools can be added to an agent you run yourself.
 - What it asks permission for shows in the session. Nothing opens before you choose. PMT's own tools that only read
   need no asking. **Always allow** is remembered for that agent and tool, and Settings lists what is allowed, to remove.
 - A new session starts with the model, effort and mode the agent was last given.

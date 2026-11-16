@@ -67,6 +67,11 @@ export interface Task {
     "chip": string;
 
     /**
+     * Pages are the pages that offer the task, every page if there are none.
+     */
+    "pages": string[] | null;
+
+    /**
      * Edits is true for a task that changes the file it is about.
      */
     "edits": boolean;

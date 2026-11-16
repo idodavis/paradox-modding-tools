@@ -138,12 +138,10 @@ function show(index: number): void {
   marked?.scrollIntoView({ block: "center" });
 }
 
-/** reveal scrolls to the part of the document that has the given id, if any. */
 function reveal(id: string): void {
   if (id) content.value?.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView();
 }
 
-/** unmark removes the find's mark. */
 function unmark(): void {
   marked?.classList.remove(...MARKED);
   marked = undefined;
@@ -260,14 +258,17 @@ function follow(event: MouseEvent): void {
         <UButton
           v-else
           icon="i-lucide-search"
-          variant="ghost"
+          color="neutral"
+          variant="outline"
           size="xs"
           square
           aria-label="Find in this document"
-          class="absolute end-5 top-2 z-10 opacity-60 hover:opacity-100"
+          class="absolute end-5 top-2 z-10"
           @click="finding = true"
         />
         <div ref="body" class="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3.5 py-3 wrap-break-word">
+          <!-- the first lines wrap clear of the find button -->
+          <div aria-hidden="true" class="float-end h-5 w-8" />
           <!-- eslint-disable-next-line vue/no-v-html -- sanitized by Go -->
           <div ref="content" class="art max-w-none" @click="follow" v-html="html" />
           <Teleport v-for="(codeBlock, index) in codeBlocks" :key="index" :to="codeBlock.pre">

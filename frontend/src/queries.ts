@@ -20,7 +20,6 @@ import type { Coat, PictureList, States } from "@services/draw/models";
 import type { Filter } from "@services/graph/models";
 import type { Site } from "@services/lsp/models";
 
-/** fileUrl returns the URL that serves a file. */
 export function fileUrl(path: string): string {
   return `/files?path=${encodeURIComponent(path)}`;
 }
@@ -82,7 +81,6 @@ export const keys = {
   agents: ["agent"] as const,
 };
 
-/** isGitStatus reports whether a query key is a repository's status. */
 export function isGitStatus(key: readonly unknown[]): boolean {
   return key.length === 3 && key[0] === KINDS.gits[0] && key[2] === GIT_STATUS;
 }
@@ -128,7 +126,6 @@ export const noticesQuery = defineQueryOptions({
   query: async () => (await Object.values(NOTICES)[0]?.()) ?? "",
 });
 export const stateQuery = defineQueryOptions({ key: keys.state, query: () => workspace.State() });
-/** useRescan returns a mutation that scans the install with the given id again. */
 export function useRescan() {
   return useMutation({ mutation: (installId: string) => workspace.RescanInstall(installId) });
 }
@@ -149,7 +146,6 @@ export const folderQuery = defineQueryOptions((dir: string) => ({
   query: () => workspace.ListFolder(dir),
 }));
 
-/** reviewsQuery lists the places of the files under review. */
 export const reviewsQuery = defineQueryOptions({
   key: [...keys.reviews, "list"],
   query: () => workspace.ListReviews(),
@@ -407,7 +403,6 @@ export const listingQuery = defineQueryOptions(({ modId, key }: { modId: string;
   key: [...keys.release(modId), "listing", key],
   query: () => steam.ReadListing(modId, key),
 }));
-/** ownListingsQuery reads the own listing of each of the given mods. */
 export const ownListingsQuery = defineQueryOptions((modIds: string[]) => ({
   key: [...keys.ownListings, modIds],
   query: () => Promise.all(modIds.map((modId) => steam.ReadListing(modId, ""))),

@@ -28,7 +28,7 @@ flowchart LR
 | `ui/`        | Components more than one page uses, such as the hover card, a source link or the load order.                                                                                        |
 | `stores/`    | The Pinia stores.                                                                                                                                                                   |
 | `queries.ts` | Every query that reads Go, and the keys that events and mutations refresh.                                                                                                          |
-| `lib/`       | Plain functions: confirmations and toasts, the sentences the UI writes from facts, placeholders.                                                                                    |
+| `lib/`       | Plain functions: confirmations, toasts and error reports, the sentences the UI writes from facts, placeholders.                                                                     |
 | `styles/`    | `themes.css`, the one palette, and Nuxt UI's and the articles' styles.                                                                                                              |
 | `assets/`    | Fonts, game icons and the logo.                                                                                                                                                     |
 

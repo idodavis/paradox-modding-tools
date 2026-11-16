@@ -459,9 +459,8 @@ var problems struct {
 }
 
 // DiagnoseFile returns the problems of a file, judged on the editor's text
-// where the file is open, else on disk. It returns an error if the file cannot
-// be read. The problems are kept until a scan puts a new index in place, and
-// for an open file until a buffer changes, since its text changes with no scan.
+// where the file is open, else on disk. The problems are kept until a scan or
+// a buffer changes them. It returns an error if the file cannot be read.
 func DiagnoseFile(ws *workspace.Session, mods *index.Index, path string) ([]Diagnostic, error) {
 	place := ws.Locate(mods, path)
 	if !isDiagnosed(place) {
@@ -606,11 +605,9 @@ func diagnoseDescriptor(ws *workspace.Session, place workspace.Place, tree *jomi
 var patchable = []string{lang.ProblemUnknownKey, index.ProblemUnresolved, index.ProblemLocKey}
 
 // applyPatches returns the code of the patch finding that replaces a problem,
-// and adds its version, and for a rename its replacement, to the problem's
-// facts. That is the case where a patch of the mod's range renamed the name
-// or removed it. A rename wins over a removal. A key the block does not take
-// is a command, so only a removal from the dumps counts for it. It returns the
-// code as it was for any other problem.
+// where a patch of the mod's range renamed or removed the name, and adds the
+// patch's version and the replacement to the facts. A rename wins over a
+// removal. It returns the code as it was for any other problem.
 func applyPatches(patches patch.Patches, code string, facts map[string]string) string {
 	if !slices.Contains(patchable, code) {
 		return code
@@ -633,11 +630,9 @@ func applyPatches(patches patch.Patches, code string, facts map[string]string) s
 }
 
 // diagnoseCopy returns a problem at the start of a mod's file if a patch after
-// the version the mod is made for changed the game file under it. The fact
-// base is the version of the kept copy the game's changes can be merged from,
-// and is left out where there is nothing to merge.
+// the version the mod is made for changed the game file under it.
 func diagnoseCopy(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, place workspace.Place) []Diagnostic {
-	change, version, base, ok := ws.FindGameChange(mods, place)
+	change, version, ok := ws.FindGameChange(mods, place)
 	if !ok {
 		return nil
 	}
@@ -645,9 +640,6 @@ func diagnoseCopy(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, p
 	// The file is the finding's name, so each file is a finding of its own.
 	facts := map[string]string{
 		"name": change.Rel, "database": lang.File, "status": string(change.Status), "version": version,
-	}
-	if base != "" {
-		facts["base"] = base
 	}
 
 	return []Diagnostic{makeDiagnostic(tree, jomini.Span{}, "stale-copy", facts)}

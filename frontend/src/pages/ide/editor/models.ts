@@ -60,6 +60,10 @@ export function setupModels(): void {
     if (!data || data === "settings" || data === "workspaces") models.forEach((model) => void diagnose(model));
   });
   Events.On("patch:updated", () => models.forEach((model) => void diagnose(model)));
+  // A descriptor holds the game version its mod is made for.
+  Events.On("fs:changed", ({ data }) => {
+    if (data.descriptor) models.forEach((model) => void diagnose(model));
+  });
 }
 
 /** openModel returns a file's model, loading its text if needed. A file has one model. */
@@ -75,7 +79,6 @@ export function openModel(place: Place): Promise<Model> {
   return pending;
 }
 
-/** findModel returns a file's open model, or null if it has none. */
 export function findModel(key: string): Model | null {
   return models.get(key) ?? null;
 }
@@ -159,7 +162,6 @@ export async function saveUnsaved(action: string): Promise<boolean> {
   return choice !== false;
 }
 
-/** unsavedModels lists the models with unsaved text. */
 export function unsavedModels(): Model[] {
   return [...models.values()].filter((model) => model.unsaved);
 }

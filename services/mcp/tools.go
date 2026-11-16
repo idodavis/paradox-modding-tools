@@ -18,6 +18,8 @@ import (
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
+	"paradox-modding-tools/internal/patch"
+	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
@@ -71,7 +73,15 @@ type pageTitle struct {
 type lexiconFilter struct {
 	Class string `json:"class" jsonschema:"effect, trigger, link, scope, modifier, on_action or function"`
 	Query string `json:"query,omitempty" jsonschema:"text the row's name holds"`
+	Since string `json:"since,omitempty" jsonschema:"a game version from list_patches: only what the game changed after it"`
 	Limit int    `json:"limit,omitempty" jsonschema:"the most rows wanted; 50 if left out"`
+}
+
+type patchFilter struct {
+	Version string `json:"version" jsonschema:"the game version, as list_patches gives it"`
+	Mod     string `json:"mod,omitempty" jsonschema:"a mod's id: only the articles that touch it"`
+	Query   string `json:"query,omitempty" jsonschema:"text an article, a key or a file's path holds"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"the most rows of each list wanted; 50 if left out"`
 }
 
 type textSearch struct {
@@ -225,7 +235,18 @@ func (s *Service) addPageTools(server *sdk.Server) {
 		answer(func(request pageTitle) (wiki.Page, error) { return s.Wiki.ReadPage(request.Title) }))
 	sdk.AddTool(server, &sdk.Tool{Name: "build_lexicon", Title: "Look up the game's effects and triggers",
 		Annotations: readsOnly, Description: "Lists the game's effects, triggers, links, scopes or functions, each " +
-			"with what it does, where it runs."}, answer(s.buildLexicon))
+			"with what it does, where it runs. With since, only the ones the game added, changed or removed after " +
+			"that version, each with what happened to it and in which version."}, answer(s.buildLexicon))
+	sdk.AddTool(server, &sdk.Tool{Name: "list_patches", Title: "List the game's patches", Annotations: readsOnly,
+		Description: "Lists the game's patches (its versions), newest first: each one's page of patch notes on the " +
+			"wiki, to read with read_page, whether what it changed is known, and the user's mods made for it. Use " +
+			"this and read_patch for any question about a game update, before the web."},
+		answer(func(struct{}) (any, error) { return s.Patch.ListPatches() }))
+	sdk.AddTool(server, &sdk.Tool{Name: "read_patch", Title: "Read what a game patch changed", Annotations: readsOnly,
+		Description: "Gives what one game patch changed for modders, against the version before it: the Modding Co-op's " +
+			"written notes as HTML, the keys it renamed, the commands and the game's own definitions it added, " +
+			"changed or removed, and the game files it changed. build_report says which of these a mod runs into."},
+		answer(s.readPatch))
 }
 
 func (s *Service) addAppTools(server *sdk.Server) {
@@ -344,17 +365,83 @@ func (s *Service) buildReport(filter findingFilter) (health.Report, error) {
 
 // buildLexicon returns the rows of a class whose name holds the filter's text.
 func (s *Service) buildLexicon(filter lexiconFilter) ([]lsp.LexiconRow, error) {
-	rows, err := s.LSP.BuildLexicon(filter.Class, "", "")
-	query := strings.ToLower(filter.Query)
+	end := ""
+	if filter.Since != "" {
+		end = s.Workspace.State().Install.Version
+	}
 
-	matches := make([]lsp.LexiconRow, 0, len(rows))
+	rows, err := s.LSP.BuildLexicon(filter.Class, filter.Since, end)
+	name := func(row lsp.LexiconRow) string { return row.Name }
+
+	return pickRows(rows, filter.Query, filter.Limit, name), err
+}
+
+// readPatch returns a version's patch with each of its lists cut to the rows
+// that hold the filter's text, and its articles to the ones that touch the
+// filter's mod. It returns an error, saying where the version's notes are, if
+// PMT does not know what the version changed.
+func (s *Service) readPatch(filter patchFilter) (patch.Patch, error) {
+	errs := []error{s.checkPatch(filter.Version)}
+	if filter.Mod != "" {
+		errs = append(errs, s.checkMod(filter.Mod))
+	}
+
+	if err := errors.Join(errs...); err != nil {
+		return patch.Patch{}, err
+	}
+
+	gamePatch, err := s.Patch.FindPatch(filter.Version)
+	if err == nil && gamePatch.Version == "" {
+		err = fmt.Errorf("PMT does not know what %s changed; list_patches marks the versions it knows as known, "+
+			"and read_page reads this one's patch notes from the wiki", filter.Version)
+	}
+
+	if err != nil || filter.Mod == "" {
+		return cutPatch(gamePatch, filter), err
+	}
+
+	ties, err := s.Patch.ListTies()
+	gamePatch.Articles = slices.DeleteFunc(slices.Clone(gamePatch.Articles), func(article patch.Article) bool {
+		for _, tie := range ties {
+			if tie.ModID == filter.Mod && tie.Version == filter.Version && tie.ID == article.ID {
+				return false
+			}
+		}
+
+		return true
+	})
+
+	return cutPatch(gamePatch, filter), err
+}
+
+// cutPatch returns a patch with each of its lists cut to the rows that hold
+// the filter's text, and to the filter's limit.
+func cutPatch(gamePatch patch.Patch, filter patchFilter) patch.Patch {
+	key := func(change schema.KeyChange) string { return change.Key }
+	gamePatch.Articles = pickRows(gamePatch.Articles, filter.Query, filter.Limit,
+		func(article patch.Article) string { return article.Title + " " + article.HTML })
+	gamePatch.KeyRenames = pickRows(gamePatch.KeyRenames, filter.Query, filter.Limit,
+		func(rename patch.KeyRename) string { return rename.Key + " " + rename.Replacement })
+	gamePatch.DumpChanges = pickRows(gamePatch.DumpChanges, filter.Query, filter.Limit, key)
+	gamePatch.DefinitionChanges = pickRows(gamePatch.DefinitionChanges, filter.Query, filter.Limit, key)
+	gamePatch.GameFiles = pickRows(gamePatch.GameFiles, filter.Query, filter.Limit,
+		func(file patch.GameFile) string { return file.Rel })
+
+	return gamePatch
+}
+
+// pickRows returns the rows whose text holds the query, whatever its case, up
+// to the limit, or to 50 if the limit is left out.
+func pickRows[T any](rows []T, query string, limit int, text func(row T) string) []T {
+	query = strings.ToLower(query)
+	matches := make([]T, 0, len(rows))
 	for _, row := range rows {
-		if strings.Contains(strings.ToLower(row.Name), query) {
+		if strings.Contains(strings.ToLower(text(row)), query) {
 			matches = append(matches, row)
 		}
 	}
 
-	return matches[:min(len(matches), resolveLimit(filter.Limit, defaultLimit))], err
+	return matches[:min(len(matches), resolveLimit(limit, defaultLimit))]
 }
 
 const (
@@ -371,6 +458,9 @@ const (
 2. Learn what is valid. hover says what a key or a value is, complete lists what fits at a position, and signature ` +
 		`what an effect or a macro takes. build_lexicon lists the game's effects, triggers, links, scopes, ` +
 		`modifiers, on_actions and functions; search_pages and read_page read the game's wiki.
+   After a game update, list_patches lists the game's versions and read_patch gives what one changed: the ` +
+		`Modding Co-op's notes, renamed keys, changed commands and changed game files. build_lexicon with since ` +
+		`lists what changed after a version.
 3. Write it in the mod that should own it, never in the game's files: with your own file tools, or with ` +
 		`apply_edit, rename and write_scaffold, which preview first.
 4. Check it. diagnose the file, or your text before you write it. build_report gives Health's findings: how the ` +

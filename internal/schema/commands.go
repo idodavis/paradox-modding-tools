@@ -24,18 +24,14 @@ const (
 	originShipped = "shipped"
 )
 
-// buildDumps builds the schema's commands, scope types, modifiers,
-// on_actions and data types from the install's dumps, with the shipped
-// backup filling what they lack. It records where the data came from, whether
-// it is older than the install, and whether it describes the installed
-// version.
+// buildDumps builds the schema's commands, scope types, modifiers, on_actions
+// and data types from the install's dumps, with the shipped backup filling
+// what they lack. Where the install's dumps are missing or older than the
+// install, the digest's are used, if there are any.
 //
-// The install's own dumps are used unless they are missing or older than the
-// install, and then the digest's are, if there are any. It returns the
-// install's own dumps when they were used and are not older than the install,
-// else nil. Those carry the installed version. The version of dumps that are
-// older than the install is not known, since the files do not say which game
-// wrote them.
+// It returns the install's own dumps when they were used, else nil. The
+// version of dumps older than the install is not known, since the files do
+// not say which game wrote them.
 func (b *builder) buildDumps(
 	dialect *lang.Dialect, dumpDirs []string, digest *Dumps, installPath, version string,
 ) (*Dumps, error) {

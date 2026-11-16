@@ -248,12 +248,12 @@ func addPast(id, folder string) (string, error) {
 
 	var before patch.Snapshot
 	for position, version := range versions {
-		texts, err := readPastTexts(folder, entries, version)
+		contents, err := readPastFiles(folder, entries, version)
 		if err != nil {
 			return "", err
 		}
 
-		current := patch.Snapshot{Dumps: schema.ParseDumps(texts)}
+		current := patch.Snapshot{Dumps: schema.ParseDumps(contents)}
 		if position > 0 {
 			gamePatch := patch.CompareSnapshots(versions[position-1], version, before, current, language)
 			history = patch.Put(history, gamePatch)
@@ -291,25 +291,25 @@ func listPastVersions(entries []os.DirEntry) (versions, skipped []string) {
 	return versions, skipped
 }
 
-// readPastTexts returns the text of each dump file a folder holds of one
+// readPastFiles returns the bytes of each dump file a folder holds of one
 // version, by the file's name without the version. It returns an error for a
 // file that cannot be read, since a version read in part would show the rest
 // as removed.
-func readPastTexts(folder string, entries []os.DirEntry, version string) (map[string]string, error) {
-	texts := map[string]string{}
+func readPastFiles(folder string, entries []os.DirEntry, version string) (map[string][]byte, error) {
+	contents := map[string][]byte{}
 	for _, entry := range entries {
 		file, ok := strings.CutPrefix(entry.Name(), version+"_")
 		if !ok || !schema.IsDumpFile(file) {
 			continue
 		}
 
-		text, err := files.ReadText(filepath.Join(folder, entry.Name()))
+		content, err := files.ReadContent(filepath.Join(folder, entry.Name()))
 		if err != nil {
 			return nil, err
 		}
 
-		texts[file] = text.Text
+		contents[file] = content
 	}
 
-	return texts, nil
+	return contents, nil
 }

@@ -9,7 +9,7 @@ import { until, useLocalStorage } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
 import { groupBy, lowerFirst } from "es-toolkit";
 import { defineStore } from "pinia";
-import { computed, markRaw, reactive, shallowRef } from "vue";
+import { computed, markRaw, reactive, shallowRef, watch } from "vue";
 
 import type { Agent } from "@services/agent/models";
 import type { Tool } from "@services/mcp/models";
@@ -90,6 +90,7 @@ export type Usage = { used: number; size: number; cost: v2.Cost | null; limit: P
 /** A Session is one chat with an agent in this window. */
 export type Session = {
   key: string; // this window's own id for it
+  workspace: string; // the workspace it was started in, whose mod its agent runs in
   agent: Agent;
   protocol: Protocol;
   id: string; // the agent's id for it, "" until the agent gives one
@@ -253,6 +254,15 @@ export const useAgentStore = defineStore("agent", () => {
   const isPromptWanted = shallowRef(false);
 
   const active = computed(() => sessions.find((session) => session.key === activeKey.value));
+  /**
+   * showLive shows the newest running session of the active workspace, or
+   * none. A session of another workspace is never shown: its agent runs in
+   * that workspace's mod.
+   */
+  const showLive = (): void => {
+    activeKey.value = sessions.findLast((session) => session.workspace === workspace.activeId())?.key ?? "";
+  };
+  watch(() => workspace.activeId(), showLive);
   // The agents a chat can start with, which leaves out the one that completes
   // code.
   const ready = computed(() => (agents.value ?? []).filter((row) => row.program && !row.completion));
@@ -307,6 +317,7 @@ export const useAgentStore = defineStore("agent", () => {
   function makeSession(agent: Agent, record?: SessionRecord): Session {
     return reactive<Session>({
       key: `s${++count}`,
+      workspace: record?.workspace ?? workspace.activeId(),
       agent,
       protocol: protocols.value[`${agent.id}@${agent.installed}`] ?? 2,
       id: record?.id ?? "",
@@ -342,8 +353,10 @@ export const useAgentStore = defineStore("agent", () => {
       if (step === "resume") await dialect.resume(session.id, startMessage);
       else session.id = await dialect.create(startMessage);
       session.state = "idle";
-      remember(session);
-      if (step === "create") await applyLastOptions(session);
+      // An agent keeps nothing of a session before its first turn, so a new
+      // session is remembered when that turn ends.
+      if (step === "resume") remember(session);
+      else await applyLastOptions(session);
     } catch (error) {
       if (isAuthRequired(error)) {
         session.state = "sign-in";
@@ -733,6 +746,10 @@ export const useAgentStore = defineStore("agent", () => {
         name: pageChip.label + lines,
       });
     } else if (pageChip?.text) blocks.push({ type: "text", text: pageChip.text });
+    // An agent that drops the tool server's instructions gets them once,
+    // after the user's own words, which name the session.
+    if (session.agent.instructions && !session.entries.some((entry) => entry.kind === "user"))
+      blocks.push({ type: "text", text: session.agent.instructions });
     // A version 2 agent sends the prompt back, but a version 1 agent does not.
     if (session.protocol === 1) {
       const chips = [...files.map((file) => file.rel), ...(pageChip ? [pageChip.label] : [])];
@@ -782,7 +799,7 @@ export const useAgentStore = defineStore("agent", () => {
   const close = (session: Session): void => {
     unlink(session);
     sessions.splice(sessions.indexOf(session), 1);
-    if (activeKey.value === session.key) activeKey.value = sessions.at(-1)?.key ?? "";
+    if (activeKey.value === session.key) showLive();
   };
 
   /** signIn signs in to a session's agent, in PMT's terminal or through the agent, and starts the session again. */
@@ -812,7 +829,7 @@ export const useAgentStore = defineStore("agent", () => {
     const previous = records.value.find((other) => other.id === session.id);
     const record = {
       agent: session.agent.id,
-      workspace: previous?.workspace ?? workspace.activeId(),
+      workspace: session.workspace,
       id: session.id,
       title: session.title,
       updatedAt: Date.now(),

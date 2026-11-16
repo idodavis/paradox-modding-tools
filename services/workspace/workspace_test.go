@@ -354,6 +354,10 @@ func TestLoadTreeUsesBufferThenCache(t *testing.T) {
 // of the install does nothing.
 func TestRescanFollowsDisk(t *testing.T) {
 	ws, dir := openFixture(t)
+
+	// The test rescans by hand. The watcher would rescan the files it writes
+	// a moment later, which gives a new index while the last check runs.
+	ws.watcher.Close()
 	before := ws.Mods.Load()
 	fresh := filepath.Join(dir, "events", "m_fresh.txt")
 	if err := os.WriteFile(fresh, []byte("namespace = m\n\nm.9 = { type = character_event }\n"), 0o644); err != nil {

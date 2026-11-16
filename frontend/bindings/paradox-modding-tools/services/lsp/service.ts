@@ -22,11 +22,10 @@ import * as jomini$0 from "../../internal/jomini/models.js";
 import * as $models from "./models.js";
 
 /**
- * BuildLexicon returns the rows of a class, sorted by name, scripted effects
- * and triggers included. With a start version, it returns only the rows of the
- * keys that the patches after the start, up to the end version, changed. Each
- * says how they last changed it, and a key the game no longer has is among
- * them. It returns an error if no workspace is open or the class is unknown.
+ * BuildLexicon returns the rows of a class, sorted by name. With a start
+ * version, it returns only the keys the patches changed after it, up to the
+ * end version, each with its latest change. It returns an error if no
+ * workspace is open or the class is unknown.
  */
 export function BuildLexicon(id: string, start: string, end: string): $CancellablePromise<$models.LexiconRow[] | null> {
     return $Call.ByID(2974875071, id, start, end);
@@ -91,10 +90,9 @@ export function DescribeIndentation(path: string): $CancellablePromise<string> {
 
 /**
  * DescribeKey returns the card of one key of a lexicon class: what hover says
- * of the key, what each patch did to it, and where the mods use it. A key
- * the game no longer has gets a card only if a patch changed it. It returns an
- * error if no workspace is open, the class is unknown, or the key is neither
- * in the game nor in a patch.
+ * of it, what each patch did to it, and where the mods use it. It returns an
+ * error if no workspace is open, the class is unknown, or the key is in
+ * neither the game nor a patch.
  */
 export function DescribeKey(id: string, key: string): $CancellablePromise<$models.Card> {
     return $Call.ByID(979662325, id, key);

@@ -35,7 +35,6 @@ over PMT's own, and each part the winner lacks comes from the next that has it.
 | `dumps-<version>.gob` | the digest's dumps of a version an install is on, which the schema uses where the install's own are stale | `SaveDigest` |
 | `local.gob` | the patches PMT compared itself | `KeepSnapshot` |
 | `snapshots/<version>.gob` | the `Snapshot` of each version an install is on | `KeepSnapshot` |
-| `copies/<version>/<path>.gz` | the game files mods replace, as they were at a version | `KeepCopy` |
 
 ## Snapshots
 
@@ -45,13 +44,6 @@ are not older than the install. `KeepSnapshot` first compares it with the snapsh
 (`CompareSnapshots`) and saves the result as PMT's own patch. So the dumps wait for the user to run `script_docs`
 after an update, while the names and the files need none. `gen` makes the shipped history with the same comparison.
 
-## Copies
-
-A mod's file at the path of a game file replaces it. `KeepCopy` keeps the game's text file as it is at the install's
-version, and `FindCopy` finds the copy a mod's file can be merged from: the copy of the latest kept version at or
-before the mod's range start, when every patch in between lists the files it changed and none lists this one.
-`DeleteCopies` drops the versions no install is on and no mod's range needs.
-
 ## Files
 
 | file | what it holds |
@@ -59,7 +51,6 @@ before the mod's range start, when every patch in between lists the files it cha
 | `patch.go` | The package doc, `Patch` and its parts, the merge of the sources, the ranges, and what a range's patches did to a key, a name or a file. |
 | `folder.go` | The folder of patches, the digest's files in it, and the shipped history. |
 | `snapshot.go` | `Snapshot`, the comparison of two, and keeping one for each version. |
-| `copies.go` | The kept copies of game files. |
 
 ## Terms
 

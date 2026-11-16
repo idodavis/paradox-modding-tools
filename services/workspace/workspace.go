@@ -1,7 +1,7 @@
 // Package workspace holds the one open workspace: a game install and the mods
 // being edited, in load order. It also keeps the records of installs,
 // workspaces and mods, reads, writes and moves the files in the mods, and
-// keeps a game's patches: what each version of the game changed.
+// loads the game's patches for the session.
 //
 // Opening a workspace loads the install's schema and index from a cache
 // folder, or builds and saves them, then scans the mods on top and watches
@@ -319,21 +319,20 @@ func (s *Service) RescanInstall(id string) error {
 	return nil
 }
 
-// reopen opens the open workspace again if its record matches.
+// reopen opens the open workspace again if its record matches. The lock is
+// held from the close to the end of the open, so no call finds no workspace
+// open in between.
 func (s *Service) reopen(matches func(record app.Workspace) bool) {
 	s.mu.Lock()
-	workspaceID := ""
 	if s.session != nil {
 		if record, _, _, err := findRecords(s.Config.Config(), s.session.ID); err == nil && matches(record) {
-			workspaceID = record.ID
+			s.open(record.ID)
+
+			return
 		}
 	}
-	s.mu.Unlock()
 
-	if workspaceID != "" {
-		s.Close()
-		s.Open(workspaceID)
-	}
+	s.mu.Unlock()
 }
 
 // ResetData closes the open workspace and removes every workspace, install
@@ -503,6 +502,12 @@ func (s *Service) Open(workspaceID string) {
 		return
 	}
 
+	s.open(workspaceID)
+}
+
+// open closes the open session and opens a workspace in the background. The
+// caller holds the lock, which is released when the open ends.
+func (s *Service) open(workspaceID string) {
 	s.closeSession()
 	go func() {
 		defer s.mu.Unlock()

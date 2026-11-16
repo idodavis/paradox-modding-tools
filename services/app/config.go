@@ -115,6 +115,11 @@ type Agent struct {
 	// Files are the instruction files and folders the agent reads in a mod.
 	Files []string `json:"files,omitempty"`
 
+	// Instructions is what the pane adds to a session's first prompt, for an
+	// agent that drops the instructions PMT's tool server gives it. It is ""
+	// for an agent that reads them.
+	Instructions string `json:"instructions,omitempty"`
+
 	// Chat is the id of the row that chats for this one, so Settings draws
 	// the two as one agent; "" if there is none. Each row starts on its own.
 	Chat string `json:"chat,omitempty"`

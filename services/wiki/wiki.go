@@ -3,10 +3,9 @@
 // file.
 //
 // A client asks the wiki's API at most twice a second. Each page is cached as
-// one JSON file with its HTML sanitized, and a client keeps the pages it has
-// read in memory. A refresh asks the wiki for the latest revision of each
-// listed page, 50 titles to a query, and fetches the pages that are not cached
-// or whose cached revision differs.
+// one JSON file with its HTML sanitized. A refresh asks for the latest
+// revision of each listed page, 50 titles to a query, and fetches the pages
+// that are not cached or have changed.
 //
 // The wiki's rules, as the package applies them:
 //
@@ -15,23 +14,14 @@
 //     for a minor version's hotfix notes.
 //   - A note's release date is the one in "released on 2026-09-30", within the
 //     first 2000 bytes of its text.
-//   - A sanitized page loses the wiki's chrome, citations, pictures and its See
-//     also, References, External links and Further reading sections. It folds
-//     a table of more than two rows and keeps only links that are web
-//     addresses.
 //
 // # Robustness
 //
 // FetchPage refuses a page the wiki answers with an error, and an answer that
 // is not JSON. A refresh stops if the listing or a revision query fails, but
-// not for a page that fails. ListNotes refuses until a refresh has fetched the
-// listing, and FindPages and SearchPages return nil until then.
-//
-// A cached file that is missing or does not decode reads as not cached, and a
-// note whose page is not cached has no release date. A page cached without a
-// revision is fetched again by the next refresh. A refresh reads past a listed
-// title the wiki gives no revision for: it does not fetch it, and any cached
-// copy stays. Sanitizing reads past elements and attributes it does not keep.
+// not for a page that fails. A cached file that is missing or does not decode
+// reads as not cached. A listed title the wiki gives no revision for is not
+// fetched, and its cached copy stays.
 package wiki
 
 import (

@@ -282,9 +282,7 @@ export interface Report {
 
     /**
      * Patch is the findings of the patch question: what the game's patches
-     * changed under the mods, which is each mod's made-for version, its
-     * removed or renamed names and its stale copies. They are in no mod's
-     * group.
+     * changed under the mods. They are in no mod's group.
      */
     "patch": Group;
 

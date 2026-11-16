@@ -36,7 +36,8 @@ sequenceDiagram
 
 `agents` is the table of the agents PMT offers: Claude, GitHub Copilot CLI, GitHub Copilot and Codex. A row has the
 registry's id, the command that registers PMT's tools with that agent outside PMT, and the instruction files and
-folders it reads in a mod.
+folders it reads in a mod. The CLI's row also has `Instructions`, the summary of the instructions PMT's tool server
+gives: the CLI drops those, so the pane adds the summary to a session's first prompt, after the user's text.
 
 Two rows are Copilot's, both named GitHub Copilot. The CLI's row, `github-copilot-cli`, is the registry's and is
 Copilot's chat. The server's row, `copilot-language-server`, is Copilot's tab completion, and names its own parts, so

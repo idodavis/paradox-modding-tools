@@ -4,10 +4,9 @@
 // reads a table's rows, compares and joins paths, unpacks a zip and applies
 // ignore rules.
 //
-// It knows no game. Which folders a game reads, and what each one holds, are
-// the rows of the game package; this one names a file by its place below a
-// root and by its extension, never by its contents. A root carries what the
-// game mounts below it: its stage folders, and a mod's replace_path folders.
+// It knows no game: it names a file by its place below a root and by its
+// extension, never by its contents. A root carries what the game mounts below
+// it: its stage folders, and a mod's replace_path folders.
 //
 // # Formats
 //

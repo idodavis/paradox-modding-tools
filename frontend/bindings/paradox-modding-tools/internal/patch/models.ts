@@ -6,32 +6,29 @@
 import * as schema$0 from "../schema/models.js";
 
 /**
- * Article is one titled part of the written notes of a digest.
+ * Article is one titled part of a digest's written notes.
  */
 export interface Article {
     /**
-     * ID names the article within its patch, and is the id of its heading.
+     * ID is the id of the article's heading.
      */
     "id": string;
     "title": string;
 
     /**
-     * HTML is the article as a document the pages show: its heading, then
-     * what the digest writes under it.
+     * HTML is the article's heading and body.
      */
     "html": string;
 
     /**
-     * Breaking is whether the article is one of the digest's breaking
-     * changes, and New whether it is a new feature.
+     * Breaking and New mark a breaking change and a new feature.
      */
     "breaking": boolean;
     "new": boolean;
 
     /**
-     * Folders are the folders of the game's script the article links a type
-     * doc of, and Keys the names it writes in backticks. They are what ties
-     * the article to a mod.
+     * Folders are the script folders the article links, and Keys the names
+     * it writes in backticks. They tie the article to a mod.
      */
     "folders": string[] | null;
     "keys": string[] | null;
@@ -68,17 +65,14 @@ export interface Patch {
     "base": string;
 
     /**
-     * Local is whether PMT compared the two versions itself, when the game
-     * updated or when the history the app ships was made. It is false for a
-     * patch from a digest.
+     * Local is true where PMT compared the two versions itself.
      */
     "local": boolean;
 
     /**
-     * DumpChanges are the keys of the dumps the version changed, and
-     * DefinitionChanges the names the game's files began or stopped to
-     * define, localization keys included. A digest lists no defined names,
-     * so its version takes them from the shipped or PMT's own patch.
+     * DumpChanges are the changed keys of the dumps. DefinitionChanges are
+     * the names the game's files began or stopped defining, which no digest
+     * lists.
      */
     "dumpChanges": schema$0.KeyChange[] | null;
     "definitionChanges": schema$0.KeyChange[] | null;
@@ -90,8 +84,7 @@ export interface Patch {
     "gameFiles": GameFile[] | null;
 
     /**
-     * Articles are the written notes of a digest. A patch PMT compared
-     * itself has none.
+     * Articles are a digest's written notes.
      */
     "articles": Article[] | null;
 }

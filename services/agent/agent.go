@@ -11,6 +11,9 @@
 //   - An agent PMT offers is a row of the agents table: its registry id, the
 //     text that registers PMT's tools with it outside PMT, and the
 //     instruction files and folders it reads in a mod.
+//   - GitHub Copilot's CLI drops the instructions PMT's tool server gives it,
+//     so its row carries their summary, which the pane adds to a session's
+//     first prompt.
 //   - Node is the system's if it is version 22 or newer, else the copy PMT
 //     downloaded into its cache folder, else none. Npm and every agent run on
 //     that Node.
@@ -156,8 +159,9 @@ var agents = []app.Agent{
 		Register: `claude mcp add --transport http pmt {url} --header "Authorization: Bearer {token}"`,
 		Files:    []string{"CLAUDE.md", "CLAUDE.local.md", ".claude"}},
 	{ID: "github-copilot-cli", Name: "GitHub Copilot",
-		Register: `copilot mcp add --transport http pmt {url} --header "Authorization: Bearer {token}"`,
-		Files:    []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github"}},
+		Register:     `copilot mcp add --transport http pmt {url} --header "Authorization: Bearer {token}"`,
+		Files:        []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github"},
+		Instructions: mcp.Summary},
 	{ID: "copilot-language-server", Name: "GitHub Copilot", Chat: "github-copilot-cli", Completion: true,
 		Package: "@github/copilot-language-server", Script: "dist/language-server.js", Args: []string{"--acp"},
 		Env: []string{"GITHUB_COPILOT_ACP_USE_CLI=0"}},

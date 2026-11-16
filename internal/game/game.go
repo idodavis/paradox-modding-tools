@@ -21,8 +21,6 @@
 //     Linux. Where none exists, it is the first of them.
 //   - An install was last updated when the newest file in its binaries
 //     folder was written, else the newest file in the install's own folder.
-//     A folder's own time is no use, since replacing a file in place leaves
-//     it unchanged.
 //   - The Workshop folder is the game's folder under steamapps/workshop in
 //     each Steam library.
 //   - The program that starts a game is the one the launcher's exePath

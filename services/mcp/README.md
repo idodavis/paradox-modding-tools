@@ -6,21 +6,23 @@ The mcp service is PMT's tool server for coding agents. It serves PMT's tools, i
 over MCP to the agents on this computer, and passes on to the main window what an agent asks it to show.
 
 The tools hold no logic of their own. Each answers through the method of another service that answers the same
-question for a page: the editor's, Health's, the Event Graph's, the wiki's, the Visual view's, the search's and the
-workspace's. What the assistant pane says to an agent is [agent](../agent/README.md)'s.
+question for a page: the editor's, Health's, the Event Graph's, the wiki's, the Patch Center's, the Visual view's,
+the search's and the workspace's. What the assistant pane says to an agent is [agent](../agent/README.md)'s.
 
 **Uses** [files](../../internal/files/README.md), [jomini](../../internal/jomini/README.md),
 [lang](../../internal/lang/README.md), [loc](../../internal/loc/README.md),
+[patch](../../internal/patch/README.md), [schema](../../internal/schema/README.md),
 [terminal](../../internal/terminal/README.md),
 [draw](../draw/README.md), [graph](../graph/README.md),
-[health](../health/README.md), [lsp](../lsp/README.md), [search](../search/), [wiki](../wiki/README.md),
+[health](../health/README.md), [lsp](../lsp/README.md), [patch](../patch/README.md), [search](../search/),
+[wiki](../wiki/README.md),
 [workspace](../workspace/README.md) · **Used by** [agent](../agent/README.md), [terminal](../terminal/README.md).
 
 ```mermaid
 flowchart LR
   agentprog["A coding agent"] -->|"HTTP, with the token"| gate["Token and origin checks"]
   gate --> tools["PMT's tools"]
-  tools --> lsp & health & eventgraph["graph"] & wiki & draw & search & workspace
+  tools --> lsp & health & eventgraph["graph"] & wiki & patch & draw & search & workspace
   tools -->|show| event(["mcp:show"])
   event --> main["Main window"]
   pages["Pages"] -->|view and pages| tools
@@ -49,7 +51,9 @@ the two for the Terminal's settings.
 
 The instructions say what PMT is and give the working rules: find a name with PMT's tools and never invent one,
 diagnose a file before calling a change done, write only in the workspace's mods, and leave saving, uploading and
-Settings to the user. Their first paragraph stands alone, since Codex may read no more. `read_guide` holds the rest, in
+Settings to the user. Their first paragraph, `Summary`, stands alone, since Codex may read no more. GitHub Copilot's
+CLI drops the instructions, so the assistant pane adds `Summary` to the first prompt of a session with it
+([agent](../agent/README.md)'s table says which agents). `read_guide` holds the rest, in
 four topics: the pages and what `show` can bring to the front on each, how a change is made with PMT's tools, which
 copy the game keeps when several definitions share a name, and the open workspace's game, mods and folders.
 
@@ -102,7 +106,8 @@ and the page catalog the main window sends once (`SetPages`).
 
 ## Terms
 
-- **Task**: a starter task, a prompt PMT offers an agent, with the chip of the page it carries.
+- **Task**: a starter task, a prompt PMT offers an agent, with the chip of the page it carries and the pages that
+  offer it, every page where it names none.
 - **Tool**: one of PMT's tools, with its title and whether it only reads.
 - **Access**: the address and token an agent needs to reach the server.
 - **View**: the page a window shows and its chip, as the window sent them last.

@@ -29,19 +29,18 @@ type Note struct {
 	// Beta is whether the version is an open beta.
 	Beta bool `json:"beta"`
 
-	// Mods are the ids of the user's own mods in the open workspace that are
-	// made for this version: their supported_version matches it. An external
-	// mod is never listed, since it is not the user's to patch.
+	// Installed is whether the workspace's install is on this version.
+	Installed bool `json:"installed"`
+
+	// Mods are the ids of the user's own mods made for this version. An
+	// external mod is never listed.
 	Mods []string `json:"mods"`
 }
 
 // ListPatches returns the versions the workspace's patches hold, and the
-// versions of the wiki's notes that no patch takes, newest first. A patch is
-// listed with the note that holds its version, as wiki.ResolveNote says. Until
-// the wiki's listing
-// is fetched, it lists the patches' versions, which have none of the wiki's
-// fields. It returns an error if no workspace is open or the wiki fails
-// otherwise.
+// versions of the wiki's notes that no patch covers, newest first. Until the
+// wiki's listing is fetched, the rows have none of the wiki's fields. It
+// returns an error if no workspace is open or the wiki fails.
 func (s *Service) ListPatches() ([]Note, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -80,6 +79,7 @@ func (s *Service) ListPatches() ([]Note, error) {
 		row := &rows[position]
 		row.Release = game.ResolveRelease(row.Version)
 		row.Beta, row.Mods = patches.IsBeta(row.Version), []string{}
+		row.Installed = game.IsInstalled(row.Version, ws.Schema.Version)
 		for _, mod := range *ws.Order.Load() {
 			if matches, _ := patch.MatchVersion(mod.Descriptor.SupportedVersion, row.Version); matches && !mod.External {
 				row.Mods = append(row.Mods, mod.ID)
@@ -92,10 +92,8 @@ func (s *Service) ListPatches() ([]Note, error) {
 	return rows, nil
 }
 
-// FindPatch returns the patch of a version. It returns the zero patch, with no
-// version, for a version the workspace's patches do not hold, which is a
-// version whose changes are not known yet. It returns an error if no workspace
-// is open.
+// FindPatch returns the patch of a version, or the zero patch for a version
+// whose changes are not known. It returns an error if no workspace is open.
 func (s *Service) FindPatch(version string) (patch.Patch, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {

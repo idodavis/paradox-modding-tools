@@ -129,7 +129,6 @@ export function describePicture(header: Header): string {
   return `${header.width} by ${header.height}, ${bytes(header.bytes)}`;
 }
 
-/** joinParts returns parts as one plain sentence. */
 export function joinParts(parts: readonly Part[] | null | undefined): string {
   return (parts ?? []).map((part) => part.text).join("");
 }
@@ -228,7 +227,6 @@ const DIFFERENCE_FIELDS: Readonly<Record<string, string>> = {
   version: "Version",
 };
 
-/** toDifferenceId returns the key of a difference in a list. */
 export function toDifferenceId({ field, rel = "" }: Difference): string {
   return `${field}:${rel}`;
 }

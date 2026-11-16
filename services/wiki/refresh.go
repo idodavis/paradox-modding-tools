@@ -138,8 +138,7 @@ func (c *Client) listCategory(category string) ([]string, error) {
 
 // listChanged returns the titles of listed pages that are not cached or whose
 // cached revision is not the wiki's latest. A title the wiki gives no revision
-// for, such as a page it moved or deleted, is left out: it cannot be fetched,
-// and its cached copy stays readable.
+// for, such as a moved page, is left out.
 func (c *Client) listChanged(listing Listing) ([]string, error) {
 	titles := make([]string, 0, len(listing.Pages)+len(listing.Versions))
 	titles = append(titles, listing.Pages...)

@@ -10,10 +10,8 @@ import { notesQuery, reportQuery, tiesQuery } from "../queries";
 import { useWorkspaceStore } from "./workspace";
 
 /**
- * useSeenPatch returns the newest version that touches the workspace's mods
- * and the version the Patch Center last showed, which the page sets. It also
- * returns whether the first is newer than the second. With nothing shown yet,
- * any version that touches the mods is newer.
+ * useSeenPatch returns the newest version that touches the workspace's mods,
+ * the version the Patch Center last showed, and whether the first is newer.
  */
 export function useSeenPatch() {
   const workspace = useWorkspaceStore();

@@ -52,7 +52,8 @@ Every finding answers one of four questions: `compatibility` (how the mods touch
 mod's own problems), `patch` (what the game's patches changed under the mods: the version a mod is made for, a name a
 patch removed or renamed, a game file a patch changed that a mod replaces) or `log` (what the game's last run logged).
 The report holds the `patch` findings in a group of their own, as it holds the compatibility's: the report's tally
-counts them, and the own tally, which counts the mods' groups, leaves them out. A finding has a level by how much the
+counts them, and the own tally, which counts the mods' groups, leaves them out. `OwnPatch` counts the `patch` findings
+of the user's own mods, which is what the Patch Center's Your mods row shows. A finding has a level by how much the
 game loses:
 `critical`, `error`, `warning` or `info`. The game log rows have none.
 

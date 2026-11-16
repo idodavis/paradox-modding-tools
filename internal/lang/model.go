@@ -1,10 +1,7 @@
-// Package lang is the script language of one game version. It holds three
-// things. The first is the language's fixed rules: its keywords, the shapes of
-// its blocks, where each database's definitions are written and which copy of
-// a name the game keeps. The second is the model of what is learned about one
-// game version: which databases exist, what each key takes and which commands
-// run in which scope. The third is the one walk that reads a file against
-// both. Every feature that reads script uses the walk's result.
+// Package lang is the script language of one game version. It holds the
+// language's fixed rules, the model of what is learned about one game
+// version, and the one walk that reads a file against both. Every feature
+// that reads script uses the walk's result.
 //
 // The fixed rules are tables of rows. A fact that is one value for each game
 // is a field of the game's Dialect. A fact the games share is a row of a table
@@ -17,11 +14,8 @@
 //   - A game's own rows come before the rows of every game, and a lookup
 //     takes the first row that fits.
 //   - A row's comment cites where its fact comes from: a file of the install
-//     and its line, a dump line or a wiki page. Nothing reads it; it lets a
-//     reader check the row against the game.
-//   - A row classifies and never accuses. Only a claim from the dumps, the
-//     docs, the wiki or a definition in the files is firm enough to fail a
-//     verdict (Source.CanAccuse).
+//     and its line, a dump line or a wiki page.
+//   - A row classifies and never accuses (Source.CanAccuse).
 //
 // # Sources
 //
@@ -30,9 +24,8 @@
 //     files, and inferred last. A claim keeps the fact of its best source.
 //   - Only the dumps, the docs, the wiki and what a definition in the files
 //     says its name or a parameter takes can accuse a mod.
-//   - A fact learned from the game's own files completes a hover card, marked
-//     as inferred. It never fails a verdict, and a reference that only such a
-//     fact makes is inferred.
+//   - A fact learned from the game's own files is inferred. It completes a
+//     hover card and never fails a verdict.
 //
 // # Databases
 //
@@ -359,9 +352,7 @@ type Definition struct {
 type Database struct {
 	Name string
 
-	// Definitions are the definitions the schema itself knows, by key: a
-	// dump's entries, or the copy the game keeps of each name script calls,
-	// each modifier type, event namespace and built-in widget type. Keys are
+	// Definitions are the definitions the schema itself knows, by key, in
 	// lower case where the database ignores case.
 	Definitions map[string]*Definition
 
@@ -557,9 +548,8 @@ type Schema struct {
 	UnlistedCalls map[string]bool
 
 	// Lists, Events, OnActions, Messages, Concepts, ModifierTypes, Effects
-	// and Values name the databases of scripted lists, events, on_actions,
-	// player messages, game concepts, modifier types, scripted effects and
-	// script values. Each is "" for a game without one.
+	// and Values name the databases of those kinds. Each is "" for a game
+	// without one.
 	Lists         string
 	Events        string
 	OnActions     string

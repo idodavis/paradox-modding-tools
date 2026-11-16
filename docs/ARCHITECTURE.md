@@ -91,7 +91,7 @@ Arrows point to what a package imports. An import that follows from others is le
 | [lang](../internal/lang/README.md) | The script language of one game version: its fixed rules as tables, the model of what is learned about it, and the one walk over a file that every reader of script uses. |
 | [schema](../internal/schema/README.md) | Builds the model of one game version's language from the game's dumps, its docs and its own files. |
 | [index](../internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy of a definition the game keeps. |
-| [patch](../internal/patch/README.md) | What each version of a game changed, as plain data: the game's patches from its digest, the shipped history and PMT's own comparison, their ranges, and the snapshots and copies kept to compare and merge with. |
+| [patch](../internal/patch/README.md) | What each version of a game changed, as plain data: the game's patches from its digest, the shipped history and PMT's own comparison, their ranges, and the snapshots kept to compare versions with. |
 | [terminal](../internal/terminal/README.md) | Runs shells under Windows' pseudo console or a Linux pty. |
 
 [`schema/gen`](../internal/schema/gen/) writes the shipped backup schemas and each game's shipped history of patches,
@@ -105,7 +105,7 @@ flowchart TD
   patch --> wiki
   agent --> mcp
   terminal --> mcp
-  mcp --> draw & eventgraph["graph"] & health & search & wiki
+  mcp --> draw & eventgraph["graph"] & health & search & wiki & patch
   terminal --> lsp
   draw & eventgraph & health & search --> lsp
   lsp & wiki & patch --> workspace

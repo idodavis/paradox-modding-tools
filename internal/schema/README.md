@@ -44,6 +44,11 @@ flowchart TD
 
 - **Dumps**: everything the dump files of one game declare, as read from the files.
 - **DumpCommand**: one effect, trigger or link as its dump file lists it.
+- **A line that is not UTF-8**: measured on the three installs and the two digests, every one is in `effects.log` or
+  `triggers.log`. Victoria 3's install has 331 and its digest 1,418, each right under an entry's heading where the
+  description would be, and none is text. Crusader Kings III's install has one, the first line of
+  `create_divergent_culture`, with a dash of Windows-1252. Europa Universalis V has none. Why Victoria 3 writes them
+  is not known, nor whether any such line happens to be UTF-8: that one would stay as the description.
 - **Shipped backup**: the dumps of each game kept in the app, used where an install's own dump files are missing.
 - **Digest's dumps**: the dumps of the install's version that a game's digest holds. `Build` takes them as `digest`
   and uses them where the install's own dump files are missing or older than the install's last update, then fills

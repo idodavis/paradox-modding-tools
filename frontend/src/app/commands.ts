@@ -1,6 +1,6 @@
 /** The command table: each command of the app is one row, shaped as a menu item, with an id and a `when`. */
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
-import { useMutation, useQueryCache } from "@pinia/colada";
+import { useQueryCache } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
 import { Dialogs } from "@wailsio/runtime";
 import * as monaco from "monaco-editor/editor/editor.api";
@@ -13,7 +13,7 @@ import * as lsp from "@services/lsp/service";
 import * as workspaceApi from "@services/workspace/service";
 import type { Fix } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
-import { confirm, copyText, toast } from "../lib/feedback";
+import { confirm, copyText, reportError, toast } from "../lib/feedback";
 import { findModel, save, saveUnsaved, unsavedModels, type Model } from "../pages/ide/editor/models";
 import { copiesQuery, loadQuery, placeQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
@@ -57,8 +57,10 @@ const changedBindings = computed<Record<string, string[]>>(() => {
   }
 });
 
-// Runs work as a mutation, so a failure reaches the app's error handler. It is set when the shortcuts are registered.
-let run: (work: () => Promise<unknown>) => void = () => undefined;
+/** run does a piece of work and reports its failure as a toast and a log line. */
+function run(work: () => Promise<unknown>): void {
+  void work().catch((error: unknown) => reportError(error, "command"));
+}
 
 const activeTab = () => useEditorStore().activeTab();
 const activeFile = () => useEditorStore().activeFile();
@@ -522,8 +524,6 @@ export const COMMANDS: readonly Command[] = [
 
 /** registerShortcuts registers every command's keyboard shortcuts, on while the command's `when` holds. */
 export function registerShortcuts(): void {
-  const { mutate } = useMutation({ mutation: (work: () => Promise<unknown>) => work() });
-  run = mutate;
   defineShortcuts(
     computed(() => {
       const shortcuts: Record<string, { handler: () => void; usingInput: boolean }> = {};

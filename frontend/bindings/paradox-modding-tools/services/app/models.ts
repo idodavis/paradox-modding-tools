@@ -26,6 +26,13 @@ export interface Agent {
     "files"?: string[] | null;
 
     /**
+     * Instructions is what the pane adds to a session's first prompt, for an
+     * agent that drops the instructions PMT's tool server gives it. It is ""
+     * for an agent that reads them.
+     */
+    "instructions"?: string;
+
+    /**
      * Chat is the id of the row that chats for this one, so Settings draws
      * the two as one agent; "" if there is none. Each row starts on its own.
      */

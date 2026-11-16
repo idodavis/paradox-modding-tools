@@ -27,12 +27,10 @@ type Note struct {
 	Modding  bool   `json:"modding"`
 }
 
-// ResolveNote returns the version of the wiki's note that holds the notes of a
-// game version. The wiki writes one note for a release, as 1.15, and one for
-// its hotfixes, as 1.15.X. A version whose numbers after the first two are
-// all 0, as 1.15.0, is in the release's note. Any other version of the
-// release, as 1.15.1, is in the hotfixes'. An open beta is read by its number.
-// It returns "" for a version that names no release.
+// ResolveNote returns the version of the wiki's note that holds a game
+// version. The wiki writes one note for a release, as 1.15, which also holds
+// 1.15.0, and one for its hotfixes, as 1.15.X. It returns "" for a version
+// that names no release.
 func ResolveNote(version string) string {
 	release := game.ResolveRelease(version)
 	number, _, _ := strings.Cut(version, "-")
@@ -126,9 +124,9 @@ func (s *Service) FindPages(path string) ([]string, error) {
 }
 
 // SearchPages returns the modding pages that hold a text, title matches first.
-// A page that is not cached is searched by its title alone. It returns nil,
-// with no error, until a refresh has fetched the listing, and an error if no
-// workspace is open.
+// A page that is not cached is searched by its title alone. It returns nil
+// until a refresh has fetched the listing, and an error if no workspace is
+// open.
 func (s *Service) SearchPages(term string) ([]string, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {

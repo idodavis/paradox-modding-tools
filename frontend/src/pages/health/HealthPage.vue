@@ -276,8 +276,11 @@ function openRow(finding: Finding): void {
       :description="logError.message"
       class="mx-4 mb-4 shrink-0"
     />
+    <!-- A splitter that gains the rail while the page is hidden sizes it -->
+    <!-- against no width, so each set of panes gets a new splitter. -->
     <USplitter
       ref="splitter"
+      :key="panes.length"
       :items="panes"
       class="min-h-0 grow"
       @layout="panes.length === 2 && railWidth.keep($event)"

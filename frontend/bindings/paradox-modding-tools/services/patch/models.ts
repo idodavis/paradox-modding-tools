@@ -32,17 +32,20 @@ export interface Note {
     "beta": boolean;
 
     /**
-     * Mods are the ids of the user's own mods in the open workspace that are
-     * made for this version: their supported_version matches it. An external
-     * mod is never listed, since it is not the user's to patch.
+     * Installed is whether the workspace's install is on this version.
+     */
+    "installed": boolean;
+
+    /**
+     * Mods are the ids of the user's own mods made for this version. An
+     * external mod is never listed.
      */
     "mods": string[] | null;
 }
 
 /**
- * Tie is one article of a patch that touches a mod, because it links the type
- * doc of a folder the mod writes files in or writes a key in backticks that
- * the mod defines or uses.
+ * Tie is one article of a patch that touches a mod: it links the type doc of
+ * a folder the mod has files in, or writes a key the mod defines or uses.
  */
 export interface Tie {
     "modId": string;

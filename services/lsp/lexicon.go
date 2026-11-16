@@ -57,11 +57,10 @@ func (s *Service) ListClasses() []Class {
 	return classes
 }
 
-// BuildLexicon returns the rows of a class, sorted by name, scripted effects
-// and triggers included. With a start version, it returns only the rows of the
-// keys that the patches after the start, up to the end version, changed. Each
-// says how they last changed it, and a key the game no longer has is among
-// them. It returns an error if no workspace is open or the class is unknown.
+// BuildLexicon returns the rows of a class, sorted by name. With a start
+// version, it returns only the keys the patches changed after it, up to the
+// end version, each with its latest change. It returns an error if no
+// workspace is open or the class is unknown.
 func (s *Service) BuildLexicon(id, start, end string) ([]LexiconRow, error) {
 	ws, class, err := s.loadClass(id)
 	if err != nil {
@@ -81,10 +80,9 @@ func (s *Service) BuildLexicon(id, start, end string) ([]LexiconRow, error) {
 }
 
 // DescribeKey returns the card of one key of a lexicon class: what hover says
-// of the key, what each patch did to it, and where the mods use it. A key
-// the game no longer has gets a card only if a patch changed it. It returns an
-// error if no workspace is open, the class is unknown, or the key is neither
-// in the game nor in a patch.
+// of it, what each patch did to it, and where the mods use it. It returns an
+// error if no workspace is open, the class is unknown, or the key is in
+// neither the game nor a patch.
 func (s *Service) DescribeKey(id, key string) (Card, error) {
 	ws, class, err := s.loadClass(id)
 	if err != nil {
@@ -237,10 +235,9 @@ func makeScripted(ws *workspace.Session, mods *index.Index, class string, refere
 	return LexiconRow{Class: class, Name: reference.Name, Usage: usage, Defined: &defined}
 }
 
-// listChanged returns the rows of the keys the patches changed, each with the
-// status and version of its key's latest change. A key they changed that no
-// row has, since the game no longer has it, gets a row with the blurb of that
-// change.
+// listChanged returns the rows of the keys the patches changed, each with its
+// latest change. A key the game no longer has gets a row with that change's
+// blurb.
 func listChanged(rows []LexiconRow, class Class, patches patch.Patches) []LexiconRow {
 	latest := map[string]LexiconRow{}
 	for version, change := range patches.Changes(class.Database) {

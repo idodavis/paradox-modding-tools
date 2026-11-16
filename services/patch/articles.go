@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/patch"
 	"paradox-modding-tools/services/app"
@@ -32,10 +33,9 @@ type noteFile struct {
 // each type doc.
 const discordFile = "discord.md"
 
-// noteFiles are the names the Co-ops have given the files of their notes.
-// Vic3 writes breaking changes and features each in a file of their own,
-// under a name that changed in 1.13, and EU5 writes them in discord.md,
-// where breakingTitle finds the breaking ones.
+// noteFiles are the names the Co-ops have given their note files. Vic3 writes
+// breaking changes and features in files of their own, under names that
+// changed in 1.13. EU5 writes them in discord.md.
 var noteFiles = []noteFile{
 	{File: "breaking_changes.md", Breaking: true},
 	{File: "changes_breaking.md", Breaking: true},
@@ -61,9 +61,8 @@ var (
 	// backtickKey is a key in backticks, as `STATE_GALICH`.
 	backtickKey = regexp.MustCompile("`([A-Za-z_][A-Za-z0-9_.:]*)`")
 
-	// breakingTitle is the heading the Co-ops write breaking changes under in
-	// discord.md where a version has no file of them: 8 of EU5's 18 versions
-	// and 5 of Vic3's 38. An article under it is breaking whatever its file.
+	// breakingTitle is the heading breaking changes sit under in discord.md,
+	// where a version has no file of them.
 	breakingTitle = regexp.MustCompile(`(?i)^breaking changes?$`)
 
 	// renameLine is a line of a list of renames, as "- `A` -> `B`".
@@ -73,20 +72,18 @@ var (
 // renamed is the line that opens a list of renames.
 const renamed = "**Renamed**"
 
-// readNotes reads the notes of a version's folder into articles, one for each
-// ## heading of a note file, and the key renames their Renamed lists give,
-// each once. A file in the folder under a name that is not in noteFiles is
-// read as plain notes, unless the Co-ops generate it, as
-// changes_script_docs.md. A heading that is only contents is no article. A
-// file that cannot be read is left out, and the error says so.
+// readNotes reads a version's notes into articles, one for each ## heading,
+// and the key renames they list. A file under a name not in noteFiles is read
+// as plain notes, unless its name starts with changes_. A file that cannot be
+// read is left out, and the error says so.
 func readNotes(source archive, digests, folder string, language *lang.Schema) ([]patch.Article, []patch.KeyRename, error) {
 	var skipped error
 	notes := listNoteFiles(source.listFolder(folder))
 	texts := make(map[string]string, len(notes))
 	for _, note := range notes {
-		text, err := source.read(folder + "/" + note.File)
+		content, err := source.read(folder + "/" + note.File)
 		skipped = errors.Join(skipped, err)
-		texts[note.File] = text
+		texts[note.File] = files.DecodeText(content).Text
 	}
 
 	typeFolders := map[string]string{}
@@ -152,11 +149,10 @@ var generatedTabs = map[string]string{
 	"changes_script_docs.md": "script", "changes_data_types.md": "data", "changes_files.md": "files",
 }
 
-// makeLinkRule returns the link rule of the notes in a version's folder of a
-// digest, given as owner/name. A link inside the article and a web address
-// stay as they are. A link to a file the Co-ops generate leads to the tab of
-// the version's page that shows the same, as data-tab. Any other link into
-// the digest leads to the file on GitHub.
+// makeLinkRule returns the rule for the links in a version's notes. A link
+// inside the article and a web address stay. A link to a file the Co-ops
+// generate opens the tab of the version's page that shows the same. Any
+// other link opens the file on GitHub.
 func makeLinkRule(digests, folder string) app.LinkRule {
 	return func(target string) []html.Attribute {
 		isWeb := strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://")
@@ -214,9 +210,9 @@ func splitSections(markdown string) []section {
 	return sections
 }
 
-// isContents reports whether a section's prose is contents: it has links into
-// the digest's own files, as a table of contents does, and every item of its
-// lists is one, whatever else it says. A section with nothing in it is too.
+// isContents reports whether a section is only a table of contents: it links
+// into the digest's own files, and every list item is such a link. An empty
+// section counts too.
 func isContents(prose []string) bool {
 	hasLink, hasText := false, false
 	for _, line := range prose {
@@ -287,9 +283,8 @@ func findFolder(doc string, language *lang.Schema) string {
 	return folders[0]
 }
 
-// listRenames returns the keys the Renamed lists of a section's prose give a
-// new key. A list is the lines "- `A` -> `B`" after a line that reads
-// **Renamed**, which a blank line does not end.
+// listRenames returns the renames a section lists: the lines "- `A` -> `B`"
+// after a line that reads **Renamed**. A blank line does not end the list.
 func listRenames(prose []string) []patch.KeyRename {
 	var renames []patch.KeyRename
 	isListed := false

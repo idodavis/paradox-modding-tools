@@ -1,7 +1,7 @@
 <!--
   Your mods: what the game's patches changed under each mod. Three panels say
   it for all the mods, a list ranks the mods worst first, and the mod chosen
-  shows its renamed names, the game files its copies replace and the notes
+  shows its renamed names, the game files it replaces and the notes
   that name what it holds.
 -->
 <script setup lang="ts">
@@ -11,13 +11,8 @@ import { groupBy, sortBy, sumBy, uniq } from "es-toolkit";
 
 import type { Finding } from "@services/health/models";
 import * as patch from "@services/patch/service";
-import type { Place } from "@services/workspace/models";
-import * as workspaceApi from "@services/workspace/service";
-import { compareWithGame } from "../../app/commands";
-import { toast } from "../../lib/feedback";
 import { describeCount, list, plural } from "../../lib/format";
 import { keys, notesQuery, reportQuery, stateQuery, tiesQuery, useLevels } from "../../queries";
-import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LevelMeter from "../../ui/LevelMeter.vue";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -25,11 +20,9 @@ import SourceLink from "../../ui/SourceLink.vue";
 import VerdictHead from "../../ui/VerdictHead.vue";
 import ImpactBlock from "./ImpactBlock.vue";
 
-/** The splitter's two panes, the mods and the chosen mod. */
 const PANES = [{ slot: "list", defaultSize: 34, minSize: 20, maxSize: 60 }, { slot: "detail" }];
 
 const workspace = useWorkspaceStore();
-const editor = useEditorStore();
 const cache = useQueryCache();
 const { data: state } = useQuery(stateQuery);
 const { findLevel } = useLevels();
@@ -111,7 +104,6 @@ const panels = computed(() => {
   const names = owned.value.flatMap((card) => [...card.renamed, ...card.removed]);
   const withNames = owned.value.filter((card) => card.renamed.length + card.removed.length);
   const withFiles = owned.value.filter((card) => card.files.length);
-  const mergeable = sumBy(owned.value, (card) => card.files.filter(canMerge).length);
   const breaking = sumBy(owned.value, (card) => card.breaking.length);
   const added = sumBy(owned.value, (card) => card.added.length);
   const versions = owned.value.flatMap((card) => [...card.breaking, ...card.added].map((tie) => tie.version));
@@ -139,17 +131,14 @@ const panels = computed(() => {
     },
     {
       icon: "i-lucide-file",
-      kicker: "Game files under your copies",
+      kicker: "Game files your mods replace",
       color: withFiles.length ? levelColor(withFiles[0]?.files[0]) : "success",
       verdict: describeVerdict(
         [{ count: sumBy(withFiles, (card) => card.files.length), word: "changed" }],
         "Nothing changed",
       ),
-      note: [
-        ...withFiles.map((card) => `${workspace.originName(card.mod.id)} ${describeCount(card.files.length)}`),
-        mergeable && `${describeCount(mergeable)} can merge`,
-      ]
-        .filter(Boolean)
+      note: withFiles
+        .map((card) => `${workspace.originName(card.mod.id)} ${describeCount(card.files.length)}`)
         .join(" · "),
     },
     {
@@ -179,27 +168,9 @@ const { mutate: markMadeFor } = useMutation({
   mutation: (modId: string) => patch.UpdateSupportedVersion(modId),
   onSuccess: refresh,
 });
-const { mutate: merge } = useMutation({
-  mutation: (place: Place) => workspaceApi.MergeGameFile(place.path),
-  onSuccess: (unfit, place) => {
-    editor.show(place);
-    toast?.add({
-      title: "Merged the game's changes",
-      description: unfit
-        ? `${plural(unfit, "change")} of the game's did not fit. Compare with the game's to see ${unfit === 1 ? "it" : "them"}.`
-        : "All of the game's changes fit.",
-    });
-  },
-});
 
-/** levelColor returns the color of a finding's level, or info with none. */
 function levelColor(finding: Finding | undefined): string {
   return findLevel(finding?.level)?.color ?? "info";
-}
-
-/** canMerge reports whether the game's changes to a file can be merged. */
-function canMerge(file: Finding): boolean {
-  return !!file.facts?.base;
 }
 
 /**
@@ -216,17 +187,15 @@ function describeVerdict(
     : [{ text: none }];
 }
 
-/** describeRange returns the versions a mod's patches run from and to. */
 function describeRange({ mod }: Card): string {
   return `${mod.start || (mod.judged && mod.descriptor.supportedVersion) || "no version"} → ${end.value}`;
 }
 
-/** describeEmpty says why a mod has nothing listed. */
 function describeEmpty({ mod }: Card): string {
   if (mod.start) return "Nothing the patches changed is in this mod.";
+  if (mod.judged) return `PMT knows no patch between ${mod.descriptor.supportedVersion} and ${end.value} yet.`;
   if (mod.external) return "This mod names no game version PMT can read, so PMT cannot count the patches for it.";
-  if (!mod.judged) return "Pick the version this mod is made for, and PMT shows what the patches changed under it.";
-  return `PMT knows no patch between ${mod.descriptor.supportedVersion} and ${end.value} yet.`;
+  return "Pick the version this mod is made for, and PMT shows what the patches changed under it.";
 }
 </script>
 
@@ -355,7 +324,14 @@ function describeEmpty({ mod }: Card): string {
               class="m-auto"
             />
             <div v-else :key="current.mod.id" class="@container min-h-0 flex-1 overflow-y-auto p-4">
-              <div class="grid grid-cols-1 items-start gap-3.5 @3xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+              <!-- The notes' column is there only for a mod that has notes. -->
+              <div
+                class="grid grid-cols-1 items-start gap-3.5"
+                :class="
+                  current.breaking.length + current.added.length > 0 &&
+                  '@3xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]'
+                "
+              >
                 <div class="flex min-w-0 flex-col gap-3.5">
                   <ImpactBlock
                     v-for="block in nameBlocks"
@@ -398,11 +374,10 @@ function describeEmpty({ mod }: Card): string {
                     v-slot="{ row: file }"
                     tone="warning"
                     icon="i-lucide-file"
-                    title="Game files your copies replace"
+                    title="Game files your mod replaces"
                     :rows="current.files"
-                    :aside="current.files.some(canMerge) ? `${current.files.filter(canMerge).length} can merge` : ''"
                   >
-                    <div class="flex h-7.5 items-center gap-2.5 border-t border-default ps-3 pe-2 text-12">
+                    <div class="flex h-7.5 items-center gap-2.5 border-t border-default px-3 text-12">
                       <span class="min-w-0 truncate font-mono text-highlighted" :title="file.name">{{
                         file.name
                       }}</span>
@@ -410,26 +385,6 @@ function describeEmpty({ mod }: Card): string {
                       <span class="font-mono text-11 whitespace-nowrap text-warning">
                         {{ file.facts?.status }} {{ file.facts?.version }}
                       </span>
-                      <template v-if="file.sites?.[0]">
-                        <UButton
-                          v-if="canMerge(file) && !current.mod.external"
-                          label="Merge"
-                          icon="i-lucide-git-merge"
-                          color="success"
-                          variant="ghost"
-                          size="xs"
-                          aria-label="Merge the game's changes into this copy"
-                          @click="merge(file.sites[0].place)"
-                        />
-                        <UButton
-                          label="Compare"
-                          icon="i-lucide-diff"
-                          variant="ghost"
-                          size="xs"
-                          aria-label="Compare this copy with the game's"
-                          @click="compareWithGame(file.sites[0].place)"
-                        />
-                      </template>
                     </div>
                   </ImpactBlock>
                 </div>

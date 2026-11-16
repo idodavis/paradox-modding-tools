@@ -221,9 +221,7 @@ type Report struct {
 	Compatibility Group `json:"compatibility"`
 
 	// Patch is the findings of the patch question: what the game's patches
-	// changed under the mods, which is each mod's made-for version, its
-	// removed or renamed names and its stale copies. They are in no mod's
-	// group.
+	// changed under the mods. They are in no mod's group.
 	Patch Group `json:"patch"`
 
 	// Mods is in load order.
@@ -500,10 +498,9 @@ func (s *Service) ListReaders(key string) ([]lsp.Site, error) {
 }
 
 // WriteScaffold writes the localization keys a mod lacks in a language,
-// with the base text as a placeholder, and returns the files it wrote. Each
-// key goes at the end of the matching file, which gets its header first if
-// it is missing or empty. It returns an error if the mod or the language is
-// not valid, or a file cannot be read or written.
+// with the base text as a placeholder, and returns the files it wrote. It
+// returns an error if the mod or the language is not valid, or a file cannot
+// be read or written.
 func (s *Service) WriteScaffold(modID, language string) ([]string, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {

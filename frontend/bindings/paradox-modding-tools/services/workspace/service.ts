@@ -240,26 +240,6 @@ export function Locate(path: string): $CancellablePromise<$models.Place> {
 }
 
 /**
- * MergeGameFile applies the game's changes to a game file to the mod's file
- * that replaces it, and returns how many of the changes did not fit. The
- * changes are the lines that differ between the kept copy of the game file
- * and the game's file now, each with the unchanged lines around it that make
- * it unique in the copy. A change fits where its copy's lines are in the mod's
- * file once, wherever that is, and one the mod made already fits as it is.
- * There is no looser match: a change whose lines are in the mod's file twice,
- * or that the mod edited, is left out and counted.
- * 
- * It starts the file's review before it writes, so that the review shows each
- * change to keep or undo. It writes nothing, and starts no review, if no change
- * is made. It returns an error, and writes nothing, if no workspace is open,
- * the path is not a mod's file that replaces a game file, there is no kept copy
- * to merge from, a file is binary, or the editor holds the mod's file unsaved.
- */
-export function MergeGameFile(path: string): $CancellablePromise<number> {
-    return $Call.ByID(1086771199, path);
-}
-
-/**
  * Open opens a workspace in the background, closing the open one first, and
  * sends workspace:opened or workspace:failed. The lock is held until the open
  * ends, so every call that asks for the session waits for it.
@@ -369,27 +349,23 @@ export function State(): $CancellablePromise<$models.State> {
 }
 
 /**
- * TrackEdits starts the review of a file that an agent edits or a merge of the
- * game's changes writes, given each of the agent's edits to it as hunks, the
- * earliest edit first, and none for a merge. The baseline is the file's text on
- * disk with the edits undone, the latest edit and its last hunk first. A file
- * the agent created that is not on disk yet has the baseline "", and its
- * edits are not read. A file that has a review already is left as it is. A
- * baseline equal to the file's text starts the review as well, since the
- * agent's write follows. It returns an error, and starts no review, if no
- * workspace is open, the file is outside the workspace's mods, it cannot be
- * read, an edit has no hunk, or a hunk's lines are not in the file once.
+ * TrackEdits starts the review of a file an agent edits, given each of the
+ * agent's edits as hunks, earliest first. The baseline is the file's text on
+ * disk with the edits undone, or "" for a file the agent created that is not
+ * on disk yet. A file that has a review already is left as it is. It returns
+ * an error, and starts no review, if no workspace is open, the file is
+ * outside the workspace's mods or cannot be read, an edit has no hunk, or a
+ * hunk's lines are not in the file once.
  */
 export function TrackEdits(path: string, edits: ($models.Hunk[] | null)[] | null, isNew: boolean): $CancellablePromise<void> {
     return $Call.ByID(757513741, path, edits, isNew);
 }
 
 /**
- * UndoFile writes a file's baseline in the file's encoding, or moves a file
- * the agent created to PMT's trash, and ends its review. It returns an error,
- * and changes nothing, if no workspace is open, the file has no review, is
- * outside the workspace's mods or cannot be read, or has unsaved text in the
- * editor.
+ * UndoFile writes a file's baseline, or moves a file the agent created to
+ * PMT's trash, and ends its review. It returns an error, and changes nothing,
+ * if no workspace is open, the file has no review or cannot be read, or the
+ * editor holds unsaved text of it.
  */
 export function UndoFile(path: string): $CancellablePromise<void> {
     return $Call.ByID(1632559861, path);

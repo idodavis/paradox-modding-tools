@@ -150,9 +150,7 @@ and Health's rows both read the level from it. `SplitMessage` fills a template a
   problem. A name is removed where the patch's `DumpChanges` or, for the two codes that name a definition or a text,
   its `DefinitionChanges` list it removed. The codes that a patch finding replaces are the table `patchable`. A key
   that a patch only changed raises nothing. A mod file whose game file a patch of the range lists
-  (`Session.FindGameChange`) has one `stale-copy` at its start, with the newest patch that lists the file. Its fact
-  `base` is the version of the kept copy the change can be merged from, and is left out where there is none or the
-  game added or removed the file, so the Patch Center offers the merge only where it can run. The lookups are
+  (`Session.FindGameChange`) has one `stale-copy` at its start, with the newest patch that lists the file. The lookups are
   [patch](../../internal/patch/README.md)'s (`FindRename`, `FindRemoval`, `FindFile`, `Changes`); lsp only picks the
   code. A picture or other file
   the editor does not judge has none. New patches store a new load order, which drops the kept problems of every file.

@@ -19,10 +19,8 @@ import * as patch$0 from "../../internal/patch/models.js";
 import * as $models from "./models.js";
 
 /**
- * FindPatch returns the patch of a version. It returns the zero patch, with no
- * version, for a version the workspace's patches do not hold, which is a
- * version whose changes are not known yet. It returns an error if no workspace
- * is open.
+ * FindPatch returns the patch of a version, or the zero patch for a version
+ * whose changes are not known. It returns an error if no workspace is open.
  */
 export function FindPatch(version: string): $CancellablePromise<patch$0.Patch> {
     return $Call.ByID(868442259, version);
@@ -30,12 +28,9 @@ export function FindPatch(version: string): $CancellablePromise<patch$0.Patch> {
 
 /**
  * ListPatches returns the versions the workspace's patches hold, and the
- * versions of the wiki's notes that no patch takes, newest first. A patch is
- * listed with the note that holds its version, as wiki.ResolveNote says. Until
- * the wiki's listing
- * is fetched, it lists the patches' versions, which have none of the wiki's
- * fields. It returns an error if no workspace is open or the wiki fails
- * otherwise.
+ * versions of the wiki's notes that no patch covers, newest first. Until the
+ * wiki's listing is fetched, the rows have none of the wiki's fields. It
+ * returns an error if no workspace is open or the wiki fails.
  */
 export function ListPatches(): $CancellablePromise<$models.Note[] | null> {
     return $Call.ByID(3742764866);
@@ -43,34 +38,29 @@ export function ListPatches(): $CancellablePromise<$models.Note[] | null> {
 
 /**
  * ListTies returns the articles that touch each mod of the open workspace,
- * among the patches after the version the mod is made for. The mods are in
- * load order, and a mod's ties oldest version first. A mod with no version to
- * count from has none, and a tie is made only by an exact link or key, never
- * by a likeness of words. It returns an error if no workspace is open.
+ * among the patches of the mod's range. The mods are in load order, and a
+ * mod's ties oldest version first. A tie needs an exact link or key. It
+ * returns an error if no workspace is open.
  */
 export function ListTies(): $CancellablePromise<$models.Tie[] | null> {
     return $Call.ByID(1089165259);
 }
 
 /**
- * Refresh reads the digests of the open workspace's game again if its
- * repository has a new commit. If it saved new patches, the session loads
- * them, and it sends patch:updated then and when it fails. It does nothing
- * for a game that has no digests, and asks GitHub no sooner than recheck after
- * it last did. It returns an error if no workspace is open or the fetch fails,
- * and the files saved before stay. Where a part of the digest could not be
- * read, it saves the rest and returns what it left out.
+ * Refresh reads the digests of the open workspace's game again if their
+ * repository has a new commit. The session loads new patches, and
+ * patch:updated is sent when it saved some or failed. Where part of the
+ * digest could not be read, it saves the rest and returns what it left out.
  */
 export function Refresh(): $CancellablePromise<void> {
     return $Call.ByID(4129004967);
 }
 
 /**
- * UpdateSupportedVersion makes a mod of the user's own made for the install's
- * release, as 1.15.* for 1.15.1. It writes that version into the mod's
- * descriptor and changes nothing else the descriptor says. It returns an
- * error if no workspace is open, the mod is not in it or is someone else's,
- * or the install's version names no release.
+ * UpdateSupportedVersion writes the install's release, as 1.15.* for 1.15.1,
+ * into the descriptor of one of the user's own mods. It returns an error if
+ * no workspace is open, the mod is not the user's, or the install's version
+ * names no release.
  */
 export function UpdateSupportedVersion(modID: string): $CancellablePromise<void> {
     return $Call.ByID(2461583147, modID);

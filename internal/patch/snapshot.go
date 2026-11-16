@@ -1,5 +1,5 @@
-// snapshot.go keeps what PMT needs of each version of a game to compare the
-// next version with, and makes the patch of a version from two of them.
+// snapshot.go keeps what PMT needs of each game version to compare the next
+// one with.
 
 package patch
 
@@ -16,30 +16,26 @@ import (
 	"paradox-modding-tools/internal/schema"
 )
 
-// Snapshot is what PMT keeps of one version of a game, for the next version
-// to be compared with.
+// Snapshot is what PMT keeps of one game version to compare the next with.
 type Snapshot struct {
-	// Dumps are the install's own dumps of the version. They are nil where
-	// the dumps were older than the install, so of a version not known.
+	// Dumps are the install's own dumps, nil where they were older than the
+	// install.
 	Dumps *schema.Dumps
 
-	// Defined are the names the game's files define, by database, and Hashes
-	// the hash of each game file the index scan read, by its path from the
-	// game's folder.
+	// Defined are the names the game's files define, by database. Hashes are
+	// the game files' hashes, by path from the game's folder.
 	Defined map[string][]string
 	Hashes  map[string]string
 }
 
-// The folder of the snapshots in a folder of patches, and what a snapshot's
-// name ends in after its version.
+// The snapshots' folder and file ending.
 const (
 	snapshotsDir = "snapshots"
 	snapshotExt  = ".gob"
 )
 
-// TakeSnapshot returns the snapshot of the version an install's index was
-// scanned at, with the install's own dumps of it, nil for none. A file the
-// scan did not read has no hash, such as a picture.
+// TakeSnapshot returns the snapshot of an install as its index was scanned.
+// A file the scan did not read, such as a picture, has no hash.
 func TakeSnapshot(dumps *schema.Dumps, install *index.Index) Snapshot {
 	hashes := map[string]string{}
 	for position, file := range install.Files {
@@ -51,11 +47,9 @@ func TakeSnapshot(dumps *schema.Dumps, install *index.Index) Snapshot {
 	return Snapshot{Dumps: dumps, Defined: install.ListDefinedKeys(), Hashes: hashes}
 }
 
-// CompareSnapshots returns the patch of a version that PMT compared itself:
-// what the version changed against the snapshot of its base. The dumps are
-// compared where both snapshots have them. An old snapshot that kept no
-// names, as gen has of a version it never saw installed, gives the dumps'
-// changes alone.
+// CompareSnapshots returns PMT's own patch of a version: what changed against
+// the snapshot of its base. An old snapshot with no names, as gen makes of a
+// version it never saw installed, gives the dumps' changes alone.
 func CompareSnapshots(base, version string, old, current Snapshot, language *lang.Schema) Patch {
 	patch := Patch{
 		Version: version, Base: base, Local: true,
@@ -76,16 +70,13 @@ func CompareSnapshots(base, version string, old, current Snapshot, language *lan
 	return patch
 }
 
-// KeepSnapshot keeps the snapshot of an install's version in the game's
-// folder of patches. First it compares it with the snapshot of the newest
-// older version, if one is kept, and saves the result as PMT's own patch of
-// the install's version. A snapshot of a newer version is compared with
-// nothing, since another install of the game may be on that version.
+// KeepSnapshot saves the snapshot of an install's version. If an older
+// snapshot is kept, it first saves the comparison of the two as PMT's own
+// patch.
 //
-// The older snapshots stay until a snapshot with the install's own dumps is
-// kept, so that dumps the user makes later with script_docs can still be
-// compared. Then the snapshots of versions that no install is on, which the
-// given versions are, are deleted.
+// Older snapshots stay until one with the install's own dumps is kept, so
+// that dumps made later with script_docs can still be compared. Then the
+// snapshots of versions no install is on are deleted.
 func KeepSnapshot(dir, version string, current Snapshot, installs []string, language *lang.Schema) error {
 	folder := filepath.Join(dir, snapshotsDir)
 	others := slices.DeleteFunc(listVersions(folder, snapshotExt), func(other string) bool { return other == version })
@@ -113,9 +104,8 @@ func KeepSnapshot(dir, version string, current Snapshot, installs []string, lang
 	return nil
 }
 
-// listVersions returns the game versions a folder keeps something of. Each of
-// the folder's entries is named for its version, before the given ending. A
-// folder that is missing keeps none.
+// listVersions returns the versions a folder holds. Each entry is named for
+// its version, before the given ending.
 func listVersions(dir, ending string) []string {
 	entries, _ := os.ReadDir(dir)
 	versions := make([]string, len(entries))
@@ -126,8 +116,8 @@ func listVersions(dir, ending string) []string {
 	return versions
 }
 
-// findLatest returns the latest of the versions that is not after a limit. It
-// returns false if the limit is "" or no version is at or before it.
+// findLatest returns the latest version at or before a limit. It returns
+// false if there is none or the limit is "".
 func findLatest(versions []string, limit string) (string, bool) {
 	older := slices.DeleteFunc(slices.Clone(versions), func(version string) bool {
 		return game.CompareVersions(version, limit) > 0

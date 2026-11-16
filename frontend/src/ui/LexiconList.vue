@@ -22,7 +22,6 @@ const {
   start = "",
   end = "",
 } = defineProps<{
-  /** The classes the tabs offer. */
   classes: Class[];
   /**
    * The versions the list is of, so that it holds only the rows they changed.
@@ -38,7 +37,7 @@ const workspace = useWorkspaceStore();
 const open = shallowRef("");
 watch(kind, () => (open.value = ""));
 
-const { data: rows } = useQuery(() => ({
+const { data: rows, isPending } = useQuery(() => ({
   ...lexiconQuery({ kind: kind.value, start, end }),
   enabled: workspace.isOpen(),
 }));
@@ -62,7 +61,6 @@ const letters = computed(() =>
 );
 const topLetter = shallowRef("");
 
-/** initial returns the given text's first letter in upper case. */
 function initial(text: string): string {
   return text.charAt(0).toUpperCase();
 }
@@ -83,7 +81,6 @@ function markLetter(): void {
   topLetter.value = initial(visible.value[first]?.name ?? "");
 }
 
-/** jump marks the given letter and scrolls to the first row it begins. */
 function jump(entry: LetterStart): void {
   topLetter.value = entry.letter;
   list.value?.virtualizer?.scrollToIndex(entry.index, { align: "start" });
@@ -183,11 +180,11 @@ function estimateSize(index: number): number {
         </button>
       </nav>
     </div>
-    <p v-else-if="!rows" class="flex-1 px-3.5 py-3 text-12 text-dimmed">Reading the game's dumps…</p>
+    <p v-else-if="isPending" class="flex-1 px-3.5 py-3 text-12 text-dimmed">Reading the game's dumps…</p>
     <UEmpty
       v-else
       icon="i-lucide-book-a"
-      :title="start && !rows.length ? `No ${label} changed` : 'Nothing in the lexicon matches'"
+      :title="start && !rows?.length ? `No ${label} changed` : 'Nothing in the lexicon matches'"
       size="sm"
       class="m-auto"
     />

@@ -1,18 +1,13 @@
 // Package index records what a scan found in the files of an install or of
 // a workspace's mods: every definition, reference and localization message,
 // with lookups by name. It decides which definition the game keeps when
-// several compete and why the game does not read a copy, lists what fires
-// what, and loads an install's index from its cache. Which file the game
-// reads at a path is decided by the mounts of package files, which an index
-// embeds. It keeps no source, and of a statement only what it defines and
-// what it refers to: anything else is read by walking the file again.
+// several compete, lists what fires what, and loads an install's index from
+// its cache. It keeps no source: anything beyond what a statement defines
+// and refers to is read by walking the file again.
 //
 // An install's index is scanned once and cached. A mods' index stands on it:
-// its mounts are the mods' roots mounted on the install's, and it starts with
-// the install's occurrences and copies of its tables, so a site and an
-// ordinal mean the same in both. It scans and posts only the mods' own files.
-// A lookup reads the install's postings first and the mods' after them, so a
-// result is in load order.
+// it starts with the install's occurrences and tables, scans only the mods'
+// own files, and answers a lookup in load order.
 //
 // # The scan
 //
@@ -105,12 +100,9 @@
 //
 // A file that cannot be read, or whose format holds no names, gets no
 // occurrences, and the scan goes on. ScanMods returns an error only for a
-// root it cannot walk. ScanFiles refuses a file of the install, and then
-// changes nothing. A file deleted since the scan keeps its position, which a
-// new file at the same path takes again. LoadIndex returns false for a cache
-// that is missing, does not decode or holds no mounts. A lookup in a database
-// the schema does not have finds nothing, and an entry mode no game uses does
-// nothing.
+// root it cannot walk. ScanFiles refuses a file of the install. LoadIndex
+// returns false for a cache that is missing or does not decode. A lookup in
+// a database the schema does not have finds nothing.
 package index
 
 import (
@@ -299,12 +291,9 @@ func (i *Index) Narrow(origins []string) *Index {
 }
 
 // Reorder returns a copy of a mods' index with the mods in another load
-// order, given as their ids, without reading any file again. Which file the
-// game reads and which copy wins are worked out anew. A mod left out of the
-// order keeps no file.
-//
-// The references inside a call of a scripted definition stay as the scan
-// typed them, by the copy the scan's own order kept.
+// order, given as their ids, without reading any file again. A mod left out
+// of the order keeps no file. The references inside a call of a scripted
+// definition stay as the scan typed them.
 func (i *Index) Reorder(origins []string) *Index {
 	installFiles, installRoots := int(i.countInstallFiles()), len(i.install.Roots)
 	positions := map[string][]int32{}

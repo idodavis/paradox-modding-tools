@@ -50,9 +50,9 @@ export function Refresh(): $CancellablePromise<void> {
 
 /**
  * SearchPages returns the modding pages that hold a text, title matches first.
- * A page that is not cached is searched by its title alone. It returns nil,
- * with no error, until a refresh has fetched the listing, and an error if no
- * workspace is open.
+ * A page that is not cached is searched by its title alone. It returns nil
+ * until a refresh has fetched the listing, and an error if no workspace is
+ * open.
  */
 export function SearchPages(term: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(217338472, term);

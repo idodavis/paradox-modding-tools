@@ -12,6 +12,10 @@
 //   - Where the install's dump files are missing, or older than the install's
 //     last update, the dumps of the same version that a game's digest holds
 //     are used in their place, and the backup fills what they lack.
+//   - The games write their dumps as UTF-8. An entry's first line that is not
+//     UTF-8 is read as Windows-1252. Any other line that is not UTF-8 is no
+//     text and is left out: Victoria 3 writes what its memory held where a
+//     scripted list has no description.
 //   - A dump correction replaces the scopes of a command whose dump entry
 //     contradicts its own sentence about the command.
 //   - The effects, the triggers, the links and the scope types are four
@@ -109,12 +113,9 @@
 //
 // Build returns an error if a dump file's time or a doc cannot be read, or
 // if no script file of the listing can be parsed. A dump file that cannot
-// be read as text, such as one larger than files.TextLimit or one in
-// UTF-16, is treated as missing. A script file that cannot be parsed is
-// left out of the count. A file with no sentence and no comment, or a .txt
-// file with more lines of script than of sentences, is data and no doc, and
-// is skipped. LoadShipped returns false for a game with no backup, and for
-// a backup that cannot be decoded.
+// be read as text is treated as missing. A script file that cannot be parsed
+// is left out of the count. A file with no sentence and no comment, or a
+// .txt file with more script than sentences, is data and no doc.
 package schema
 
 import (
@@ -135,14 +136,12 @@ type builder struct {
 }
 
 // Build returns the schema of one game version from its dumps, its docs and
-// the game's own files. DLC files are left out of the listing, since the
-// game's own folders list them too.
+// the game's own files.
 //
-// The version is the install's, "" where it is not known. The digest is the
-// dumps of this version that a game's digest holds, nil for none. The schema
-// takes them in place of the install's own dumps where those are missing or
-// older than the install. Build also returns the install's own dumps when the
-// schema used them and they are not older than the install, else nil.
+// The digest is a game digest's dumps of this version, nil for none. The
+// schema takes them where the install's own dumps are missing or older than
+// the install. Build also returns the install's own dumps when the schema
+// used them, else nil.
 func Build(
 	dialect *lang.Dialect, dumpDirs []string, digest *Dumps, installPath, version string, listing []files.File,
 	parse func(path string) (*jomini.Tree, error),
@@ -267,8 +266,7 @@ var fireContents = []lang.Contents{
 
 // buildDatabases makes a database for each folder and nesting, for what GUI
 // files declare, and for the events' namespaces. It then records which
-// database plays each role the schema names, such as the events' or the
-// messages', only where exactly one does.
+// database plays each role the schema names, where exactly one does.
 func (b *builder) buildDatabases(dialect *lang.Dialect, folders []string) {
 	for _, folder := range folders {
 		declaration, _ := dialect.FindDeclaration(folder)
@@ -330,10 +328,9 @@ func (b *builder) buildDatabases(dialect *lang.Dialect, folders []string) {
 	b.listCallees()
 }
 
-// buildDatabase adds a database from its declaration, keeping only the rows
-// that hold for the game, unless the database exists. It records the
-// database under the words of its name, so "government type" finds
-// governments, unless its definitions stand for scopes.
+// buildDatabase adds a database from its declaration, unless it exists. It
+// records the database under the words of its name, so "government type"
+// finds governments, unless its definitions stand for scopes.
 func (b *builder) buildDatabase(dialect *lang.Dialect, label string, declaration lang.Declaration) {
 	if b.Databases[label] != nil {
 		return

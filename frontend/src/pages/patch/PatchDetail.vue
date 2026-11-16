@@ -26,7 +26,6 @@ const {
   article = "",
 } = defineProps<{
   version: string;
-  /** Text to find in what the tab shows. */
   find?: string;
   /** The tab shown. Without one, the digest, else the wiki's notes. */
   tab?: string;
@@ -42,7 +41,6 @@ const GROUPS: { title: string; has: (article: Article) => boolean }[] = [
 ];
 /** The lexicon class of the functions. Script changes lists the others. */
 const FUNCTIONS = "function";
-/** How many mods a line of them shows before it counts the rest. */
 const MODS_SHOWN = 3;
 
 const router = useRouter();
@@ -121,7 +119,6 @@ const fileList = useTemplateRef("fileList");
 /** The game file the find is at, by its path. */
 const found = shallowRef("");
 
-/** showFile brings one of the find's hits among the game files into view. */
 function showFile(index: number): void {
   found.value = gameFiles.value[index]?.rel ?? "";
   fileList.value?.virtualizer?.scrollToIndex(index, { align: "center" });

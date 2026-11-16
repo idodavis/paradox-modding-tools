@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
@@ -138,12 +139,13 @@ func IsDumpFile(file string) bool {
 	return strings.HasSuffix(file, ".log") || strings.HasPrefix(file, "data_types_") && strings.HasSuffix(file, ".txt")
 }
 
-// ParseDumps reads the texts of the dump files, by file name, into dumps. The
-// files are read in name order, so the same texts always give the same dumps.
-func ParseDumps(texts map[string]string) *Dumps {
+// ParseDumps reads the dump files, each given by file name as the bytes the
+// game wrote, into dumps. The files are read in name order, so the same files
+// always give the same dumps.
+func ParseDumps(contents map[string][]byte) *Dumps {
 	dumps := NewDumps()
-	for _, file := range slices.Sorted(maps.Keys(texts)) {
-		dumps.ParseFile(file, texts[file])
+	for _, file := range slices.Sorted(maps.Keys(contents)) {
+		dumps.ParseFile(file, contents[file])
 	}
 
 	return dumps
@@ -169,7 +171,7 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 			continue
 		}
 
-		text, err := files.ReadText(path)
+		content, err := files.ReadContent(path)
 		if err != nil {
 			continue
 		}
@@ -178,7 +180,7 @@ func ReadDumps(dirs []string) (*Dumps, error) {
 			dumps.OldestAt = fileAt
 		}
 
-		dumps.ParseFile(path, text.Text)
+		dumps.ParseFile(path, content)
 		if dir := filepath.Dir(path); !slices.Contains(dumps.Folders, dir) {
 			dumps.Folders = append(dumps.Folders, dir)
 		}
@@ -206,10 +208,16 @@ func findDump(dirs []string, file string) (string, time.Time, error) {
 	return newest, newestAt, nil
 }
 
-// ParseFile reads the text of one dump file into the dumps. The file's name
-// says which dump it is, and the entries it lists take the given path as
-// their place. A name that is no dump file's is read as a data types file.
-func (d *Dumps) ParseFile(path, text string) {
+// ParseFile reads one dump file, given as the bytes the game wrote, into the
+// dumps. The file's name says which dump it is, and the entries it lists take
+// the given path as their place. A name that is no dump file's is read as a
+// data types file.
+//
+// The games write their dumps as UTF-8, so the bytes are read as they are,
+// and parseSections and parseCommands say what becomes of a line that is not.
+func (d *Dumps) ParseFile(path string, content []byte) {
+	text := string(content)
+
 	switch filepath.Base(path) {
 	case "effects.log":
 		d.parseCommands(path, text, declaredEffect)
@@ -251,6 +259,11 @@ func (d *Dumps) parseCommands(path, text, declared string) {
 			number += strings.Count(text[offset:offset+start], "\n")
 			offset += start
 		}
+
+		// An entry's first line is text even where it is not UTF-8: Crusader
+		// Kings III writes a dash in create_divergent_culture's as
+		// Windows-1252.
+		head = files.DecodeText([]byte(head)).Text
 
 		// A name with no description on its line ends in " - " and the line's
 		// trailing space is gone, as in "every_activity_type - ".
@@ -299,6 +312,11 @@ var (
 // parseSections yields each entry of a dump file: its first line and the
 // lines after it. Where the file starts with a title of its own, the lines
 // before the first entry are skipped.
+//
+// A line after the first that is not UTF-8 is left out. Victoria 3 writes
+// whatever its memory held where a scripted list has no description, as under
+// "## every_country_in_asia", and every such line found is not UTF-8. One that
+// happens to be UTF-8 reads like a description and stays.
 func parseSections(text string, hasTitle bool) iter.Seq2[string, []string] {
 	return func(yield func(string, []string) bool) {
 		head, body, isOpen := "", []string(nil), !hasTitle
@@ -320,6 +338,8 @@ func parseSections(text string, hasTitle bool) iter.Seq2[string, []string] {
 
 			case head == "":
 				head = strings.TrimSpace(line)
+
+			case !utf8.ValidString(line):
 
 			default:
 				body = append(body, line)

@@ -361,12 +361,10 @@ func ReadInstallUpdatedAt(installPath string) time.Time {
 	return time.Time{}
 }
 
-// CompareVersions orders two versions part by part, as cmp.Compare does, so
-// 1.20.1.2 comes after 1.20.1. A missing part counts as 0, and a part that is
-// not a number, as the X of 1.20.X, comes before any number. An open beta,
-// a version that ends in -openbeta, is ordered by its number and comes before
-// the release of the same number: 1.14.4-openbeta is after 1.14.3 and before
-// 1.14.4.
+// CompareVersions orders two versions part by part, so 1.20.1.2 comes after
+// 1.20.1. A missing part counts as 0, and a part that is not a number, as the
+// X of 1.20.X, comes before any number. An open beta comes before the release
+// of the same number: 1.14.4-openbeta is after 1.14.3 and before 1.14.4.
 func CompareVersions(first, second string) int {
 	firstParts := strings.Split(strings.TrimSuffix(first, betaSuffix), ".")
 	secondParts := strings.Split(strings.TrimSuffix(second, betaSuffix), ".")
@@ -421,10 +419,9 @@ func IsBeta(version string) bool {
 	return strings.HasSuffix(version, betaSuffix)
 }
 
-// IsInstalled reports whether a version is the one an install is on. A version
-// of an open beta is its number and -openbeta, which is how the Modding
-// Co-ops' digests name it, and the install is on it where its own version is
-// that number.
+// IsInstalled reports whether a version is the one an install is on. An open
+// beta is named by its number and -openbeta, and the install is on it where
+// its own version is that number.
 func IsInstalled(version, installVersion string) bool {
 	return version == installVersion || IsBeta(version) && strings.HasPrefix(version, installVersion+"-")
 }

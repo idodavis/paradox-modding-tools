@@ -113,10 +113,9 @@ export function RemoveIgnoredPair(first: string, second: string): $CancellablePr
 
 /**
  * WriteScaffold writes the localization keys a mod lacks in a language,
- * with the base text as a placeholder, and returns the files it wrote. Each
- * key goes at the end of the matching file, which gets its header first if
- * it is missing or empty. It returns an error if the mod or the language is
- * not valid, or a file cannot be read or written.
+ * with the base text as a placeholder, and returns the files it wrote. It
+ * returns an error if the mod or the language is not valid, or a file cannot
+ * be read or written.
  */
 export function WriteScaffold(modID: string, language: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(1632703803, modID, language);

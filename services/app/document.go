@@ -17,10 +17,9 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// LinkRule says what a document keeps of a link, given the link's target as
-// its source wrote it: the link's attributes, which are its href and the data
-// attributes that tell the page where it leads. A link the page cannot follow
-// gets none.
+// LinkRule returns the attributes a document keeps of a link, given the
+// link's target as its source wrote it. A link the page cannot follow gets
+// none.
 type LinkRule func(target string) []html.Attribute
 
 // linkTarget is the attribute that holds where a link leads.

@@ -97,17 +97,10 @@ func Compare[K comparable, V any](old, current map[K]V, differs func(earlier, la
 // version to the current one, sorted by database and key. A changed key lists
 // the facts that differ. It returns nothing if either dumps are nil.
 //
-// A key that fits a star key of the given schema, such as
-// every_country_in_*, is the star key, so the generated keys that one version
-// lists and another does not are no change. A key two entries share keeps the
-// first. On_actions are left out where the schema has no on_actions database.
-//
-// A kind of entry the two dumps cannot be compared in is left out, since its
-// changes would be false. That is a kind one version lists none of: the
-// oldest dumps have no data types, and their scope types are a plain list the
-// reader does not take. It is also the modifiers where one version writes
-// plain names such as beja_opinion and the other templates such as
-// $CULTURE$_opinion.
+// A key that fits a star key of the schema, such as every_country_in_*, is
+// compared as the star key, so generated keys are no change. A kind of entry
+// that one version lists none of, or that the two write differently, as
+// modifiers by name and by template, is left out: its changes would be false.
 func CompareDumps(old, current *Dumps, language *lang.Schema) []KeyChange {
 	if old == nil || current == nil {
 		return nil
@@ -141,9 +134,8 @@ func CompareDumps(old, current *Dumps, language *lang.Schema) []KeyChange {
 	return sortChanges(changes)
 }
 
-// CompareKeys returns the keys the current version has in a database and the
-// old one does not as added, and the keys only the old one has as removed,
-// sorted by database and key. The keys are those ListDefinedKeys gives.
+// CompareKeys returns the keys only the current version has as added, and the
+// keys only the old one has as removed, sorted by database and key.
 func CompareKeys(old, current map[string][]string) []KeyChange {
 	never := func(_, _ bool) bool { return false }
 
@@ -201,10 +193,8 @@ func listDifferences(earlier, latest entry) []string {
 	return labels
 }
 
-// listEntries returns every key of the dumps with its entry: the effects,
-// triggers and links, the scope types, the modifiers, the on_actions and the
-// functions of the data types. A key that fits a star key has no facts, so
-// it cannot change.
+// listEntries returns every key of the dumps with its entry. A key that fits
+// a star key has no facts, so it cannot change.
 func listEntries(dumps *Dumps, language *lang.Schema) map[entryKey]entry {
 	entries := map[entryKey]entry{}
 	for _, command := range dumps.Commands {

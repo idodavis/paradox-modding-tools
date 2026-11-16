@@ -10,7 +10,7 @@ the package doc.
 
 **Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),
 [index](../../internal/index/README.md), [lang](../../internal/lang/README.md),
-[schema](../../internal/schema/README.md), [steam](../steam/README.md), [wiki](../wiki/README.md),
+[patch](../../internal/patch/README.md), [schema](../../internal/schema/README.md), [wiki](../wiki/README.md),
 [workspace](../workspace/README.md)
 
 ## The refresh
@@ -18,7 +18,7 @@ the package doc.
 ```mermaid
 flowchart TD
   opened["workspace:opened"] --> refresh["Refresh, in the background"]
-  refresh --> asked{"Asked less than 6 hours ago?"}
+  refresh --> asked{"Asked less than a day ago?"}
   asked -->|yes| done
   asked -->|no| head["Ask GitHub for the newest commit"]
   head --> current{"Same commit, and the install's dumps kept?"}
@@ -31,9 +31,9 @@ flowchart TD
 ```
 
 `Refresh` runs in the background each time a workspace opens, and does nothing for CK3, which has no Co-op. While the
-digest holds no patch of the installed version, it runs again every `recheck`, 6 hours, until the workspace closes or the
+digest holds no patch of the installed version, it runs again every `recheck`, a day, until the workspace closes or the
 digest has the patch. It never asks GitHub less than `recheck` after it last did for the game: the time of `sha.txt`
-is the time of the last ask, so a workspace opened again within 6 hours asks nothing. One request asks
+is the time of the last ask, so a workspace opened again within a day asks nothing. One request asks
 GitHub for the newest commit. If it is the one the folder of patches was read from, and the folder holds the dumps
 of each version an install is on that the digest has, nothing more is fetched. Otherwise the repository is downloaded as
 one zip and read in memory, version by version, oldest first. The zip is never written to disk.
@@ -84,8 +84,9 @@ reads it, in lower case.
 a version whose changes are not known yet.
 
 `UpdateSupportedVersion` writes the install's release, as `1.15.*` for `1.15.1`, which `workspace.ToSupportedVersion`
-makes, as the supported version of a mod of the user's own. The write goes through `steam.WriteListing`, which keeps
-the descriptor and the Workshop version tag the same. An external mod is refused: it is never patched.
+makes, as the supported version of a mod of the user's own. It writes the mod's descriptor (`Session.WriteDescriptor`)
+and nothing else, so the Workshop's version tag changes when the listing is next saved in Publish. An external mod is
+refused: it is never patched.
 
 ## Files
 

@@ -55,16 +55,13 @@ const unsavedText = "it has unsaved text in the editor: save or revert it first"
 // file's line.
 const tabSpaces = "  "
 
-// TrackEdits starts the review of a file that an agent edits or a merge of the
-// game's changes writes, given each of the agent's edits to it as hunks, the
-// earliest edit first, and none for a merge. The baseline is the file's text on
-// disk with the edits undone, the latest edit and its last hunk first. A file
-// the agent created that is not on disk yet has the baseline "", and its
-// edits are not read. A file that has a review already is left as it is. A
-// baseline equal to the file's text starts the review as well, since the
-// agent's write follows. It returns an error, and starts no review, if no
-// workspace is open, the file is outside the workspace's mods, it cannot be
-// read, an edit has no hunk, or a hunk's lines are not in the file once.
+// TrackEdits starts the review of a file an agent edits, given each of the
+// agent's edits as hunks, earliest first. The baseline is the file's text on
+// disk with the edits undone, or "" for a file the agent created that is not
+// on disk yet. A file that has a review already is left as it is. It returns
+// an error, and starts no review, if no workspace is open, the file is
+// outside the workspace's mods or cannot be read, an edit has no hunk, or a
+// hunk's lines are not in the file once.
 func (s *Service) TrackEdits(path string, edits [][]Hunk, isNew bool) error {
 	ws, err := s.FindWritable(path)
 	if err != nil {
@@ -191,11 +188,10 @@ func (s *Service) KeepFile(path string) error {
 	return nil
 }
 
-// UndoFile writes a file's baseline in the file's encoding, or moves a file
-// the agent created to PMT's trash, and ends its review. It returns an error,
-// and changes nothing, if no workspace is open, the file has no review, is
-// outside the workspace's mods or cannot be read, or has unsaved text in the
-// editor.
+// UndoFile writes a file's baseline, or moves a file the agent created to
+// PMT's trash, and ends its review. It returns an error, and changes nothing,
+// if no workspace is open, the file has no review or cannot be read, or the
+// editor holds unsaved text of it.
 func (s *Service) UndoFile(path string) error {
 	ws, err := s.FindWritable(path)
 	if err != nil {

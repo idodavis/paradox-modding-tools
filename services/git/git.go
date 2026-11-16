@@ -24,7 +24,7 @@
 // error carrying the text git wrote, and so is a commit date that does not
 // parse. DiffFile refuses a file git does not track.
 //
-// The package reads past a mod that is broken or in no repository, a
+// The package reads past a mod that is broken, external or in no repository, a
 // repository with no commit (an empty log), a ref of an unknown kind, a
 // status record of an unknown kind, letters that mark no change, and a ref
 // date that does not parse (the zero time). Places stay empty while no
@@ -163,12 +163,13 @@ func (s *Service) FindRepository(dir string) (string, bool) {
 	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(root))), true
 }
 
-// ListRepositories returns the repositories the open workspace's mods are in,
-// in load order.
+// ListRepositories returns the repositories the open workspace's own mods are
+// in, in load order. An external mod is someone else's: its repository is
+// never listed, and git is not run in its folder.
 func (s *Service) ListRepositories() []Repository {
 	var repositories []Repository
 	for _, mod := range s.Workspace.ListMods() {
-		if mod.Broken {
+		if mod.Broken || mod.External {
 			continue
 		}
 

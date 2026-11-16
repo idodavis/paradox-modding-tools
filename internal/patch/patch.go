@@ -12,6 +12,10 @@
 //   - A mod whose supported version matches the game's version has an empty
 //     range. Else the range starts at the oldest version the supported
 //     version matches, as 1.13.0 for 1.13.*, and leaves that version out.
+//   - Where no patch is of a version the supported version matches, the
+//     range starts at the base of the patch that spans the mod's version.
+//     That patch is then in the range, with what it changed before the mod's
+//     version. Where no patch spans it, the mod has no range.
 //   - Where several sources have a version, the digest's patch wins, then
 //     the shipped one, then PMT's own. An empty part is filled from the next.
 //
@@ -163,8 +167,12 @@ func MatchVersion(supported, version string) (matches, judged bool) {
 // ResolveStart returns the version a mod's range starts at, for a range that
 // ends at the given version, and whether the mod's supported version decided
 // it. A supported version that matches the end gives the end. Else the start
-// is the oldest version it matches, as 1.13.0 for 1.13.*. A blank or unjudged
-// supported version gives the mod's base version. The start is "" for none.
+// is the oldest version it matches, as 1.13.0 for 1.13.*. Where the patches
+// know no version it matches, as 1.13.2 between 1.13.0 and 1.13.3, the start
+// is the base of the patch that spans it, so the range holds that patch. A
+// blank or unjudged supported version gives the mod's base version. The
+// start is "" for none: no patch spans the mod's version, as where the
+// patches before it are not known, or the mod is made for a later game.
 func (p Patches) ResolveStart(supported, base, end string) (start string, judged bool) {
 	switch matches, judged := MatchVersion(supported, end); {
 	case !judged:
@@ -192,7 +200,20 @@ func (p Patches) ResolveStart(supported, base, end string) (start string, judged
 		}
 	}
 
-	return p.ResolveBase(beta), true
+	if beta != "" {
+		return p.ResolveBase(beta), true
+	}
+
+	own, _, _ := strings.Cut(supported, ".*")
+	for _, patch := range p {
+		isSpanning := patch.Base != "" && game.CompareVersions(patch.Base, own) <= 0 &&
+			game.CompareVersions(own, patch.Version) < 0 && game.CompareVersions(patch.Version, end) <= 0
+		if isSpanning {
+			return patch.Base, true
+		}
+	}
+
+	return "", true
 }
 
 // IsBeta reports whether a version is an open beta: one game.IsBeta names, or

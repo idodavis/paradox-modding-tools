@@ -489,7 +489,7 @@ func groupReport(findings []Finding, order []string, external map[string]bool) R
 	}
 
 	return Report{
-		Tally:         makeTally(slices.Concat(compatibility, patch, own)),
+		Tally:         makeTally(slices.Concat(compatibility, patches[""], ownPatch, own)),
 		Compatibility: makeGroup("", compatibility, nil),
 		Patch:         makeGroup("", patch, nil),
 		Mods:          mods,

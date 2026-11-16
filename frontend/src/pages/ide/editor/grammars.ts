@@ -23,6 +23,24 @@ export const SCRIPT: languages.IMonarchLanguage = {
 };
 
 /**
+ * The descriptor grammar, for a .mod file, in which Go colors nothing: each
+ * key before its = is a field, and each value takes the reference color,
+ * quoted or not. A field beside a string would be two greens in most themes.
+ */
+export const DESCRIPTOR: languages.IMonarchLanguage = {
+  brackets: SCRIPT.brackets,
+  tokenizer: {
+    root: [
+      [/#.*$/, "comment"],
+      [/[\w.-]+(?=\s*=)/, "field"],
+      [/"[^"]*"?|[\w.*-]+/, "reference"],
+      [/=/, "operator"],
+      [/[{}]/, "@brackets"],
+    ],
+  },
+};
+
+/**
  * The localization grammar: the language line, a key with its version, and
  * the quoted text.
  */

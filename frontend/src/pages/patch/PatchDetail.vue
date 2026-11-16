@@ -27,7 +27,7 @@ const {
 } = defineProps<{
   version: string;
   find?: string;
-  /** The tab shown. Without one, the digest, else the wiki's notes. */
+  /** The tab asked for. Without one, the first the version has content for. */
   tab?: string;
   /** The id of the digest's article to open at. */
   article?: string;
@@ -79,14 +79,12 @@ const replacing = computed(() =>
 );
 const gameName = computed(() => state.value?.game?.name ?? "");
 
-const shown = computed(() => tab || (articles.value.length || !note.value?.title ? "digest" : "notes"));
 /** One text to find, which follows the tabs. */
 const term = shallowRef(find);
 watch(
   () => find,
   (next) => (term.value = next),
 );
-const touching = shallowRef(false);
 /** The article whose line of mods is shown whole. */
 const opened = shallowRef("");
 
@@ -101,17 +99,24 @@ const changed = computed(() => {
   const data = changes.filter((change) => change.database === functions).length;
   return { data, script: changes.length - data };
 });
+/** The version's tabs. The digest has one only where it has written notes. */
 const tabs = computed(() => [
   { label: "Patch notes", value: "notes" },
-  { label: "Modding digest", value: "digest" },
+  ...(articles.value.length ? [{ label: "Modding digest", value: "digest" }] : []),
   { label: "Script changes", value: "script", badge: describeCount(changed.value.script) },
   { label: "Data types", value: "data", badge: describeCount(changed.value.data) },
   { label: "Game files", value: "files", badge: describeCount(gameFiles.value.length) },
 ]);
+/** The tab asked for, else the digest, the notes or the script changes. */
+const shown = computed(() => {
+  if (tabs.value.some((row) => row.value === tab)) return tab;
+  if (articles.value.length) return "digest";
+  return note.value?.title ? "notes" : "script";
+});
 /** The digest as one document: each group's heading, then its articles. */
 const digest = computed(() =>
   GROUPS.map(({ title, has }) => {
-    const listed = articles.value.filter((article) => has(article) && (!touching.value || ties.value[article.id]));
+    const listed = articles.value.filter(has);
     return (title && listed.length ? `<h1>${title}</h1>` : "") + listed.map((article) => article.html).join("");
   }).join(""),
 );
@@ -194,54 +199,38 @@ function isUntied(id: string): boolean {
       class="m-auto"
     />
 
-    <template v-else-if="shown === 'digest'">
-      <UEmpty
-        v-if="!articles.length"
-        icon="i-lucide-book-open"
-        :title="
-          patch.local
-            ? 'PMT compared this version itself and has no written digest of it'
-            : 'The digest of this version has no written notes'
-        "
-        size="sm"
-        class="m-auto"
-      />
-      <DocumentView v-else v-model:find="term" :html="digest" :anchor="article" save-id="digest">
-        <template #rail>
-          <USwitch v-model="touching" label="Only what touches my mods" size="xs" class="ps-1.5" />
-        </template>
-        <template #entry="{ id }">
-          <OriginChip v-for="tie in ties[id]?.slice(0, MODS_SHOWN)" :key="tie.modId" :origin="tie.modId" dot />
-          <span v-if="(ties[id]?.length ?? 0) > MODS_SHOWN" class="text-11 text-toned">
-            +{{ (ties[id]?.length ?? 0) - MODS_SHOWN }}
+    <DocumentView v-else-if="shown === 'digest'" v-model:find="term" :html="digest" :anchor="article" save-id="digest">
+      <template #entry="{ id }">
+        <OriginChip v-for="tie in ties[id]?.slice(0, MODS_SHOWN)" :key="tie.modId" :origin="tie.modId" dot />
+        <span v-if="(ties[id]?.length ?? 0) > MODS_SHOWN" class="text-11 text-toned">
+          +{{ (ties[id]?.length ?? 0) - MODS_SHOWN }}
+        </span>
+        <UTooltip v-if="isUntied(id)" text="Names no folder or definition, so PMT cannot say which mods it touches">
+          <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-warning" />
+        </UTooltip>
+      </template>
+      <template #section="{ id }">
+        <div v-if="ties[id]" class="flex flex-wrap items-center gap-1.5 pb-2 text-12 text-dimmed">
+          In your mods
+          <span
+            v-for="tie in opened === id ? ties[id] : ties[id]?.slice(0, MODS_SHOWN)"
+            :key="tie.modId"
+            class="flex items-center gap-1.5"
+          >
+            <OriginChip :origin="tie.modId" />
+            {{ plural(tie.count, "file or use", "files and uses") }}
           </span>
-          <UTooltip v-if="isUntied(id)" text="Names no folder or definition, so PMT cannot say which mods it touches">
-            <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-warning" />
-          </UTooltip>
-        </template>
-        <template #section="{ id }">
-          <div v-if="ties[id]" class="flex flex-wrap items-center gap-1.5 pb-2 text-12 text-dimmed">
-            In your mods
-            <span
-              v-for="tie in opened === id ? ties[id] : ties[id]?.slice(0, MODS_SHOWN)"
-              :key="tie.modId"
-              class="flex items-center gap-1.5"
-            >
-              <OriginChip :origin="tie.modId" />
-              {{ plural(tie.count, "file or use", "files and uses") }}
-            </span>
-            <UButton
-              v-if="opened !== id && (ties[id]?.length ?? 0) > MODS_SHOWN"
-              :label="`+${(ties[id]?.length ?? 0) - MODS_SHOWN}`"
-              variant="link"
-              size="xs"
-              class="p-0"
-              @click="opened = id"
-            />
-          </div>
-        </template>
-      </DocumentView>
-    </template>
+          <UButton
+            v-if="opened !== id && (ties[id]?.length ?? 0) > MODS_SHOWN"
+            :label="`+${(ties[id]?.length ?? 0) - MODS_SHOWN}`"
+            variant="link"
+            size="xs"
+            class="p-0"
+            @click="opened = id"
+          />
+        </div>
+      </template>
+    </DocumentView>
 
     <LexiconList
       v-else-if="shown === 'script'"

@@ -65,6 +65,8 @@ const right = computed(() => (side === "changes" ? working.value : (revised.valu
   <CompareView
     :left="left ?? ''"
     :right="right"
+    :left-path="place?.path"
+    :right-path="place?.path"
     :language="place?.language ?? 'plaintext'"
     :left-label="sides.labels[0] ?? ''"
     :right-label="sides.labels[1] ?? ''"

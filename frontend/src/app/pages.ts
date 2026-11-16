@@ -254,7 +254,7 @@ export const PAGES = {
       },
       {
         heading: "External mods",
-        text: "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT never publishes an external mod and keeps it out of your totals.",
+        text: "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT keeps an external mod read only, never publishes it, and keeps it out of your totals.",
       },
     ],
   },
@@ -322,7 +322,7 @@ export const PAGES = {
       },
       {
         heading: "External mods",
-        text: "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT never publishes an external mod and keeps it out of your totals.",
+        text: "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT keeps an external mod read only, never publishes it, and keeps it out of your totals.",
       },
     ],
   },

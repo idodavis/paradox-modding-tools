@@ -116,7 +116,7 @@ export interface Mod {
 
     /**
      * External is someone else's mod, which the workspace checks its own mods
-     * against.
+     * against and never changes.
      */
     "external": boolean;
 
@@ -139,7 +139,8 @@ export interface Mod {
     "thumbnail": string;
 
     /**
-     * Workshop is true for Steam's copy of a Workshop mod, which is read only.
+     * Workshop is true for Steam's copy of a Workshop mod, which is always an
+     * external mod.
      */
     "workshop": boolean;
 

@@ -60,7 +60,8 @@ type Mod struct {
 	// Thumbnail is the full path of the picture shown for the mod, "" if none.
 	Thumbnail string `json:"thumbnail"`
 
-	// Workshop is true for Steam's copy of a Workshop mod, which is read only.
+	// Workshop is true for Steam's copy of a Workshop mod, which is always an
+	// external mod.
 	Workshop bool `json:"workshop"`
 
 	// Start is the game version the patches' changes are counted from for the
@@ -624,6 +625,45 @@ func resolveDescriptor(row *game.Game, dir string) string { return files.Join(di
 
 func isMetadata(file string) bool {
 	return path.Ext(file) == ".json"
+}
+
+// descriptorKeys says what each key of a mod's descriptor is for. A .mod file
+// and metadata.json write most of them, some under another name.
+var descriptorKeys = map[string]string{
+	"name":                   "The mod's name, as the game's launcher shows it.",
+	"id":                     "The mod's own id, which another mod names to depend on it.",
+	"version":                "The mod's own version, which its author sets.",
+	"supported_version":      "The game version the mod is made for. A * stands for any number, as in 1.20.*.",
+	"supported_game_version": "The game version the mod is made for. A * stands for any number, as in 1.15.*.",
+	"tags":                   "The categories the mod is listed under.",
+	"picture":                "The mod's thumbnail, a picture in the mod's folder.",
+	"short_description":      "A line about the mod, shown where the mod is listed.",
+	"remote_file_id":         "The mod's id on the Steam Workshop, set when the mod is first uploaded.",
+	"replace_path":           "A folder whose earlier files the game does not load: its own, and those of mods loaded before.",
+	"replace_paths":          "The folders whose earlier files the game does not load: its own, and those of mods loaded before.",
+	"dependencies":           "The mods this one loads after, by name.",
+	"relationships":          "The mods this one depends on.",
+	"game_id":                "The game the mod is for.",
+	"game_custom_data":       "Settings that only this game reads, as replace_paths is.",
+}
+
+// FindDescriptorKey returns where a descriptor's text has one of its keys
+// around an offset, and what that key is for. It returns false if the word
+// there is no key of a descriptor.
+func FindDescriptorKey(text string, offset int) (jomini.Span, string, bool) {
+	isKeyByte := func(char byte) bool { return char == '_' || char >= 'a' && char <= 'z' }
+	span := jomini.Span{Start: min(offset, len(text)), End: min(offset, len(text))}
+	for span.Start > 0 && isKeyByte(text[span.Start-1]) {
+		span.Start--
+	}
+
+	for span.End < len(text) && isKeyByte(text[span.End]) {
+		span.End++
+	}
+
+	blurb, ok := descriptorKeys[text[span.Start:span.End]]
+
+	return span, blurb, ok
 }
 
 func parseDescriptorScript(text string) Descriptor {

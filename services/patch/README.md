@@ -38,6 +38,8 @@ GitHub for the newest commit. If it is the one the folder of patches was read fr
 of each version an install is on that the digest has, nothing more is fetched. Otherwise the repository is downloaded as
 one zip and read in memory, version by version, oldest first. The zip is never written to disk.
 
+A version is a folder that holds `discord.md`, which every version of both digests has; a hotfix may hold nothing else
+but its list of changed game files.
 A version's dumps are those of its `docs` folder, each missing file taken from the newest earlier version. They are
 compared with the dumps of its base, the latest earlier version that is not an open beta, by `schema.CompareDumps`, with
 the open workspace's schema as the language: an old version has no game files to resolve the keys of a star key, as
@@ -83,10 +85,8 @@ reads it, in lower case.
 `FindPatch` gives one version's patch. A version no patch holds comes back as the zero patch with no version, which is
 a version whose changes are not known yet.
 
-`UpdateSupportedVersion` writes the install's release, as `1.15.*` for `1.15.1`, which `workspace.ToSupportedVersion`
-makes, as the supported version of a mod of the user's own. It writes the mod's descriptor (`Session.WriteDescriptor`)
-and nothing else, so the Workshop's version tag changes when the listing is next saved in Publish. An external mod is
-refused: it is never patched.
+The service never writes a mod's descriptor. Where a mod is made for another game version, Your mods opens the
+descriptor at its version line, and the editor's quick fix there ([lsp](../lsp/README.md)) writes the install's release.
 
 ## Files
 
@@ -96,7 +96,7 @@ refused: it is never patched.
 | `digest.go` | Asking GitHub for the repository, opening its zip, and its versions, their dumps and changed game files, read into patches. |
 | `articles.go` | A version's note files, read into articles and key renames. |
 | `notes.go` | The versions the Patch Center lists, and the patch of one. |
-| `ties.go` | The articles that touch each mod, and making a mod made for the install's release. |
+| `ties.go` | The articles that touch each mod. |
 
 ## Events
 

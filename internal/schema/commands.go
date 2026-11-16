@@ -198,7 +198,82 @@ func splitUsage(description string) (prose, usage string) {
 		return description, ""
 	}
 
-	return strings.Join(lines[:cut], "\n"), strings.Join(lines[cut:], "\n")
+	return strings.Join(lines[:cut], "\n"), indentUsage(lines[cut:])
+}
+
+// indentUsage returns an example laid out by its braces. Each line starts a
+// tab in for each block open at it, whatever indent the dump gave it, and a
+// brace that closes a block at the end of a line of content gets a line of
+// its own. The games write the block of every list command flat and close it
+// on its last line, as <effects> } under ordered_holy_site = {, and indent
+// their other examples by tabs, by two spaces or not at all.
+func indentUsage(lines []string) string {
+	blocks := countBlocks(lines)
+	var laid []string
+	depth := 0
+	for position, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			laid = append(laid, "")
+
+			continue
+		}
+
+		code, opened := trimComment(line), blocks[position]
+		leading := len(code) - len(strings.TrimLeft(code, "}"))
+		isClosing := opened < 0 && leading == 0 && strings.HasSuffix(line, "}")
+		if isClosing {
+			line, opened = strings.TrimSpace(strings.TrimSuffix(line, "}")), opened+1
+		}
+
+		laid = append(laid, strings.Repeat("\t", max(0, depth-leading))+line)
+		depth = max(0, depth+opened)
+		if isClosing {
+			depth = max(0, depth-1)
+			laid = append(laid, strings.Repeat("\t", depth)+"}")
+		}
+	}
+
+	return strings.Join(laid, "\n")
+}
+
+// countBlocks returns, for each line of an example, how many more blocks it
+// opens than it closes, negative where it closes more.
+//
+// A brace that no later line closes opens a block only at the end of its
+// line. One the line goes on after, as random_faith = { ... }. Random one ...
+// does in create_character, is a slip of the game's and opens nothing: the
+// lines after it are sentences. A block the game never closes stays open to
+// the end, so a sentence after it is moved in too, as in seven triggers of
+// Victoria 3.
+func countBlocks(lines []string) []int {
+	blocks := make([]int, len(lines))
+	var open []int
+	for position, line := range lines {
+		code := trimComment(line)
+		blocks[position] = strings.Count(code, "{") - strings.Count(code, "}")
+		for range max(0, blocks[position]) {
+			open = append(open, position)
+		}
+
+		open = open[:max(0, len(open)+min(0, blocks[position]))]
+	}
+
+	for _, position := range open {
+		if !strings.HasSuffix(trimComment(lines[position]), "{") {
+			blocks[position]--
+		}
+	}
+
+	return blocks
+}
+
+// trimComment returns a line of an example without its comment and the
+// white space around it.
+func trimComment(line string) string {
+	code, _, _ := strings.Cut(line, "#")
+
+	return strings.TrimSpace(code)
 }
 
 // parseArguments reads the keys a command's block takes from its example

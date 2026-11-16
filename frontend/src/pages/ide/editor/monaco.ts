@@ -3,8 +3,10 @@ import { useEventBus } from "@vueuse/core";
 import Color from "colorjs.io";
 import * as monaco from "monaco-editor/editor/editor.api";
 import "monaco-editor/features/register.all";
+import "monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens";
 import "monaco-editor/editor/contrib/semanticTokens/browser/viewportSemanticTokens";
 import "monaco-editor/languages/definitions/markdown/register";
+import { jsonDefaults } from "monaco-editor/languages/features/json/register";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import { watch } from "vue";
 
@@ -15,7 +17,7 @@ import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
 import { COMMAND_BUS } from "../../../stores/windows";
 import { registerConflicts } from "./conflicts";
-import { LOCALIZATION, SCRIPT } from "./grammars";
+import { DESCRIPTOR, LOCALIZATION, SCRIPT } from "./grammars";
 import { openModel, setupModels } from "./models";
 import { labelService, registerProviders } from "./providers";
 
@@ -27,6 +29,8 @@ const LANGUAGES = [
   // a game's readme/info is prose around script examples: the script's colors, and Go's answers where an example
   // names something, though Go reports no problem in it
   { id: "paradox-readme", label: "Game readme/info", grammar: SCRIPT, word: /[\w.:@$-]+/ },
+  // a .mod descriptor is written as script; metadata.json is Monaco's own JSON
+  { id: "paradox-descriptor", label: "Mod descriptor", grammar: DESCRIPTOR, word: /[\w.:@$-]+/ },
 ];
 const PAIRS = [
   { open: "{", close: "}" },
@@ -75,6 +79,8 @@ export function setupMonaco(): void {
       },
     )
     .dispose();
+  // JSON gets its colors only: Monaco's other JSON features need a worker.
+  jsonDefaults.setModeConfiguration({ tokens: true });
   for (const { id, label, grammar, word } of LANGUAGES) {
     monaco.languages.register({ id, aliases: [label] });
     monaco.languages.setMonarchTokensProvider(id, grammar);

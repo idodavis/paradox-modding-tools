@@ -10,9 +10,10 @@ import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { groupBy, sortBy, sumBy, uniq } from "es-toolkit";
 
 import type { Finding } from "@services/health/models";
-import * as patch from "@services/patch/service";
+import { compareWithGame } from "../../app/commands";
 import { describeCount, list, plural } from "../../lib/format";
 import { keys, notesQuery, reportQuery, stateQuery, tiesQuery, useLevels } from "../../queries";
+import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LevelMeter from "../../ui/LevelMeter.vue";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -23,6 +24,7 @@ import ImpactBlock from "./ImpactBlock.vue";
 const PANES = [{ slot: "list", defaultSize: 34, minSize: 20, maxSize: 60 }, { slot: "detail" }];
 
 const workspace = useWorkspaceStore();
+const editor = useEditorStore();
 const cache = useQueryCache();
 const { data: state } = useQuery(stateQuery);
 const { findLevel } = useLevels();
@@ -56,9 +58,11 @@ const cards = computed(() => {
       { word: "breaking", count: breaking.length, color: "error" },
       { word: "new", count: added.length, color: "success" },
     ].filter((row) => row.count);
+    // Where the mod's descriptor names another game version than the game's.
+    const version = codes["supported-version"]?.[0]?.sites?.[0];
     // Made for the game's version, as Go judged it, and nothing changed in it.
-    const quiet = !!mod.start && mod.judged && !counts.length && !codes["supported-version"];
-    return { mod, renamed, removed, files, breaking, added, counts, quiet };
+    const quiet = !!mod.start && mod.judged && !counts.length && !version;
+    return { mod, renamed, removed, files, breaking, added, counts, quiet, version };
   });
 });
 type Card = (typeof cards.value)[number];
@@ -162,10 +166,6 @@ const refresh = () =>
 const { mutate: setBase } = useMutation({
   mutation: ({ modId, base }: { modId: string; base: string }) =>
     workspace.updateMod(workspace.activeId(), modId, { base }),
-  onSuccess: refresh,
-});
-const { mutate: markMadeFor } = useMutation({
-  mutation: (modId: string) => patch.UpdateSupportedVersion(modId),
   onSuccess: refresh,
 });
 
@@ -308,11 +308,14 @@ function describeEmpty({ mod }: Card): string {
                 />
               </template>
               <span class="grow" />
+              <!-- A quick fix on that line writes the game's version. -->
               <UButton
-                :label="`Mark as made for ${end}`"
+                v-if="current.version"
+                :label="`Set the game version in ${current.version.place.name}`"
+                icon="i-lucide-file-pen-line"
                 variant="subtle"
                 size="sm"
-                @click="markMadeFor(current.mod.id)"
+                @click="editor.show(current.version.place, { lineNumber: current.version.line, column: 1 })"
               />
             </div>
 
@@ -377,11 +380,27 @@ function describeEmpty({ mod }: Card): string {
                     title="Game files your mod replaces"
                     :rows="current.files"
                   >
+                    <!-- The finding's site is the mod's own file: its name -->
+                    <!-- opens it, and the button compares it with the game's. -->
                     <div class="flex h-7.5 items-center gap-2.5 border-t border-default px-3 text-12">
-                      <span class="min-w-0 truncate font-mono text-highlighted" :title="file.name">{{
-                        file.name
-                      }}</span>
+                      <button
+                        type="button"
+                        class="min-w-0 truncate font-mono text-highlighted hover:underline"
+                        :title="`Open your mod's ${file.name}`"
+                        :disabled="!file.sites?.[0]"
+                        @click="file.sites?.[0] && editor.show(file.sites[0].place)"
+                      >
+                        {{ file.name }}
+                      </button>
                       <span class="grow" />
+                      <UButton
+                        v-if="file.sites?.[0]"
+                        label="Compare with the game's"
+                        icon="i-lucide-git-compare"
+                        variant="ghost"
+                        size="xs"
+                        @click="compareWithGame(file.sites[0].place)"
+                      />
                       <span class="font-mono text-11 whitespace-nowrap text-warning">
                         {{ file.facts?.status }} {{ file.facts?.version }}
                       </span>

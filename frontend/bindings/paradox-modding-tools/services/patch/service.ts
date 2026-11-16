@@ -55,13 +55,3 @@ export function ListTies(): $CancellablePromise<$models.Tie[] | null> {
 export function Refresh(): $CancellablePromise<void> {
     return $Call.ByID(4129004967);
 }
-
-/**
- * UpdateSupportedVersion writes the install's release, as 1.15.* for 1.15.1,
- * into the descriptor of one of the user's own mods. It returns an error if
- * no workspace is open, the mod is not the user's, or the install's version
- * names no release.
- */
-export function UpdateSupportedVersion(modID: string): $CancellablePromise<void> {
-    return $Call.ByID(2461583147, modID);
-}

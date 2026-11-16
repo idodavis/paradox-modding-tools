@@ -64,9 +64,8 @@ const PACKAGE_PATHS = `<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.
 const LOCK_PATHS = `<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>`;
 /** STROKE is how the root marks are drawn: lines in the row's text color. */
 const STROKE = `fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
-/** EXTERNAL and EXTERNAL_READ_ONLY are the root marks of an external mod, and of Steam's copy, which is also locked. */
-const EXTERNAL = { name: "pmt-external", width: 16, height: 16, viewBox: "0 0 16 16" };
-const EXTERNAL_READ_ONLY = { name: "pmt-external-read-only", width: 32, height: 16, viewBox: "0 0 32 16" };
+/** EXTERNAL is the root mark of an external mod: a package and a lock. */
+const EXTERNAL = { name: "pmt-external", width: 32, height: 16, viewBox: "0 0 32 16" };
 /** SPRITE is the SVG sheet of the file icons, one symbol for each, and of the root marks. */
 const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${[...SYMBOLS]
   .map(
@@ -75,7 +74,7 @@ const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" sty
   )
   .join(
     "",
-  )}<symbol id="${EXTERNAL.name}" viewBox="0 0 24 24" ${STROKE}>${PACKAGE_PATHS}</symbol><symbol id="${EXTERNAL_READ_ONLY.name}" viewBox="0 0 48 24" ${STROKE}>${PACKAGE_PATHS}<g transform="translate(24 0)">${LOCK_PATHS}</g></symbol></svg>`;
+  )}<symbol id="${EXTERNAL.name}" viewBox="0 0 48 24" ${STROKE}>${PACKAGE_PATHS}<g transform="translate(24 0)">${LOCK_PATHS}</g></symbol></svg>`;
 /** FILTER_HITS is how many files the filter asks the file search for. */
 const FILTER_HITS = 500;
 /** MENU_CONTENT is the context menu's content options, one object so the menu is not drawn again on each render. */
@@ -215,15 +214,15 @@ function buildStyles(): string {
     .join("\n");
 }
 
-/** markRoot returns the mark at the end of a root's row: a package for an external mod, a lock for read-only files. */
+/**
+ * markRoot returns the mark at the end of a read-only root's row: a package
+ * and a lock for an external mod, a lock for the game.
+ */
 function markRoot(root: Place | undefined): FileTreeRowDecoration | null {
-  if (!root) return null;
-  if (!workspace.isExternal(root.origin)) {
-    return root.readOnly ? { icon: "file-tree-icon-lock", title: "Read only" } : null;
-  }
-  return root.readOnly
-    ? { icon: EXTERNAL_READ_ONLY, title: "External mod, read only: Steam's copy of a Workshop mod" }
-    : { icon: EXTERNAL, title: "External mod" };
+  if (!root?.readOnly) return null;
+  return workspace.isExternal(root.origin)
+    ? { icon: EXTERNAL, title: "External mod, read only" }
+    : { icon: "file-tree-icon-lock", title: "Read only" };
 }
 
 /** rootIndex returns the index of the root a row is under, or -1 for a row under none. */
@@ -645,7 +644,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
       ? [{ label: "New coat of arms", icon: "i-lucide-shield-plus", onSelect: () => commandBus.emit("draw.newCoat") }]
       : [];
   const init: ContextMenuItem[] =
-    git.isInstalled && isRoot(row) && isWritable(row) && !git.findRoot(roots[rootIndex(row)])
+    git.isInstalled && isRoot(row) && git.bare.some((mod) => mod.id === roots[rootIndex(row)]?.origin)
       ? [
           {
             label: "Initialize a git repository",

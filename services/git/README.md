@@ -30,8 +30,9 @@ itself send it too.
 
 ## Reading
 
-- `ListRepositories` lists the repositories the open workspace's mods are in, each with its root and its mods, in the
-  load order of their first mod. A mod in none, or whose folder is missing, is left out.
+- `ListRepositories` lists the repositories the open workspace's own mods are in, each with its root and its mods, in
+  the load order of their first mod. A mod in none, or whose folder is missing, is left out. So is an external mod:
+  it is someone else's, so Source control shows no repository of it and offers to start none in it.
 - `ReadStatus` reads the porcelain status of one repository. Each change and each ignored path gets its
   `workspace.Place` while a workspace is open. A path git ends with a slash is a folder, and its place says so.
 - `ListRefs` reads the branches, remote branches and tags, each with the date of its commit and whether it is current.

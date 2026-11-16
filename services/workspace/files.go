@@ -83,6 +83,10 @@ var editorLanguages = map[files.Format]string{
 	files.FormatReadme: "paradox-readme", files.FormatMarkdown: "markdown",
 }
 
+// descriptorLanguages are the editor languages of a mod's descriptor, by its
+// file's ending: a .mod file is written as script and metadata.json as JSON.
+var descriptorLanguages = map[string]string{".mod": "paradox-descriptor", ".json": "json"}
+
 // Locate returns the place of a file in an index of the mods. A path under no
 // root gets only its path, key and name.
 func (s *Session) Locate(mods *index.Index, path string) Place {
@@ -97,13 +101,16 @@ func (s *Session) Locate(mods *index.Index, path string) Place {
 	// A root's own folder has no rel.
 	place.File, _ = files.NewFile(root, path)
 	place.Language = cmp.Or(editorLanguages[place.Format], plainLanguage)
+	if place.Format == files.FormatDescriptor {
+		place.Language = descriptorLanguages[filepath.Ext(path)]
+	}
 	if folder, _, ok := strings.CutLast(place.Rel, "/"); ok {
 		place.Folder = folder
 	}
 
 	place.Root = root.Dir
 	place.ReadOnly = root.Origin == files.OriginVanilla ||
-		slices.ContainsFunc(*s.Order.Load(), func(mod Mod) bool { return mod.ID == root.Origin && mod.Workshop })
+		slices.ContainsFunc(*s.Order.Load(), func(mod Mod) bool { return mod.ID == root.Origin && mod.External })
 	if database, ok := s.Schema.FindDatabase(place.File); ok {
 		place.Database = database.Name
 		if database.Readme != "" {
@@ -258,8 +265,8 @@ func (s *Service) ReadHeader(path string) (texture.Header, error) {
 	return texture.ReadHeader(path)
 }
 
-// FindWritable returns the open session if every path is in one of its mods. It
-// fails for the game's own files and a Workshop mod's.
+// FindWritable returns the open session if every path is in one of the user's
+// own mods. It fails for the game's own files and an external mod's.
 //
 //wails:ignore
 func (s *Service) FindWritable(paths ...string) (*Session, error) {
@@ -276,8 +283,7 @@ func (s *Service) FindWritable(paths ...string) (*Session, error) {
 		case place.Origin == files.OriginVanilla:
 			return nil, errors.New("the game's own files are not changed")
 		case place.ReadOnly:
-			return nil, fmt.Errorf("%s is Steam's copy of a Workshop mod; Steam replaces it when its author updates it",
-				ws.DescribeMod(place.Origin))
+			return nil, fmt.Errorf("%s is an external mod, which PMT does not change", ws.DescribeMod(place.Origin))
 		}
 	}
 

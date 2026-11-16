@@ -13,7 +13,7 @@ your events, a health check of your load order, what each game patch changed und
 publishing, in one window.
 
 **Alpha: expect bugs.** Windows and Linux. Unofficial, and not affiliated with Paradox Interactive. Tested on CK3
-1.20.1.2, Victoria 3 1.13.11 and EU5's current release.
+1.20.1.2, Victoria 3 1.15.1 and EU5 1.4.7.
 
 [Download](https://github.com/idodavis/paradox-modding-tools/releases) · [Features](docs/FEATURES.md) ·
 [Roadmap](docs/ROADMAP.md) · [Contributing](docs/CONTRIBUTING.md) · [All the docs](docs/README.md)

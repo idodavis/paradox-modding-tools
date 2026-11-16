@@ -61,6 +61,10 @@ linters:
       # the code table spells each code, and each report names its own
       - path: services/lsp/diagnostics\.go
         linters: [goconst]
+      # the descriptor's key table repeats the keys its reader and its writer spell
+      - path: services/workspace/mod\.go
+        linters: [goconst]
+        text: 'string `(name|version|supported_version|tags|picture|remote_file_id|replace_path)`'
       # show's query table and the starter tasks repeat a page's id, a key and a chip's kind as data
       - path: services/mcp/(checks|mcp)\.go
         linters: [goconst]

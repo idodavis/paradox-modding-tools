@@ -117,6 +117,8 @@ func (s *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, error
 			title, edits = buildMissingFix(ws.Schema, walk(diagnostic), diagnostic)
 		case lang.ProblemMode:
 			title, edits = "Remove mode", []Edit{{Range: diagnostic.Range}}
+		case codeSupportedVersion:
+			title, edits = buildVersionFix(ws.Schema.Version, diagnostic)
 		}
 
 		if len(edits) > 0 {
@@ -131,6 +133,18 @@ func (s *Service) ListFixes(path string, diagnostics []Diagnostic) ([]Fix, error
 	}
 
 	return fixes, nil
+}
+
+// buildVersionFix returns the fix that writes the game's release, as 1.20.*,
+// where a descriptor names another game version. It returns no edit for a
+// game version that names no release.
+func buildVersionFix(version string, diagnostic Diagnostic) (string, []Edit) {
+	supported := workspace.ToSupportedVersion(version)
+	if supported == "" {
+		return "", nil
+	}
+
+	return "Set to " + supported, []Edit{{Range: diagnostic.Range, Text: supported}}
 }
 
 // buildKeysFix returns the fix that adds the file's keys that lack
@@ -473,13 +487,14 @@ func findEntry(ws *workspace.Session, document lang.Document, offset int) *lang.
 	return context.Definition
 }
 
-// findOverrideMod returns the mod with the given id, else the first writable
-// mod that is not the file's own. It returns an error if there is none.
+// findOverrideMod returns the mod with the given id, else the first of the
+// user's own mods that is not the file's. It returns an error if there is
+// none.
 func (s *Service) findOverrideMod(place workspace.Place, modID string) (workspace.Mod, error) {
 	mods := s.Workspace.ListMods()
 	if modID == "" {
 		position := slices.IndexFunc(mods, func(mod workspace.Mod) bool {
-			return !mod.Broken && !mod.Workshop && mod.ID != place.Origin
+			return !mod.Broken && !mod.External && mod.ID != place.Origin
 		})
 		if position < 0 {
 			return workspace.Mod{}, errors.New("the workspace has no other mod that can hold the copy")

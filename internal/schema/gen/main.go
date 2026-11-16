@@ -14,18 +14,11 @@
 //     runs gen, out of git, so a run on another machine finds none and adds a
 //     patch of the dumps' changes alone.
 //
-// "gen past <game> <folder>" adds the patches of versions older than any the
-// history holds. The folder holds one dump file per line of a version, named
-// <version>_<dump file>, as OldEnt's repository of Crusader Kings III dumps
-// has them: 1.10.2_effects.log. It compares each version's dumps with the one
-// before and adds the changes of each as a patch.
-//
 // # Robustness
 //
 // gen refuses a game whose install is not named, whose dumps are older than
 // the install's last update, or whose history or state it cannot read, since
-// writing over them would lose the past. A name in a folder of past dumps that
-// is not a version number, as 1.6.1~2, is left out and said.
+// writing over them would lose the past.
 package main
 
 import (
@@ -36,8 +29,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -60,31 +51,15 @@ const (
 	stateDir   = "gen/state"
 )
 
-// pastVersion is a name that is a version number, as 1.9.0.4.
-var pastVersion = regexp.MustCompile(`^\d+(\.\d+)*$`)
-
 func main() {
-	args := os.Args[1:]
-	if len(args) == 3 && args[0] == "past" {
-		line, err := addPast(args[1], args[2])
-		finish(args[1], line, err)
-
-		return
-	}
-
-	for _, id := range args {
+	for _, id := range os.Args[1:] {
 		line, err := refresh(id)
-		finish(id, line, err)
-	}
-}
+		if err != nil {
+			log.Fatalf("%s: %v", id, err)
+		}
 
-// finish prints what gen did for a game, or stops with the error.
-func finish(id, line string, err error) {
-	if err != nil {
-		log.Fatalf("%s: %v", id, err)
+		fmt.Printf("%s: %s\n", id, line)
 	}
-
-	fmt.Printf("%s: %s\n", id, line)
 }
 
 // lookupInstall returns a game's row, the name of the variable that holds its
@@ -211,105 +186,4 @@ func writeGob(file string, value any) error {
 	}
 
 	return files.WriteAtomic(file, encoded.Bytes())
-}
-
-// addPast adds the patches of the versions a folder of dumps holds to a game's
-// history, and returns a line saying what it did. The first version has no
-// patch, since nothing is before it to compare with. A version the history has
-// already is replaced.
-func addPast(id, folder string) (string, error) {
-	row, variable, install, err := lookupInstall(id)
-	switch {
-	case err != nil:
-		return "", err
-	case install == "":
-		return "", errors.New(variable + " is not set")
-	}
-
-	entries, err := os.ReadDir(folder)
-	if err != nil {
-		return "", err
-	}
-
-	versions, skipped := listPastVersions(entries)
-	if len(versions) < 2 {
-		return "", fmt.Errorf("%s holds the dumps of %d versions, and a patch needs two", folder, len(versions))
-	}
-
-	language, _, err := buildSchema(row, install, row.LoadVersion(install))
-	if err != nil {
-		return "", err
-	}
-
-	history, err := patch.LoadHistory(id)
-	if err != nil {
-		return "", err
-	}
-
-	var before patch.Snapshot
-	for position, version := range versions {
-		contents, err := readPastFiles(folder, entries, version)
-		if err != nil {
-			return "", err
-		}
-
-		current := patch.Snapshot{Dumps: schema.ParseDumps(contents)}
-		if position > 0 {
-			gamePatch := patch.CompareSnapshots(versions[position-1], version, before, current, language)
-			history = patch.Put(history, gamePatch)
-		}
-
-		before = current
-	}
-
-	if err = writeGob(filepath.Join(historyDir, id+".gob"), history); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("added %d patches, %s to %s, to a history of %d; left out, not version numbers: %s",
-		len(versions)-1, versions[1], versions[len(versions)-1], len(history), strings.Join(skipped, ", ")), nil
-}
-
-// listPastVersions returns the versions a folder of dumps holds files of,
-// oldest first, and the names it left out for not being version numbers.
-func listPastVersions(entries []os.DirEntry) (versions, skipped []string) {
-	for _, entry := range entries {
-		version, file, ok := strings.Cut(entry.Name(), "_")
-		if !ok || !schema.IsDumpFile(file) || slices.Contains(versions, version) || slices.Contains(skipped, version) {
-			continue
-		}
-
-		if pastVersion.MatchString(version) {
-			versions = append(versions, version)
-		} else {
-			skipped = append(skipped, version)
-		}
-	}
-
-	slices.SortFunc(versions, game.CompareVersions)
-
-	return versions, skipped
-}
-
-// readPastFiles returns the bytes of each dump file a folder holds of one
-// version, by the file's name without the version. It returns an error for a
-// file that cannot be read, since a version read in part would show the rest
-// as removed.
-func readPastFiles(folder string, entries []os.DirEntry, version string) (map[string][]byte, error) {
-	contents := map[string][]byte{}
-	for _, entry := range entries {
-		file, ok := strings.CutPrefix(entry.Name(), version+"_")
-		if !ok || !schema.IsDumpFile(file) {
-			continue
-		}
-
-		content, err := files.ReadContent(filepath.Join(folder, entry.Name()))
-		if err != nil {
-			return nil, err
-		}
-
-		contents[file] = content
-	}
-
-	return contents, nil
 }

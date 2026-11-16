@@ -20,10 +20,14 @@ export function useSeenPatch() {
   const { data: report } = useQuery(() => ({ ...reportQuery(workspace.listModIds()), enabled: workspace.isOpen() }));
   const shown = useLocalStorage(() => `pmt.patchCenter.shown.${workspace.activeId()}`, "");
 
+  // An external mod is not the user's to patch, so what touches it is not new.
   const newest = computed(() => {
+    const own = new Set(workspace.listOwnMods().map((mod) => mod.id));
     const touching = new Set([
-      ...(ties.value ?? []).map((tie) => tie.version),
-      ...(report.value?.patch.findings ?? []).map((finding) => finding.facts?.version ?? ""),
+      ...(ties.value ?? []).filter((tie) => own.has(tie.modId)).map((tie) => tie.version),
+      ...(report.value?.patch.findings ?? [])
+        .filter((finding) => own.has(finding.origin))
+        .map((finding) => finding.facts?.version ?? ""),
     ]);
     return notes.value?.find((note) => touching.has(note.version))?.version ?? "";
   });

@@ -23,4 +23,10 @@ export const SYNTAX: Readonly<Record<string, string>> = {
   link: "link",
   parameter: "macro",
   constant: "macro",
+  // Monaco's own names for the parts of a JSON file. A value takes the
+  // reference color, as a .mod descriptor's does.
+  "string.key.json": "field",
+  "string.value.json": "reference",
+  "number.json": "reference",
+  "keyword.json": "reference",
 };

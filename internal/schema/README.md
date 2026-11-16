@@ -63,9 +63,7 @@ flowchart TD
   compares the one before with the new dumps, and the defined names and file hashes it kept of the version before with
   the install's (`patch.CompareSnapshots`), and adds that patch to the history. What it kept is the snapshot
   `gen/state/<game>.gob`, which the app neither embeds nor reads, and which stays on the machine that runs gen, out of
-  git: a run on another machine finds none and adds a patch of the dumps' changes alone. `gen past <game> <folder>` adds the
-  dump changes of older versions from a folder of `<version>_<dump file>` files, as OldEnt's repository of Crusader
-  Kings III dumps has them.
+  git: a run on another machine finds none and adds a patch of the dumps' changes alone.
 - **Doc**: a file the game ships beside its script that describes a database's fields, such as an `.info` file.
 - **Count**: what the game's own files write at each field, added up over every file.
 - **Star key**: a command the dumps list once for each definition of a database, such as `has_relation_*`.

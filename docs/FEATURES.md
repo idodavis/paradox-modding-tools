@@ -150,13 +150,14 @@ What the game's patches changed, for the game of the open workspace, and what th
 
 - **Your mods** counts, for each mod, what changed between the version it is made for and the game's version now:
   names the game renamed or removed that the mod still uses, game files that changed under the mod's copies, and
-  the notes that name what the mod holds. Open a name where the mod uses it. The same findings show in the editor
-  and in Health.
-- A mod that names no game version asks which version to compare from. **Mark as made for** writes the game's
-  version into the mod once you have brought it up to date. Mods that are not yours are listed and never changed.
-- **A version** shows its patch notes from the wiki, the Modding Co-op's digest, the script keys and data functions
-  it changed, and the game files it changed. The digest marks the mods each article touches, and **Only what
-  touches my mods** hides the rest. Ctrl F finds in what is shown.
+  the notes that name what the mod holds. Open a name where the mod uses it. A changed game file opens your
+  copy by its name, or compares it with the game's file as it is now. The same findings show in the editor and in Health.
+- A mod that names no game version asks which version to compare from. Once you have brought a mod up to date,
+  **Set the game version** opens its descriptor at the version line, where the editor's quick fix writes the game's
+  version. Mods that are not yours are listed and never changed.
+- **A version** shows its patch notes from the wiki, the Modding Co-op's digest where it has written notes, the
+  script keys and data functions it changed, and the game files it changed. The digest marks the mods each article
+  touches. Ctrl F finds in what is shown.
 
 The notes come from the game's wiki. What each version of Victoria 3 and EU5 changed comes from their Modding
 Co-op's digests. For CK3, and for a version with no digest, PMT ships what it compared itself, and compares each new
@@ -244,10 +245,11 @@ game's own DDS at that place, and offers that DDS's format when it is another on
 
 ![Source control](images/source-control.png)
 
-The sidebar's third view runs the git installed on your computer on each mod that is a repository. Each repository has
-a section with its branch, its commit box and its changes. A branch that is only on your computer shows Publish, and
-with nothing to commit the commit button publishes or syncs the branch. The Graph shows the history of the active
-file's repository.
+The sidebar's third view runs the git installed on your computer on each of your own mods that is a repository. Each
+repository has a section with its branch, its commit box and its changes. A branch that is only on your computer shows
+Publish, and with nothing to commit the commit button publishes or syncs the branch. The Graph shows the history of
+the active file's repository. An external mod is someone else's: PMT shows no repository of it and never starts one
+in it.
 
 Diffs open as tabs. Merge conflicts are resolved in the editor. PMT reimplements none of git, so git must be installed.
 
@@ -307,13 +309,16 @@ explorer or from any other page. A window can hand its tabs back to the main win
 ![External mods](images/external-mods.png)
 
 Some mods in a workspace are not yours: a Workshop mod you subscribe to, or a copy of someone else's work. Add them as
-**external mods** to check your own against them. PMT never publishes an external mod, and keeps it out of your totals.
+**external mods** to check your own against them. PMT keeps an external mod read only, never publishes it, and keeps
+it out of your totals.
 
 - **Adding.** Settings and the IDE have an add menu: a mod of yours, an external mod, or **From the Workshop**, which
   lists the mods Steam has downloaded for your game. Steam does not have to be running. The new workspace setup has a
   second list for them.
-- **A Workshop copy is always external.** Steam's copy of a mod you subscribe to is read only, and the mod's card says
-  so. Any other mod has an **External mod** switch on its card.
+- **Read only.** PMT changes nothing in an external mod: no edit, no new file, no copy into it, and no git. To change
+  one, make a mod of your own for the changes.
+- **A Workshop copy is always external.** Any other mod has an **External mod** switch on its card; switch it off for
+  a mod that is yours, and it can be edited again.
 - **The explorer** puts external mods under their own heading, "External mods · never published".
 - **Health** judges the mods together, so it still finds where yours clash with theirs. Its rail lists "Your mods" and
   "External mods" apart, and the totals count yours only.

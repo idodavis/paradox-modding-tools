@@ -11,12 +11,13 @@
 //
 // The Co-ops' layout, as the package reads it:
 //
-//   - A version's folder is the one that holds a docs folder: flat, as
-//     1.15.1, or under a major version's folder, as 1.4/1.4.7. An open
-//     beta's ends in -openbeta.
-//   - A version's dump files are the docs folder's .log files and its
-//     data_types_*.txt files. A file the folder lacks did not change, so the
-//     version takes the newest earlier copy.
+//   - A version's folder is the one that holds discord.md: flat, as 1.15.1,
+//     or under a major version's folder, as 1.4/1.4.7. An open beta's ends
+//     in -openbeta.
+//   - A version's dump files are the .log files and the data_types_*.txt
+//     files of its docs folder. A file the version lacks did not change, so
+//     the version takes the newest earlier copy. A hotfix may have no docs
+//     folder at all, as 1.4/1.4.6.
 //   - A version is compared against its base, the latest earlier version
 //     that is not an open beta.
 //   - changes_files.md lists the game files a version added, modified or

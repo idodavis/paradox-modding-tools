@@ -3,6 +3,7 @@ import * as monaco from "monaco-editor/editor/editor.api";
 import type { languages } from "monaco-editor";
 import { watch } from "vue";
 
+import { Format } from "@internal/files/models";
 import * as lsp from "@services/lsp/service";
 import type { Completion, Edit, Fix, Site, Symbol } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
@@ -10,6 +11,7 @@ import { fileUrl, loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
 import { useWorkspaceStore } from "../../../stores/workspace";
+import { COMPARE_SCHEME } from "../../../ui/CompareView.vue";
 import { GROUP, registerSuggestions } from "./completion";
 import { findModel, flushText, openModel } from "./models";
 
@@ -53,7 +55,8 @@ export function registerProviders(languageIds: string[], legend: languages.Seman
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, dotSheet];
   registerNavigation(selector);
   registerCompletion(selector);
-  registerWriting(selector);
+  // A metadata.json descriptor has a quick fix too.
+  registerWriting([...selector, { language: "json", scheme: "file" }]);
   registerDecoration(selector, legend);
 }
 
@@ -252,6 +255,18 @@ function registerDecoration(selector: languages.LanguageFilter[], legend: langua
       return { data: Uint32Array.from((await lsp.Tokens(model.uri.fsPath, range)) ?? []) };
     },
   });
+  // A compare's text is no file, so Go colors it whole, read as the file
+  // whose path its model carries.
+  monaco.languages.registerDocumentSemanticTokensProvider(
+    selector.map(({ language }) => ({ language, scheme: COMPARE_SCHEME })),
+    {
+      getLegend: () => legend,
+      provideDocumentSemanticTokens: async (model) => ({
+        data: Uint32Array.from((await lsp.ColorText(model.uri.fsPath, Format.FormatScript, model.getValue(), 0)) ?? []),
+      }),
+      releaseDocumentSemanticTokens: () => undefined,
+    },
+  );
 }
 
 /**

@@ -149,12 +149,15 @@ const notice = computed(() => {
   if (!activePlace?.readOnly || activeTab.value?.side || closedNotices.has(group.active ?? "")) return null;
   if (activePlace.origin === VANILLA) {
     if (activePlace.format === Format.FormatReadme || activePlace.format === Format.FormatMarkdown) return null;
-    return { text: "Game files are read only.", detail: "", workshop: false };
+    return { text: "Game files are read only.", detail: "", external: false };
   }
+  const isWorkshop = workspace.listMods().some((mod) => mod.id === activePlace.origin && mod.workshop);
   return {
-    text: `${workspace.originName(activePlace.origin)} is from the Steam Workshop, so PMT keeps it read only.`,
-    detail: `Steam replaces ${activePlace.root} each time its author updates it.`,
-    workshop: true,
+    text: `${workspace.originName(activePlace.origin)} is an external mod, so PMT keeps it read only.`,
+    detail: isWorkshop
+      ? `Steam replaces ${activePlace.root} each time its author updates it.`
+      : "If it is your own mod, switch off External mod on its card in Settings.",
+    external: true,
   };
 });
 
@@ -671,6 +674,8 @@ const actions = computed<DropdownMenuItem[]>(() => [
             <CompareView
               :left="model.diskText.text"
               :right="model.model.getValue()"
+              :left-path="model.place.path"
+              :right-path="model.place.path"
               :language="model.place.language"
               left-label="The file on disk"
               right-label="Your unsaved text"
@@ -741,7 +746,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
         @click="copyToMod(place)"
       />
       <UButton
-        v-if="notice.workshop"
+        v-if="notice.external"
         label="New mod for my changes…"
         size="xs"
         color="neutral"

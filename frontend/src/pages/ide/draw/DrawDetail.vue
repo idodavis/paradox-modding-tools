@@ -50,7 +50,7 @@ const { data: drawables } = useQuery(() => ({
 }));
 
 const mods = computed(() =>
-  listMods(workspaceStore.listWritableMods()).map(({ label, value }) => ({ label, onSelect: () => copy(value) })),
+  listMods(workspaceStore.listOwnMods()).map(({ label, value }) => ({ label, onSelect: () => copy(value) })),
 );
 
 const actions = computed(() => [

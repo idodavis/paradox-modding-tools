@@ -58,12 +58,16 @@ after an update, while the names and the files need none. `gen` makes the shippe
   game files and articles. A local patch is one PMT compared itself.
 - **Base**: the version a patch is compared against: the latest earlier version that is not an open beta.
 - **History**: the patches the app ships for a game (`LoadHistory`), embedded from `shipped/<game>.gob` and written by
-  the `gen` command of [schema](../schema/README.md). For Crusader Kings III it holds the dump changes of the
-  versions from 1.0.3 to 1.10.2 from OldEnt's dumps. Versions between that and the first `gen` saw are not in it.
+  the `gen` command of [schema](../schema/README.md). For Crusader Kings III it also holds the dump changes of the
+  versions from 1.0.3 to 1.10.2, read once from OldEnt's repository of dumps; nothing in the code adds to those.
+  Versions between that and the first `gen` saw are not in it.
 - **Range**: the patches after a start version, up to an end version (`ListRange`). A mod's range starts at
   `ResolveStart`: the end itself where the supported version matches it (the mod is made for the game as it is),
-  else the oldest version its supported version matches, else the mod's base version where the supported version is
-  blank or cannot be judged (`1.13*`), else "" for none. Open betas count only where the range ends at one.
+  else the oldest version its supported version matches, else the base of the patch that spans it where the patches
+  know none it matches (a mod made for `1.13.2` starts at `1.13.0` where the patch of `1.13.3` is compared against
+  `1.13.0`; a mod made for a version in a gap of the history, as `1.17.*` for Crusader Kings III, has none), else the
+  mod's base version where the supported version is blank or cannot be judged (`1.13*`), else "" for none. Open betas
+  count only where the range ends at one.
 - **MatchVersion**: whether a mod made for a supported version runs on a game version, and whether that can be judged.
 - **KeyRename**: a key a patch gave a new key, with its replacement.
 - **GameFile**: a file of the game that a patch added, changed or removed. A patch lists its game files sorted by
@@ -71,4 +75,3 @@ after an update, while the names and the files need none. `gen` makes the shippe
 - **Article**: one titled part of a digest's written notes, as a document the pages show, with the folders and keys
   it names.
 - **Snapshot**: what PMT keeps of one version of a game for the next to be compared with.
-- **Copy**: a gzipped copy of a text game file's content as it was at a game version.

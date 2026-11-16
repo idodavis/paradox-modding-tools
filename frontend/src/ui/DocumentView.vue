@@ -30,8 +30,6 @@ const {
 /** The text the find looks for, which a host may share with its other views. */
 const term = defineModel<string>("find", { default: "" });
 defineSlots<{
-  /** Controls in the rail's header. */
-  rail?: () => unknown;
   /** Marks beside the rail's entry of the heading with an id. */
   entry?: (props: { id: string }) => unknown;
   /** A line under the heading with an id, in the document. */
@@ -198,17 +196,15 @@ function follow(event: MouseEvent): void {
             />
           </UTooltip>
         </div>
-        <div class="flex flex-col items-start gap-1 ps-1 pb-1">
-          <UButton
-            v-if="jumpHeading"
-            :label="`Jump to ${jump}`"
-            icon="i-lucide-arrow-down-to-line"
-            variant="ghost"
-            size="xs"
-            @click="jumpHeading.scrollIntoView({ block: 'start' })"
-          />
-          <slot name="rail" />
-        </div>
+        <UButton
+          v-if="jumpHeading"
+          :label="`Jump to ${jump}`"
+          icon="i-lucide-arrow-down-to-line"
+          variant="ghost"
+          size="xs"
+          class="ms-1 mb-1 self-start"
+          @click="jumpHeading.scrollIntoView({ block: 'start' })"
+        />
         <button
           v-for="(heading, index) in headings"
           :key="index"

@@ -102,7 +102,7 @@ export interface Mod {
 
     /**
      * External is someone else's mod, which the workspace checks its own mods
-     * against.
+     * against and never changes.
      */
     "external": boolean;
 

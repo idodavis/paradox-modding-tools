@@ -346,8 +346,11 @@ function describeSite(site: Site): string {
         />
         <CompareView
           v-else-if="compared && pair.left && pair.right"
+          :key="`${pair.left.place.key} ${pair.right.place.key}`"
           :left="compared.left"
           :right="compared.right"
+          :left-path="pair.left.place.path"
+          :right-path="pair.right.place.path"
           :language="pair.left.place.language"
           :left-label="describeSite(pair.left)"
           :right-label="describeSite(pair.right)"

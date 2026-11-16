@@ -1,6 +1,20 @@
 <!-- Two texts in a diff editor, with a toolbar above it and a chip above each side. -->
 <script lang="ts">
-import { editor } from "monaco-editor/editor/editor.api";
+import { editor, Uri } from "monaco-editor/editor/editor.api";
+
+/**
+ * COMPARE_SCHEME is the URI scheme of a compared text that is a version of a
+ * file. Its model carries the file's path, so Go colors the text as that
+ * file's, and no other language feature takes it for the file.
+ */
+export const COMPARE_SCHEME = "pmt-compare";
+/** How many such models were made, which keeps their URIs apart. */
+let made = 0;
+/**
+ * GO_COLORS turns Go's colors on. Monaco's diff editor takes the option,
+ * though its type leaves it out.
+ */
+const GO_COLORS: editor.IStandaloneEditorConstructionOptions = { "semanticHighlighting.enabled": true };
 
 /** DIFF_OPTIONS holds the options every diff editor in the app shares. */
 export const DIFF_OPTIONS: editor.IDiffEditorConstructionOptions = {
@@ -21,12 +35,23 @@ import { useLocalStorage } from "@vueuse/core";
 import { plural } from "../lib/format";
 import { useSettingsStore } from "../stores/settings";
 
-const { left, right, language, leftLabel, rightLabel } = defineProps<{
+const {
+  left,
+  right,
+  language,
+  leftLabel,
+  rightLabel,
+  leftPath = "",
+  rightPath = "",
+} = defineProps<{
   left: string;
   right: string;
   language: string;
   leftLabel: string;
   rightLabel: string;
+  /** The file each text is a version of. Without one, Go colors nothing. */
+  leftPath?: string;
+  rightPath?: string;
 }>();
 
 const STYLES = [
@@ -41,8 +66,8 @@ const additions = shallowRef(0);
 const removals = shallowRef(0);
 const split = computed(() => style.value !== "unified");
 const host = useTemplateRef("host");
-const original = editor.createModel(left, language);
-const modified = editor.createModel(right, language);
+const original = createSide(left, leftPath);
+const modified = createSide(right, rightPath);
 let view: editor.IStandaloneDiffEditor | undefined;
 
 onMounted(() => {
@@ -59,6 +84,7 @@ onMounted(() => {
     scrollBeyondLastLine: false,
     stickyScroll: { enabled: false },
     contextmenu: false,
+    ...GO_COLORS,
   });
   view.setModel({ original, modified });
   view.onDidUpdateDiff(() => {
@@ -108,6 +134,12 @@ onBeforeUnmount(() => {
   original.dispose();
   modified.dispose();
 });
+
+/** createSide makes one text's model, with its file's path if it has one. */
+function createSide(text: string, path: string): editor.ITextModel {
+  const uri = path ? Uri.file(path).with({ scheme: COMPARE_SCHEME, fragment: `${++made}` }) : undefined;
+  return editor.createModel(text, language, uri);
+}
 
 /** compareAgain compares the two texts anew, folding the unchanged regions again. */
 function compareAgain(): void {

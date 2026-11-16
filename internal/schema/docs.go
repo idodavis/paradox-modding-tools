@@ -397,11 +397,11 @@ func splitComment(line string) (code, comment string) {
 }
 
 // isFact reports whether a key = value line says something about the whole
-// definition rather than a field, as root = character does.
+// definition rather than a field, as root = character does. A line
+// default = x is a field: it is one in every doc of the three games that
+// writes it, as a game rule's default = setting_name.
 func isFact(key string) bool {
-	lower := strings.ToLower(key)
-
-	return lower == lang.LinkRoot || lower == "default"
+	return strings.EqualFold(key, lang.LinkRoot)
 }
 
 // isNote reports whether a line written as a statement is a sentence about

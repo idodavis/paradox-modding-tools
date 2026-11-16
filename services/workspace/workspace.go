@@ -9,8 +9,8 @@
 // dumps and the app's build, so a change to any of them scans again.
 //
 // It applies these rules:
-//   - The game's own files and Steam's copy of a Workshop mod are read only,
-//     and a Workshop mod is always an external mod.
+//   - The game's own files and an external mod's are read only, and Steam's
+//     copy of a Workshop mod is always an external mod.
 //   - A mod is a folder with the game's descriptor file in it. A mod whose
 //     folder is missing is broken.
 //   - A mod's color is the first of 16 slots that no mod has.

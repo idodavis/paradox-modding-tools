@@ -283,7 +283,7 @@ var Codes = []Code{
 		Message: "This folder is outside the in_game, main_menu and loading_screen folders, " +
 			"so the game never reads the files in it: {count}.",
 		Advice: "Move the files into one of those folders."},
-	{ID: "supported-version", Question: QuestionPatch, Level: LevelWarning, Topic: "descriptor",
+	{ID: codeSupportedVersion, Question: QuestionPatch, Level: LevelWarning, Topic: "descriptor",
 		Label:       "Made for another game version",
 		Description: "A mod made for another game version than the installed one.",
 		Message:     "{mod} is made for game {supported}; the game is {version}.",
@@ -576,6 +576,10 @@ func diagnoseDocument(ws *workspace.Session, mods *index.Index, place workspace.
 	return describeDiagnostics(diagnostics)
 }
 
+// codeSupportedVersion is the code of the problem a descriptor has when it
+// names another game version than the game's.
+const codeSupportedVersion = "supported-version"
+
 // diagnoseDescriptor returns a problem if a mod's descriptor supports another
 // game version than the game's. It returns none if no source shows a mismatch.
 func diagnoseDescriptor(ws *workspace.Session, place workspace.Place, tree *jomini.Tree) []Diagnostic {
@@ -596,7 +600,7 @@ func diagnoseDescriptor(ws *workspace.Session, place workspace.Place, tree *jomi
 	facts := lang.DescribeReference(lang.Reference{Name: cmp.Or(descriptor.Name, "This mod")})
 	facts["mod"], facts["supported"], facts["version"] = facts["name"], descriptor.SupportedVersion, version
 
-	return []Diagnostic{makeDiagnostic(tree, span, "supported-version", facts)}
+	return []Diagnostic{makeDiagnostic(tree, span, codeSupportedVersion, facts)}
 }
 
 // patchable holds the codes of the problems that a patch finding replaces: a

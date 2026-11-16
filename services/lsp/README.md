@@ -58,7 +58,9 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
 
 ## The answers
 
-- **Hover.** `Hover` walks to the position and returns a `Card`: what the key or value is, a localization key's
+- **Hover.** In a mod's descriptor, `Hover` says what the key under the pointer is for, as
+  `workspace.FindDescriptorKey` gives it. In any
+  other file it walks to the position and returns a `Card`: what the key or value is, a localization key's
   text, a color, the sites that define the name, the one the game keeps first, and its facts as `Card.Rows`. A row is
   a label and the fact in words, worded here and kept in the one order `rowLabels` lists: what the word takes, where
   it leads, a date in the mod's calendar, an image's size and format. The page draws the rows as given. A scope is
@@ -101,7 +103,7 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   page shows: it adds the comments, quoted texts and operators that Monaco colors by itself in the editor.
 - **Edits.** `Format` keeps the file's own indentation, and gives no edits for a read-only file or a file that does
   not parse; its edits only ever replace white space. `ListFixes` gives the quick fixes: the nearest defined
-  name for one nothing defines, which for a call is also a command the block allows, a missing key with its default, an entry mode out of place removed, and the file's
+  name for one nothing defines, which for a call is also a command the block allows, a missing key with its default, an entry mode out of place removed, the install's release where a descriptor names another game version, and the file's
   localization keys that have no base-language text added to the mod's localization file, which the fix creates first
   if it is missing. `BuildOverride` copies an entry into a mod, and `DraftFile` names and starts a new file.
 - **Details.** `ListFolds` returns every block that spans lines. `ListHints` reads each date in the mod's calendar and

@@ -174,13 +174,15 @@ func readArchive(
 var otherFolders = []string{"documentation", "current_docs", "image", "script"}
 
 // listVersions returns the folder of each version of the digest, oldest
-// first: every folder that holds a docs folder.
+// first: every folder that holds the notes posted to Discord. Every version
+// of both digests has them, and a hotfix may have nothing else but its list
+// of changed game files.
 func (a archive) listVersions() []string {
 	var folders []string
 	for file := range a {
-		folder, ok := strings.CutSuffix(path.Dir(file), "/docs")
+		folder := path.Dir(file)
 		top, _, _ := strings.Cut(folder, "/")
-		if ok && !slices.Contains(otherFolders, top) && !slices.Contains(folders, folder) {
+		if path.Base(file) == discordFile && !slices.Contains(otherFolders, top) {
 			folders = append(folders, folder)
 		}
 	}

@@ -156,6 +156,18 @@ func (s *Service) Hover(path string, line, column int) (*Card, error) {
 	tree, mods := document.Tree, ws.Mods.Load()
 	place := ws.Locate(mods, path)
 	offset := jomini.ToOffset(tree.Src, tree.Lines, line, column)
+	if place.Format == files.FormatDescriptor {
+		var card *Card
+		if span, blurb, ok := workspace.FindDescriptorKey(tree.Src, offset); ok {
+			card = &Card{
+				Title: tree.Src[span.Start:span.End], What: "descriptor key", Blurb: blurb,
+				Range: jomini.ToRange(tree.Src, tree.Lines, span),
+			}
+		}
+
+		return card, nil
+	}
+
 	if place.Format != files.FormatLocalization {
 		return colorCard(document, s.describeHit(ws, mods, place, findCursor(document, offset))), nil
 	}

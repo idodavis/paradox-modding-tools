@@ -897,8 +897,11 @@ function collapseAll(): void {
           </p>
           <CompareView
             v-else-if="leftFile.data.value && rightFile.data.value"
+            :key="`${comparing.left.key} ${comparing.right.key}`"
             :left="leftFile.data.value.text.text"
             :right="rightFile.data.value.text.text"
+            :left-path="comparing.left.path"
+            :right-path="comparing.right.path"
             :language="comparing.right.language"
             :left-label="describePlace(comparing.left)"
             :right-label="describePlace(comparing.right)"

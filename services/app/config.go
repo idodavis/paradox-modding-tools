@@ -69,7 +69,7 @@ type Mod struct {
 	LeftOut bool `json:"leftOut"`
 
 	// External is someone else's mod, which the workspace checks its own mods
-	// against.
+	// against and never changes.
 	External bool `json:"external"`
 
 	// Base is the game version a patch's changes are counted from for a mod

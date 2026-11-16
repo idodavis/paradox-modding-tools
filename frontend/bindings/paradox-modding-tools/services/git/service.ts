@@ -87,8 +87,9 @@ export function ListRemotes(root: string): $CancellablePromise<$models.Remote[] 
 }
 
 /**
- * ListRepositories returns the repositories the open workspace's mods are in,
- * in load order.
+ * ListRepositories returns the repositories the open workspace's own mods are
+ * in, in load order. An external mod is someone else's: its repository is
+ * never listed, and git is not run in its folder.
  */
 export function ListRepositories(): $CancellablePromise<$models.Repository[] | null> {
     return $Call.ByID(1749972734);

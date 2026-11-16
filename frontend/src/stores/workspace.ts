@@ -93,10 +93,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   /** listMods returns the active workspace's mods in load order. */
   const listMods = (): Mod[] => active()?.mods ?? [];
 
-  /** listWritableMods returns the mods PMT writes into: all but Steam's read-only Workshop copies and broken mods. */
-  const listWritableMods = (): Mod[] => listMods().filter((mod) => !mod.workshop && !mod.broken);
-
-  /** listOwnMods returns the user's own mods, the ones PMT publishes: all but external mods and broken mods. */
+  /**
+   * listOwnMods returns the user's own mods, the ones PMT writes into and
+   * publishes: all but external mods and broken mods.
+   */
   const listOwnMods = (): Mod[] => listMods().filter((mod) => !mod.external && !mod.broken);
 
   /** listModIds returns the ids of the active workspace's mods in load order. */
@@ -163,7 +163,6 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     isExternal,
     isCustom,
     listMods,
-    listWritableMods,
     listOwnMods,
     listModIds,
     open,

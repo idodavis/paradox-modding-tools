@@ -7,6 +7,7 @@ import { computed, reactive, shallowRef } from "vue";
 import * as gitApi from "@services/git/service";
 import type { Place } from "@services/workspace/models";
 import { gitInstalledQuery, keys, repositoriesQuery } from "../queries";
+import { useWorkspaceStore } from "./workspace";
 
 /** OUTPUT_LINES is how many lines of git's output the store keeps. */
 const OUTPUT_LINES = 300;
@@ -17,6 +18,7 @@ export const UNSTAGE = ["reset", "-q", "--"] as const;
 
 export const useGitStore = defineStore("git", () => {
   const cache = useQueryCache();
+  const workspace = useWorkspaceStore();
   const { data: listed } = useQuery(repositoriesQuery);
   const { data: installed } = useQuery(gitInstalledQuery);
   /** Whether git is on the PATH. It counts as installed until Go answers, to avoid a flash of its absence. */
@@ -35,6 +37,11 @@ export const useGitStore = defineStore("git", () => {
     lines.value = [...lines.value.slice(1 - OUTPUT_LINES), data];
   });
 
+  /** The user's own mods in no repository: only they may be given one. */
+  const bare = computed(() =>
+    workspace.listOwnMods().filter((mod) => !repositories.value.some((repo) => repo.mods?.includes(mod.id))),
+  );
+
   /** findRoot returns the root of the repository that holds a file's mod, or "". */
   const findRoot = (place: Pick<Place, "origin"> | null | undefined): string =>
     repositories.value.find((repository) => repository.mods?.includes(place?.origin ?? ""))?.root ?? "";
@@ -48,5 +55,5 @@ export const useGitStore = defineStore("git", () => {
     onSuccess: () => cache.invalidateQueries({ key: keys.gits }),
   });
 
-  return { isInstalled, repositories, graphRoot, folded, commitTarget, findRoot, output, initialize };
+  return { isInstalled, repositories, bare, graphRoot, folded, commitTarget, findRoot, output, initialize };
 });

@@ -644,10 +644,10 @@ function chooseMod(id: string, label: string, mods: string[], act: (modId: strin
   choicesBus.emit({ id, label, items });
 }
 
-/** listCopyTargets lists the mods a file can be copied into: every writable mod but the file's own. */
+/** listCopyTargets lists the mods a file can be copied into: the user's own. */
 function listCopyTargets(place: Place): string[] {
   return useWorkspaceStore()
-    .listWritableMods()
+    .listOwnMods()
     .filter((mod) => mod.id !== place.origin)
     .map((mod) => mod.id);
 }

@@ -1,16 +1,14 @@
 // ties.go says which articles of the game's patches touch each mod of the
-// open workspace, and makes a mod made for the install's release.
+// open workspace.
 
 package patch
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/lang"
-	"paradox-modding-tools/services/workspace"
 )
 
 // Tie is one article of a patch that touches a mod: it links the type doc of
@@ -107,29 +105,4 @@ func countFiles(rels, folders []string) int {
 	}
 
 	return count
-}
-
-// UpdateSupportedVersion writes the install's release, as 1.15.* for 1.15.1,
-// into the descriptor of one of the user's own mods. It returns an error if
-// no workspace is open, the mod is not the user's, or the install's version
-// names no release.
-func (s *Service) UpdateSupportedVersion(modID string) error {
-	ws, err := s.Workspace.Session()
-	if err != nil {
-		return err
-	}
-
-	mod, ok := s.Workspace.LookupMod(modID)
-	if !ok || mod.External {
-		return fmt.Errorf("%s is not a mod of yours in the open workspace", modID)
-	}
-
-	supported := workspace.ToSupportedVersion(ws.Schema.Version)
-	if supported == "" {
-		return fmt.Errorf("the install's version %q names no release to make the mod for", ws.Schema.Version)
-	}
-
-	mod.Descriptor.SupportedVersion = supported
-
-	return ws.WriteDescriptor(modID, mod.Descriptor)
 }

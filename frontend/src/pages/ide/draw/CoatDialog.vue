@@ -13,7 +13,7 @@ const emit = defineEmits<{ close: [result: { modId: string; name: string } | nul
 
 const editor = useEditorStore();
 const workspaceStore = useWorkspaceStore();
-const mods = computed(() => listMods(workspaceStore.listWritableMods()));
+const mods = computed(() => listMods(workspaceStore.listOwnMods()));
 const chosenMod = shallowRef("");
 const id = shallowRef("");
 const script = shallowRef("");

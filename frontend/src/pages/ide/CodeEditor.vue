@@ -267,7 +267,7 @@ function listReferences(heading: string, sites: Site[]): void {
 /** describeReadOnly returns what the editor says when typing is tried in a read only file. */
 function describeReadOnly(place: Place): string {
   if (place.origin === VANILLA) return "Game files are read only. To change this, use Override, or Copy into a mod.";
-  return `${workspace.originName(place.origin)} is Steam's copy of a Workshop mod, so PMT keeps it read only. Make a mod for your changes.`;
+  return `${workspace.originName(place.origin)} is an external mod, so PMT keeps it read only. Make a mod for your changes.`;
 }
 
 /** keepMovedFocus stops the menu from taking focus back after an item moved it to another text box. */

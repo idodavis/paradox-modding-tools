@@ -12,7 +12,8 @@ import * as lsp from "@services/lsp/service";
 import * as workspace from "@services/workspace/service";
 import { confirm } from "../../../lib/feedback";
 import { list, plural } from "../../../lib/format";
-import { fileQuery, keys, loadQuery, placeQuery } from "../../../queries";
+import { type Colors, paintModel } from "../../../lib/syntax";
+import { fileQuery, keys, legendQuery, loadQuery, placeQuery } from "../../../queries";
 import { useSearchStore } from "../../../stores/search";
 
 /** A Model is one open file in this window, shared by every tab that shows it. */
@@ -166,10 +167,17 @@ export function unsavedModels(): Model[] {
   return [...models.values()].filter((model) => model.unsaved);
 }
 
-/** load reads a file and makes its model. A draft Go still holds comes back as unsaved text. */
+/**
+ * load reads a file and makes its model, already in Go's colors, since an
+ * editor shows a model the moment it is made. A draft Go still holds comes
+ * back as unsaved text.
+ */
 async function load(place: Place): Promise<Model> {
   const cache = useQueryCache();
-  const { data: file } = await cache.fetch(cache.ensure(fileQuery(place.path)));
+  const [{ data: file }, colors] = await Promise.all([
+    cache.fetch(cache.ensure(fileQuery(place.path))),
+    fetchColors(place),
+  ]);
   if (!file) throw new Error(`${place.path} could not be read`);
   const model = buildModel(place, {
     text: file.draft || file.text.text,
@@ -177,9 +185,37 @@ async function load(place: Place): Promise<Model> {
     encoding: file.text.encoding,
     unsaved: !!file.draft,
   });
+  if (colors) paintModel(model.model, colors, false);
   if (doomed.delete(place.key)) closeModel(place.key);
   else void diagnose(model);
   return model;
+}
+
+/** repaintModels sets every open file's colors again, for a new theme. */
+export function repaintModels(): void {
+  models.forEach((model) => {
+    void fetchColors(model.place).then((colors) => colors && paintModel(model.model, colors, false));
+  });
+}
+
+/** WHOLE is a range past the end of any text, which Go reads as all of it. */
+const WHOLE = {
+  startLineNumber: 1,
+  startColumn: 1,
+  endLineNumber: Number.MAX_SAFE_INTEGER,
+  endColumn: Number.MAX_SAFE_INTEGER,
+};
+
+/**
+ * fetchColors asks Go for a whole file's colors, as Go holds the file. It
+ * returns null for a file of no Paradox language, which has none, and for
+ * one Go cannot color.
+ */
+async function fetchColors(place: Place): Promise<Colors | null> {
+  if (!place.language.startsWith("paradox-")) return null;
+  const [legend, data] = await Promise.all([loadQuery(legendQuery), lsp.Tokens(place.path, WHOLE).catch(() => null)]);
+  if (!legend || !data) return null;
+  return { legend: { tokenTypes: legend.tokenTypes ?? [], tokenModifiers: legend.tokenModifiers ?? [] }, data };
 }
 
 /** buildModel makes a file's Model, reusing the Monaco text model already at the file's URI if there is one. */

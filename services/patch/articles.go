@@ -107,7 +107,7 @@ func readNotes(source archive, digests, folder string, language *lang.Schema) ([
 			articles = append(articles, patch.Article{
 				ID: id, Title: section.title, New: note.New,
 				Breaking: note.Breaking || breakingTitle.MatchString(section.title),
-				HTML:     heading + app.RenderMarkdown(section.markdown, makeLinkRule(digests, folder)),
+				HTML:     heading + app.RenderMarkdown(section.markdown, makeLinkRule(digests, folder), 2),
 				Folders:  listFolders(prose, typeFolders, language),
 				Keys:     listMatches(backtickKey, prose),
 			})

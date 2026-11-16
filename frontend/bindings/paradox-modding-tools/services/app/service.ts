@@ -72,7 +72,7 @@ export function InstallRelease(version: string): $CancellablePromise<void> {
 
 /**
  * ListReleases returns the published releases of this app, newest first, with
- * their notes. A build that is no release gets only the newest.
+ * their notes. Each release's notes sit under a heading of its version.
  */
 export function ListReleases(): $CancellablePromise<$models.Release[] | null> {
     return $Call.ByID(449327985);

@@ -372,43 +372,61 @@ var Keywords = []Keyword{
 	{Key: "always", Class: KeywordClassLogical, Blurb: "True or false as written: always = yes is always true."},
 
 	{Key: "if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Blurb: "Runs what is inside it when its limit holds."},
-	{Key: "else_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"if", "else_if"},
-		Blurb: "Runs when the if or else_if before it did not, and its own limit holds."},
-	{Key: "else", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"if", "else_if"},
-		Blurb: "Runs when no if or else_if before it ran."},
+	{
+		Key: "else_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"if", "else_if"},
+		Blurb: "Runs when the if or else_if before it did not, and its own limit holds.",
+	},
+	{
+		Key: "else", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"if", "else_if"},
+		Blurb: "Runs when no if or else_if before it ran.",
+	},
 	{Key: "trigger_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Blurb: "Checks what is inside it only when its limit holds."},
-	{Key: "trigger_else_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"trigger_if", "trigger_else_if"},
-		Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds."},
-	{Key: "trigger_else", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"trigger_if", "trigger_else_if"},
-		Blurb: "Checks what is inside it when every trigger_if before it was skipped."},
+	{
+		Key: "trigger_else_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"trigger_if", "trigger_else_if"},
+		Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds.",
+	},
+	{
+		Key: "trigger_else", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"trigger_if", "trigger_else_if"},
+		Blurb: "Checks what is inside it when every trigger_if before it was skipped.",
+	},
 	// an else inside a progress_condition takes over when its limit fails,
 	// and may hold an else of its own (Vic3 scripted_progress_bars.md)
-	{Games: []string{game.Vic3}, Key: "else", Parent: "progress_condition", Class: KeywordClassConditional, Shape: ShapeEnclosing,
-		Recursive: true, Blurb: "Takes over when the limit of the progress condition or the else around it fails."},
-	{Key: "limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "The conditions an if, a list, a while or a trigger_if checks first."},
+	{
+		Games: []string{game.Vic3}, Key: "else", Parent: "progress_condition", Class: KeywordClassConditional, Shape: ShapeEnclosing,
+		Recursive: true, Blurb: "Takes over when the limit of the progress condition or the else around it fails.",
+	},
+	{Key: "limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "The conditions an if, exists, a list, a while or a trigger_if checks first."},
 	{Key: "alternative_limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "A second limit a list falls back to when its limit matches nothing."},
 	{Key: "calc_true_if", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "True when at least amount of the triggers inside it are true."},
 
 	// a switch is trigger = <a trigger>, a block for each value and
 	// fallback = { } (effects.log and triggers.log)
-	{Key: "switch", Class: KeywordClassConditional, Shape: ShapeEnclosing,
-		Blurb: "Reads one trigger and runs the case whose value matches, else the fallback."},
-	{Key: "trigger", Parent: "switch", Class: KeywordClassConditional, Names: DumpTriggers,
-		Blurb: "The trigger whose value picks the case."},
+	{
+		Key: "switch", Class: KeywordClassConditional, Shape: ShapeEnclosing,
+		Blurb: "Reads one trigger and runs the case whose value matches, else the fallback.",
+	},
+	{
+		Key: "trigger", Parent: "switch", Class: KeywordClassConditional, Names: DumpTriggers,
+		Blurb: "The trigger whose value picks the case.",
+	},
 	{Key: "fallback", Parent: "switch", Class: KeywordClassConditional, Shape: ShapeEnclosing, Blurb: "Runs when no case matches."},
 	{Key: AnyKey, Parent: "switch", Shape: ShapeEnclosing, Blurb: "One case of a switch: runs when the trigger's value is this."},
 
 	{Key: "while", Class: KeywordClassFlow, Shape: ShapeEffects, Blurb: "Repeats what is inside it while its limit holds, or count times."},
 	{Key: "random", Class: KeywordClassFlow, Shape: ShapeEffects, Blurb: "Runs what is inside it with the chance given, else nothing."},
 	{Key: "random_list", Class: KeywordClassFlow, Blurb: "Picks one branch at random; each branch's number is its weight."},
-	{Key: jomini.NumberKey, Parent: "random_list", Shape: ShapeEffects, Caller: AnyCall, Weighted: true,
-		Blurb: "One branch of a random list; its number is how likely it is."},
+	{
+		Key: jomini.NumberKey, Parent: "random_list", Shape: ShapeEffects, Caller: AnyCall, Weighted: true,
+		Blurb: "One branch of a random list; its number is how likely it is.",
+	},
 	{Key: "hidden_effect", Class: KeywordClassDisplay, Shape: ShapeEffects, Blurb: "Runs its effects without showing them in the tooltip."},
 	{Key: "show_as_tooltip", Class: KeywordClassDisplay, Shape: ShapeEffects, Preview: true, Blurb: "Shows its effects in the tooltip without running them."},
 
 	math("value", "The number a script value starts from, or is set to."),
-	{Key: "value", Holders: []Shape{ShapeArguments}, Class: KeywordClassMath, Shape: ShapeValue,
-		Blurb: "The number the command takes, or a script value that works it out."},
+	{
+		Key: "value", Holders: []Shape{ShapeArguments}, Class: KeywordClassMath, Shape: ShapeValue,
+		Blurb: "The number the command takes, or a script value that works it out.",
+	},
 	math("add", "Adds the number or script value given."),
 	math("subtract", "Subtracts the number or script value given."),
 	math("multiply", "Multiplies by the number or script value given."),
@@ -429,10 +447,14 @@ var Keywords = []Keyword{
 	{Key: "desc", Holders: []Shape{ShapeValue}, Shape: ShapeDescription, Blurb: descBlurb},
 	{Key: "format", Holders: []Shape{ShapeValue}, Shape: ShapeDescription, Blurb: "The text that lays out this block's line when the value is broken down."},
 	// EU5 in_game/common/international_organizations/hre.txt:897
-	{Key: "desc_sort_order", Holders: []Shape{ShapeValue}, Class: KeywordClassDisplay,
-		Blurb: "Where this block's line sorts when the value is broken down: the lowest comes last."},
-	{Key: "save_temporary_value_as", Holders: []Shape{ShapeValue}, Class: KeywordClassSaving, Shape: ShapeArguments,
-		Blurb: "Remembers a value under a name until this script value ends."},
+	{
+		Key: "desc_sort_order", Holders: []Shape{ShapeValue}, Class: KeywordClassDisplay,
+		Blurb: "Where this block's line sorts when the value is broken down: the lowest comes last.",
+	},
+	{
+		Key: "save_temporary_value_as", Holders: []Shape{ShapeValue}, Class: KeywordClassSaving, Shape: ShapeArguments,
+		Blurb: "Remembers a value under a name until this script value ends.",
+	},
 	// a weight block: CK3 _scripted_modifiers.info:13-22, EU5
 	// scripted_modifiers.info:8-22, Vic3 _on_actions.md:50-55
 	math("base", "The number a weight starts from."),
@@ -443,19 +465,29 @@ var Keywords = []Keyword{
 	// modifier's conditions in it
 	{Key: "trigger", Holders: []Shape{ShapeValue}, Shape: ShapeTriggers, Blurb: "The conditions that must hold for the modifier around it to apply."},
 	{Key: "opinion_modifier", Holders: []Shape{ShapeValue}, Shape: ShapeArguments, Blurb: "Changes the weight by how much one character likes another."},
-	{Key: "compare_modifier", Holders: []Shape{ShapeValue}, Shape: ShapeArguments,
-		Blurb: "Changes the weight by how a value of one character compares with another's."},
+	{
+		Key: "compare_modifier", Holders: []Shape{ShapeValue}, Shape: ShapeArguments,
+		Blurb: "Changes the weight by how a value of one character compares with another's.",
+	},
 	// CK3 character_interactions/00_scheme_interactions.txt:2099 and
 	// schemes/scheme_types/befriend_scheme.txt:315
-	{Games: []string{game.CK3}, Key: "compatibility_modifier", Holders: []Shape{ShapeValue}, Shape: ShapeArguments,
-		Blurb: "Changes the weight by how well two characters' traits get along."},
+	{
+		Games: []string{game.CK3}, Key: "compatibility_modifier", Holders: []Shape{ShapeValue}, Shape: ShapeArguments,
+		Blurb: "Changes the weight by how well two characters' traits get along.",
+	},
 
-	{Key: "first_valid", Holders: []Shape{ShapeDescription}, Class: KeywordClassDisplay, Shape: ShapeDescription,
-		Blurb: "Shows the first text inside it whose trigger holds."},
-	{Key: "random_valid", Holders: []Shape{ShapeDescription}, Class: KeywordClassDisplay, Shape: ShapeDescription,
-		Blurb: "Shows one of the texts inside it whose trigger holds, at random."},
-	{Key: "triggered_desc", Holders: []Shape{ShapeDescription}, Class: KeywordClassDisplay, Shape: ShapeDescription,
-		Blurb: "A text shown only when its trigger holds."},
+	{
+		Key: "first_valid", Holders: []Shape{ShapeDescription}, Class: KeywordClassDisplay, Shape: ShapeDescription,
+		Blurb: "Shows the first text inside it whose trigger holds.",
+	},
+	{
+		Key: "random_valid", Holders: []Shape{ShapeDescription}, Class: KeywordClassDisplay, Shape: ShapeDescription,
+		Blurb: "Shows one of the texts inside it whose trigger holds, at random.",
+	},
+	{
+		Key: "triggered_desc", Holders: []Shape{ShapeDescription}, Class: KeywordClassDisplay, Shape: ShapeDescription,
+		Blurb: "A text shown only when its trigger holds.",
+	},
 	{Key: "trigger", Holders: []Shape{ShapeDescription}, Shape: ShapeTriggers, Blurb: "The conditions that must hold for the block around it to count."},
 	// a scalar desc is the text itself
 	{Key: "desc", Holders: []Shape{ShapeDescription}, Shape: ShapeDescription, Blurb: descBlurb},

@@ -1,20 +1,6 @@
 <!-- Two texts in a diff editor, with a toolbar above it and a chip above each side. -->
 <script lang="ts">
-import { editor, Uri } from "monaco-editor/editor/editor.api";
-
-/**
- * COMPARE_SCHEME is the URI scheme of a compared text that is a version of a
- * file. Its model carries the file's path, so Go colors the text as that
- * file's, and no other language feature takes it for the file.
- */
-export const COMPARE_SCHEME = "pmt-compare";
-/** How many such models were made, which keeps their URIs apart. */
-let made = 0;
-/**
- * GO_COLORS turns Go's colors on. Monaco's diff editor takes the option,
- * though its type leaves it out.
- */
-const GO_COLORS: editor.IStandaloneEditorConstructionOptions = { "semanticHighlighting.enabled": true };
+import { editor } from "monaco-editor/editor/editor.api";
 
 /** DIFF_OPTIONS holds the options every diff editor in the app shares. */
 export const DIFF_OPTIONS: editor.IDiffEditorConstructionOptions = {
@@ -32,7 +18,11 @@ export const DIFF_OPTIONS: editor.IDiffEditorConstructionOptions = {
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useLocalStorage } from "@vueuse/core";
 
+import { Format } from "@internal/files/models";
+import * as lsp from "@services/lsp/service";
 import { plural } from "../lib/format";
+import { paintModel } from "../lib/syntax";
+import { legendQuery, loadQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 
 const {
@@ -66,14 +56,18 @@ const additions = shallowRef(0);
 const removals = shallowRef(0);
 const split = computed(() => style.value !== "unified");
 const host = useTemplateRef("host");
-const original = createSide(left, leftPath);
-const modified = createSide(right, rightPath);
+const settings = useSettingsStore();
+const original = editor.createModel(left, language);
+const modified = editor.createModel(right, language);
 let view: editor.IStandaloneDiffEditor | undefined;
 
-onMounted(() => {
+onMounted(async () => {
+  // The editor is made once both sides have their colors, so it never shows
+  // them bare.
+  await showSides();
   if (!host.value) return;
   view = editor.createDiffEditor(host.value, {
-    ...useSettingsStore().codeFont(),
+    ...settings.codeFont(),
     ...DIFF_OPTIONS,
     readOnly: true,
     automaticLayout: true,
@@ -84,7 +78,6 @@ onMounted(() => {
     scrollBeyondLastLine: false,
     stickyScroll: { enabled: false },
     contextmenu: false,
-    ...GO_COLORS,
   });
   view.setModel({ original, modified });
   view.onDidUpdateDiff(() => {
@@ -104,18 +97,14 @@ onMounted(() => {
 // setValue loses the marks Monaco keeps of the folded regions, so a new text compares again.
 watch(
   () => left,
-  (text) => {
-    original.setValue(text);
-    compareAgain();
-  },
+  () => void showSide(original).then(compareAgain),
 );
 watch(
   () => right,
-  (text) => {
-    modified.setValue(text);
-    compareAgain();
-  },
+  () => void showSide(modified).then(compareAgain),
 );
+// A theme has its own colors.
+watch(() => settings.theme(), showSides);
 watch(
   () => language,
   (id) => {
@@ -135,10 +124,28 @@ onBeforeUnmount(() => {
   modified.dispose();
 });
 
-/** createSide makes one text's model, with its file's path if it has one. */
-function createSide(text: string, path: string): editor.ITextModel {
-  const uri = path ? Uri.file(path).with({ scheme: COMPARE_SCHEME, fragment: `${++made}` }) : undefined;
-  return editor.createModel(text, language, uri);
+function showSides(): Promise<void[]> {
+  return Promise.all([showSide(original), showSide(modified)]);
+}
+
+/**
+ * showSide puts one side's text on its model together with Go's colors, so
+ * the text is never drawn bare. Go reads the text as the file it is a version
+ * of. A text of no file, or of no Paradox language, gets no colors. If a
+ * newer text came for the side meanwhile, this one is dropped.
+ */
+async function showSide(side: editor.ITextModel): Promise<void> {
+  const [text, path] = side === original ? [left, leftPath] : [right, rightPath];
+  const [legend, data] =
+    path && language.startsWith("paradox-")
+      ? await Promise.all([loadQuery(legendQuery), lsp.ColorText(path, Format.FormatScript, text, 0).catch(() => null)])
+      : [];
+  if (side.isDisposed() || text !== (side === original ? left : right)) return;
+
+  if (side.getValue() !== text) side.setValue(text);
+  if (!legend || !data) return;
+  const tokenTypes = legend.tokenTypes ?? [];
+  paintModel(side, { legend: { tokenTypes, tokenModifiers: legend.tokenModifiers ?? [] }, data }, true);
 }
 
 /** compareAgain compares the two texts anew, folding the unchanged regions again. */

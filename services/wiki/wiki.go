@@ -5,7 +5,8 @@
 // A client asks the wiki's API at most twice a second. Each page is cached as
 // one JSON file with its HTML sanitized. A refresh asks for the latest
 // revision of each listed page, 50 titles to a query, and fetches the pages
-// that are not cached or have changed.
+// that are not cached or have changed. A game has one refresh at a time. Once
+// one has finished, the next asks the wiki no sooner than six hours later.
 //
 // The wiki's rules, as the package applies them:
 //
@@ -45,8 +46,11 @@ type Progress struct {
 type Service struct {
 	Workspace *workspace.Service
 
-	mu     sync.Mutex
-	client *Client
+	mu sync.Mutex
+
+	// clients holds the client of each game a workspace has opened, by the
+	// game's id, so that a game has one refresh at a time.
+	clients map[string]*Client
 }
 
 const (
@@ -65,7 +69,7 @@ func init() {
 }
 
 // ServiceStartup refreshes the wiki in the background each time a workspace
-// opens.
+// opens. A refresh asks the wiki only if none finished lately.
 func (s *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	application.Get().Event.On(workspace.EventOpened, func(*application.CustomEvent) {
 		go func() { _ = s.Refresh() }()
@@ -137,14 +141,21 @@ func (s *Service) Refresh() error {
 	return err
 }
 
-// resolveClient returns the client for the open workspace's game, making a new
-// one when the game changes.
+// resolveClient returns the client for the open workspace's game, making it
+// the first time a workspace of that game opens.
 func (s *Service) resolveClient(ws *workspace.Session) *Client {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.client == nil || s.client.game.ID != ws.Game.ID {
-		s.client = newClient(s.Workspace.Config.Dirs.Cache, ws.Game)
+
+	if s.clients == nil {
+		s.clients = map[string]*Client{}
 	}
 
-	return s.client
+	client, ok := s.clients[ws.Game.ID]
+	if !ok {
+		client = newClient(s.Workspace.Config.Dirs.Cache, ws.Game)
+		s.clients[ws.Game.ID] = client
+	}
+
+	return client
 }

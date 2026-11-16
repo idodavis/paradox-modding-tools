@@ -11,8 +11,10 @@ import (
 	"strings"
 
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
@@ -72,11 +74,36 @@ var markdown = goldmark.New(
 	goldmark.WithExtensions(extension.GFM), goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 )
 
-// RenderMarkdown returns the document of a markdown text, sanitized as
-// Sanitize says. It returns "" for a text that cannot be read.
-func RenderMarkdown(text string, rule LinkRule) string {
+// lastLevel is the deepest heading HTML has, an h6.
+const lastLevel = 6
+
+// RenderMarkdown returns the document of a markdown text that sits under a
+// heading of the given level, sanitized as Sanitize says. The shallowest of
+// its own headings gets the next level, and the others keep their distance
+// from it, down to an h6. It returns "" for a text that cannot be read.
+func RenderMarkdown(source string, rule LinkRule, level int) string {
+	document := markdown.Parser().Parse(text.NewReader([]byte(source)))
+
+	var headings []*ast.Heading
+	_ = ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if heading, ok := node.(*ast.Heading); ok && entering {
+			headings = append(headings, heading)
+		}
+
+		return ast.WalkContinue, nil
+	})
+
+	shallowest := lastLevel
+	for _, heading := range headings {
+		shallowest = min(shallowest, heading.Level)
+	}
+
+	for _, heading := range headings {
+		heading.Level = min(heading.Level-shallowest+level+1, lastLevel)
+	}
+
 	var rendered bytes.Buffer
-	if err := markdown.Convert([]byte(text), &rendered); err != nil {
+	if err := markdown.Renderer().Render(&rendered, []byte(source), document); err != nil {
 		return ""
 	}
 

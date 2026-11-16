@@ -90,9 +90,14 @@ Wails' runtime acts only on the window that calls it.
 `pages/ide/editor/` sets up Monaco once and holds what the editor is made of:
 
 - `monaco.ts`: the Paradox languages, their providers, the themes and the options.
-- `grammars.ts`: Monarch grammars that color shapes only; the meaning comes from Go's semantic tokens on top.
+- `grammars.ts`: Monarch grammars that color shapes only; the meaning comes from Go's semantic tokens on top. A mod's
+  descriptor is the exception: Go colors nothing in it, so its grammar colors its keys and values.
 - `providers.ts`: Monaco's providers, each handing the lsp service's answer to Monaco.
-- `models.ts`: the open files as Monaco models, which follow their files on disk and show Go's problems.
+- `models.ts`: the open files as Monaco models, which follow their files on disk and show Go's problems. A model is
+  made already in Go's colors, fetched beside its text: Monaco asks a provider for colors only 100 ms or more after an
+  editor shows a model, so a file would open bare. `lib/syntax.ts`'s `paintModel` sets them, through Monaco's own
+  modules for a model's coloring, which `env.d.ts` gives types. The compare (`ui/CompareView.vue`) paints its two
+  sides the same way before it makes its editor.
 - `completion.ts`: tab completion. It tells the completion agent of the open files and shows its suggestions as Monaco's
   inline completions, which PMT's own ghost text gives way to.
 - `review.ts`: an agent's edits to a file, shown as the file against its text from before them, with Keep and Undo for

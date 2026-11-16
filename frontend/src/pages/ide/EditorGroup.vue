@@ -1,26 +1,15 @@
 <!-- One editor group: its tab strip and the active tab, as code, an image, a diff, a picture or the start page. -->
 <script setup lang="ts">
-import { computed, shallowReactive, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useEventListener, watchDebounced } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 
-import { Format } from "@internal/files/models";
 import * as lsp from "@services/lsp/service";
 import type { Place } from "@services/workspace/models";
 
-import {
-  canCopyToMod,
-  compare,
-  compareWithGame,
-  copyToMod,
-  findCommand,
-  findGameCopy,
-  findKbds,
-  findOverride,
-  overrideEntry,
-} from "../../app/commands";
+import { compare, compareWithGame, findCommand, findGameCopy, findKbds, hideDisabled } from "../../app/commands";
 import { copiesQuery, fileQuery, folderQuery, loadQuery, outlineQuery } from "../../queries";
 import { useAgentStore } from "../../stores/agent";
 import { canSplit, useEditorStore, type Group, type Side, type Tab } from "../../stores/editor";
@@ -60,7 +49,6 @@ const MODES = [
 /** CRUMB holds the classes of a breadcrumb that opens a menu. */
 const CRUMB = "-mx-1 rounded-sm px-1 hover:bg-accented hover:text-highlighted";
 const REVEAL = findCommand("explorer.reveal");
-const CREATE = findCommand("mod.create");
 const SAVE_ALL = findCommand("editor.saveAll");
 
 const agent = useAgentStore();
@@ -99,17 +87,11 @@ const reviewStatus = computed(() => {
   return `Change ${Math.max(locateChange(model.value, changes.value), 0) + 1} of ${changes.value.length}`;
 });
 
-// The keys around the caret, and the fix that overrides the entry it is in.
-const { mutate: locateCaret, data: located } = useMutation({
-  mutation: async (fileModel: Model) => {
-    const [within, override] = await Promise.all([
-      lsp.ListAncestors(fileModel.place.path, fileModel.caret.line, fileModel.caret.column),
-      findOverride(fileModel.place, fileModel.caret.line, fileModel.caret.column),
-    ]);
-    return { within: within ?? [], override };
-  },
+// The keys around the caret.
+const { mutate: locateCaret, data: within } = useMutation({
+  mutation: (fileModel: Model) => lsp.ListAncestors(fileModel.place.path, fileModel.caret.line, fileModel.caret.column),
 });
-const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(located.value?.within ?? [])]);
+const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(within.value ?? [])]);
 const folderCount = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
 // The menu of the breadcrumb pressed, filled as it opens.
 const crumbMenu = shallowRef<DropdownMenuItem[]>([]);
@@ -128,38 +110,6 @@ const { data: menuCopies } = useQuery(() => ({
   enabled: !!menuPlace.value && menuPlace.value.origin !== VANILLA,
 }));
 const menuGameCopy = computed(() => menuPlace.value && findGameCopy(menuPlace.value, menuCopies.value));
-const closedNotices = shallowReactive(new Set<string>());
-// The other ways to change a read only file when the caret is in no entry to override. Null until the caret is known.
-const hint = computed(() => {
-  const activePlace = place.value;
-  if (!activePlace || !located.value || located.value.override) return null;
-  if (activePlace.database) return { text: "Put the caret in an entry to override it.", copy: false };
-  if (activePlace.format === Format.FormatLocalization) {
-    return {
-      text: "To change a line, write its key again in your mod's localization replace folder, which the game reads first.",
-      copy: false,
-    };
-  }
-  return { text: "To change this file, copy it into a mod.", copy: canCopyToMod(activePlace) };
-});
-// What the notice over a read only file says. Null for a file a mod can write to, and for the game's readmes/info,
-// which a mod has no reason to override.
-const notice = computed(() => {
-  const activePlace = place.value;
-  if (!activePlace?.readOnly || activeTab.value?.side || closedNotices.has(group.active ?? "")) return null;
-  if (activePlace.origin === VANILLA) {
-    if (activePlace.format === Format.FormatReadme || activePlace.format === Format.FormatMarkdown) return null;
-    return { text: "Game files are read only.", detail: "", external: false };
-  }
-  const isWorkshop = workspace.listMods().some((mod) => mod.id === activePlace.origin && mod.workshop);
-  return {
-    text: `${workspace.originName(activePlace.origin)} is an external mod, so PMT keeps it read only.`,
-    detail: isWorkshop
-      ? `Steam replaces ${activePlace.root} each time its author updates it.`
-      : "If it is your own mod, switch off External mod on its card in Settings.",
-    external: true,
-  };
-});
 
 watch(
   () => group.active,
@@ -188,18 +138,6 @@ function saveMine(fileModel: Model): void {
 function applyDisk(fileModel: Model): void {
   if (fileModel.diskText) setText(fileModel, fileModel.diskText);
   comparing.value = false;
-}
-
-/** overrideHere overrides the entry at a model's caret in the mod the notice's button names. */
-function overrideHere(fileModel: Model): void {
-  const modId = located.value?.override?.reveal?.place.origin;
-  void overrideEntry(
-    fileModel.place,
-    fileModel.caret.line,
-    fileModel.caret.column,
-    located.value?.within[0] ?? "",
-    modId,
-  ).then(() => locateCaret(fileModel));
 }
 
 /**
@@ -429,7 +367,7 @@ function endDrag(): void {
 function buildMenu(row: Row): ContextMenuItem[][] {
   const filePlace = row.tabPlace;
   const fileModel = findModel(row.tab.key);
-  return [
+  return hideDisabled([
     [
       {
         label: "Save",
@@ -476,7 +414,7 @@ function buildMenu(row: Row): ContextMenuItem[][] {
       },
       { label: "Select for compare", disabled: !filePlace, onSelect: () => (editor.compareFile = filePlace ?? null) },
       {
-        label: editor.compareFile ? `Compare with ${editor.compareFile.rel}` : "Compare with selected",
+        label: `Compare with ${editor.compareFile?.rel}`,
         disabled: !filePlace || !editor.compareFile || editor.compareFile.key === filePlace.key,
         onSelect: () => filePlace && editor.compareFile && compare(editor.compareFile, filePlace),
       },
@@ -513,7 +451,7 @@ function buildMenu(row: Row): ContextMenuItem[][] {
         },
       },
     ],
-  ];
+  ]);
 }
 
 const actions = computed<DropdownMenuItem[]>(() => [
@@ -720,48 +658,6 @@ const actions = computed<DropdownMenuItem[]>(() => [
         <span class="text-toned">{{ workspace.originName(replacement.origin) }}</span>
         <UButton label="Compare" variant="ghost" size="xs" @click="compare(place, replacement)" />
       </template>
-    </div>
-    <div
-      v-if="notice"
-      class="flex shrink-0 items-center gap-2.5 border-b border-default bg-(--bg-3) py-1.5 ps-3.5 pe-2.5 text-12"
-    >
-      <UIcon name="i-lucide-lock" class="size-3.5 shrink-0 text-dimmed" />
-      <div class="flex min-w-0 grow flex-col gap-0.5">
-        <span class="text-toned">{{ notice.text }}</span>
-        <span v-if="notice.detail" class="truncate text-dimmed">{{ notice.detail }}</span>
-        <span v-if="hint" class="text-dimmed">{{ hint.text }}</span>
-      </div>
-      <UButton
-        v-if="model && located?.override"
-        :label="located.override.title"
-        icon="i-lucide-copy-plus"
-        size="xs"
-        @click="overrideHere(model)"
-      />
-      <UButton
-        v-if="place && hint?.copy"
-        label="Copy into a mod"
-        icon="i-lucide-copy-plus"
-        size="xs"
-        @click="copyToMod(place)"
-      />
-      <UButton
-        v-if="notice.external"
-        label="New mod for my changes…"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        @click="CREATE?.onSelect?.()"
-      />
-      <UButton
-        icon="i-lucide-x"
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        square
-        aria-label="Close the notice"
-        @click="closedNotices.add(group.active ?? '')"
-      />
     </div>
     <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <GitDiff

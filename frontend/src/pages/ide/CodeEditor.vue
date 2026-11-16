@@ -17,12 +17,15 @@ import type { Card, Site } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 
 import {
+  canCopyToMod,
   compareWithFile,
   compareWithGame,
+  copyToMod,
   findCommand,
   findGameCopy,
   findKbds,
   findOverride,
+  hideDisabled,
   overrideEntry,
 } from "../../app/commands";
 import { baselineQuery, copiesQuery, detailQuery, loadQuery, reportQuery, wikiPagesQuery } from "../../queries";
@@ -266,8 +269,11 @@ function listReferences(heading: string, sites: Site[]): void {
 
 /** describeReadOnly returns what the editor says when typing is tried in a read only file. */
 function describeReadOnly(place: Place): string {
-  if (place.origin === VANILLA) return "Game files are read only. To change this, use Override, or Copy into a mod.";
-  return `${workspace.originName(place.origin)} is an external mod, so PMT keeps it read only. Make a mod for your changes.`;
+  if (place.origin === VANILLA)
+    return "Game files are read only. Right-click to override an entry in a mod, or to copy the file into one.";
+  const isWorkshop = workspace.listMods().some((mod) => mod.id === place.origin && mod.workshop);
+  const advice = isWorkshop ? "" : " If it is your own mod, switch off External mod on its card in Settings.";
+  return `${workspace.originName(place.origin)} is an external mod, so PMT keeps it read only. Make a mod for your changes.${advice}`;
 }
 
 /** keepMovedFocus stops the menu from taking focus back after an item moved it to another text box. */
@@ -312,6 +318,12 @@ const groups = computed<ContextMenuItem[][]>(() => [
           },
         ]
       : []),
+    {
+      label: "Copy this file into a mod…",
+      icon: "i-lucide-copy-plus",
+      disabled: !model.place.readOnly || !canCopyToMod(model.place),
+      onSelect: () => copyToMod(model.place),
+    },
     ...(caretFacts.value?.fixes ?? []).map((fix) => ({
       label: fix.title,
       icon: "i-lucide-lightbulb",
@@ -385,7 +397,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
   ],
   [{ label: "Command palette", kbds: findKbds("palette.open"), onSelect: () => commandBus.emit("palette.open") }],
 ]);
-const menu = computed(() => groups.value.filter((group) => group.length));
+const menu = computed(() => hideDisabled(groups.value));
 </script>
 
 <template>

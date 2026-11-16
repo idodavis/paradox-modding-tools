@@ -82,8 +82,8 @@ flowchart TD
   download.
 - **The list.** `ListReleases` returns every published release, the newest first, without drafts, prereleases and the
   releases before `firstRelease` (0.5.0), which are an older app the repository keeps on GitHub. Each
-  says whether it is the running one and whether it is older. A build that is no release, such as a dev build, gets the
-  newest only.
+  says whether it is the running one and whether it is older. A release's notes sit under a heading of its version: the
+  notes' own headings start one level below it, however their author wrote them.
 - `FetchURL` downloads a web address with PMT's user agent, for this service and the others that read the web. It says so
   when GitHub refuses a request for a used-up limit, without GitHub's reset time, which its answers disagree on.
 

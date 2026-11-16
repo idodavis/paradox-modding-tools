@@ -28,8 +28,8 @@ publishing, in one window.
 | **[IDE](docs/FEATURES.md#ide):** an editor that knows the game's script: hover cards, completion, go to definition, checks as you type, and the game's own files beside yours. | **[Event Graph](docs/FEATURES.md#event-graph):** what fires what, from any event, with each branch's conditions. |
 | [<img src="docs/images/health.png" width="400" alt="Health">](docs/FEATURES.md#health) | [<img src="docs/images/visual-view-gui.png" width="400" alt="Visual view">](docs/FEATURES.md#visual-view) |
 | **[Health](docs/FEATURES.md#health):** what conflicts between your mods and the game, and what is wrong in each mod, worst first. | **[Visual view](docs/FEATURES.md#visual-view):** GUI windows and coats of arms drawn as the game draws them. |
-| [<img src="docs/images/publish.png" width="400" alt="Publish">](docs/FEATURES.md#publish) | [<img src="docs/images/patch-notes.png" width="400" alt="Patch Center">](docs/FEATURES.md#patch-center) |
-| **[Publish](docs/FEATURES.md#publish):** your Workshop page, written and uploaded from PMT, and compared with Steam's copy. | **[Patch Center](docs/FEATURES.md#patch-center):** what each game patch changed under your mods, with every version's notes. |
+| [<img src="docs/images/publish.png" width="400" alt="Publish">](docs/FEATURES.md#publish) | [<img src="docs/images/patch-center.png" width="400" alt="Patch Center">](docs/FEATURES.md#patch-center) |
+| **[Publish](docs/FEATURES.md#publish):** your Workshop page, written and uploaded from PMT, and compared with Steam's copy. | **[Patch Center](docs/FEATURES.md#patch-center):** what each game patch changed under your mods: names removed, files changed, and the modding digest's breaking changes. |
 
 Source control, a terminal, the wiki beside your file, a coding assistant and pop-out windows are in
 [FEATURES.md](docs/FEATURES.md) too.

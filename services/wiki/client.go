@@ -47,6 +47,9 @@ type Client struct {
 	limiter *rate.Limiter
 	dir     string
 
+	// refreshing is held by the refresh that runs, so a second one waits.
+	refreshing sync.Mutex
+
 	// mu guards pages and texts.
 	mu sync.Mutex
 

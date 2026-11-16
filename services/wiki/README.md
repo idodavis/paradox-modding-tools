@@ -16,7 +16,9 @@ lexicon is the [lsp](../lsp/README.md) service's.
 ```mermaid
 flowchart TD
   opened["workspace:opened"] --> refresh["Refresh, in the background"]
-  refresh --> listing["Fetch the Modding and Patches categories"]
+  refresh --> recent{"A refresh finished in the last 6 hours?"}
+  recent -->|yes| updated
+  recent -->|no| listing["Fetch the Modding and Patches categories"]
   listing --> saved[("listing.json")]
   listing --> revisions["Ask each page's latest revision, 50 titles a query"]
   revisions --> stale{"Each page: cached at that revision?"}
@@ -32,10 +34,15 @@ flowchart TD
 
 A `Client` reads one game's wiki through its API, rate limited, with a timeout. It caches each page, its HTML
 sanitized, as one JSON file, and the game's listing of pages as another, in the wiki's folder of the app's cache. The
-service makes a client when a workspace first needs one, and a new one when a workspace of another game opens.
+service keeps one client for each game a workspace has opened.
 
-`Refresh` runs in the background each time a workspace opens. It fetches the listing, which holds the titles of the
-wiki's Modding category and the patch versions of its Patches category. Then it asks the wiki for the latest revision of
+`Refresh` runs in the background each time a workspace opens. A game has one refresh at a time: a second waits for the
+first. A refresh asks the wiki nothing if one finished less than six hours ago (`recheck`). The listing keeps when the
+last one finished (`FinishedAt`), so restarting PMT does not ask again. A refresh in which a page failed has not
+finished, so the next one asks again.
+
+A refresh fetches the listing, which holds the titles of the wiki's Modding category and the patch versions of its
+Patches category. Then it asks the wiki for the latest revision of
 every listed page, 50 titles to a query, and fetches each page that is not cached or whose cached `Revision` differs.
 When every page is current, a refresh makes the listing's requests and one revision query per 50 titles, and fetches no
 page. A page cached before revisions were kept has a `Revision` of 0 and is fetched again once. A title the wiki gives

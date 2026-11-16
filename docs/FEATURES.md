@@ -81,9 +81,13 @@ An editor that knows the game's script, localization and GUI files.
   Ctrl Shift F searches the text of the files and can replace it.
 - **Tabs.** A single click opens a preview tab that the next click replaces. A double click or an edit keeps it. Drag a
   tab to another group, or out to a window of its own. Your open tabs come back when you open the workspace again.
+- **Colors.** Every key, value and name is colored by what it is in the game: a command, a field, a definition, a
+  link to another scope. A file opens already in its colors, and so does a compare.
 - **Hover.** Rest the pointer on a key or a value to see what it is, what it takes and where it is defined. For a
   name, the card shows the copy the game keeps first. For a definition, it also shows the name and description the
   game shows for it, and the comment written above it.
+- **A mod's descriptor** (`descriptor.mod`, or `metadata.json`) says what each of its keys is for on hover, and has a
+  quick fix that sets the game version it is made for.
 - **Go to.** Ctrl click goes to a definition. A search for references finds every use. F2 renames a name in every mod
   file. Alt Left and Alt Right step back and forward through the places you jumped between.
 - **Completion** offers what fits the block you are in, and then what fits the value.
@@ -144,7 +148,7 @@ how things are.
 
 ## Patch Center
 
-![Patch Center](images/patch-notes.png)
+![Patch Center](images/patch-center.png)
 
 What the game's patches changed, for the game of the open workspace, and what that means for your mods.
 
@@ -155,13 +159,26 @@ What the game's patches changed, for the game of the open workspace, and what th
 - A mod that names no game version asks which version to compare from. Once you have brought a mod up to date,
   **Set the game version** opens its descriptor at the version line, where the editor's quick fix writes the game's
   version. Mods that are not yours are listed and never changed.
+- A dot on the Patch Center tab says a patch changed something under a mod of yours. External mods never light it.
+
+![A version's modding digest](images/patch-center-digest.png)
+
 - **A version** shows its patch notes from the wiki, the Modding Co-op's digest where it has written notes, the
-  script keys and data functions it changed, and the game files it changed. The digest marks the mods each article
-  touches. Ctrl F finds in what is shown.
+  script keys and data functions it changed, and the game files it changed. Ctrl F finds in what is shown.
+- **The modding digest** lists the version's breaking changes and new features. Each article names the mods of yours
+  it touches, with how many of their files and uses, and the contents beside it mark them by color.
+
+![A version's script changes](images/patch-center-changes.png)
+
+- **Script changes** and **Data types** list every effect, trigger, scope, modifier, on_action and data function the
+  version added, changed or removed. Open one for what it takes, what changed in each version, and the game's own
+  example.
+- **Game files** lists each file the version added, changed or removed, and marks the ones your mods replace.
 
 The notes come from the game's wiki. What each version of Victoria 3 and EU5 changed comes from their Modding
-Co-op's digests. For CK3, and for a version with no digest, PMT ships what it compared itself, and compares each new
-version when the game updates. PMT reads all of it when it starts and keeps it.
+Co-op's digests. Crusader Kings III has no digest, so PMT ships what it compared itself: every change from 1.19 on, and
+the script changes of 1.0.3 to 1.10.2. For any game, PMT also compares each new version itself when the game updates.
+PMT reads all of it when it starts and keeps it.
 
 ## Publish
 
@@ -194,8 +211,8 @@ Opened from the top bar's gear menu (Ctrl ,), which also switches the theme and 
 shortcuts and opens Help. It has three groups.
 
 - **App**, for every workspace:
-  - Appearance: the theme (PMT, Catppuccin, One, Pierre, JetBrains, or a look for each game), light or dark, the interface scale,
-    the pages shown, and a simple interface that hides the IDE's advanced parts.
+  - Appearance: the theme (PMT, VS Code Modern, Catppuccin, One, Pierre, JetBrains, or a look for each game), light or
+    dark, the interface scale, the pages shown, and a simple interface that hides the IDE's advanced parts.
   - Guidance, keyboard shortcuts, the Terminal's default shell, and Agents and tools.
 - **IDE**, for every workspace: the editor, the explorer, the language features, the Visual view and the wiki. The
   Health checks, which pick the problems the editor shows, are kept for each workspace.

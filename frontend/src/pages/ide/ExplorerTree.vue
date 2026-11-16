@@ -30,6 +30,7 @@ import {
   compare,
   copyToMod,
   findCommand,
+  hideDisabled,
   removeMod,
   trashFile,
 } from "../../app/commands";
@@ -274,7 +275,12 @@ function loadExpanded(): void {
     if (row.endsWith("/") && !members.has(row) && findHandle(row)?.isExpanded()) void load(row);
 }
 
-/** load lists a folder row and puts its rows in the tree. A folder gone from disk changes nothing. */
+/**
+ * load lists a folder row and puts its rows in the tree. A folder gone from
+ * disk changes nothing. The tree draws a folder that holds only one folder
+ * as one row with it. So when such a folder is open, the folder inside it
+ * opens too and takes its selection.
+ */
 async function load(row: string): Promise<void> {
   let children: Place[];
   try {
@@ -282,7 +288,16 @@ async function load(row: string): Promise<void> {
   } catch {
     return;
   }
+
   apply(row, children);
+  const [only] = children;
+  const outer = findHandle(row);
+  const inner = children.length === 1 && only.isDir ? findHandle(`${row}${only.name}/`) : undefined;
+  if (!inner || !outer?.isExpanded()) return;
+  inner.expand();
+  if (!outer.isSelected()) return;
+  inner.select();
+  outer.deselect();
 }
 
 /** apply makes a folder row hold the listed rows, adding the new ones and removing those that are gone. */
@@ -653,9 +668,14 @@ function buildMenu(row: string): ContextMenuItem[][] {
           },
         ]
       : [];
-  const leave: ContextMenuItem[] =
+  const modItems: ContextMenuItem[] =
     isRoot(row) && place && place.origin !== VANILLA
       ? [
+          {
+            label: "Mod settings",
+            icon: "i-lucide-settings",
+            onSelect: () => commandBus.emit("settings.open", place.origin),
+          },
           {
             label: "Remove from workspace",
             icon: "i-lucide-circle-minus",
@@ -675,7 +695,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
         ...(selected?.when() ? [{ label: "Compare the two selected", onSelect: selected.onSelect }] : []),
       ]
     : [];
-  return [buildOpenItems(file, dir), readme, coat, init, commands, leave, comparisons].filter((group) => group.length);
+  return hideDisabled([buildOpenItems(file, dir), readme, coat, init, commands, modItems, comparisons]);
 }
 
 /** buildOpenItems builds the menu items that open a row elsewhere: beside the editor, in a window or in Visual. */

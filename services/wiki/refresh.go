@@ -20,6 +20,10 @@ type Listing struct {
 	Pages       []string  `json:"pages"`
 	Versions    []string  `json:"versions"`
 	RefreshedAt time.Time `json:"refreshedAt"`
+
+	// FinishedAt is when a refresh last fetched every page that had changed.
+	// It is zero while none has, so the next refresh asks the wiki again.
+	FinishedAt time.Time `json:"finishedAt"`
 }
 
 // answer is one reply of the wiki's API to a category query.
@@ -47,11 +51,24 @@ const (
 // the version.
 var patchTitle = regexp.MustCompile(`^` + patchPrefix + `(\d+(?:\.\d+)*(?:\.X)?)$`)
 
+// recheck is the shortest time between two refreshes that ask the wiki, once
+// one has finished.
+const recheck = 6 * time.Hour
+
 // Refresh fetches the listing and each page that is not cached or has a newer
-// revision on the wiki, calling progress after each page. It returns an error
-// if the listing or a revision query fails. A page that fails does not stop the
-// others.
+// revision on the wiki, calling progress after each page. It waits for a
+// refresh that is running, and asks the wiki nothing if one finished less
+// than recheck ago. It returns an error if the listing or a revision query
+// fails. A page that fails does not stop the others, but leaves the refresh
+// unfinished, so the next one asks again.
 func (c *Client) Refresh(progress func(done, total int)) error {
+	c.refreshing.Lock()
+	defer c.refreshing.Unlock()
+
+	if cached, ok := c.LoadListing(); ok && time.Since(cached.FinishedAt) < recheck {
+		return nil
+	}
+
 	listing, err := c.fetchListing()
 	if err != nil {
 		return err
@@ -73,7 +90,13 @@ func (c *Client) Refresh(progress func(done, total int)) error {
 		progress(position+1, len(changed))
 	}
 
-	return errors.Join(errs...)
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+
+	listing.FinishedAt = time.Now()
+
+	return app.SaveJSON(c.resolveListing(), listing)
 }
 
 // LoadListing returns the cached listing, or false if there is none.

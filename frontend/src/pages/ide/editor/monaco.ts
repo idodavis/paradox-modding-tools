@@ -3,7 +3,6 @@ import { useEventBus } from "@vueuse/core";
 import Color from "colorjs.io";
 import * as monaco from "monaco-editor/editor/editor.api";
 import "monaco-editor/features/register.all";
-import "monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens";
 import "monaco-editor/editor/contrib/semanticTokens/browser/viewportSemanticTokens";
 import "monaco-editor/languages/definitions/markdown/register";
 import { jsonDefaults } from "monaco-editor/languages/features/json/register";
@@ -18,7 +17,7 @@ import { useSettingsStore } from "../../../stores/settings";
 import { COMMAND_BUS } from "../../../stores/windows";
 import { registerConflicts } from "./conflicts";
 import { DESCRIPTOR, LOCALIZATION, SCRIPT } from "./grammars";
-import { openModel, setupModels } from "./models";
+import { openModel, repaintModels, setupModels } from "./models";
 import { labelService, registerProviders } from "./providers";
 
 /** LANGUAGES lists each Paradox language with its label, grammar and word pattern. */
@@ -127,6 +126,7 @@ function applyTheme(family: string, dark: boolean): void {
     monaco.editor.defineTheme(id, makeTheme(`${family}-${dark ? "dark" : "light"}`, dark));
   }
   monaco.editor.setTheme(id);
+  repaintModels();
 }
 
 /** editorOptions returns the Monaco editor options built from the settings. */

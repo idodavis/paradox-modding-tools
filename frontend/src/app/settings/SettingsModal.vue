@@ -194,11 +194,14 @@ const { data: workspaces } = useQuery(workspacesQuery);
 const { data: catalog } = useQuery(settingsCatalogQuery);
 const { data: codes } = useQuery(codesQuery);
 
-// The command's target is a setting's key, else a section.
+// The command's target is a setting's key, a mod's id or a section. A mod's
+// id opens Mods and load order on that mod.
 commandBus.on((command, target) => {
   if (command !== "settings.open") return;
   const setting = catalog.value?.find((row) => row.key === target);
-  if (target) section.value = setting?.section ?? target;
+  const mod = store.listMods().find((row) => row.id === target);
+  if (mod) origin.value = mod.id;
+  if (target) section.value = mod ? "mods" : (setting?.section ?? target);
   highlighted.value = setting?.key ?? "";
   if (setting) search.value = "";
   open.value = true;
@@ -354,7 +357,7 @@ async function remove(): Promise<void> {
     title="Settings"
     description="Saved automatically"
     :ui="{
-      content: 'h-[min(48.75rem,90vh)] sm:max-w-[min(73.75rem,92vw)]',
+      content: 'h-[min(55rem,92vh)] sm:max-w-[min(85rem,94vw)]',
       header: 'min-h-13 py-2.5 pe-14 sm:pe-14',
       wrapper: 'flex-1',
       body: 'flex min-h-0 flex-1 overflow-hidden p-0 sm:p-0',

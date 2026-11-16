@@ -263,7 +263,7 @@ const (
 )
 
 // ListReleases returns the published releases of this app, newest first, with
-// their notes. A build that is no release gets only the newest.
+// their notes. Each release's notes sit under a heading of its version.
 func (s *Service) ListReleases() ([]Release, error) {
 	running := s.running()
 
@@ -281,10 +281,10 @@ func (s *Service) ListReleases() ([]Release, error) {
 			}
 
 			id := "release-" + version
-			heading := `<h1 id="` + html.EscapeString(id) + `">` + html.EscapeString(version) + "</h1>"
+			heading := `<h2 id="` + html.EscapeString(id) + `">` + html.EscapeString(version) + "</h2>"
 			releases = append(releases, Release{
 				Version: version, Date: published.Published, ID: id,
-				Notes:   heading + RenderMarkdown(published.Body, keepWebLink),
+				Notes:   heading + RenderMarkdown(published.Body, keepWebLink, 2),
 				Running: version == running, Older: isOlder(version, running),
 				Installable: semver.Compare("v"+version, "v"+firstInstallable) >= 0,
 			})
@@ -293,10 +293,6 @@ func (s *Service) ListReleases() ([]Release, error) {
 		if len(batch) < pageSize {
 			break
 		}
-	}
-
-	if !slices.ContainsFunc(releases, func(release Release) bool { return release.Running }) {
-		return releases[:min(len(releases), 1)], nil
 	}
 
 	return releases, nil

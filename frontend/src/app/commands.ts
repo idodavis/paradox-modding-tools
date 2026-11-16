@@ -1,5 +1,5 @@
 /** The command table: each command of the app is one row, shaped as a menu item, with an id and a `when`. */
-import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
+import type { CommandPaletteGroup, CommandPaletteItem, ContextMenuItem } from "@nuxt/ui";
 import { useQueryCache } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
 import { Dialogs } from "@wailsio/runtime";
@@ -582,6 +582,15 @@ export function findCommand(id: string): Command | undefined {
 export function findKbds(id: string): string[] {
   const command = findCommand(id);
   return (command && listBindings(command)[0]) ?? [];
+}
+
+/**
+ * hideDisabled returns a context menu's groups without their disabled items,
+ * and without a group that has none left. A context menu lists only what can
+ * be chosen.
+ */
+export function hideDisabled(groups: ContextMenuItem[][]): ContextMenuItem[][] {
+  return groups.map((group) => group.filter((item) => !item.disabled)).filter((group) => group.length);
 }
 
 /** joinShortcut returns keys as Nuxt UI writes a shortcut, such as meta_shift_p. */

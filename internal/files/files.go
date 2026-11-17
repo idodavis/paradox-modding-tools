@@ -17,6 +17,7 @@
 //     .metadata, where Victoria 3 and Europa Universalis 5 keep it.
 //   - A .txt file whose name starts with readme is a readme: the games' are
 //     comments only.
+//   - A .txt file below a fonts folder is text: a font's license.
 //   - Script written directly at a root is text, since the games never read
 //     it.
 //   - An extension the table of formats does not know is text.
@@ -134,13 +135,15 @@ var formats = map[string]Format{
 // extension it does not know is text.
 func Classify(rel string) Format {
 	folder, base := path.Split(strings.ToLower(rel))
-	ext := path.Ext(base)
+	ext, folders := path.Ext(base), strings.Split(folder, "/")
 
 	switch {
-	case ext == ".yml" && slices.Contains(strings.Split(folder, "/"), "localization"):
+	case ext == ".yml" && slices.Contains(folders, "localization"):
 		return FormatLocalization
 	case ext == ".txt" && strings.HasPrefix(base, "readme"):
 		return FormatReadme
+	case ext == ".txt" && slices.Contains(folders, "fonts"):
+		return FormatText
 	case ext == ".mod" && folder == "", base == "metadata.json" && path.Base(folder) == ".metadata":
 		return FormatDescriptor
 	}

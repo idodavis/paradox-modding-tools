@@ -354,13 +354,13 @@ func (b *builder) buildDatabase(dialect *lang.Dialect, label string, declaration
 		return
 	}
 
-	// where two databases have the same words, the one whose name is
-	// exactly those words keeps them, and neither does where neither is
+	// of two databases with the same words the top-level one keeps them, as
+	// buildings over domiciles/buildings; neither does if none is top-level
 	phrase := lang.DescribeDefinition(label, false)
 	owner := label
-	if earlier, ok := b.TypeDatabases[phrase]; ok && !isNamedExactly(label, phrase) {
+	if earlier, ok := b.TypeDatabases[phrase]; ok && !isTopLevel(label) {
 		owner = ""
-		if isNamedExactly(earlier, phrase) {
+		if earlier != "" && isTopLevel(earlier) {
 			owner = earlier
 		}
 	}
@@ -368,8 +368,8 @@ func (b *builder) buildDatabase(dialect *lang.Dialect, label string, declaration
 	b.TypeDatabases[phrase] = owner
 }
 
-func isNamedExactly(label, phrase string) bool {
-	return label == strings.ReplaceAll(phrase, " ", "_")
+func isTopLevel(label string) bool {
+	return !strings.ContainsAny(label, "/.")
 }
 
 // buildNested adds the database of each nesting that has one of its own and

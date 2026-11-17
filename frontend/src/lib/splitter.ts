@@ -17,17 +17,18 @@ export function useKeptPixelSize(splitter: Readonly<ShallowRef<Splitter | null>>
   let size = 0;
   let panes = 0;
   let returning = false;
-  onActivated(() => (returning = true));
+  // A page shown for the first time has kept no size, so it is not returning.
+  onActivated(() => (returning = size > 0));
   useResizeObserver(
     () => splitter.value?.$el,
     ([entry]) => {
       if (!returning || !entry?.contentRect.width) return;
       returning = false;
-      if (size && splitter.value?.panelsRef.length === panes) splitter.value.panelsRef[pane]?.resize(size);
+      if (splitter.value?.panelsRef.length === panes) splitter.value.panelsRef[pane]?.resize(size);
     },
   );
   return (sizes: number[]): boolean => {
-    if (returning && size) return false;
+    if (returning) return false;
     size = sizes[pane] ?? 0;
     panes = sizes.length;
     return true;

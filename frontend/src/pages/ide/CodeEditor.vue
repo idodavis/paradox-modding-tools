@@ -243,7 +243,10 @@ watch(
   },
 );
 watch(reviewBaseline, (text) => text !== undefined && followBaseline(model, text));
-watch(editorOptions, (options) => (diff.value ?? view.value)?.updateOptions(options));
+watch(editorOptions, (options) => {
+  if (diff.value) diff.value.updateOptions({ ...options, ...DIFF_OPTIONS });
+  else view.value?.updateOptions(options);
+});
 // A range requested when the file was shown is selected once, in the active group's editor. The editor takes focus
 // unless Follow the agent opened the file, so the focus stays where the user is typing.
 watch(

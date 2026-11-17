@@ -9,6 +9,8 @@ export const DIFF_OPTIONS: editor.IDiffEditorConstructionOptions = {
   // the lane of the + and − signs, wide enough to keep them off the numbers
   // and the text
   lineDecorationsWidth: "3ch",
+  // off in Monaco's standalone build; it keeps the two line numbers apart
+  glyphMargin: true,
   ignoreTrimWhitespace: false,
   useInlineViewWhenSpaceIsLimited: false,
 };

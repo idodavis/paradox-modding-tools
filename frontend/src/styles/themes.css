@@ -1109,6 +1109,10 @@
 .monaco-diff-editor div:has(> .gutter-delete) > .line-numbers {
   color: var(--ui-error);
 }
+/* The unified view's old line numbers are green beside new lines, not red. */
+.monaco-diff-editor .original-in-monaco-diff-editor .margin-view-zones > .gutter-delete {
+  background-color: var(--vscode-diffEditorGutter-insertedLineBackground);
+}
 /* The lines changed since the last commit get a bar beside the line numbers, and a wedge where lines were removed. */
 .monaco-editor .pmt-change-added,
 .monaco-editor .pmt-change-changed {

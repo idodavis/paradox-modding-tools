@@ -532,7 +532,7 @@ type Schema struct {
 
 	// TypeDatabases maps the words of a data type's name to the database of
 	// the names it stands for: "government type" gives governments. It holds
-	// "" where several databases share the words.
+	// "" where several databases share the words and none is top-level.
 	TypeDatabases map[string]string
 
 	// InlineDatabases maps each key that declares a definition inside an
@@ -664,10 +664,16 @@ func (e Expected) namesDatabase() bool {
 	return e.Database != "" && (e.Type == ValueTypeReference || e.Type == ValueTypeTarget)
 }
 
-// declares reports whether a row, the dumps or the docs list a key as a field
-// of the database's definitions. Such a key never opens a nested definition.
-func (d *Database) declares(key string) bool {
-	child := d.Field.findChild(key)
+// declares reports whether a row, the dumps or the docs list a key as a
+// field. holders are the keys of the blocks around it in a definition. Such
+// a key never opens a nested definition.
+func (d *Database) declares(holders []string, key string) bool {
+	block := d.Field
+	for _, holder := range holders {
+		block = block.findChild(holder)
+	}
+
+	child := block.findChild(key)
 
 	return child != nil && child.Source != SourceNone && child.Source <= SourceDocs
 }

@@ -34,7 +34,8 @@ func (w *walker) findDefinition(statement int32, level int) (Copy, bool) {
 
 // findNested returns the definition a statement makes inside another, as a
 // policy inside an EU5 law. Where the database writes a separator, the name
-// starts with its holder's name, as NAI|X.
+// starts with its holder's name, as NAI|X. A key listed as a field makes
+// none: special_parameters = { number_of_spouses = 1 } in a CK3 doctrine.
 func (w *walker) findNested(statement int32, level int) (Copy, bool) {
 	current := w.tree.Statements[statement]
 	label, span := w.frames[level].label, w.frames[level].span
@@ -43,7 +44,7 @@ func (w *walker) findNested(statement int32, level int) (Copy, bool) {
 		label = w.tree.Text(span)
 	}
 
-	if label == "" || w.database == nil {
+	if label == "" || w.database == nil || w.database.declares(w.frames[level-1].path, label) {
 		return Copy{}, false
 	}
 
@@ -83,13 +84,8 @@ func (w *walker) findNested(statement int32, level int) (Copy, bool) {
 }
 
 // isNested reports whether a key written directly in a definition opens a
-// nested definition. A key that a row, the dumps or the docs list as a field
-// never does.
+// nested definition.
 func (w *walker) isNested(key string, nesting Nesting, isOwn bool) bool {
-	if w.database.declares(key) {
-		return false
-	}
-
 	fits, _ := path.Match(nesting.Keys, key)
 
 	return fits || !isOwn && nesting.Keys == ""

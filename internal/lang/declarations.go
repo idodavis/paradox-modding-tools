@@ -506,6 +506,8 @@ var Declarations = []Declaration{
 	},
 	// the DLC subfolder writes the same blocks
 	{Folder: "common/opinion_modifiers", Games: []string{game.CK3}},
+	// its subfolders are one database (_districts.info:44,54)
+	{Folder: "common/buildings", Games: []string{game.CK3}},
 	// an outbreak's notification fires events (CK3 _epidemics.info:124-128)
 	{
 		Folder: "common/epidemics", Games: []string{game.CK3},
@@ -945,13 +947,15 @@ var DefinitionTexts = []TextKeys{
 	{Games: []string{game.Vic3}, Title: "notification_%s_name", Databases: []string{"messages"}},
 	{Games: []string{game.CK3}, Description: "%s_desc", Databases: []string{
 		"activities/activity_locales", "activities/activity_types", "activities/activity_types.phase",
-		"activities/intents", "ai_war_stances", "bookmarks/bookmarks", "bookmarks/challenge_characters",
+		"activities/intents", "ai_war_stances", "bookmarks/bookmarks", "bookmarks/challenge_characters", "buildings",
 		"character_memory_types", "council_positions", "court_positions/tasks", "court_positions/types",
-		"court_types", "culture/eras", "culture/innovations", "decisions", "dlc_metadata", "factions", "governments",
-		"history/faiths", "important_actions", "inspirations", "lease_contracts", "modifiers", "nicknames",
-		"puppets/types", "raids/intents", "religion/faith_types", "religion/religion_types", "religion/rite_types",
-		"schemes/agent_types", "secret_types", "situation/catalysts", "struggle/catalysts", "struggle/struggles",
-		"subject_contracts/groups", "suggestions", "task_contracts", "travel/travel_options", "vassal_stances",
+		"court_types", "culture/eras", "culture/innovations", "decisions", "districts", "dlc_metadata", "factions",
+		"governments", "history/faiths", "important_actions", "inspirations", "lease_contracts", "modifiers",
+		"nicknames", "puppets/types", "raids/intents", "religion/faith_types", "religion/religion_types",
+		"religion/rite_types", "schemes/agent_types", "secret_types", "situation/catalysts", "struggle/catalysts",
+		"struggle/struggles", "subject_contracts/groups", "suggestions", "task_contracts",
+		"trade/trade_good_categories", "trade/trade_good_types", "trade_tasks", "travel/travel_options",
+		"vassal_stances",
 	}},
 	{Games: []string{game.CK3}, Title: "%s_name", Databases: []string{
 		"culture/aesthetics_bundles", "culture/creation_names", "dynasty_perks", "lifestyle_perks",
@@ -962,7 +966,6 @@ var DefinitionTexts = []TextKeys{
 	}},
 	{Games: []string{game.CK3}, Title: "%s_title", Databases: []string{"activities/pulse_actions"}},
 	{Games: []string{game.CK3}, Title: "activity_group_type_%s", Databases: []string{"activities/activity_group_types"}},
-	{Games: []string{game.CK3}, Title: "building_%s", Description: "building_%s_desc", Databases: []string{"buildings"}},
 	{Games: []string{game.CK3}, Title: "confederation_type_%s_name", Databases: []string{"confederation_types"}},
 	{Games: []string{game.CK3}, Title: "decision_group_type_%s", Databases: []string{"decision_group_types"}},
 	{Games: []string{game.CK3}, Title: "epidemic_%s", Databases: []string{"epidemics"}},

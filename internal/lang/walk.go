@@ -1078,7 +1078,7 @@ func (w *walker) take(
 		return fit, true
 
 	case takeDocumented:
-		if database := w.schema.Databases[parent.Database]; database == nil || !database.declares(key) {
+		if database := w.schema.Databases[parent.Database]; database == nil || !database.declares(nil, key) {
 			return match{}, false
 		}
 

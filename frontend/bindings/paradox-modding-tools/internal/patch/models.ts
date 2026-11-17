@@ -71,8 +71,8 @@ export interface Patch {
 
     /**
      * DumpChanges are the changed keys of the dumps. DefinitionChanges are
-     * the names the game's files began or stopped defining, which no digest
-     * lists.
+     * the names the game's files began or stopped defining, or define with
+     * other text, which no digest lists. They are sorted by database and key.
      */
     "dumpChanges": schema$0.KeyChange[] | null;
     "definitionChanges": schema$0.KeyChange[] | null;

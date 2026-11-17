@@ -71,7 +71,8 @@ flowchart TD
   versions runs on it. `CompareDumps` compares two versions' dumps. A key that fits a star key of the installed
   schema is the star key, so the generated region keys of `every_country_in_*` are no change in themselves. A kind
   of entry one version lists none of, or writes in another form, is left out. `CompareKeys` compares the names two
-  versions' files define (`index.Index.ListDefinedKeys`), which are only added or removed.
+  versions' files define (`index.Index.ListDefinedKeys`): added, removed, or changed where both versions have a
+  hash of the name's text and the two differ.
 - **Key change**: one key that a patch added, removed or changed. A key of the dumps is changed when a fact of its
   entry differs: its sentence, scopes, target or traits for a command, and the facts of a scope type, an on_action or
   a data function. A function of a data type is in the database `lang.DataFunctions`.

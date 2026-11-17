@@ -425,6 +425,7 @@ func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context
 		occurrence.Local, occurrence.Own = definition.Local, definition.IsOwn()
 		occurrence.Line = int32(tree.Lines.ToPosition(definition.Span.Start).Line)
 		occurrence.Parent, occurrence.Statement = holder, definition.Statement
+		occurrence.Hash = hashText(tree.Text(tree.Statements[definition.Statement].Span))
 		holder = int32(len(c.occurrences))
 		c.occurrences = append(c.occurrences, occurrence)
 
@@ -449,6 +450,25 @@ func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context
 
 		c.occurrences = append(c.occurrences, occurrence)
 	}
+}
+
+// The offset and the prime of the 32-bit FNV-1a hash.
+const (
+	hashOffset uint32 = 2166136261
+	hashPrime  uint32 = 16777619
+)
+
+// hashText returns the FNV-1a hash of a text without its white space, so
+// that a change of layout alone gives the same hash.
+func hashText(text string) uint32 {
+	hash := hashOffset
+	for position := range len(text) {
+		if char := text[position]; !strings.ContainsRune(" \t\r\n", rune(char)) {
+			hash = (hash ^ uint32(char)) * hashPrime
+		}
+	}
+
+	return hash
 }
 
 func (i *Index) makeOccurrence(role Role, database, name string, span jomini.Span) Occurrence {

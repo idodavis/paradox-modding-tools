@@ -175,6 +175,10 @@ type Occurrence struct {
 	// Statement is the statement that writes the occurrence. It is 0, the
 	// file, for a definition named by its file, a message or a row.
 	Statement int32
+
+	// Hash is the hash of a script definition's statement without its white
+	// space. It is 0 for a row, a message and a reference.
+	Hash uint32
 }
 
 // Table interns texts, so that an occurrence stores a small ordinal in place

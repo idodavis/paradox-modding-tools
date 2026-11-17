@@ -49,12 +49,18 @@ const cards = computed(() => {
     const renamed = codes["patch-renamed"] ?? [];
     const removed = codes["patch-removed"] ?? [];
     const files = codes["stale-copy"] ?? [];
+    const definitions = codes["stale-definition"] ?? [];
     const breaking = (tied[mod.id] ?? []).filter((tie) => tie.breaking);
     const added = (tied[mod.id] ?? []).filter((tie) => tie.new);
     const counts = [
       { word: "renamed", count: renamed.length, color: levelColor(renamed[0]) },
       { word: "removed", count: removed.length, color: levelColor(removed[0]) },
       { word: files.length === 1 ? "file" : "files", count: files.length, color: levelColor(files[0]) },
+      {
+        word: definitions.length === 1 ? "definition" : "definitions",
+        count: definitions.length,
+        color: levelColor(definitions[0]),
+      },
       { word: "breaking", count: breaking.length, color: "error" },
       { word: "new", count: added.length, color: "success" },
     ].filter((row) => row.count);
@@ -62,7 +68,7 @@ const cards = computed(() => {
     const version = codes["supported-version"]?.[0]?.sites?.[0];
     // Made for the game's version, as Go judged it, and nothing changed in it.
     const quiet = !!mod.start && mod.judged && !counts.length && !version;
-    return { mod, renamed, removed, files, breaking, added, counts, quiet, version };
+    return { mod, renamed, removed, files, definitions, breaking, added, counts, quiet, version };
   });
 });
 type Card = (typeof cards.value)[number];
@@ -70,7 +76,7 @@ type Card = (typeof cards.value)[number];
 const ranked = computed(() =>
   sortBy(cards.value, [
     (card) => -(card.renamed.length + card.removed.length + card.breaking.length),
-    (card) => -card.files.length,
+    (card) => -(card.files.length + card.definitions.length),
     (card) => -card.added.length,
   ]),
 );
@@ -91,8 +97,9 @@ const current = computed(() => ranked.value.find((card) => card.mod.id === chose
 const owned = computed(() => cards.value.filter((card) => !card.mod.external));
 /** The chosen mod's blocks of names and of notes that name what it holds. */
 const nameBlocks = computed(() => [
-  { title: "Names the game renamed", findings: current.value?.renamed ?? [] },
-  { title: "Names the game removed", findings: current.value?.removed ?? [] },
+  { tone: "error", title: "Names the game renamed", findings: current.value?.renamed ?? [] },
+  { tone: "error", title: "Names the game removed", findings: current.value?.removed ?? [] },
+  { tone: "warning", title: "Game definitions your mod overrides", findings: current.value?.definitions ?? [] },
 ]);
 const tieBlocks = computed(() => [
   {
@@ -107,7 +114,9 @@ const busiest = computed(() => Math.max(1, ...cards.value.map((card) => sumBy(ca
 const panels = computed(() => {
   const names = owned.value.flatMap((card) => [...card.renamed, ...card.removed]);
   const withNames = owned.value.filter((card) => card.renamed.length + card.removed.length);
-  const withFiles = owned.value.filter((card) => card.files.length);
+  const withFiles = owned.value.filter((card) => card.files.length + card.definitions.length);
+  const fileCount = sumBy(withFiles, (card) => card.files.length);
+  const definitionCount = sumBy(withFiles, (card) => card.definitions.length);
   const breaking = sumBy(owned.value, (card) => card.breaking.length);
   const added = sumBy(owned.value, (card) => card.added.length);
   const versions = owned.value.flatMap((card) => [...card.breaking, ...card.added].map((tie) => tie.version));
@@ -135,14 +144,20 @@ const panels = computed(() => {
     },
     {
       icon: "i-lucide-file",
-      kicker: "Game files your mods replace",
-      color: withFiles.length ? levelColor(withFiles[0]?.files[0]) : "success",
+      kicker: "Game files and definitions your mods replace",
+      color: withFiles.length ? levelColor(withFiles[0]?.files[0] ?? withFiles[0]?.definitions[0]) : "success",
       verdict: describeVerdict(
-        [{ count: sumBy(withFiles, (card) => card.files.length), word: "changed" }],
+        [
+          { count: fileCount, word: fileCount === 1 ? "file changed" : "files changed" },
+          { count: definitionCount, word: definitionCount === 1 ? "definition changed" : "definitions changed" },
+        ],
         "Nothing changed",
       ),
       note: withFiles
-        .map((card) => `${workspace.originName(card.mod.id)} ${describeCount(card.files.length)}`)
+        .map((card) => {
+          const count = card.files.length + card.definitions.length;
+          return `${workspace.originName(card.mod.id)} ${describeCount(count)}`;
+        })
         .join(" · "),
     },
     {
@@ -340,7 +355,7 @@ function describeEmpty({ mod }: Card): string {
                     v-for="block in nameBlocks"
                     :key="block.title"
                     v-slot="{ row: finding }"
-                    tone="error"
+                    :tone="block.tone"
                     icon="i-lucide-tag"
                     :title="block.title"
                     :rows="block.findings"

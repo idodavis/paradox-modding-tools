@@ -22,10 +22,14 @@ type Snapshot struct {
 	// install.
 	Dumps *schema.Dumps
 
-	// Defined are the names the game's files define, by database. Hashes are
-	// the game files' hashes, by path from the game's folder.
+	// Defined are the names the game's files define, by database. Texts run
+	// beside them: the hash of each name's definitions, 0 where it has none.
+	// Texts is nil in a snapshot that kept no hashes.
 	Defined map[string][]string
-	Hashes  map[string]string
+	Texts   map[string][]uint32
+
+	// Hashes are the game files' hashes, by path from the game's folder.
+	Hashes map[string]string
 }
 
 // The snapshots' folder and file ending.
@@ -44,7 +48,9 @@ func TakeSnapshot(dumps *schema.Dumps, install *index.Index) Snapshot {
 		}
 	}
 
-	return Snapshot{Dumps: dumps, Defined: install.ListDefinedKeys(), Hashes: hashes}
+	defined, texts := install.ListDefinedKeys()
+
+	return Snapshot{Dumps: dumps, Defined: defined, Texts: texts, Hashes: hashes}
 }
 
 // CompareSnapshots returns PMT's own patch of a version: what changed against
@@ -59,7 +65,7 @@ func CompareSnapshots(base, version string, old, current Snapshot, language *lan
 		return patch
 	}
 
-	patch.DefinitionChanges = schema.CompareKeys(old.Defined, current.Defined)
+	patch.DefinitionChanges = schema.CompareKeys(old.Defined, current.Defined, old.Texts, current.Texts)
 	differs := func(earlier, latest string) bool { return earlier != latest }
 	for rel, status := range schema.Compare(old.Hashes, current.Hashes, differs) {
 		patch.GameFiles = append(patch.GameFiles, GameFile{Rel: rel, Status: status})

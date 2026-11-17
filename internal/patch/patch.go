@@ -48,8 +48,8 @@ type Patch struct {
 	Local bool `json:"local"`
 
 	// DumpChanges are the changed keys of the dumps. DefinitionChanges are
-	// the names the game's files began or stopped defining, which no digest
-	// lists.
+	// the names the game's files began or stopped defining, or define with
+	// other text, which no digest lists. They are sorted by database and key.
 	DumpChanges       []schema.KeyChange `json:"dumpChanges"`
 	DefinitionChanges []schema.KeyChange `json:"definitionChanges"`
 
@@ -308,6 +308,20 @@ func (p Patches) FindRemoval(name string, countDefined bool) (string, bool) {
 	for _, patch := range p {
 		isDefined := countDefined && slices.ContainsFunc(patch.DefinitionChanges, isRemoved)
 		if isDefined || slices.ContainsFunc(patch.DumpChanges, isRemoved) {
+			return patch.Version, true
+		}
+	}
+
+	return "", false
+}
+
+// FindChange returns the version of the newest patch that changed the text of
+// a name the game's files define. It returns false if no patch did.
+func (p Patches) FindChange(database, name string) (string, bool) {
+	wanted := schema.KeyChange{Database: database, Key: name}
+	for _, patch := range slices.Backward(p) {
+		position, ok := slices.BinarySearchFunc(patch.DefinitionChanges, wanted, schema.CompareChanges)
+		if ok && patch.DefinitionChanges[position].Status == schema.StatusChanged {
 			return patch.Version, true
 		}
 	}

@@ -152,8 +152,10 @@ and Health's rows both read the level from it. `SplitMessage` fills a template a
   problem. A name is removed where the patch's `DumpChanges` or, for the two codes that name a definition or a text,
   its `DefinitionChanges` list it removed. The codes that a patch finding replaces are the table `patchable`. A key
   that a patch only changed raises nothing. A mod file whose game file a patch of the range lists
-  (`Session.FindGameChange`) has one `stale-copy` at its start, with the newest patch that lists the file. The lookups are
-  [patch](../../internal/patch/README.md)'s (`FindRename`, `FindRemoval`, `FindFile`, `Changes`); lsp only picks the
+  (`Session.FindGameChange`) has one `stale-copy` at its start, with the newest patch that lists the file. Any other
+  mod file has a `stale-definition` at each of its own definitions whose game copy a patch of the range changed
+  (`diagnoseDefinitions`). The lookups are
+  [patch](../../internal/patch/README.md)'s (`FindRename`, `FindRemoval`, `FindFile`, `FindChange`, `Changes`); lsp only picks the
   code. A picture or other file
   the editor does not judge has none. New patches store a new load order, which drops the kept problems of every file.
 - The parse errors and the localization checks come from `jomini` and `loc`, under the same table.

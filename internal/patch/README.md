@@ -39,7 +39,7 @@ over PMT's own, and each part the winner lacks comes from the next that has it.
 ## Snapshots
 
 Whenever a workspace's open builds the schema or the install's index, it keeps a `Snapshot` of the version: the names
-the install's files define, the hash of each game file the index scan read, and the install's own dumps where they
+the install's files define with a hash of each one's script text, the hash of each game file the index scan read, and the install's own dumps where they
 are not older than the install. `KeepSnapshot` first compares it with the snapshot of the newest older version
 (`CompareSnapshots`) and saves the result as PMT's own patch. So the dumps wait for the user to run `script_docs`
 after an update, while the names and the files need none. `gen` makes the shipped history with the same comparison.

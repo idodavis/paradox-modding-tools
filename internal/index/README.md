@@ -81,7 +81,8 @@ copy `FindKept` returns.
 - **Role**: what an occurrence does with its name: defines it, refers to it or localizes it.
 - **Defined key**: a name some file of the index defines in a database, or a localization key under
   `lang.Localization`. `ListDefinedKeys` lists them by database, which is what a new version of the game may add or
-  remove.
+  remove, each with a hash of its script definitions' text without white space (`Occurrence.Hash`), which is
+  what a new version may change; a table's row and a localization key have none.
 - **Hash**: the SHA-256 of a file's bytes, which the scan takes of each script, GUI, font, GFX, table and
   localization file it reads, into the file's `Hash`.
 - **Table**: the interned texts of one kind, each given one ordinal.

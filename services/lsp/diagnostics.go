@@ -311,6 +311,13 @@ var Codes = []Code{
 			"version the mod is made for.",
 		Message: "The game's own copy was {status} in {version}.",
 		Advice:  "Compare the copy with the game's file in the Patch Center and carry the game's changes over."},
+	{ID: "stale-definition", Question: QuestionPatch, Level: LevelWarning, Topic: "patch",
+		Label: "Game definition changed under the mod's copy",
+		Description: "A definition of the game that the mod writes its own copy of, which the game changed in a " +
+			"patch after the version the mod is made for.",
+		Message: "The game's own {database} {name} was changed in {version}.",
+		Advice: "Compare the mod's copy with the game's and carry over what the mod needs of the game's changes. " +
+			"If the copy needs none, set the game version the mod supports to the game's, and this goes away."},
 	{ID: "contest", Question: QuestionCompatibility, Level: LevelCritical, Topic: "definitions", HealthOnly: true,
 		Label:       "Contested definition",
 		Description: "A name that two or more mods define, of which the game keeps one copy.",
@@ -545,7 +552,11 @@ func diagnoseDocument(ws *workspace.Session, mods *index.Index, place workspace.
 	}
 
 	patches := ws.ListModPatches(place.Origin)
-	diagnostics = append(diagnostics, diagnoseCopy(ws, mods, tree, place)...)
+	if stale := diagnoseCopy(ws, mods, tree, place); len(stale) > 0 {
+		diagnostics = append(diagnostics, stale...)
+	} else {
+		diagnostics = append(diagnostics, diagnoseDefinitions(ws, mods, patches, document)...)
+	}
 
 	narrowed := mods
 	if place.Origin != "" {
@@ -647,6 +658,38 @@ func diagnoseCopy(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, p
 	}
 
 	return []Diagnostic{makeDiagnostic(tree, jomini.Span{}, "stale-copy", facts)}
+}
+
+// diagnoseDefinitions returns a problem at each definition of a mod's file
+// whose copy in the game a patch changed after the version the mod is made
+// for. A definition replaces none of the game's, and has no problem, where
+// only its own file can refer to it or the game keeps every copy of the name,
+// as of a flag. A file that is a changed game file's copy has one problem
+// for the whole file instead.
+func diagnoseDefinitions(ws *workspace.Session, mods *index.Index, patches patch.Patches, document lang.Document) []Diagnostic {
+	var diagnostics []Diagnostic
+	for _, context := range document.Contexts {
+		definition := context.Definition
+		if !context.Defines || definition.Local || !definition.IsOwn() {
+			continue
+		}
+
+		database := ws.Schema.Databases[definition.Database]
+		if database == nil || database.Precedence.KeepsEvery() {
+			continue
+		}
+
+		version, ok := patches.FindChange(definition.Database, mods.ToCaseless(definition.Database, definition.Name))
+		if !ok {
+			continue
+		}
+
+		facts := lang.DescribeReference(lang.Reference{Database: definition.Database, Name: definition.Name})
+		facts["version"] = version
+		diagnostics = append(diagnostics, makeDiagnostic(document.Tree, definition.Span, "stale-definition", facts))
+	}
+
+	return diagnostics
 }
 
 func toDiagnostics(tree *jomini.Tree, problems []jomini.Problem) []Diagnostic {

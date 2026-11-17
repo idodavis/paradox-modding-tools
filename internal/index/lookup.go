@@ -5,6 +5,7 @@ package index
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -127,11 +128,13 @@ func (i *Index) ListDefinitions(database string) []Site {
 }
 
 // ListDefinedKeys returns the names the index's own files define, by database,
-// each list sorted. The keys of the localization are under lang.Localization,
-// defined by their messages. A mods' index lists its own files only, since
-// the install's are the install's index's.
-func (i *Index) ListDefinedKeys() map[string][]string {
-	keys := map[string][]string{}
+// each list sorted, and a hash beside each name: the hashes of its copies in
+// load order, as one. A name with a copy that has no hash, as a table's row
+// or a localization key, gets 0. The keys of the localization are under
+// lang.Localization, defined by their messages. A mods' index lists its own
+// files only, since the install's are the install's index's.
+func (i *Index) ListDefinedKeys() (keys map[string][]string, hashes map[string][]uint32) {
+	hashed := map[string]map[string]uint32{}
 
 	for posting, names := range i.postings {
 		database := i.Databases.Texts[posting.Database]
@@ -140,17 +143,37 @@ func (i *Index) ListDefinedKeys() map[string][]string {
 		}
 
 		for name, sites := range names {
-			if len(i.narrowSites(sites)) > 0 {
-				keys[database] = append(keys[database], i.Names.Texts[name])
+			own := i.narrowSites(sites)
+			if len(own) == 0 {
+				continue
 			}
+
+			hash := hashOffset
+			for _, site := range own {
+				hash = (hash ^ i.Occurrence(site).Hash) * hashPrime
+			}
+
+			if slices.ContainsFunc(own, func(site Site) bool { return i.Occurrence(site).Hash == 0 }) {
+				hash = 0
+			}
+
+			if hashed[database] == nil {
+				hashed[database] = map[string]uint32{}
+			}
+
+			hashed[database][i.Names.Texts[name]] = hash
 		}
 	}
 
-	for _, list := range keys {
-		slices.Sort(list)
+	keys, hashes = map[string][]string{}, map[string][]uint32{}
+	for database, names := range hashed {
+		keys[database] = slices.Sorted(maps.Keys(names))
+		for _, name := range keys[database] {
+			hashes[database] = append(hashes[database], names[name])
+		}
 	}
 
-	return keys
+	return keys, hashes
 }
 
 // ListMessages returns every message with the given key, one per language and

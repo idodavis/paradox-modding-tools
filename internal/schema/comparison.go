@@ -134,13 +134,15 @@ func CompareDumps(old, current *Dumps, language *lang.Schema) []KeyChange {
 	return sortChanges(changes)
 }
 
-// CompareKeys returns the keys only the current version has as added, and the
-// keys only the old one has as removed, sorted by database and key.
-func CompareKeys(old, current map[string][]string) []KeyChange {
-	never := func(_, _ bool) bool { return false }
+// CompareKeys returns the keys only the current version has as added, the
+// keys only the old one has as removed, and the keys whose hashes differ as
+// changed, sorted by database and key. The hashes run beside the keys. A key
+// with no hash in either version, or with the hash 0, is never changed.
+func CompareKeys(old, current map[string][]string, oldHashes, currentHashes map[string][]uint32) []KeyChange {
+	differs := func(earlier, latest uint32) bool { return earlier != 0 && latest != 0 && earlier != latest }
 
 	var changes []KeyChange
-	for place, status := range Compare(listKeys(old), listKeys(current), never) {
+	for place, status := range Compare(listKeys(old, oldHashes), listKeys(current, currentHashes), differs) {
 		changes = append(changes, KeyChange{Database: place.database, Key: place.key, Status: status})
 	}
 
@@ -149,19 +151,25 @@ func CompareKeys(old, current map[string][]string) []KeyChange {
 
 // sortChanges sorts changes by database and key, and returns them.
 func sortChanges(changes []KeyChange) []KeyChange {
-	slices.SortFunc(changes, func(first, second KeyChange) int {
-		return cmp.Or(strings.Compare(first.Database, second.Database), strings.Compare(first.Key, second.Key))
-	})
+	slices.SortFunc(changes, CompareChanges)
 
 	return changes
 }
 
-// listKeys returns the keys of each database as one set.
-func listKeys(keys map[string][]string) map[entryKey]bool {
-	set := map[entryKey]bool{}
+// CompareChanges orders changes by database and key, which is how a
+// comparison lists them.
+func CompareChanges(first, second KeyChange) int {
+	return cmp.Or(strings.Compare(first.Database, second.Database), strings.Compare(first.Key, second.Key))
+}
+
+// listKeys returns the keys of each database as one set, each with the hash
+// beside it, or 0 where there is none.
+func listKeys(keys map[string][]string, hashes map[string][]uint32) map[entryKey]uint32 {
+	set := map[entryKey]uint32{}
 	for database, names := range keys {
-		for _, name := range names {
-			set[entryKey{database, name}] = true
+		beside := append(slices.Clone(hashes[database]), make([]uint32, len(names))...)
+		for position, name := range names {
+			set[entryKey{database, name}] = beside[position]
 		}
 	}
 

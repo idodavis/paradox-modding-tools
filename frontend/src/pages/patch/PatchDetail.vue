@@ -141,7 +141,7 @@ function isUntied(id: string): boolean {
 
 <template>
   <section class="flex min-h-0 min-w-0 grow flex-col bg-(--bg-0)">
-    <div class="flex h-13 shrink-0 items-center gap-3 border-b border-default ps-8 pe-6">
+    <div class="flex h-13 shrink-0 items-center gap-3 border-b border-default px-6">
       <h1 class="truncate text-16">Update {{ version }}</h1>
       <span v-if="note?.released" class="text-12 whitespace-nowrap text-dimmed">{{ note.released }}</span>
       <span v-if="patch?.version" class="min-w-0 truncate text-12 text-dimmed">
@@ -160,7 +160,7 @@ function isUntied(id: string): boolean {
         @click="Browser.OpenURL(page.url)"
       />
     </div>
-    <div class="flex h-10 shrink-0 items-center gap-3 border-b border-default ps-6 pe-6">
+    <div class="flex h-10 shrink-0 items-center gap-3 border-b border-default ps-2.5 pe-6">
       <UTabs
         :model-value="shown"
         :items="tabs"

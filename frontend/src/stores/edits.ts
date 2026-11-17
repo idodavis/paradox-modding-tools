@@ -91,7 +91,8 @@ export function toEdits(diff: DiffContent): FileEdit[] {
         added: 0,
         removed: 0,
         hunks: [{ before: splitLines(diff.oldText ?? ""), after: splitLines(diff.newText ?? "") }],
-        isNew: !diff.oldText,
+        // "" is an empty file, not a new one.
+        isNew: typeof diff.oldText !== "string",
         reviewError: "",
       },
     ];

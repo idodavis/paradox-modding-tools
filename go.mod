@@ -11,9 +11,9 @@ require (
 	github.com/kaiser-chris/dds-go v1.0.0
 	github.com/kaiser-chris/pdx-asset-go v0.7.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/sergi/go-diff v1.4.0
+	github.com/sergi/go-diff v1.4.4
 	github.com/wailsapp/wails/v3 v3.1.0
-	github.com/yuin/goldmark v1.7.17
+	github.com/yuin/goldmark v1.8.7
 	golang.org/x/mod v0.43.0
 	golang.org/x/net v0.62.0
 	golang.org/x/sync v0.25.0
@@ -30,6 +30,6 @@ require (
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/term v0.47.0 // indirect
+	golang.org/x/oauth2 v0.38.0 // indirect
+	golang.org/x/term v0.48.0 // indirect
 )

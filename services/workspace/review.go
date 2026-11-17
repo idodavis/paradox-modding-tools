@@ -223,14 +223,15 @@ func (s *Service) UndoFile(path string) error {
 }
 
 // readSaved returns a file's text on disk. It returns an error if the editor
-// holds other text for the file, which is unsaved.
+// holds other text for the file, which is unsaved; line endings do not count.
 func (s *Session) readSaved(path string) (files.Text, error) {
 	text, err := files.ReadText(path)
 	if err != nil {
 		return files.Text{}, err
 	}
 
-	if draft, isOpen := s.LookupBuffer(path); isOpen && draft != text.Text {
+	draft, isOpen := s.LookupBuffer(path)
+	if isOpen && unifyEndings(draft) != unifyEndings(text.Text) {
 		return files.Text{}, errors.New(unsavedText)
 	}
 

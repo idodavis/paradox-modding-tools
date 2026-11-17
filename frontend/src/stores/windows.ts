@@ -153,7 +153,7 @@ export const useWindowsStore = defineStore("windows", () => {
 
   // A starting window, a reloaded one too, says hello, which each of the others answers with its state.
   shared.post({ type: "hello", state: state.value });
-  watch(state, sendState);
+  const stopSending = watch(state, sendState);
   useEventListener(shared.channel, "message", ({ data }: MessageEvent<Message>) => {
     if (data.type === "hello" || data.type === "state") {
       others.set(data.state.name, data.state);
@@ -179,6 +179,10 @@ export const useWindowsStore = defineStore("windows", () => {
       const mine = editor.listTabs();
       shared.post({ type: "closing", from: THIS_WINDOW, tabs: mine.flatMap(toHanded) });
       mine.forEach((tab) => editor.close(tab.id));
+      // On Linux a closed window's page keeps running, so it stops talking.
+      stopSending();
+      shared.close();
+      own.close();
     }
     closeWindow();
   });

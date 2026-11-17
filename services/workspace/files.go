@@ -456,8 +456,10 @@ func move(source, target string) error {
 // Workshop folders is refused.
 func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	query := request.URL.Query()
-	path := query.Get("path")
 	records := s.Config.Config()
+
+	// Cleaned first, so that `..` cannot leave an allowed folder.
+	path := filepath.Clean(query.Get("path"))
 
 	var dirs []string
 	for _, install := range records.Installs {

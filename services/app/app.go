@@ -312,9 +312,11 @@ func (s *Service) OpenMainWindow() {
 		if !s.mainClosable.Load() {
 			event.Cancel()
 			pmt.Event.Emit(EventWindowClosing, mainWindow)
+
+			return
 		}
-	})
-	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+
+		// Read before the close: a listener races Wails's own and reads 0×0.
 		maximized, bounds := window.IsMaximised(), window.Bounds()
 		_ = s.Config.Update("window", func(config *Config) error {
 			config.Window.Maximized = maximized
@@ -324,8 +326,8 @@ func (s *Service) OpenMainWindow() {
 
 			return nil
 		})
-		pmt.Quit()
 	})
+	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { pmt.Quit() })
 }
 
 // OpenWindow opens a new window on a page of the app. Its first close only

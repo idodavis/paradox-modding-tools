@@ -8,7 +8,7 @@ import type {
 import type { DropdownMenuItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
 import { createReusableTemplate, refDebounced, useTimeoutFn } from "@vueuse/core";
-import { Clipboard } from "@wailsio/runtime";
+import { Browser, Clipboard } from "@wailsio/runtime";
 import { sumBy, uniqBy } from "es-toolkit";
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 
@@ -58,6 +58,16 @@ const MACHINERY = { trigger: "text-dimmed hover:text-toned" };
 const MENTION = /\[@([^\]]+)\]\(file:\/\/[^)]*\)/g;
 // An absolute path in a tool's title, Windows' or Unix's, whose last part, the file's name, is what the row shows.
 const ABSOLUTE_PATH = /(?:[A-Za-z]:[\\/]|\/)(?:[^\s`'"\\/]+[\\/])+([^\s`'"\\/]+)/g;
+// A link in an answer to a file: an absolute path or a file:// address, with
+// an optional line, as C:\mod\a.txt:12 or file:///C:/mod/a.txt#L12.
+const FILE_LINK = /^(?:file:\/\/)?\/?((?:[A-Za-z]:)?[\\/].*?)(?:#L(\d+).*|:(\d+)(?::\d+)?)?$/;
+// The editor blanks a link it does not allow, and it allows no file link.
+const LINKS = {
+  link: {
+    isAllowedUri: (url: string, context: { defaultValidate: (url: string) => boolean }) =>
+      context.defaultValidate(url) || FILE_LINK.test(url),
+  },
+};
 // A tool row, a run of tool calls or the reasoning stands apart from what comes before it.
 const MACHINERY_ROW = "max-w-180 not-first:mt-5";
 const OPTIONS: Record<string, { color: "primary" | "neutral"; variant: "solid" | "outline" | "ghost" }> = {
@@ -106,7 +116,6 @@ const { data: places } = useQuery(() => ({
 }));
 const copied = shallowRef("");
 const { start: clearCopied } = useTimeoutFn(() => (copied.value = ""), 1500, { immediate: false });
-
 // Each user entry is a message of its own; the entries after it, the agent's texts and tool calls, share one message.
 const messages = computed(() =>
   session.entries.reduce<{ id: string; role: "user" | "assistant"; parts: ShownEntry[] }[]>((list, entry) => {
@@ -306,6 +315,18 @@ function splitMentions(text: string): { text: string; names: string[] } {
   return { text: text.replace(MENTION, "").trim(), names };
 }
 
+/** follow opens a link in an answer: a web address in the browser, a file in the IDE at its line. */
+function follow(event: MouseEvent): void {
+  const link = event.target instanceof Element ? event.target.closest(".ProseMirror a") : null;
+  if (!link) return;
+  // The link's own click would open a window of the app.
+  event.preventDefault();
+  const href = link.getAttribute("href") ?? "";
+  const [, path, hashLine, colonLine] = FILE_LINK.exec(decodeURI(href)) ?? [];
+  if (/^https?:/i.test(href)) void Browser.OpenURL(href);
+  else if (path) void toolView.followFile(path, Number(hashLine ?? colonLine ?? 1));
+}
+
 /** stripControls returns a terminal's output without its color and cursor codes. */
 function stripControls(output: string): string {
   return output.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g, "");
@@ -314,7 +335,7 @@ function stripControls(output: string): string {
 
 <template>
   <UChatPalette :ui="frame">
-    <div class="flex flex-col" :class="frame.column">
+    <div class="flex flex-col" :class="frame.column" @click.capture="follow" @auxclick.capture="follow">
       <DefineTool v-slot="{ entry, tool }">
         <UChatTool
           v-if="entry.kind === 'tool'"
@@ -448,6 +469,7 @@ function stripControls(output: string): string {
                   :model-value="entry.text"
                   content-type="markdown"
                   :extensions="TABLES"
+                  :starter-kit="LINKS"
                   :editable="false"
                   :mention="false"
                   :ui="{ base: ANSWER }"

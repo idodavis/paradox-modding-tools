@@ -484,6 +484,21 @@ export const useAgentStore = defineStore("agent", () => {
     );
     const connection = client.connect(stream);
     const agent = connection.agent;
+
+    /** locate returns the folder the agent keeps a session by, "" if unlisted. */
+    const locate = async (id: string): Promise<string> => {
+      type Page = { sessions?: { sessionId: string; cwd: string }[]; nextCursor?: string | null };
+      let cursor: string | null | undefined;
+      do {
+        const page = (await agent.request("session/list", cursor ? { cursor } : {}).catch(() => ({}))) as Page;
+        const listed = page.sessions?.find((other) => other.sessionId === id);
+        if (listed) return listed.cwd;
+        cursor = page.nextCursor;
+      } while (cursor);
+
+      return "";
+    };
+
     return {
       initialize: async () => {
         const { methods, ...capabilities } = row.toCapabilities(await agent.request("initialize", row.initialize));
@@ -497,7 +512,12 @@ export const useAgentStore = defineStore("agent", () => {
       },
       resume: async (id, start) => {
         if (!session.resumable) throw new Error(`${session.agent.name} cannot replay a session`);
-        applyOffers(session, (await agent.request(...row.resume(id, start, folders(session, start)))) as Offers);
+        // An agent replays a session's history only from the folder the
+        // session was made in, which is not always the one it starts in now.
+        const folder = (await locate(id)) || start.folder;
+        const others = [start.folder, ...(start.directories ?? [])].filter((other) => other !== folder);
+        const own = { ...start, folder, directories: others };
+        applyOffers(session, (await agent.request(...row.resume(id, own, folders(session, own)))) as Offers);
       },
       prompt: async (id, blocks) => {
         session.state = "running";

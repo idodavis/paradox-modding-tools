@@ -110,6 +110,9 @@ const rootSheet = new CSSStyleSheet();
 // The rows git ignores are dimmed; a git status would count them as changes in every folder above.
 const ignoredSheet = new CSSStyleSheet();
 const undrawableSheet = new CSSStyleSheet();
+// A dot folder or file, and what a dot folder holds, is dimmed as hidden.
+const dotSheet = new CSSStyleSheet();
+dotSheet.replaceSync('[data-item-path*="/."] { color: var(--fg-3); }');
 const history = { done: [] as Move[], undone: [] as Move[] };
 // What a menu item chose to do, run once the menu has closed and released the keyboard.
 let deferred: (() => void) | undefined;
@@ -196,7 +199,8 @@ function mount(): void {
   tree.subscribe(loadExpanded);
   tree.render({ containerWrapper: host.value });
   const shadow = host.value.querySelector("*")?.shadowRoot;
-  if (shadow) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, rootSheet, ignoredSheet, undrawableSheet];
+  const sheets = [rootSheet, ignoredSheet, undrawableSheet, dotSheet];
+  if (shadow) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, ...sheets];
   view.value = tree;
   void markGit();
   follow();

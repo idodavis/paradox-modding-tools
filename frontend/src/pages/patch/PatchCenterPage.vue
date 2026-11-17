@@ -118,8 +118,8 @@ function show(version: string): void {
         <aside class="flex min-w-0 flex-1 flex-col border-e border-default bg-muted">
           <button
             type="button"
-            class="mx-1.5 mt-2 mb-1 flex h-8 shrink-0 items-center gap-2 rounded-md px-2.5 text-13 font-medium text-toned"
-            :class="!patch && 'border-s-2 border-primary bg-(--accent-soft) text-highlighted'"
+            class="mx-1.5 mt-2 mb-1 flex h-8 shrink-0 items-center gap-2 rounded-md px-2.5 text-13 font-medium whitespace-nowrap text-toned"
+            :class="!patch && 'border-s-2 border-primary bg-(--accent-soft) ps-2 text-highlighted'"
             @click="show('')"
           >
             <UIcon name="i-lucide-layers" class="size-3.5" />
@@ -127,7 +127,7 @@ function show(version: string): void {
             <span class="grow" />
             <LevelCounts v-if="report" :levels="report.ownPatch.counts" />
           </button>
-          <div class="flex h-9 shrink-0 items-center border-t border-default px-3 text-12 font-semibold">
+          <div class="flex h-9 shrink-0 items-center border-t border-default px-4 text-12 font-semibold">
             Versions<span class="grow" /><span class="text-11 font-normal text-dimmed">{{ notes?.length ?? 0 }}</span>
           </div>
           <UEmpty
@@ -145,13 +145,13 @@ function show(version: string): void {
             :filter="{ placeholder: 'Filter versions', icon: 'i-lucide-search', size: 'sm', variant: 'outline' }"
             class="min-h-0 flex-1"
             :ui="{
-              root: 'gap-0 border-0',
-              input: 'mx-2.5 mb-1 border-0',
+              root: 'gap-0 rounded-none ring-0',
+              input: 'mx-1.5 mb-1 border-0',
               content: 'max-h-none divide-y-0 px-1.5',
               label: 'px-2.5 pt-3 pb-1 text-11 font-medium text-dimmed',
               item: [
                 'h-7.5 items-center rounded-md px-2.5 text-13 text-muted before:rounded-md',
-                'data-[state=checked]:border-s-2 data-[state=checked]:border-primary data-[state=checked]:before:bg-(--accent-soft)',
+                'data-[state=checked]:border-s-2 data-[state=checked]:border-primary data-[state=checked]:ps-2 data-[state=checked]:before:bg-(--accent-soft)',
               ],
               itemTrailingIcon: 'hidden',
             }"
@@ -180,7 +180,7 @@ function show(version: string): void {
               />
             </template>
           </UListbox>
-          <div class="flex flex-col gap-0.5 border-t border-default px-3 py-2 text-11 text-dimmed">
+          <div class="flex flex-col gap-0.5 border-t border-default px-4 py-2 text-11 text-dimmed">
             <span class="flex items-center gap-1.5">
               <span class="size-2 shrink-0 rounded-full border-2 border-(--link)" />The wiki's notes have a modding
               section
@@ -203,7 +203,7 @@ function show(version: string): void {
         <div class="flex min-h-0 min-w-0 grow flex-col">
           <div
             v-if="staleDumps"
-            class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-default bg-muted py-2 ps-8 pe-6 text-12"
+            class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-default bg-muted px-6 py-2 text-12"
           >
             <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-warning" />
             <p class="min-w-0 text-toned"><FactText :parts="staleDumps.message" /> {{ advice }}</p>
@@ -234,7 +234,7 @@ function show(version: string): void {
             </div>
             <p
               v-if="knownUntil"
-              class="flex shrink-0 items-center gap-3 border-b border-default bg-muted py-2 ps-8 pe-6 text-12 text-toned"
+              class="flex shrink-0 items-center gap-3 border-b border-default bg-muted px-6 py-2 text-12 text-toned"
             >
               <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-warning" />
               PMT does not know what {{ state?.install.version }} changed. The newest changes it knows are

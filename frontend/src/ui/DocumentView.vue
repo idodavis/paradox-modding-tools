@@ -181,7 +181,7 @@ function follow(event: MouseEvent): void {
     <template #rail>
       <nav
         ref="rail"
-        class="flex min-w-0 flex-1 flex-col overflow-auto border-e border-default pt-2 ps-1 pe-2 [scrollbar-gutter:stable]"
+        class="flex min-w-0 flex-1 flex-col overflow-auto border-e border-default pt-2 ps-3.5 pe-2 [scrollbar-gutter:stable]"
       >
         <div class="flex items-center ps-2.5">
           <span class="grow text-11 font-medium text-dimmed">On this page</span>

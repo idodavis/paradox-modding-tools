@@ -1,5 +1,7 @@
-<!-- A dialog of the files an upload sends, the rules that leave files out with the files each leaves out, and the mod's
-own patterns. -->
+<!--
+  A dialog of the files an upload sends, the rules that leave files out with
+  the files each leaves out, and the mod's own patterns.
+-->
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -10,7 +12,6 @@ import { ignoreQuery, rulesQuery, uploadQuery } from "../../queries";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import * as steam from "@services/steam/service";
-import type { Mod as ModRecord } from "@services/app/models";
 import type { Mod } from "@services/workspace/models";
 
 const { mod, listingKey } = defineProps<{ mod: Mod; listingKey: string }>();
@@ -18,23 +19,24 @@ const open = defineModel<boolean>("open", { required: true });
 
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
-const toast = useToast();
 const tab = shallowRef("included");
-// The latest write of the mod's record, which an export waits for.
-let lastUpdate: Promise<void> | undefined;
 
 const enabled = computed(() => open.value && workspace.isOpen());
 const { data: rules } = useQuery(rulesQuery);
-const { data: upload } = useQuery(() => ({
+const { data: upload, refetch: refetchUpload } = useQuery(() => ({
   ...uploadQuery({ modId: mod.id, key: listingKey }),
   enabled: enabled.value,
 }));
-// the text of the mod's .workshop-ignore file, or "" when the folder has none
+// The mod's own patterns: the text of its .workshop-ignore file, "" when the
+// folder has none.
 const { data: ignore, refetch: refetchIgnore } = useQuery(() => ({ ...ignoreQuery(mod.id), enabled: enabled.value }));
 
 const included = computed(() => upload.value?.files?.map((file) => file.rel) ?? []);
 const excluded = computed(() => Object.keys(upload.value?.excluded ?? {}).sort());
-/** Every rule with the files it leaves out, then each other reason a file is left out for, with its files. */
+/**
+ * Every rule with the files it leaves out, then each other reason a file is
+ * left out for, with its files.
+ */
 const exclusions = computed(() => {
   const byReason = groupBy(excluded.value, (rel) => upload.value?.excluded?.[rel] ?? "");
   const ruleRows = (rules.value ?? []).map((rule) => ({ ...rule, files: byReason[rule.reason] ?? [] }));
@@ -48,18 +50,10 @@ const tabs = computed(() => [
   { label: `Left out (${describeCount(excluded.value.length)})`, value: "excluded", icon: "i-lucide-eye-off" },
 ]);
 
-const { mutate: update } = useMutation({
-  mutation: (changes: Partial<ModRecord>) => (lastUpdate = workspace.updateMod(workspace.activeId(), mod.id, changes)),
-});
-const { mutate: exportIgnore } = useMutation({
-  mutation: async () => {
-    await lastUpdate?.catch(() => undefined);
-    await steam.WriteIgnore(mod.id);
-  },
-  onSuccess: () => {
-    toast.add({ title: "Wrote the patterns to .workshop-ignore in the mod's folder.", color: "success" });
-    void refetchIgnore();
-  },
+// Writes the patterns to the file, then lists again what an upload sends.
+const { mutate: writeIgnore } = useMutation({
+  mutation: (text: string) => steam.WriteIgnore(mod.id, text),
+  onSuccess: () => Promise.all([refetchIgnore(), refetchUpload()]),
 });
 </script>
 
@@ -119,34 +113,16 @@ const { mutate: exportIgnore } = useMutation({
         <section class="flex flex-col gap-2">
           <span class="text-12 font-medium text-toned">The mod's own patterns</span>
           <UTextarea
-            :model-value="mod.ignore"
+            :model-value="ignore ?? ''"
             :model-modifiers="{ lazy: true }"
             :rows="6"
             placeholder="Gitignore patterns, one per line, such as gfx/source/**"
             class="w-full font-mono"
-            @update:model-value="update({ ignore: `${$event}` })"
+            @update:model-value="writeIgnore(`${$event}`)"
           />
-          <div class="flex gap-1">
-            <UTooltip text="The mod's folder has no .workshop-ignore file" :disabled="!!ignore">
-              <span>
-                <UButton
-                  label="Import .workshop-ignore"
-                  icon="i-lucide-file-down"
-                  variant="ghost"
-                  size="sm"
-                  :disabled="!ignore"
-                  @click="update({ ignore })"
-                />
-              </span>
-            </UTooltip>
-            <UButton
-              label="Export .workshop-ignore"
-              icon="i-lucide-file-up"
-              variant="ghost"
-              size="sm"
-              @click="exportIgnore()"
-            />
-          </div>
+          <span class="text-11 text-dimmed">
+            Kept in <span class="font-mono text-toned">.workshop-ignore</span> in the mod's folder.
+          </span>
         </section>
 
         <p class="flex items-start gap-2 rounded-lg bg-muted p-3 text-12 text-dimmed">

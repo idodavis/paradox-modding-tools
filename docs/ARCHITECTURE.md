@@ -56,7 +56,9 @@ There are four layers, and each calls only the ones below it.
 A few rules hold the layers together:
 
 - **The engine is game-agnostic.** The parser and the language model are shared by every game. Anything one game does
-  differently is a row in `game`'s tables, and `jomini` never imports `game`.
+  differently is a row of a table, in the lowest package whose topic it is: a rule of the script language in `lang`,
+  a game's identity and installs in `game`, and a fact one feature reads beside the function that reads it. `jomini`
+  never imports `game`.
 - **One open workspace.** The workspace service holds the one open workspace. The other services ask it for the
   session at every call, so none keeps a copy that could go stale.
 - **Go computes, the page shows.** A payload carries what a page displays, such as a file's relative path and its
@@ -67,12 +69,12 @@ A few rules hold the layers together:
 
 ```mermaid
 flowchart TD
-  index --> schema
+  index --> lang
   index --> texture
-  schema --> game
-  schema --> loc
+  schema --> lang
+  lang --> game
+  lang --> loc
   game --> files
-  game --> jomini
   loc --> jomini
   terminal --> files
 ```
@@ -83,26 +85,30 @@ Arrows point to what a package imports. An import that follows from others is le
 |---|---|
 | [jomini](../internal/jomini/README.md) | Parses Paradox script, GUI and asset files into a flat tree. |
 | [loc](../internal/loc/README.md) | Reads and writes localization files: messages, languages and markup. |
-| [files](../internal/files/README.md) | Lists the files of an install, a mod or a dump folder, and tells each one's format. |
-| [texture](../internal/texture/README.md) | Decodes DDS, TGA and PNG images, reads their headers, and writes DDS. |
-| [game](../internal/game/README.md) | Every fact about the supported games, as tables: installs, folders, file layout, language rules. |
-| [schema](../internal/schema/README.md) | The language of one game version, and the one walk over a file that every reader of script uses. |
-| [index](../internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy the game keeps. |
+| [files](../internal/files/README.md) | Lists the files of an install, a mod or a dump folder, tells each one's format, and decides which of them the game reads. |
+| [texture](../internal/texture/README.md) | Reads DDS, TGA and PNG images and their headers through dds-go and pdx-asset-go, and writes DDS in a given DXGI format. |
+| [game](../internal/game/README.md) | The supported games: each one's identity, how its mods are laid out and how it is started. It also finds a game's installs on this machine. |
+| [lang](../internal/lang/README.md) | The script language of one game version: its fixed rules as tables, the model of what is learned about it, and the one walk over a file that every reader of script uses. |
+| [schema](../internal/schema/README.md) | Builds the model of one game version's language from the game's dumps, its docs and its own files. |
+| [index](../internal/index/README.md) | Every definition, reference and localization message a scan found, and which copy of a definition the game keeps. |
+| [patch](../internal/patch/README.md) | What each version of a game changed, as plain data: the game's patches from its digest, the shipped history and PMT's own comparison, their ranges, and the snapshots kept to compare versions with. |
 | [terminal](../internal/terminal/README.md) | Runs shells under Windows' pseudo console or a Linux pty. |
 
-[`schema/gen`](../internal/schema/gen/) writes the shipped backup schemas, the only game data the app embeds.
+[`schema/gen`](../internal/schema/gen/) writes the shipped backup schemas and each game's shipped history of patches,
+the only game data the app embeds.
 
 ### The services
 
 ```mermaid
 flowchart TD
   steam --> agent & git & wiki
+  patch --> wiki
   agent --> mcp
   terminal --> mcp
-  mcp --> draw & eventgraph["graph"] & health & search & wiki
+  mcp --> draw & eventgraph["graph"] & health & search & wiki & patch
   terminal --> lsp
-  draw & eventgraph & health & search & wiki --> lsp
-  lsp --> workspace
+  draw & eventgraph & health & search --> lsp
+  lsp & wiki & patch --> workspace
   git --> workspace
   workspace --> app
   workspace --> engine["the engine"]
@@ -112,13 +118,14 @@ flowchart TD
 |---|---|
 | [app](../services/app/README.md) | The app itself: `config.json`, settings, the log, windows and updates. |
 | [workspace](../services/workspace/README.md) | The one open workspace: its schema and indexes, its files, and the watcher on its mods. |
-| [lsp](../services/lsp/README.md) | The editor's language features: hover cards, completion, checks, go-to and references. |
+| [lsp](../services/lsp/README.md) | The editor's language features: hover cards, completion, checks, go-to and references, and the lexicon of the game's commands. |
 | [draw](../services/draw/README.md) | The Visual view: GUI windows as widgets, and coats of arms. |
 | [graph](../services/graph/README.md) | The Event Graph: what fires what, from one root. |
 | [health](../services/health/README.md) | The Health report: what is wrong in the workspace's mods, and the game's error log. |
 | [search](../services/search/) | Text search and replace over the workspace, and the file search behind Ctrl P. |
 | [git](../services/git/README.md) | Source control, through the git installed on the machine. |
 | [wiki](../services/wiki/README.md) | The community wiki: cached pages, patch notes, and the Wiki pane's pages for a file. |
+| [patch](../services/patch/README.md) | The Modding Co-ops' digests: what each version of Vic3 and EU5 changed, read into the game's patches, and the versions the Patch Center lists. |
 | [steam](../services/steam/README.md) | Publishing to the Steam Workshop, and the compare with Steam. |
 | [terminal](../services/terminal/README.md) | The IDE's Terminal: its shells, streamed to the window that shows them. |
 | [mcp](../services/mcp/README.md) | PMT's tool server for coding agents. |
@@ -133,7 +140,8 @@ flowchart TD
 - **The game's dumps:** the lists of triggers, effects, scopes, on_actions and data types that the game writes when it
   runs with its debug flag, in the game's folder under Documents.
 - **The mods:** each mod's folder and its descriptor, CK3's `.mod` file or Vic3's and EU5's `metadata.json`.
-- **The community wiki**, for the Wiki pane and Patch Notes.
+- **The community wiki**, for the Wiki pane and the Patch Center's notes.
+- **The Modding Co-ops' digests** of Vic3 and EU5, one GitHub repository each, read for what each version changed.
 - **Steam**, through the game's own copy of Steam's library, for publishing.
 
 ### What PMT builds
@@ -145,7 +153,7 @@ flowchart LR
   dumps["The game's dumps"] --> schema
   shipped["Shipped backups"] -.->|a dump is missing| schema
   sources["The game's docs<br/>and own files"] --> schema
-  tables["game's tables"] --> schema
+  tables["lang's tables"] --> schema
   schema["Schema"] --> installIndex["Install index"]
   install["Install files"] --> installIndex
   installIndex --> modsIndex["Mods' index"]
@@ -157,7 +165,7 @@ flowchart LR
 
 - **The schema** models the language of one game version: which databases exist, what each key takes and which
   commands run in which scope. It is built from the dumps, the game's docs and what the game's own files write. The
-  rules no source states are `game`'s rows.
+  rules no source states are `lang`'s rows.
 - **The install's index** records every definition, reference and localization message in the game's files.
 - Both are cached in a folder named for the install's version, the time of its dumps and PMT's version, so a game
   patch, fresh dumps or a new build of PMT each scan again.
@@ -173,6 +181,7 @@ flowchart LR
 | `pmt.log` | The user cache folder: `%LocalAppData%\paradox-modding-tools` on Windows, `~/.cache/paradox-modding-tools` on Linux |
 | The caches (schemas, indexes, wiki pages, Steam snapshots, the agents' installs) and the trash | `cache/` in that same folder. Reset data empties it. |
 | A mod's Workshop listing | The mod's own `.workshop` folder |
+| A mod's own upload patterns | The mod's own `.workshop-ignore` file |
 
 ## One request: a hover
 
@@ -184,7 +193,7 @@ sequenceDiagram
   participant Card as editor/hover.ts
   participant LSP as lsp service
   participant Session as workspace session
-  participant Engine as schema and index
+  participant Engine as lang and index
   Editor->>Card: the pointer rests on a word
   Card->>LSP: Hover(path, line, column), through the bindings
   LSP->>Session: the file's tree
@@ -224,17 +233,17 @@ read that section refresh. Each package README lists the events its service send
 | Feature | Frontend | Services | Engine |
 |---|---|---|---|
 | Library, New workspace, New mod | `pages/library`, `pages/wizard`, `pages/newmod` | workspace, app | game, files |
-| The editor | `pages/ide`, `pages/ide/editor` | lsp, workspace | jomini, loc, schema, index |
+| The editor | `pages/ide`, `pages/ide/editor` | lsp, workspace | jomini, loc, lang, schema, index |
 | The explorer | `pages/ide/ExplorerTree.vue` | workspace | files, index |
 | Search, command palette | `pages/ide/SearchView.vue`, `app/CommandPalette.vue` | search, lsp | index |
-| Visual view, images, Save as DDS | `pages/ide/draw`, `ImageView.vue`, `SaveDdsModal.vue` | draw, workspace | texture, schema, index |
+| Visual view, images, Save as DDS | `pages/ide/draw`, `ImageView.vue`, `SaveDdsModal.vue` | draw, workspace | texture, lang, index |
 | Source control | `SourceControlView.vue`, `stores/git.ts` | git | |
-| Wiki pane | `pages/ide/WikiPane.vue` | wiki | |
+| Wiki pane | `pages/ide/WikiPane.vue` | wiki, lsp | |
 | Terminal | `pages/ide/terminal`, `stores/terminal.ts` | terminal | terminal |
-| Assistant | `app/AgentPane.vue`, `ui/AgentSession.vue`, `stores/agent.ts` | agent, mcp | |
-| Event Graph | `pages/graph` | graph | index, schema |
-| Health | `pages/health` | health | index, schema, loc |
-| Patch Notes | `pages/notes` | wiki | |
+| Assistant | `app/agent/`, `stores/agent.ts` | agent, mcp | |
+| Event Graph | `pages/graph` | graph | index, lang |
+| Health | `pages/health` | health | index, lang, loc |
+| Patch Center | `pages/patch` | patch, wiki, health, lsp, workspace | patch, schema |
 | Publish | `pages/publish`, `stores/uploads.ts` | steam | files, game |
 | Settings | `app/settings` | app, workspace | |
 
@@ -277,6 +286,7 @@ flowchart LR
 | [FEATURES.md](FEATURES.md) | Every page and what it does |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Building from source, the tests, a first change |
 | [AGENTS.md](../AGENTS.md) | The code conventions, for people and the coding agents they bring |
+| [GLOSSARY.md](GLOSSARY.md) | The one word PMT uses for each of its own things |
 | [RELEASING.md](RELEASING.md) | How a release goes out, and its checklist |
 | [ROADMAP.md](ROADMAP.md) | What comes next |
 | [frontend/src/README.md](../frontend/src/README.md) | The Vue app's folders and patterns |

@@ -24,9 +24,6 @@ type Sprite = { url: string; border: number[]; density: number; isTiled: boolean
 /** A Mask is a sprite that keeps part of a layer, by its alpha or by its brightness. */
 type Mask = [sprite: Sprite, mode: "alpha" | "luminance"];
 
-/** WRITTEN_SIZES lists the built-in types that are as large as they write whatever their children's size. */
-const WRITTEN_SIZES = ["widget", "uberwidget"];
-
 /** MASKS lists the texture keys whose image is a mask, not a picture. */
 const MASKS = ["coat_of_arms_mask", "mask"];
 
@@ -285,7 +282,7 @@ function applyStyle(element: HTMLElement, widget: Drawn, holder: Drawn | null): 
   // the running game, which the page cannot know, so that widget grows to its children.
   const isScrolled = holder?.row.holding === "scroll";
   const isBound = findValue(widget, "size").includes("[");
-  if (WRITTEN_SIZES.includes(widget.builtin) && !isFree && !isScrolled && !isBound) {
+  if (widget.row.keepsSize && !isFree && !isScrolled && !isBound) {
     const unsized = ["width", "height"].filter((length) => !style.getPropertyValue(length));
     for (const length of unsized) style.setProperty(length, "0px");
     element.dataset.unsized = unsized.join(" ");

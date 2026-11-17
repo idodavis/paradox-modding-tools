@@ -254,27 +254,35 @@ export const PAGES = {
       },
       {
         heading: "External mods",
-        text: "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT never publishes an external mod and keeps it out of your totals.",
+        text: "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT keeps an external mod read only, never publishes it, and keeps it out of your totals.",
       },
     ],
   },
-  "patch-notes": {
-    title: "Patch Notes",
+  "patch-center": {
+    title: "Patch Center",
     icon: "i-lucide-newspaper",
     workspace: true,
     start: [
-      "These are the game's patch notes, from its wiki, for the game this workspace uses.",
-      "Pick a version to read its notes. A dot marks a note with a Modding section.",
-      "Ctrl F finds in the note shown.",
+      "Your mods shows what the game's patches changed under each mod, from the version it is made for to the game's.",
+      "Pick a version in the list to read what it changed. A dot marks a note with a Modding section.",
+      "Mark as made for sets a mod's version once you have carried the changes over.",
     ],
     help: [
       {
-        heading: "The notes",
-        text: "The game's patch notes from its wiki, read when PMT starts and kept, for the game this workspace uses.",
+        heading: "Your mods",
+        text: "Each mod's line says which versions its changes run from and to, and counts the names the game renamed or removed that the mod uses, the game files it replaces that the game changed, and the breaking changes and new features that name what it holds. Open a mod for the rows. Health lists the same findings.",
       },
       {
-        heading: "Reading a note",
-        text: "Pick a version to read its notes; a dot marks a note with a Modding section, and Jump to Modding beside Find goes to it. Ctrl F finds in the note shown.",
+        heading: "Compare from and Mark as made for",
+        text: "A mod that gives no supported version that PMT can read is compared from the version you pick in Compare from. Mark as made for writes the game's release as the mod's supported version, in its descriptor and its Publish listing.",
+      },
+      {
+        heading: "A version",
+        text: "Pick a version to read the wiki's patch notes, the Modding Co-op's digest and the game files it changed. A mod's name under a digest's article says the article names a folder the mod writes files in, or a name the mod uses. Compare with the game's opens a file you replace next to the game's copy.",
+      },
+      {
+        heading: "Changes not known yet",
+        text: "Where no digest or comparison covers a version yet, the page says so. The comparison PMT makes itself needs the game's documentation to be current: type script_docs in the game's console after an update.",
       },
     ],
   },
@@ -314,7 +322,7 @@ export const PAGES = {
       },
       {
         heading: "External mods",
-        text: "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT never publishes an external mod and keeps it out of your totals.",
+        text: "External mods: add subscribed Workshop mods, or copies of other people's mods, as external mods to check your mods against them. PMT keeps an external mod read only, never publishes it, and keeps it out of your totals.",
       },
     ],
   },

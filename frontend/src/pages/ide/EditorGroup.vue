@@ -1,40 +1,31 @@
 <!-- One editor group: its tab strip and the active tab, as code, an image, a diff, a picture or the start page. -->
 <script setup lang="ts">
-import { computed, shallowReactive, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useEventListener, watchDebounced } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 
-import { Format } from "@internal/files/models";
 import * as lsp from "@services/lsp/service";
 import type { Place } from "@services/workspace/models";
 
-import {
-  canCopyToMod,
-  compare,
-  compareWithGame,
-  copyToMod,
-  findCommand,
-  findGameCopy,
-  findKbds,
-  findOverride,
-  overrideEntry,
-} from "../../app/commands";
+import { compare, compareWithGame, findCommand, findGameCopy, findKbds, hideDisabled } from "../../app/commands";
 import { copiesQuery, fileQuery, folderQuery, loadQuery, outlineQuery } from "../../queries";
+import { useAgentStore } from "../../stores/agent";
 import { canSplit, useEditorStore, type Group, type Side, type Tab } from "../../stores/editor";
 import { THIS_WINDOW, useWindowsStore } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
+import LineCounts from "../../ui/LineCounts.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import RichEditor from "../../ui/RichEditor.vue";
-import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import CodeEditor from "./CodeEditor.vue";
 import DrawPane from "./draw/DrawPane.vue";
 import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
 import StartPage from "./StartPage.vue";
 import { applyEdits, findModel, save, setText, type Model } from "./editor/models";
+import { findFileReview, goToChange, keepFile, locateChange, undoFile } from "./editor/review";
 import { findIcon, VIEWS } from "./editor/tabs";
 
 const { group, active } = defineProps<{ group: Group; active: boolean }>();
@@ -58,9 +49,9 @@ const MODES = [
 /** CRUMB holds the classes of a breadcrumb that opens a menu. */
 const CRUMB = "-mx-1 rounded-sm px-1 hover:bg-accented hover:text-highlighted";
 const REVEAL = findCommand("explorer.reveal");
-const CREATE = findCommand("mod.create");
 const SAVE_ALL = findCommand("editor.saveAll");
 
+const agent = useAgentStore();
 const editor = useEditorStore();
 const windows = useWindowsStore();
 const workspace = useWorkspaceStore();
@@ -84,19 +75,23 @@ const isRendered = computed(() => isMarkdown.value && editor.viewOf(activeTab.va
 const markdownBar = useTemplateRef<HTMLElement>("markdownBar");
 const isTopRight = computed(() => THIS_WINDOW === "main" && editor.layout().rows[0]?.columns.at(-1)?.id === group.id);
 const rows = computed(() => group.tabs.map(describe));
+const code = useTemplateRef("code");
 
-// The hover card at the caret, and the fix that overrides the entry it is in.
-const { mutate: locateCaret, data: located } = useMutation({
-  mutation: async (fileModel: Model) => {
-    const [card, override] = await Promise.all([
-      lsp.Hover(fileModel.place.path, fileModel.caret.line, fileModel.caret.column),
-      findOverride(fileModel.place, fileModel.caret.line, fileModel.caret.column),
-    ]);
-    return { card, override };
-  },
+// The bar over a file whose agent's edits are under review.
+const review = computed(() => model.value && agent.findReview(model.value.place.path));
+const changes = computed(() => (model.value ? findFileReview(model.value)?.changes : undefined));
+const reviewStatus = computed(() => {
+  if (!model.value || !changes.value) return "The agent's changes";
+  if (!changes.value.length) return "No changes left";
+
+  return `Change ${Math.max(locateChange(model.value, changes.value), 0) + 1} of ${changes.value.length}`;
 });
-const card = computed(() => located.value?.card);
-const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
+
+// The keys around the caret.
+const { mutate: locateCaret, data: within } = useMutation({
+  mutation: (fileModel: Model) => lsp.ListAncestors(fileModel.place.path, fileModel.caret.line, fileModel.caret.column),
+});
+const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(within.value ?? [])]);
 const folderCount = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
 // The menu of the breadcrumb pressed, filled as it opens.
 const crumbMenu = shallowRef<DropdownMenuItem[]>([]);
@@ -115,35 +110,6 @@ const { data: menuCopies } = useQuery(() => ({
   enabled: !!menuPlace.value && menuPlace.value.origin !== VANILLA,
 }));
 const menuGameCopy = computed(() => menuPlace.value && findGameCopy(menuPlace.value, menuCopies.value));
-const closedNotices = shallowReactive(new Set<string>());
-// The other ways to change a read only file when the caret is in no entry to override. Null until the caret is known.
-const hint = computed(() => {
-  const activePlace = place.value;
-  if (!activePlace || !located.value || located.value.override) return null;
-  if (activePlace.database) return { text: "Put the caret in an entry to override it.", copy: false };
-  if (activePlace.format === Format.FormatLocalization) {
-    return {
-      text: "To change a line, write its key again in your mod's localization replace folder, which the game reads first.",
-      copy: false,
-    };
-  }
-  return { text: "To change this file, copy it into a mod.", copy: canCopyToMod(activePlace) };
-});
-// What the notice over a read only file says. Null for a file a mod can write to, and for the game's readmes/info,
-// which a mod has no reason to override.
-const notice = computed(() => {
-  const activePlace = place.value;
-  if (!activePlace?.readOnly || activeTab.value?.side || closedNotices.has(group.active ?? "")) return null;
-  if (activePlace.origin === VANILLA) {
-    if (activePlace.format === Format.FormatReadme || activePlace.format === Format.FormatMarkdown) return null;
-    return { text: "Game files are read only.", detail: "", workshop: false };
-  }
-  return {
-    text: `${workspace.originName(activePlace.origin)} is from the Steam Workshop, so PMT keeps it read only.`,
-    detail: `Steam replaces ${activePlace.root} each time its author updates it.`,
-    workshop: true,
-  };
-});
 
 watch(
   () => group.active,
@@ -158,6 +124,8 @@ watchDebounced(
 // A tab drag ends with a drop or a drag end that reaches the window wherever it lands.
 useEventListener(window, ["drop", "dragend"], endDrag);
 const { mutate: saveModel } = useMutation({ mutation: save });
+const { mutate: keepAll } = useMutation({ mutation: keepFile });
+const { mutate: undoAll } = useMutation({ mutation: undoFile });
 const comparing = shallowRef(false);
 
 /** saveMine saves a model's text over the disk's text, and closes the compare. */
@@ -170,18 +138,6 @@ function saveMine(fileModel: Model): void {
 function applyDisk(fileModel: Model): void {
   if (fileModel.diskText) setText(fileModel, fileModel.diskText);
   comparing.value = false;
-}
-
-/** overrideHere overrides the entry at a model's caret in the mod the notice's button names. */
-function overrideHere(fileModel: Model): void {
-  const modId = located.value?.override?.reveal?.place.origin;
-  void overrideEntry(
-    fileModel.place,
-    fileModel.caret.line,
-    fileModel.caret.column,
-    card.value?.within?.[0] ?? "",
-    modId,
-  ).then(() => locateCaret(fileModel));
 }
 
 /**
@@ -411,7 +367,7 @@ function endDrag(): void {
 function buildMenu(row: Row): ContextMenuItem[][] {
   const filePlace = row.tabPlace;
   const fileModel = findModel(row.tab.key);
-  return [
+  return hideDisabled([
     [
       {
         label: "Save",
@@ -458,7 +414,7 @@ function buildMenu(row: Row): ContextMenuItem[][] {
       },
       { label: "Select for compare", disabled: !filePlace, onSelect: () => (editor.compareFile = filePlace ?? null) },
       {
-        label: editor.compareFile ? `Compare with ${editor.compareFile.rel}` : "Compare with selected",
+        label: `Compare with ${editor.compareFile?.rel}`,
         disabled: !filePlace || !editor.compareFile || editor.compareFile.key === filePlace.key,
         onSelect: () => filePlace && editor.compareFile && compare(editor.compareFile, filePlace),
       },
@@ -495,7 +451,7 @@ function buildMenu(row: Row): ContextMenuItem[][] {
         },
       },
     ],
-  ];
+  ]);
 }
 
 const actions = computed<DropdownMenuItem[]>(() => [
@@ -656,7 +612,9 @@ const actions = computed<DropdownMenuItem[]>(() => [
             <CompareView
               :left="model.diskText.text"
               :right="model.model.getValue()"
-              :language="EDITOR_LANGUAGES[model.place.format] ?? 'plaintext'"
+              :left-path="model.place.path"
+              :right-path="model.place.path"
+              :language="model.place.language"
               left-label="The file on disk"
               right-label="Your unsaved text"
             />
@@ -701,48 +659,6 @@ const actions = computed<DropdownMenuItem[]>(() => [
         <UButton label="Compare" variant="ghost" size="xs" @click="compare(place, replacement)" />
       </template>
     </div>
-    <div
-      v-if="notice"
-      class="flex shrink-0 items-center gap-2.5 border-b border-default bg-(--bg-3) py-1.5 ps-3.5 pe-2.5 text-12"
-    >
-      <UIcon name="i-lucide-lock" class="size-3.5 shrink-0 text-dimmed" />
-      <div class="flex min-w-0 grow flex-col gap-0.5">
-        <span class="text-toned">{{ notice.text }}</span>
-        <span v-if="notice.detail" class="truncate text-dimmed">{{ notice.detail }}</span>
-        <span v-if="hint" class="text-dimmed">{{ hint.text }}</span>
-      </div>
-      <UButton
-        v-if="model && located?.override"
-        :label="located.override.title"
-        icon="i-lucide-copy-plus"
-        size="xs"
-        @click="overrideHere(model)"
-      />
-      <UButton
-        v-if="place && hint?.copy"
-        label="Copy into a mod"
-        icon="i-lucide-copy-plus"
-        size="xs"
-        @click="copyToMod(place)"
-      />
-      <UButton
-        v-if="notice.workshop"
-        label="New mod for my changes…"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        @click="CREATE?.onSelect?.()"
-      />
-      <UButton
-        icon="i-lucide-x"
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        square
-        aria-label="Close the notice"
-        @click="closedNotices.add(group.active ?? '')"
-      />
-    </div>
     <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <GitDiff
         v-if="activeTab?.side"
@@ -768,7 +684,52 @@ const actions = computed<DropdownMenuItem[]>(() => [
               @update:model-value="writeMarkdown(model, $event)"
             />
           </template>
-          <CodeEditor v-else :key="place.key" :model="model" :active="active" />
+          <template v-else>
+            <div
+              v-if="review"
+              class="flex h-8 shrink-0 items-center gap-2 border-b border-default bg-elevated ps-3.5 pe-2.5 text-12 whitespace-nowrap"
+            >
+              <UIcon name="i-lucide-git-compare" class="size-3.5 shrink-0 text-primary" />
+              <span class="tabular-nums">{{ reviewStatus }}</span>
+              <LineCounts :added="review.added" :removed="review.removed" />
+              <UFieldGroup size="xs">
+                <UButton
+                  icon="i-lucide-chevron-up"
+                  color="neutral"
+                  variant="subtle"
+                  :disabled="!changes?.length"
+                  aria-label="Previous change"
+                  @click="goToChange(code?.view, model, -1)"
+                />
+                <UButton
+                  icon="i-lucide-chevron-down"
+                  color="neutral"
+                  variant="subtle"
+                  :disabled="!changes?.length"
+                  aria-label="Next change"
+                  @click="goToChange(code?.view, model, 1)"
+                />
+              </UFieldGroup>
+              <span class="grow" />
+              <UButton
+                label="Keep all"
+                icon="i-lucide-check-check"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                @click="keepAll(model)"
+              />
+              <UButton
+                label="Undo all"
+                icon="i-lucide-undo-2"
+                size="xs"
+                color="error"
+                variant="soft"
+                @click="undoAll(model)"
+              />
+            </div>
+            <CodeEditor ref="code" :key="place.key" :model="model" :active="active" />
+          </template>
         </template>
         <p v-else-if="isUnshown" class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
           PMT can't show this file.

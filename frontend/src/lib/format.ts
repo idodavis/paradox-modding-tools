@@ -1,8 +1,9 @@
 /** The sentences and numbers the UI writes from facts. A name or a description from Go is shown as it is. */
+import type { Cost } from "@agentclientprotocol/sdk/experimental/v2";
 import { formatTimeAgo, type UseTimeAgoMessages } from "@vueuse/core";
 import { groupBy, mapValues, sumBy } from "es-toolkit";
 
-import type { SourceState } from "@internal/schema/models";
+import type { SourceState } from "@internal/lang/models";
 import type { Header } from "@internal/texture/models";
 import type { Difference } from "@services/steam/models";
 import type { Mod, State } from "@services/workspace/models";
@@ -35,6 +36,17 @@ export function describeCount(count: number): string {
   return NUMBERS.format(count);
 }
 
+/**
+ * describeCost returns an agent's cost as the user reads it, such as "$0.42".
+ * A currency that is not a three-letter ISO code, such as "credits", follows
+ * the amount as given.
+ */
+export function describeCost(cost: Cost): string {
+  if (!/^[A-Za-z]{3}$/.test(cost.currency)) return `${describeCount(cost.amount)} ${cost.currency}`;
+
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: cost.currency }).format(cost.amount);
+}
+
 /** plural returns a count with its noun, such as "1 file" or "1,350 files". Without a plural form it adds an s. */
 export function plural(count: number, noun: string, pluralNoun?: string): string {
   return `${describeCount(count)} ${PLURALS.select(count) === "one" ? noun : (pluralNoun ?? `${noun}s`)}`;
@@ -54,6 +66,11 @@ export function abbreviate(name: string): string {
 /** list joins items into a phrase, such as "a, b and c". It is "" for no items. */
 export function list(items: readonly string[]): string {
   return LISTS.format(items);
+}
+
+/** describeRelease returns a version's release, such as 1.15 for 1.15.1. */
+export function describeRelease(version: string): string {
+  return version.split(".").slice(0, 2).join(".");
 }
 
 /** listLeftOut returns the names of the given mods that the workspace leaves out of its checks. */
@@ -112,7 +129,6 @@ export function describePicture(header: Header): string {
   return `${header.width} by ${header.height}, ${bytes(header.bytes)}`;
 }
 
-/** joinParts returns parts as one plain sentence. */
 export function joinParts(parts: readonly Part[] | null | undefined): string {
   return (parts ?? []).map((part) => part.text).join("");
 }
@@ -176,7 +192,10 @@ export function installLine(game: string, version: string, scannedAt: string): s
 export function describeDumps(dumps: SourceState): { current: boolean; label: string } {
   if (dumps.origin === "install" && !dumps.stale) return { current: true, label: "The game's own documentation" };
   if (dumps.origin === "install") return { current: false, label: "The game's documentation, older than the game" };
-  if (dumps.origin === "shipped") return { current: false, label: "PMT's copy of the game's documentation" };
+  if (dumps.origin === "digest") {
+    return { current: dumps.current, label: "The Modding Co-op's copy of the game's documentation" };
+  }
+  if (dumps.origin === "shipped") return { current: dumps.current, label: "PMT's copy of the game's documentation" };
   return { current: false, label: "No documentation of the game" };
 }
 
@@ -208,7 +227,6 @@ const DIFFERENCE_FIELDS: Readonly<Record<string, string>> = {
   version: "Version",
 };
 
-/** toDifferenceId returns the key of a difference in a list. */
 export function toDifferenceId({ field, rel = "" }: Difference): string {
   return `${field}:${rel}`;
 }

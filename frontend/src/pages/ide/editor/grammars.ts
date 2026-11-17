@@ -1,4 +1,7 @@
-/** The Monarch grammars. They color shapes only; meaning comes from the semantic tokens on top. */
+/**
+ * The Monarch grammars. They color what needs no reading: comments, strings,
+ * operators and brackets. Go colors every key, value and piece of markup.
+ */
 import type { languages } from "monaco-editor";
 
 /** The script grammar, for .txt, .gui, .asset, .font and .gfx. */
@@ -8,12 +11,6 @@ export const SCRIPT: languages.IMonarchLanguage = {
     root: [
       [/#.*$/, "comment"],
       [/"/, "string", "@string"],
-      // a key is whatever stands before an operator, and a block's key has a brace after it
-      [/[\w.:@$|'-]+(?=\s*(?:[!=<>?]=|[=<>])\s*\{)/, "block"],
-      [/[\w.:@$|'-]+(?=\s*(?:[!=<>?]=|[=<>]))/, "field"],
-      [/\d{1,4}\.\d{1,2}\.\d{1,2}(?:\.\d{1,2})?(?![\w.])/, "literal"],
-      [/-?\d+(?:\.\d+)?(?![\w.])/, "number"],
-      [/(?:yes|no|none)(?![\w.:-])/, "literal"],
       [/[!=<>?]=|[=<>]/, "operator"],
       [/[{}]/, "@brackets"],
     ],
@@ -25,7 +22,28 @@ export const SCRIPT: languages.IMonarchLanguage = {
   },
 };
 
-/** The localization grammar: the language line, a key with its version, and the quoted text with its markup. */
+/**
+ * The descriptor grammar, for a .mod file, in which Go colors nothing: each
+ * key before its = is a field, and each value takes the reference color,
+ * quoted or not. A field beside a string would be two greens in most themes.
+ */
+export const DESCRIPTOR: languages.IMonarchLanguage = {
+  brackets: SCRIPT.brackets,
+  tokenizer: {
+    root: [
+      [/#.*$/, "comment"],
+      [/[\w.-]+(?=\s*=)/, "field"],
+      [/"[^"]*"?|[\w.*-]+/, "reference"],
+      [/=/, "operator"],
+      [/[{}]/, "@brackets"],
+    ],
+  },
+};
+
+/**
+ * The localization grammar: the language line, a key with its version, and
+ * the quoted text.
+ */
 export const LOCALIZATION: languages.IMonarchLanguage = {
   tokenizer: {
     root: [
@@ -37,12 +55,8 @@ export const LOCALIZATION: languages.IMonarchLanguage = {
     // the last quote on a line closes the text, so a text may quote
     text: [
       [/"(?=[^"]*$)/, "string", "@pop"],
-      [/\$[^$\s]*\$/, "variable"],
-      [/\[[^\]]*\]/, "scope"],
-      [/#[!\w;]*/, "comment"],
-      [/@\w+!/, "literal"],
       [/\\./, "string"],
-      [/[^\\"$[#@]+/, "string"],
+      [/[^\\"]+/, "string"],
       [/./, "string"],
     ],
   },

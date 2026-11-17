@@ -7,6 +7,7 @@ import type { DropdownMenuItem, ToastProps } from "@nuxt/ui";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useEventBus, useIntervalFn } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
+import { keyBy } from "es-toolkit";
 import { computed, onScopeDispose, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -28,8 +29,10 @@ import {
   useRescan,
   versionQuery,
 } from "../queries";
-import { useAgentStore } from "../stores/agent";
+import { describeLimit, useAgentStore } from "../stores/agent";
+import { useCompletionStore } from "../stores/completion";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
+import DocumentView from "../ui/DocumentView.vue";
 import HowModWorks from "../ui/HowModWorks.vue";
 import ScriptDocsGuide from "../ui/ScriptDocsGuide.vue";
 import { STATUS_ITEM } from "../ui/StatusFacts.vue";
@@ -44,20 +47,20 @@ const router = useRouter();
 const toast = useToast();
 const windows = useWindowsStore();
 const agent = useAgentStore();
+const completion = useCompletionStore();
 
 const page = computed<Page | undefined>(() => (route.name ? PAGES[route.name] : undefined));
 // A workspace page's help is followed by the agent pane's.
-const sections = computed(() => [
-  ...(page.value?.help ?? []),
-  ...(route.name && isWorkspacePage(route.name) ? PANE_HELP : []),
-]);
+const hasPane = computed(() => !!route.name && isWorkspacePage(route.name));
+const sections = computed(() => [...(page.value?.help ?? []), ...(hasPane.value ? PANE_HELP : [])]);
 // The Help dialog opens on the help.open command, from the top bar's gear menu, F1 or the palette.
 const helping = shallowRef(false);
 const explaining = shallowRef(false);
 // the one guide to the game's documentation: nested in another dialog, Reka's layers update each other without end
 const guiding = shallowRef(false);
 const licensing = shallowRef(false);
-useEventBus(COMMAND_BUS).on((command) => {
+const commandBus = useEventBus(COMMAND_BUS);
+commandBus.on((command) => {
   if (command === "help.open") helping.value = true;
   if (command === "docs.guide") guiding.value = true;
   if (command === "help.licenses") licensing.value = true;
@@ -89,6 +92,7 @@ const {
 } = useQuery({ ...updateQuery, staleTime: CHECK_INTERVAL, enabled: THIS_WINDOW === "main" });
 if (THIS_WINDOW === "main") useIntervalFn(() => void checkUpdate(), CHECK_INTERVAL);
 const { data: releases, error: listError, refetch: refetchReleases } = useQuery({ ...releasesQuery, enabled: false });
+const releasesById = computed(() => keyBy(releases.value ?? [], (release) => release.id));
 const { data: crashed } = useQuery(crashedQuery);
 const { data: configFault } = useQuery(configFaultQuery);
 const { data: levels } = useQuery(levelsQuery);
@@ -180,9 +184,9 @@ watch(
         icon: "i-lucide-refresh-cw",
         actions: [
           {
-            label: "Open Patch Notes",
+            label: "Open Patch Center",
             color: "warning",
-            onClick: () => void router.push({ name: "patch-notes", params: { id: current.id } }),
+            onClick: () => void router.push({ name: "patch-center", params: { id: current.id } }),
           },
         ],
       });
@@ -243,6 +247,23 @@ const LAUNCH = findCommand("game.launch");
     <button v-if="agent.status && agent.active" type="button" :class="STATUS_ITEM" @click="agent.showPane()">
       <span class="size-1.5 shrink-0 rounded-full" :class="agentDot" />
       {{ agent.status }}
+    </button>
+    <button
+      v-if="hasPane && completion.signInNotice"
+      type="button"
+      :class="STATUS_ITEM"
+      @click="commandBus.emit('settings.open', 'agents')"
+    >
+      <span class="size-1.5 shrink-0 rounded-full bg-warning" />
+      {{ completion.signInNotice }}
+    </button>
+    <button
+      v-if="agent.warnedLimit && agent.active"
+      type="button"
+      :class="[STATUS_ITEM, agent.warnedLimit.status === 'rejected' ? 'text-error' : 'text-warning']"
+      @click="agent.showPane()"
+    >
+      {{ agent.active.agent.name }}: {{ agent.warnedLimit.window }} {{ describeLimit(agent.warnedLimit) }}
     </button>
     <span v-if="wiki" class="flex items-center gap-1.25 tabular-nums">
       <span class="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
@@ -324,51 +345,43 @@ const LAUNCH = findCommand("game.launch");
     <ScriptDocsGuide v-if="guiding" v-model:open="guiding" :game="state?.game?.id ?? ''" />
     <UModal
       title="Releases"
-      :ui="{ content: 'h-160 sm:max-w-3xl' }"
+      :ui="{ content: 'h-160 sm:max-w-3xl', body: 'flex min-h-0 flex-col p-0 sm:p-0' }"
       @update:open="(opened) => opened && refetchReleases()"
     >
-      <UTooltip :text="update?.available ? 'Releases and updates: a newer version is out' : 'Releases and updates'">
-        <UButton
-          v-if="update?.available"
-          :label="version"
-          icon="i-lucide-download"
-          size="xs"
-          color="primary"
-          variant="soft"
-        />
+      <UTooltip :text="update ? 'Releases and updates: a newer version is out' : 'Releases and updates'">
+        <UButton v-if="update" :label="version" icon="i-lucide-download" size="xs" color="primary" variant="soft" />
         <button v-else type="button" :class="STATUS_ITEM">
           <UIcon name="i-lucide-tag" class="size-3" />{{ version }}
         </button>
       </UTooltip>
       <template #body>
-        <div class="flex flex-col gap-5">
-          <p v-if="listError" class="text-13 text-error">
-            The releases could not be read. {{ toSentence(listError.message) }}
-          </p>
-          <section v-for="release in releases ?? []" :key="release.version" class="flex flex-col gap-1.5">
-            <div class="flex items-center gap-2">
-              <h3 class="text-13 font-semibold text-highlighted">
-                {{ release.version }} <span class="font-normal text-dimmed">{{ day(release.date) }}</span>
-              </h3>
-              <UBadge v-if="release.running" label="Running" color="primary" variant="subtle" size="sm" />
+        <p v-if="listError" class="px-4 pt-3 text-13 text-error">
+          The releases could not be read. {{ toSentence(listError.message) }}
+        </p>
+        <DocumentView :html="(releases ?? []).map((release) => release.notes).join('')" save-id="releases">
+          <template #entry="{ id }">
+            <UBadge v-if="releasesById[id]?.running" label="Running" color="primary" variant="subtle" size="sm" />
+          </template>
+          <!-- The rail's entry is a button, so the install button sits here. -->
+          <template #section="{ id }">
+            <div v-if="releasesById[id]" class="flex items-center gap-2 pb-2 text-12 text-dimmed">
+              {{ day(releasesById[id].date) }}
               <UButton
-                v-else-if="release.installable"
+                v-if="!releasesById[id].running && releasesById[id].installable"
                 label="Install this version"
                 size="xs"
                 variant="soft"
-                class="ml-auto"
-                @click="installVersion(release)"
+                @click="installVersion(releasesById[id])"
               />
             </div>
-            <UEditor :model-value="release.notes" content-type="markdown" :editable="false" :mention="false" />
-          </section>
-        </div>
+          </template>
+        </DocumentView>
       </template>
       <template #footer>
         <span class="grow text-12 text-error">
           {{ checkError && `The check for updates failed. ${toSentence(checkError.message)}` }}
         </span>
-        <UButton v-if="update?.available" :label="`Update to ${update.version}`" @click="applyUpdate()" />
+        <UButton v-if="update" :label="`Update to ${update}`" @click="applyUpdate()" />
         <UButton v-else label="Check for updates" :loading="checking" @click="checkUpdate()" />
       </template>
     </UModal>

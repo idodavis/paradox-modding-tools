@@ -1,7 +1,7 @@
 import { Events } from "@wailsio/runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Format } from "@internal/files/models";
+import { Format, Hiding } from "@internal/files/models";
 import type { Place } from "@services/workspace/models";
 import { inApp } from "../../vitest.setup";
 import { useEditorStore } from "./editor";
@@ -65,13 +65,18 @@ describe("the windows", () => {
       name: "m",
       folder: "",
       origin: "mod",
+      stage: "",
       format: Format.FormatScript,
       root: "/mod",
       database: "",
       readOnly: false,
       isDir: false,
+      missing: false,
       drawable: false,
       readme: "",
+      language: "plaintext",
+      hiding: Hiding.$zero,
+      hider: "",
     };
     editor.show(place);
     expect(windows.holderOf("m")).toBe("main");

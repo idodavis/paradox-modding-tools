@@ -13,7 +13,7 @@ reads that workspace. Each page also has its own Help, in the top bar's gear men
   - [IDE](#ide)
   - [Event Graph](#event-graph)
   - [Health](#health)
-  - [Patch Notes](#patch-notes)
+  - [Patch Center](#patch-center)
   - [Publish](#publish)
   - [Settings](#settings)
   - [The IDE's parts](#the-ides-parts)
@@ -81,9 +81,13 @@ An editor that knows the game's script, localization and GUI files.
   Ctrl Shift F searches the text of the files and can replace it.
 - **Tabs.** A single click opens a preview tab that the next click replaces. A double click or an edit keeps it. Drag a
   tab to another group, or out to a window of its own. Your open tabs come back when you open the workspace again.
+- **Colors.** Every key, value and name is colored by what it is in the game: a command, a field, a definition, a
+  link to another scope. A file opens already in its colors, and so does a compare.
 - **Hover.** Rest the pointer on a key or a value to see what it is, what it takes and where it is defined. For a
   name, the card shows the copy the game keeps first. For a definition, it also shows the name and description the
   game shows for it, and the comment written above it.
+- **A mod's descriptor** (`descriptor.mod`, or `metadata.json`) says what each of its keys is for on hover, and has a
+  quick fix that sets the game version it is made for.
 - **Go to.** Ctrl click goes to a definition. A search for references finds every use. F2 renames a name in every mod
   file. Alt Left and Alt Right step back and forward through the places you jumped between.
 - **Completion** offers what fits the block you are in, and then what fits the value.
@@ -134,19 +138,47 @@ Every finding has a level by how much the game loses. **Critical:** the game los
 how things are.
 
 - **Compatibility** explains how your game picks between two copies, and what the load order can change. Drag the order
-  to preview another one, then save it or drop it. Where another order would fix a clash, **Try this order** previews
-  it. Open a finding to see each copy and put the two side by side. You can ignore the clashes between two mods.
+  to preview another one, then save it or drop it. A preview reads no file again: the problems inside a file stay
+  as the saved order reads them until you save. Where another order would fix a clash, **Try this
+  order** previews it. Open a finding to see each copy and put the two side by side. You can ignore the clashes between two mods.
 - **A mod's view** says which mods it is judged with, counts what it holds and shows how much of its text each language
   covers. **Write the missing keys** adds the keys a language lacks, with the base language's text as the placeholder.
 - **The game log** lists the lines from your mods apart from the game's own. Open it in the IDE, or let it follow the
   log while you play.
 
-## Patch Notes
+## Patch Center
 
-![Patch Notes](images/patch-notes.png)
+![Patch Center](images/patch-center.png)
 
-The game's patch notes, from its wiki, for the game of the open workspace. Pick a version to read it. A dot marks a
-note with a Modding section. Ctrl F finds in the note shown. PMT reads the notes when it starts and keeps them.
+What the game's patches changed, for the game of the open workspace, and what that means for your mods.
+
+- **Your mods** counts, for each mod, what changed between the version it is made for and the game's version now:
+  names the game renamed or removed that the mod still uses, game files that changed under the mod's copies, and
+  the notes that name what the mod holds. Open a name where the mod uses it. A changed game file opens your
+  copy by its name, or compares it with the game's file as it is now. The same findings show in the editor and in Health.
+- A mod that names no game version asks which version to compare from. Once you have brought a mod up to date,
+  **Set the game version** opens its descriptor at the version line, where the editor's quick fix writes the game's
+  version. Mods that are not yours are listed and never changed.
+- A dot on the Patch Center tab says a patch changed something under a mod of yours. External mods never light it.
+
+![A version's modding digest](images/patch-center-digest.png)
+
+- **A version** shows its patch notes from the wiki, the Modding Co-op's digest where it has written notes, the
+  script keys and data functions it changed, and the game files it changed. Ctrl F finds in what is shown.
+- **The modding digest** lists the version's breaking changes and new features. Each article names the mods of yours
+  it touches, with how many of their files and uses, and the contents beside it mark them by color.
+
+![A version's script changes](images/patch-center-changes.png)
+
+- **Script changes** and **Data types** list every effect, trigger, scope, modifier, on_action and data function the
+  version added, changed or removed. Open one for what it takes, what changed in each version, and the game's own
+  example.
+- **Game files** lists each file the version added, changed or removed, and marks the ones your mods replace.
+
+The notes come from the game's wiki. What each version of Victoria 3 and EU5 changed comes from their Modding
+Co-op's digests. Crusader Kings III has no digest, so PMT ships what it compared itself: every change from 1.19 on, and
+the script changes of 1.0.3 to 1.10.2. For any game, PMT also compares each new version itself when the game updates.
+PMT reads all of it when it starts and keeps it.
 
 ## Publish
 
@@ -160,8 +192,8 @@ them. Every change is saved in the mod's files as you stop typing.
   note from the mod's git history. The rail lists what the upload changes on Steam, and a click shows a change
   beside Steam's copy.
 - **What an upload sends** shows beside Upload: how many files the upload sends and leaves out. Review lists each file
-  left out under the rule that leaves it out, with the mod's own patterns. The Workshop page is kept in the mod's
-  `.workshop` folder, which no upload sends.
+  left out under the rule that leaves it out, with the mod's own patterns, which are kept in the mod's
+  `.workshop-ignore` file. The Workshop page is kept in the mod's `.workshop` folder, which no upload sends.
 - **Compare with Steam** is also in the IDE, for the active file's mod.
 - **Older versions.** A mod can have a separate Workshop item for an older game version.
 - **Paradox Mods** has no way in for tools. Copy the description for it with Export's Copy as BBCode, and paste it in
@@ -179,8 +211,8 @@ Opened from the top bar's gear menu (Ctrl ,), which also switches the theme and 
 shortcuts and opens Help. It has three groups.
 
 - **App**, for every workspace:
-  - Appearance: the theme (PMT, Catppuccin, One, Pierre, JetBrains, or a look for each game), light or dark, the interface scale,
-    the pages shown, and a simple interface that hides the IDE's advanced parts.
+  - Appearance: the theme (PMT, VS Code Modern, Catppuccin, One, Pierre, JetBrains, or a look for each game), light or
+    dark, the interface scale, the pages shown, and a simple interface that hides the IDE's advanced parts.
   - Guidance, keyboard shortcuts, the Terminal's default shell, and Agents and tools.
 - **IDE**, for every workspace: the editor, the explorer, the language features, the Visual view and the wiki. The
   Health checks, which pick the problems the editor shows, are kept for each workspace.
@@ -221,18 +253,20 @@ PMT writes your changes to the code in the editor, so undo works as it always do
 ![Save as DDS](images/save-as-dds.png)
 
 Right-click a PNG or TGA picture, or a folder of them, and choose **Save as DDS**. PMT writes a `.dds` beside each one,
-either uncompressed (exact) or BC3 (a quarter of the size, with slightly blurred colors). Mipmaps are optional. The
-image view has the same button. PMT starts from the settings of the DDS already beside the picture, or else of the
-game's own DDS at that place.
+in B8G8R8A8 (uncompressed and exact), BC1 (an eighth of the size, each pixel opaque or clear), BC3 (a quarter of the
+size, with full alpha) or BC7 (a quarter of the size, and much closer to the picture than BC3). Mipmaps are optional.
+The image view has the same button. PMT starts from the settings of the DDS already beside the picture, or else of the
+game's own DDS at that place, and offers that DDS's format when it is another one.
 
 ### Source control
 
 ![Source control](images/source-control.png)
 
-The sidebar's third view runs the git installed on your computer on each mod that is a repository. Each repository has
-a section with its branch, its commit box and its changes. A branch that is only on your computer shows Publish, and
-with nothing to commit the commit button publishes or syncs the branch. The Graph shows the history of the active
-file's repository.
+The sidebar's third view runs the git installed on your computer on each of your own mods that is a repository. Each
+repository has a section with its branch, its commit box and its changes. A branch that is only on your computer shows
+Publish, and with nothing to commit the commit button publishes or syncs the branch. The Graph shows the history of
+the active file's repository. An external mod is someone else's: PMT shows no repository of it and never starts one
+in it.
 
 Diffs open as tabs. Merge conflicts are resolved in the editor. PMT reimplements none of git, so git must be installed.
 
@@ -242,7 +276,8 @@ Diffs open as tabs. Merge conflicts are resolved in the editor. PMT reimplements
 
 The Wiki button at the end of the editor's tabs (Ctrl Shift W) opens the wiki's pages for the file you are in. It
 can follow the open file. It also holds the **Lexicon**: the game's triggers, effects and scopes, each with where the
-game's own files use it. Look a name up from the editor's right-click menu.
+game's own files use it. Look a name up from the editor's right-click menu. **Changed since** lists only what the
+game added, changed or removed after a version.
 
 ### Terminal
 
@@ -262,12 +297,20 @@ and signs in to its own account. PMT never sees it. PMT installs the agent for y
 registry into its own folder, with Node if your system has none new enough.
 
 - The agent is given PMT's tools, so it finds names, problems, Health's findings and the Event Graph as PMT does, with
-  your unsaved text. The same tools can be added to an agent you run yourself.
+  your unsaved text. It can also read what each game version changed, which is what it needs to bring a mod up to date
+  after a patch. The same tools can be added to an agent you run yourself.
 - What it asks permission for shows in the session. Nothing opens before you choose. PMT's own tools that only read
   need no asking. **Always allow** is remembered for that agent and tool, and Settings lists what is allowed, to remove.
 - A new session starts with the model, effort and mode the agent was last given.
 - What the page has in front of you goes with your prompt as an attachment.
-- **Follow the agent** opens the files it reads. An edit can be undone from its row, or all of a session's at once.
+- **Follow the agent** opens the files it reads.
+- **Review its edits** in the editor. A file the agent changed shows as a diff against how it was, with **Keep** and
+  **Undo** over each change and for the whole file. What you type outside the changes stays yours. The pane's **Files
+  to review** lists each file still waiting, with Keep and Undo for it and for all of them at once.
+- **Tab completion** in the editor comes from GitHub Copilot, which has its own sign-in in Settings › Agents, and a
+  switch there. Until you sign in, Settings, the pane and the status bar say so. Claude and Codex do not complete code.
+- The ring in the prompt box shows how full the agent's context window is. Click it for the window and for the plan's
+  usage.
 
 ### Pop-out windows
 
@@ -283,13 +326,16 @@ explorer or from any other page. A window can hand its tabs back to the main win
 ![External mods](images/external-mods.png)
 
 Some mods in a workspace are not yours: a Workshop mod you subscribe to, or a copy of someone else's work. Add them as
-**external mods** to check your own against them. PMT never publishes an external mod, and keeps it out of your totals.
+**external mods** to check your own against them. PMT keeps an external mod read only, never publishes it, and keeps
+it out of your totals.
 
 - **Adding.** Settings and the IDE have an add menu: a mod of yours, an external mod, or **From the Workshop**, which
   lists the mods Steam has downloaded for your game. Steam does not have to be running. The new workspace setup has a
   second list for them.
-- **A Workshop copy is always external.** Steam's copy of a mod you subscribe to is read only, and the mod's card says
-  so. Any other mod has an **External mod** switch on its card.
+- **Read only.** PMT changes nothing in an external mod: no edit, no new file, no copy into it, and no git. To change
+  one, make a mod of your own for the changes.
+- **A Workshop copy is always external.** Any other mod has an **External mod** switch on its card; switch it off for
+  a mod that is yours, and it can be edited again.
 - **The explorer** puts external mods under their own heading, "External mods · never published".
 - **Health** judges the mods together, so it still finds where yours clash with theirs. Its rail lists "Your mods" and
   "External mods" apart, and the totals count yours only.
@@ -322,7 +368,7 @@ What EU5 has:
 - The editor, with hover, completion, go to and rename, over EU5's three stages (`in_game`, `main_menu` and
   `loading_screen`).
 - Entry modes such as `INJECT:` and `REPLACE:` before a name, which the editor knows and checks.
-- The Event Graph, Health, Patch Notes, the Visual view and Publish.
+- The Event Graph, Health, the Patch Center, the Visual view and Publish.
 
 EU5 has no Linux build. On Linux it runs through Proton, PMT finds its documents folder in Steam's Proton folder, and
 PMT cannot start the game for you. See [Each system](#each-system).

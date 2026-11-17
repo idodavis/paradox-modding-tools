@@ -14,7 +14,7 @@ export function openSite(site: Site): void {
 import { computed } from "vue";
 import type { Snippet } from "@services/health/models";
 import ModTitle from "../../ui/ModTitle.vue";
-import ScriptSnippet, { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
+import ScriptSnippet from "../../ui/ScriptSnippet.vue";
 import SourceLink from "../../ui/SourceLink.vue";
 
 const {
@@ -29,9 +29,12 @@ const {
   ignored?: boolean;
 }>();
 
-/** The site's own lines to highlight. A kept, ignored or unsettled copy shows its whole definition, with none. */
+/**
+ * The site's own lines to highlight. A kept, ignored, unsettled or unread
+ * copy shows its whole definition, with none.
+ */
 const focus = computed((): [number, number] | undefined =>
-  site.kept || site.reason || ignored ? undefined : [site.line, snippet?.last ?? site.line],
+  site.kept || site.reason || site.place.hiding || ignored ? undefined : [site.line, snippet?.last ?? site.line],
 );
 </script>
 
@@ -45,7 +48,7 @@ const focus = computed((): [number, number] | undefined =>
       :text="snippet.text"
       :line="snippet.line"
       :focus="focus"
-      :language="EDITOR_LANGUAGES[site.place.format]"
+      :path="site.place.path"
       class="rounded-md bg-(--bg-0) py-1.5"
       :class="{ 'opacity-70': ignored }"
     />

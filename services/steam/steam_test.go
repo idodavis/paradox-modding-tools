@@ -172,6 +172,7 @@ func TestListUploadSplitsFilesByRules(t *testing.T) {
 	writeFiles(t, dir, map[string]string{
 		".hidden":                     "",
 		".gitignore":                  "*.log\n",
+		".workshop-ignore":            "secret/\n*.psd\n",
 		"notes.log":                   "",
 		".git/config":                 "",
 		".metadata/metadata.json":     "{}",
@@ -181,12 +182,12 @@ func TestListUploadSplitsFilesByRules(t *testing.T) {
 		"art/logo.psd":                "",
 		"common/mod_things/extra.txt": "x",
 	})
-	stm := openService(t, resolveFixture(t, "ck3"), app.Mod{ID: fixtureModID, Dir: dir, Ignore: "secret/\n*.psd\n"})
+	stm := openService(t, resolveFixture(t, "ck3"), app.Mod{ID: fixtureModID, Dir: dir})
 	upload, err := stm.ListUpload(fixtureModID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantExcluded := []string{".gitignore", ".hidden", "art/logo.psd", "notes.log", "secret/key.txt"}
+	wantExcluded := []string{".gitignore", ".hidden", ".workshop-ignore", "art/logo.psd", "notes.log", "secret/key.txt"}
 	if got := slices.Sorted(maps.Keys(upload.Excluded)); !reflect.DeepEqual(got, wantExcluded) {
 		t.Errorf("got excluded %v, want %v", got, wantExcluded)
 	}
@@ -227,7 +228,7 @@ func TestCompareReportsChanges(t *testing.T) {
 	hashes := buildHashes(src, upload.Files)
 	steamDir := t.TempDir()
 	writeFiles(t, steamDir, map[string]string{"descriptor.mod": "version=\"0.9\"\n", changedRel: "old\n", goneRel: "x"})
-	err = SaveSnapshot(stm.Workspace.Config.Dirs.Cache, Snapshot{
+	err = app.SaveJSON(resolveSnapshotPath(stm.Workspace.Config.Dirs.Cache, "1"), Snapshot{
 		WorkshopID: "1", Dir: steamDir,
 		Files: map[string]string{sameRel: hashes[sameRel], changedRel: "old", goneRel: "x"},
 	})

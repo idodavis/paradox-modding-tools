@@ -10,6 +10,7 @@ import { fileUrl, loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
 import { useWorkspaceStore } from "../../../stores/workspace";
+import { GROUP, registerSuggestions } from "./completion";
 import { findModel, flushText, openModel } from "./models";
 
 /** FIX_COMMAND is the id of the command a quick fix runs. */
@@ -52,7 +53,8 @@ export function registerProviders(languageIds: string[], legend: languages.Seman
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, dotSheet];
   registerNavigation(selector);
   registerCompletion(selector);
-  registerWriting(selector);
+  // A metadata.json descriptor has a quick fix too.
+  registerWriting([...selector, { language: "json", scheme: "file" }]);
   registerDecoration(selector, legend);
 }
 
@@ -90,18 +92,21 @@ function registerNavigation(selector: languages.LanguageFilter[]): void {
   });
 }
 
-/** registerCompletion registers completion, inline completion and signature help. */
+/**
+ * registerCompletion registers completion, inline completion, the completion
+ * agent's suggestions and signature help.
+ */
 function registerCompletion(selector: languages.LanguageFilter[]): void {
   const settings = useSettingsStore();
   monaco.languages.registerCompletionItemProvider(selector, {
     triggerCharacters: [".", "@", "$", ":", "["],
     provideCompletionItems: async (model, position) => {
-      const { word, completions } = await resolveCompletions(model, position);
+      const { word, completions, cut } = await resolveCompletions(model, position);
       const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
       const snippet = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
       return {
-        // Go lists localization keys by what is typed, so Monaco must ask again as typing goes on.
-        incomplete: true,
+        // Monaco asks again as typing narrows a list that Go cut short.
+        incomplete: cut,
         suggestions: completions.map((completion): ImageCompletion => ({
           label: completion.label,
           kind: monaco.languages.CompletionItemKind.Property,
@@ -128,8 +133,13 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
       return item;
     },
   });
+  // PMT's ghost text gives way to the completion agent's.
   monaco.languages.registerInlineCompletionsProvider(selector, {
+    groupId: "pmt",
+    yieldsToGroupIds: [GROUP],
     provideInlineCompletions: async (model, position) => {
+      // Monaco shows inline completions for Copilot's setting too.
+      if (!settings.isOn("ide.predict")) return { items: [] };
       const { word, completions } = await resolveCompletions(model, position);
       const top = completions[0];
       if (!top || !word.word || word.endColumn > position.column) return { items: [] };
@@ -138,6 +148,7 @@ function registerCompletion(selector: languages.LanguageFilter[]): void {
     },
     disposeInlineCompletions: () => undefined,
   });
+  registerSuggestions(selector);
   monaco.languages.registerSignatureHelpProvider(selector, {
     signatureHelpTriggerCharacters: [" ", "="],
     provideSignatureHelp: async (model, position) => {
@@ -238,22 +249,36 @@ function registerDecoration(selector: languages.LanguageFilter[], legend: langua
   monaco.languages.registerDocumentRangeSemanticTokensProvider(selector, {
     getLegend: () => legend,
     provideDocumentRangeSemanticTokens: async (model, range) => {
-      const place = await loadQuery(placeQuery(model.uri.fsPath));
-      const fileModel = place && findModel(place.key);
-      if (fileModel) await flushText(fileModel);
+      await flushModel(model);
       return { data: Uint32Array.from((await lsp.Tokens(model.uri.fsPath, range)) ?? []) };
     },
   });
 }
 
-/** resolveCompletions returns the completions at a position and the word typed up to it, which they replace. */
+/**
+ * flushModel sends Go the text of a Monaco model's file now, if the editor
+ * holds text Go has not seen.
+ */
+async function flushModel(model: monaco.editor.ITextModel): Promise<void> {
+  const place = await loadQuery(placeQuery(model.uri.fsPath));
+  const fileModel = place && findModel(place.key);
+  if (fileModel) await flushText(fileModel);
+}
+
+/**
+ * resolveCompletions returns the completions at a position, whether Go cut
+ * their list short, and the word typed up to the position, which they
+ * replace. Go gets the typed text first: Monaco keeps a list that is not
+ * cut, so it must be the list of the text as typed.
+ */
 async function resolveCompletions(
   model: monaco.editor.ITextModel,
   position: monaco.Position,
-): Promise<{ word: monaco.editor.IWordAtPosition; completions: Completion[] }> {
+): Promise<{ word: monaco.editor.IWordAtPosition; completions: Completion[]; cut: boolean }> {
   const word = model.getWordUntilPosition(position);
-  const completions = await lsp.Complete(model.uri.fsPath, position.lineNumber, position.column);
-  return { word, completions: completions ?? [] };
+  await flushModel(model);
+  const list = await lsp.Complete(model.uri.fsPath, position.lineNumber, position.column);
+  return { word, completions: list.candidates ?? [], cut: list.cut };
 }
 
 /**

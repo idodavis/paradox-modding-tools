@@ -7,7 +7,7 @@ import type { Finding } from "@services/health/models";
 import type { Part, Site } from "@services/lsp/models";
 import { compareWithGame } from "../../app/commands";
 import { describeCount, matchQuery, plural } from "../../lib/format";
-import { codesQuery, comparedQuery, levelsQuery, readersQuery, snippetsQuery } from "../../queries";
+import { codesQuery, comparedQuery, readersQuery, snippetsQuery, useLevels } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
 import FactText from "../../ui/FactText.vue";
@@ -17,16 +17,10 @@ import HealthFrame from "./HealthFrame.vue";
 import HealthSection from "./HealthSection.vue";
 import HealthSite, { openSite } from "./HealthSite.vue";
 
-const {
-  finding,
-  order = [],
-  outdated = undefined,
-} = defineProps<{
+const { finding, order = [] } = defineProps<{
   finding: Finding;
   /** The load order the finding was checked in. */
   order?: string[];
-  /** The finding that the finding's mod is made for another game version, if it has one. */
-  outdated?: Finding;
 }>();
 const emit = defineEmits<{ preview: [order: string[]] }>();
 /** Whether the comparison of the two copies is open. */
@@ -39,13 +33,11 @@ const USES_SHOWN = 6;
 
 const workspace = useWorkspaceStore();
 const { data: codes } = useQuery(codesQuery);
-const { data: levels } = useQuery(levelsQuery);
-const mark = computed(() => levels.value?.find((level) => level.id === finding.level));
+const { findLevel } = useLevels();
+const mark = computed(() => findLevel(finding.level));
 const code = computed(() => codes.value?.find((row) => row.id === finding.code));
 /** Whether the finding is about a name nothing defines. */
 const isMissing = computed(() => !!code.value?.elsewhere);
-/** Whether a patch since the version the mod is made for may have removed the name. */
-const isPatched = computed(() => finding.code === "unresolved-reference" && !!outdated);
 /** The line under the title: what the name is, and how often it is used or found. */
 const subtitle = computed(() => {
   const frequency = isMissing.value ? `used ${describeCount(finding.count)} times` : plural(finding.count, "place");
@@ -164,15 +156,6 @@ function describeSite(site: Site): string {
       <p class="max-w-[74ch] text-13 leading-5.5 text-toned"><FactText :parts="finding.message" /></p>
       <p v-if="code?.advice" class="max-w-[74ch] text-12 leading-5 text-dimmed">
         <span class="font-medium text-toned">What to do:</span> {{ code.advice }}
-      </p>
-      <p v-if="isPatched" class="max-w-[74ch] text-12 leading-5 text-dimmed">
-        The mod is made for game {{ outdated?.facts?.supported }}; the game is {{ outdated?.facts?.version }}.
-        <RouterLink
-          :to="{ name: 'patch-notes', params: { id: workspace.activeId() } }"
-          class="text-secondary hover:underline"
-        >
-          Patch Notes
-        </RouterLink>
       </p>
       <p v-if="!sites.length" class="text-12 text-dimmed">This finding points at no place.</p>
     </HealthSection>
@@ -363,9 +346,12 @@ function describeSite(site: Site): string {
         />
         <CompareView
           v-else-if="compared && pair.left && pair.right"
+          :key="`${pair.left.place.key} ${pair.right.place.key}`"
           :left="compared.left"
           :right="compared.right"
-          language="paradox-script"
+          :left-path="pair.left.place.path"
+          :right-path="pair.right.place.path"
+          :language="pair.left.place.language"
           :left-label="describeSite(pair.left)"
           :right-label="describeSite(pair.right)"
           class="h-[70vh]"

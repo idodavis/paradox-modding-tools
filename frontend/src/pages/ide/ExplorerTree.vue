@@ -30,6 +30,7 @@ import {
   compare,
   copyToMod,
   findCommand,
+  hideDisabled,
   removeMod,
   trashFile,
 } from "../../app/commands";
@@ -64,9 +65,8 @@ const PACKAGE_PATHS = `<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.
 const LOCK_PATHS = `<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>`;
 /** STROKE is how the root marks are drawn: lines in the row's text color. */
 const STROKE = `fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
-/** EXTERNAL and EXTERNAL_READ_ONLY are the root marks of an external mod, and of Steam's copy, which is also locked. */
-const EXTERNAL = { name: "pmt-external", width: 16, height: 16, viewBox: "0 0 16 16" };
-const EXTERNAL_READ_ONLY = { name: "pmt-external-read-only", width: 32, height: 16, viewBox: "0 0 32 16" };
+/** EXTERNAL is the root mark of an external mod: a package and a lock. */
+const EXTERNAL = { name: "pmt-external", width: 32, height: 16, viewBox: "0 0 32 16" };
 /** SPRITE is the SVG sheet of the file icons, one symbol for each, and of the root marks. */
 const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${[...SYMBOLS]
   .map(
@@ -75,7 +75,7 @@ const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" sty
   )
   .join(
     "",
-  )}<symbol id="${EXTERNAL.name}" viewBox="0 0 24 24" ${STROKE}>${PACKAGE_PATHS}</symbol><symbol id="${EXTERNAL_READ_ONLY.name}" viewBox="0 0 48 24" ${STROKE}>${PACKAGE_PATHS}<g transform="translate(24 0)">${LOCK_PATHS}</g></symbol></svg>`;
+  )}<symbol id="${EXTERNAL.name}" viewBox="0 0 48 24" ${STROKE}>${PACKAGE_PATHS}<g transform="translate(24 0)">${LOCK_PATHS}</g></symbol></svg>`;
 /** FILTER_HITS is how many files the filter asks the file search for. */
 const FILTER_HITS = 500;
 /** MENU_CONTENT is the context menu's content options, one object so the menu is not drawn again on each render. */
@@ -215,15 +215,15 @@ function buildStyles(): string {
     .join("\n");
 }
 
-/** markRoot returns the mark at the end of a root's row: a package for an external mod, a lock for read-only files. */
+/**
+ * markRoot returns the mark at the end of a read-only root's row: a package
+ * and a lock for an external mod, a lock for the game.
+ */
 function markRoot(root: Place | undefined): FileTreeRowDecoration | null {
-  if (!root) return null;
-  if (!workspace.isExternal(root.origin)) {
-    return root.readOnly ? { icon: "file-tree-icon-lock", title: "Read only" } : null;
-  }
-  return root.readOnly
-    ? { icon: EXTERNAL_READ_ONLY, title: "External mod, read only: Steam's copy of a Workshop mod" }
-    : { icon: EXTERNAL, title: "External mod" };
+  if (!root?.readOnly) return null;
+  return workspace.isExternal(root.origin)
+    ? { icon: EXTERNAL, title: "External mod, read only" }
+    : { icon: "file-tree-icon-lock", title: "Read only" };
 }
 
 /** rootIndex returns the index of the root a row is under, or -1 for a row under none. */
@@ -275,7 +275,12 @@ function loadExpanded(): void {
     if (row.endsWith("/") && !members.has(row) && findHandle(row)?.isExpanded()) void load(row);
 }
 
-/** load lists a folder row and puts its rows in the tree. A folder gone from disk changes nothing. */
+/**
+ * load lists a folder row and puts its rows in the tree. A folder gone from
+ * disk changes nothing. The tree draws a folder that holds only one folder
+ * as one row with it. So when such a folder is open, the folder inside it
+ * opens too and takes its selection.
+ */
 async function load(row: string): Promise<void> {
   let children: Place[];
   try {
@@ -283,7 +288,16 @@ async function load(row: string): Promise<void> {
   } catch {
     return;
   }
+
   apply(row, children);
+  const [only] = children;
+  const outer = findHandle(row);
+  const inner = children.length === 1 && only.isDir ? findHandle(`${row}${only.name}/`) : undefined;
+  if (!inner || !outer?.isExpanded()) return;
+  inner.expand();
+  if (!outer.isSelected()) return;
+  inner.select();
+  outer.deselect();
 }
 
 /** apply makes a folder row hold the listed rows, adding the new ones and removing those that are gone. */
@@ -374,14 +388,22 @@ function dimUndrawable(): void {
   );
 }
 
-/** buildRow returns the row of a place, with no trailing slash for a folder. It is "" if no root holds the place. */
+/**
+ * buildRow returns the row of a place, with no trailing slash for a folder. A file of a root that lies inside a listed
+ * root, as a DLC's folder lies inside the game's, has its row below that folder. It is "" if no listed root holds the
+ * place.
+ */
 function buildRow(place: Place): string {
-  const index = roots.findIndex(
-    (root) =>
-      root.origin === place.origin && (!root.rel || place.rel === root.rel || place.rel.startsWith(`${root.rel}/`)),
-  );
+  let index = roots.findIndex((root) => root.path === place.root);
+  if (index < 0) {
+    index = roots.findIndex(
+      (root) => place.root.startsWith(root.path) && /^[\\/]/.test(place.root.slice(root.path.length)),
+    );
+  }
   const root = roots[index];
-  return root ? `${labels.value[index]}/${place.rel.slice(root.rel ? root.rel.length + 1 : 0)}` : "";
+  if (!root) return "";
+  const folders = place.root.slice(root.path.length).split(/[\\/]/);
+  return `${labels.value[index]}/${[...folders, place.rel].filter(Boolean).join("/")}`;
 }
 
 /** select records the selected files with the editor store, and opens a file selected alone as a preview tab. */
@@ -453,14 +475,19 @@ function collapseAll(): void {
   for (const row of listRows()) findHandle(row)?.collapse();
 }
 
-// The tree has moved the row already; a move Go refuses puts it back.
+// The tree has moved the row already; a move Go refuses puts it back, and the app's toast says why.
 const { mutate: rename } = useMutation({
   mutation: async ({ source, destination }: { source: string; destination: string }): Promise<Move> => {
     const move = {
       oldPath: findPath(source),
       newPath: `${findPath(findParent(destination))}/${takeName(destination)}`,
     };
-    await editor.rename(move.oldPath, move.newPath);
+    try {
+      await editor.rename(move.oldPath, move.newPath);
+    } catch (error) {
+      view.value?.move(destination, source);
+      throw error;
+    }
     return move;
   },
   onSuccess: (move, { source }) => {
@@ -469,7 +496,6 @@ const { mutate: rename } = useMutation({
     record(move);
     forget(source);
   },
-  onError: (_error, { source, destination }) => view.value?.move(destination, source),
 });
 
 /** record adds a move to the history and drops the moves undone before it. */
@@ -517,7 +543,7 @@ const { mutate: create } = useMutation({
     if (dir) for (let count = 2; occupied(label); count++) label = `new_folder_${count}`;
     const row = `${folder}${label}${dir ? "/" : ""}`;
     const path = `${findPath(folder)}/${label}`;
-    await service.Create(path, dir);
+    await (dir ? service.CreateFolder(path) : service.CreateFile(path));
     if (draft?.text.text) await service.Write(path, draft.text);
     return { row, path };
   },
@@ -633,7 +659,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
       ? [{ label: "New coat of arms", icon: "i-lucide-shield-plus", onSelect: () => commandBus.emit("draw.newCoat") }]
       : [];
   const init: ContextMenuItem[] =
-    git.isInstalled && isRoot(row) && isWritable(row) && !git.findRoot(roots[rootIndex(row)])
+    git.isInstalled && isRoot(row) && git.bare.some((mod) => mod.id === roots[rootIndex(row)]?.origin)
       ? [
           {
             label: "Initialize a git repository",
@@ -642,9 +668,14 @@ function buildMenu(row: string): ContextMenuItem[][] {
           },
         ]
       : [];
-  const leave: ContextMenuItem[] =
+  const modItems: ContextMenuItem[] =
     isRoot(row) && place && place.origin !== VANILLA
       ? [
+          {
+            label: "Mod settings",
+            icon: "i-lucide-settings",
+            onSelect: () => commandBus.emit("settings.open", place.origin),
+          },
           {
             label: "Remove from workspace",
             icon: "i-lucide-circle-minus",
@@ -664,7 +695,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
         ...(selected?.when() ? [{ label: "Compare the two selected", onSelect: selected.onSelect }] : []),
       ]
     : [];
-  return [buildOpenItems(file, dir), readme, coat, init, commands, leave, comparisons].filter((group) => group.length);
+  return hideDisabled([buildOpenItems(file, dir), readme, coat, init, commands, modItems, comparisons]);
 }
 
 /** buildOpenItems builds the menu items that open a row elsewhere: beside the editor, in a window or in Visual. */

@@ -4,13 +4,12 @@ import { createPinia } from "pinia";
 import { PiniaColada } from "@pinia/colada";
 import ui from "@nuxt/ui/vue-plugin";
 
-import { Error as logError } from "../bindings/github.com/wailsapp/wails/v3/pkg/services/log/logservice";
 import App from "./app/App.vue";
 import { router } from "./app/router";
 import { subscribeEvents } from "./app/events";
-import { takeToasts, toast } from "./lib/feedback";
-import { splitError } from "./lib/format";
+import { isCancelled, reportError, showError, takeToasts, writeLog } from "./lib/feedback";
 import { useAgentStore } from "./stores/agent";
+import { useCompletionStore } from "./stores/completion";
 import { useEditorStore } from "./stores/editor";
 import { useGitStore } from "./stores/git";
 import { useSearchStore } from "./stores/search";
@@ -21,19 +20,6 @@ import { useWindowsStore } from "./stores/windows";
 import { useWorkspaceStore } from "./stores/workspace";
 import { setupMonaco } from "./pages/ide/editor/monaco";
 import "./styles/nuxt-ui.css";
-
-const TOAST_LINES = 3;
-
-/** writeLog writes an error to pmt.log, tagged with the given source. */
-function writeLog(error: unknown, source: string): void {
-  const failure = error instanceof Error ? error : new Error(String(error));
-  void logError(failure.message, "source", source, "stack", failure.stack ?? "");
-}
-
-/** isCancelled reports whether an error is the user cancelling a system dialog, which is neither shown nor logged. */
-function isCancelled(error: unknown): boolean {
-  return String((error as { message?: unknown } | null | undefined)?.message).includes("cancelled by user");
-}
 
 window.addEventListener("error", (event) => {
   // The browser's notice that a resize observer changed the layout again within one frame is harmless.
@@ -57,16 +43,14 @@ app.use(PiniaColada, {
   queryOptions: { staleTime: 30_000, refetchOnWindowFocus: false },
   mutationOptions: {
     /** The one place a failed mutation is reported, as a toast and a log line. */
-    onError: (error: unknown) => {
-      if (isCancelled(error)) return;
-      const [summary, details] = splitError(error, TOAST_LINES);
-      toast?.add({ title: summary, description: details, color: "error", ui: { description: "whitespace-pre-wrap" } });
-      writeLog(error, "mutation");
-    },
+    onError: (error: unknown) => reportError(error, "mutation"),
   },
 });
 app.use(ui);
 app.use(router);
+// A page that cannot load would leave the click that asked for it showing
+// nothing.
+router.onError(showError);
 app.runWithContext(() => {
   subscribeEvents();
   useSearchStore().subscribe();
@@ -78,6 +62,7 @@ app.runWithContext(() => {
   useEditorStore();
   useGitStore();
   useAgentStore();
+  useCompletionStore();
   useTerminalStore();
   useToolViewStore();
   setupMonaco();

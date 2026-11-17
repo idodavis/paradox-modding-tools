@@ -6,12 +6,15 @@ The workspace service holds the one open workspace: a game install and the mods 
 one loads the install's schema and index, or builds them, scans the mods on top and watches their folders. Every other
 service asks it for the open session at each call, so the workspace's state exists once.
 
-It also keeps the records of installs, workspaces and mods, reads and writes the mods' files, and serves files to the
-page. What a key means is the [schema](../../internal/schema/README.md)'s; where a name is defined is the
-[index](../../internal/index/README.md)'s.
+It also keeps the records of installs, workspaces and mods, reads and writes the mods' files, keeps the review of the
+files a coding agent edits, holds the game's patches for the open session, and serves files to the page. What a key
+means is [lang](../../internal/lang/README.md)'s; what each version of the game changed is
+[patch](../../internal/patch/README.md)'s;
+where a name is defined is the [index](../../internal/index/README.md)'s.
 
 **Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),
-[jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md), [schema](../../internal/schema/README.md),
+[jomini](../../internal/jomini/README.md), [lang](../../internal/lang/README.md), [loc](../../internal/loc/README.md),
+[schema](../../internal/schema/README.md),
 [index](../../internal/index/README.md), [texture](../../internal/texture/README.md) · **Used by** every other service
 but app.
 
@@ -32,10 +35,23 @@ flowchart TD
 - The open runs in the background and holds the service's lock, so a call that needs the session waits for it.
   `install:scanning` reports each stage in words, and `workspace:opened` or `workspace:failed` ends it.
 - The schema and the install's index are cached as two gob files, in a folder named for the install's version, the
-  time of its dumps and PMT's version. A game patch, fresh dumps or a new build of PMT each scan again, and the open
-  deletes the game's older cache folders.
+  time of its dumps, the time of the digest's dumps of that version (0 for none) and PMT's version. A game patch, fresh
+  dumps, digest dumps saved later or a new build of PMT each scan again, and the open deletes the game's older cache
+  folders.
+- Whenever the open builds the schema or the install's index, it hands [patch](../../internal/patch/README.md) a
+  snapshot of the version (`patch.KeepSnapshot`), which compares it with the one before and keeps PMT's own patch.
+- The open loads the game's patches into the session (`LoadPatches`, which is `patch.Load`), and the load order is
+  stored with each mod's range (`storeOrder`): `Mod.Start`, the version its patches are counted from, and
+  `Mod.Judged`, whether its supported version decides that. `LoadPatches` stores the order again, so every answer
+  kept for a load order (lsp's problems, Health's report) is made again when the patches change.
 - Changing what the open read (the install, the language, or the mods and their order) opens the workspace again. So
   does moving or rescanning its install.
+
+## Game files under a mod's files
+
+A mod's file at the path of a game file replaces it (`findReplaced`; a DLC's file is read over the base game's, so the
+last one in load order is the game's). `FindGameChange` says what the patches of a mod's range did to the game file
+under one of the mod's files, and in which version. A change no patch lists is not known.
 
 ## The session
 
@@ -50,21 +66,34 @@ index, the mods in load order and the language.
 - **Texts.** A localization key's text comes in the workspace's language, else the base language, with the message
   the game keeps. A definition's title and description are the texts the game shows it by: the keys it writes, else
   the keys `game.DefinitionTexts` builds from its name.
-- **Other load orders.** `ScanOrder` scans the mods in another order and keeps the result nowhere, for Health's
-  preview of a load order.
+- **Other load orders.** `PreviewOrder` returns the mods' index as another load order would have it, for Health's
+  preview. It is `index.Index.Reorder`: the same files and occurrences mounted in the other order, with no file read
+  again, and it is kept nowhere.
 
 ## Places
 
 A `Place` is where one file sits in the workspace: its root (the game or a mod), its path from that root, its
 database, whether it is read only and whether the Visual view draws it. Every payload that names a file carries a
-place, and the page shows its fields as they are. The game's own files and a Workshop mod's copy are read only.
+place, and the page shows its fields as they are. The game's own files and an external mod's are read only.
 
 ## Reading and writing
 
 - Writes are refused outside the workspace's mods. A write is atomic and keeps the file's encoding.
 - `CreateCopy` copies a file of the game or of another mod to the same path in a mod, where it overrides the original.
 - `Delete` moves a file into PMT's trash, which empties at the next start, so `Restore` can bring it back.
-- `RevertHunks` gives a file back its text from before a coding agent's edits.
+- `TrackEdits` starts the review of a file a coding agent edits, once. The review's baseline is the file's text on
+  disk with the agent's edits undone, in the file's own line endings. A file the agent created that is not on disk
+  yet has the baseline "". It is refused if an edit's lines are not in the file once.
+- `ListReviews` lists the files under review, each a `Review`: its place and the lines its text adds and removes
+  against its baseline (`files.CountLines`). `Baseline` returns a file's baseline, and `SetBaseline`
+  replaces it, which is how the page keeps one change. `KeepFile` ends a review and leaves the file as it is.
+  `UndoFile` writes the baseline back, or moves a file the agent created to the trash, and ends the review. It refuses
+  while the editor holds unsaved text for the file.
+- A review ends on `KeepFile` (which Source control's Discard calls for each file it discards), on `UndoFile`, on
+  `SetBaseline` with the file's text on disk, and when the watcher
+  reports the file with lines on disk equal to its baseline's, whatever their line endings (a file the agent created:
+  when it is deleted). The counts compare lines the same way. The
+  reviews live in the session, so closing the workspace drops them and leaves the files as the agent wrote them.
 - `ServeHTTP` serves files to the page at `/files`. A DDS or TGA is decoded to PNG first, since the browser cannot
   show it.
 
@@ -94,10 +123,13 @@ being watched.
 
 A `Mod` is the config's record of a mod with its `Descriptor`, its thumbnail, and whether it is broken (its folder is
 missing) or a Workshop mod's copy. The descriptor is the mod's own description: CK3's `.mod` file, or Vic3's and EU5's
-`.metadata/metadata.json`. Writing it back keeps the fields PMT does not model.
+`.metadata/metadata.json`. Writing it back keeps the fields PMT does not model. The thumbnail is the picture the
+descriptor names, else the mod's `thumbnail.*` file (`findThumbnail`): the one rule for the picture the app shows for
+the mod and the one an upload sends.
 
 A mod is the user's own or an external mod: someone else's, which the workspace checks the user's mods against and
-PMT never publishes. `External` is on its record, set by `AddMod` and `SetExternal`; Steam's copy of a Workshop mod
+PMT never changes or publishes: its files are read only (`Place.ReadOnly`), and every write asks `FindWritable`.
+`External` is on its record, set by `AddMod` and `SetExternal`; Steam's copy of a Workshop mod
 is always one, whatever its record says, so every page reads the one field. `ListWorkshopMods` lists the mods Steam
 has downloaded for an install's game, from the Workshop folder in each of Steam's libraries, to add as external mods.
 
@@ -118,7 +150,7 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 | `session.go` | The open session: its documents, buffers, texts and rescans. |
 | `mod.go` | Mods, their descriptors, and a new mod's skeleton. |
 | `locate.go` | Places: where a file sits, and every copy of a path in load order. |
-| `revert.go` | Taking a coding agent's edits back. |
+| `review.go` | The review of a coding agent's edits, and the matching of its hunks to a file's lines. |
 | `watcher.go` | The watcher on the mods' folders. |
 
 ## Events
@@ -132,21 +164,34 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 | `install:scanned` | the install's id | an install's scan finished |
 | `fs:changed` | a `FileChange` | a file of the open workspace changed on disk, and the index has it |
 | `game:exited` | whether the dumps are fresher | the launched game exited |
+| `review:changed` | the file's path | a file's review started, its baseline or its text on disk changed, or the review ended |
 
 ## Terms
 
 - **Session**: the open workspace as every service reads it.
 - **Document**: one file parsed once in the dialect of its format.
 - **Buffer**: the document of the editor's text for one open file.
+- **Review**: a file a coding agent edited that the user has not kept or undone yet. The session holds it.
+- **Baseline**: a reviewed file's text from before the agent's edits that are not kept, in the file's own line endings.
+- **Hunk**: one run of lines an agent's edit changed in a file, as its lines before and after the edit.
 - **Place**: where one file sits in the workspace.
 - **Workspace**: one recorded workspace as the pages list it: its install, its game and its mods.
 - **Mod**: one mod of the open workspace: the recorded mod with its descriptor.
 - **Descriptor**: a mod's own description, as its game writes it.
 - **Broken**: a mod whose folder is missing.
-- **External mod**: someone else's mod, which the workspace checks the user's mods against and PMT never publishes.
+- **External mod**: someone else's mod, which the workspace checks the user's mods against and PMT never changes or
+  publishes.
 - **Watcher**: what watches the mods' folders and reports a burst of changes together.
 - **State**: the open workspace as the frontend sees it.
 - **FileText**: a file's text in its encoding, with its place and the editor's draft.
 - **FileChange**: one file that changed or was deleted on disk.
+- **Patches**: the session's copy of the game's patches, which [patch](../../internal/patch/README.md) loads and the
+  open and the patch service's refresh each store (`LoadPatches`).
+- **Range**: the versions a mod's patches run from and to. The end is the install's version, and the start is
+  `Mod.Start`, as `patch.ResolveStart` gives it. `ListModPatches` gives the range's patches.
+- **Install versions**: the version each recorded install of a game is on, once each (`ListInstallVersions`), which
+  the digest's dumps and the snapshots are kept for.
+- **Mod base**: the game version a mod with no readable supported version is compared from, kept in the mod's
+  record and written by `UpdateMod`.
 - **Scanning**: one stage of an install's scan, in words, with the percent of its files done, or -1 for a stage that
   reports none.

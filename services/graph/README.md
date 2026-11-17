@@ -11,9 +11,8 @@ splice of hidden nodes, where each firing sits in its definition, an event's pic
 graph has no coordinates: the page lays it out with dagre and draws it with Vue Flow
 (`pages/graph`, see [the frontend](../../frontend/src/README.md)).
 
-**Uses** [game](../../internal/game/README.md), [index](../../internal/index/README.md),
-[jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
-[schema](../../internal/schema/README.md), [lsp](../lsp/README.md), [workspace](../workspace/README.md) · **Used by**
+**Uses** [index](../../internal/index/README.md), [jomini](../../internal/jomini/README.md),
+[lang](../../internal/lang/README.md), [loc](../../internal/loc/README.md), [lsp](../lsp/README.md), [workspace](../workspace/README.md) · **Used by**
 [mcp](../mcp/README.md).
 
 ## Building a graph
@@ -43,7 +42,7 @@ A node the filter hides is spliced out: the edges into and out of it become one 
 keeping the first firing's delay and blocks. A node whose parent is hidden takes the nearest drawn one, and a deep mark
 on a hidden node passes to the nearest drawn node before it. The root and the folds are never hidden.
 
-`Defaults` is the filter of a new graph: the databases that are fired (`schema.Schema.FireDatabases`) and the scripted
+`Defaults` is the filter of a new graph: the databases that are fired (`lang.Schema.FireDatabases`) and the scripted
 effects, from the game and every mod, with every fold closed. `FindRoots` finds the nodes whose name holds a query, the
 exact name first, then the names that start with it, then the rest. `ListOwnRoots` lists the events the workspace's mods
 define that the game keeps, for the page's start.
@@ -61,7 +60,7 @@ game reads. It is shown at the copy the game keeps, or at the first copy the gra
 Where the game keeps no copy for every file, the node is the copy a file keeps for itself, such as a scripted effect an
 events file defines.
 
-A node says how the player sees it: an event shows a window or is hidden (`game.HiddenKey`), and a message is sent. An
+A node says how the player sees it: an event shows a window or is hidden (`hidden = yes`), and a message is sent. An
 event's node holds its background picture, found by the `Picture` chain of the game's `Events` row. At each hop of the
 chain, of several copies of a key the first with no trigger of its own wins, or the one a `key[field=value]` names.
 Every node holds the comment lines just above its definition and the origin of the copy of its name it hides.
@@ -75,22 +74,27 @@ fan-out, and `Count` says how many.
 An `Edge` is one firing, from a firer to what it fires. It holds where it is written (`Site`), its delay in words
 ("7 days", "10–30 days"), the effect that writes it and that effect's title. Its `Steps` are the blocks around it from
 the top of the definition: a branch of an if's chain, a weighted branch, a list, a link to another scope, an option or
-another block. Each has its condition in words and, for an option, its name. A firing written as an entry that an
-on_action's `random_events` picks by weight has that entry as its last step.
+another block. Each carries its `Conditions`: the step in words (`describeStep`, with an option's name and a branch's
+weight), then its own condition. A firing written as an entry that an on_action's `random_events` picks by weight has
+that entry as its last step. What kind a step is is read from what the walk decided at each statement. Which statement
+is the effect that fires is the scan's: an occurrence's `Firing` says how many blocks above the reference it is
+written (`index/fires.go`), and nothing here decides it again.
 
 ## Conditions in words
 
-A condition in words is a block's limit, else its trigger, each statement a `Condition`.
+A condition in words is a block's limit, else its trigger, each statement a `Condition`. Where some of a trigger's
+conditions are negated, `groupConditions` sets them under "must be true" and "must be false", so the page draws them
+as they come.
 
-- A keyword of the language reads its `game.Keyword.Says` ("any of", "any province where"), and one that `Covers`
+- A key with words of its own reads them from `phrases` ("any of", "any province where"), and one that `Covers`
   what it holds reads its text as the player does (a `custom_tooltip`).
 - A key that names a scope, or a parameter that stands for one, stays as written as the condition's `Subject`. Any other
   key is its words, a yes after it dropped and a no making it `Negated`.
-- Each operator reads its words from `game.OperatorSays`, but an = reads its words only between a scope and a value,
+- Each operator reads its words from `operatorSays`, but an = reads its words only between a scope and a value,
   and a ?= before a block reads "if it exists".
-- A value stays as written, with `Title`, the in-game name of the definition a `prefix:name` value names. A keyword
+- A value stays as written, with `Title`, the in-game name of the definition a `prefix:name` value names. A key
   marked `ValueFirst` makes the value the subject (`exists = X` reads "X exists").
-- A block that only wraps one condition folds into it: a negation (`game.Keyword.Negates`) makes it `Negated`, and a
+- A block that only wraps one condition folds into it: a negation (a phrase that `Negates`) makes it `Negated`, and a
   scope makes itself its subject. A negation around several stays a group, since moving its lines would change what they
   claim.
 

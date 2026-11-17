@@ -1,5 +1,5 @@
-// Package main starts Paradox Modding Tools. Started with --steam-publish, it runs as the copy of the app that
-// publishes to the Workshop.
+// Package main starts Paradox Modding Tools. Started with --steam-publish, it
+// runs as the copy of the app that publishes to the Workshop.
 package main
 
 import (
@@ -18,6 +18,7 @@ import (
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/mcp"
+	"paradox-modding-tools/services/patch"
 	"paradox-modding-tools/services/search"
 	"paradox-modding-tools/services/steam"
 	"paradox-modding-tools/services/terminal"
@@ -30,24 +31,25 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// version is the app's version, set by the build. It is app.DevBuild in a dev run.
+// version is set by the build. A dev run keeps app.DevBuild.
 var version = app.DevBuild
 
-// main runs the app, or the Workshop publisher when started as one.
 func main() {
 	if exitCode, served := steam.ServePublish(os.Args[1:]); served {
 		os.Exit(exitCode)
 	}
+
 	config, err := app.OpenConfig()
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
+
 	logger, err := app.OpenLog(config, version)
 	if err != nil {
 		log.Fatalf("log: %v", err)
 	}
-	appService := &app.Service{Config: config, Build: version}
 
+	appService := &app.Service{Config: config, Build: version}
 	pmt := application.New(application.Options{
 		Name:        "paradox-modding-tools",
 		Description: "Desktop tools for Paradox Interactive game modding",
@@ -76,8 +78,8 @@ func main() {
 	}
 }
 
-// listServices returns the app's services, the given app service first. Most of the others reach the config and the
-// open workspace through the workspace service.
+// listServices returns the app's services. Most of them reach the config and
+// the open workspace through the workspace service.
 func listServices(config *app.ConfigFile, appService *app.Service) []application.Service {
 	wsp := &workspace.Service{Config: config, Build: version}
 	gitService := &git.Service{Workspace: wsp}
@@ -86,10 +88,13 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 	graphService := &graph.Service{Workspace: wsp}
 	wikiService := &wiki.Service{Workspace: wsp}
 	drawService := &draw.Service{Workspace: wsp}
+	steamService := &steam.Service{Workspace: wsp, Git: gitService}
+	patchService := &patch.Service{Workspace: wsp, Wiki: wikiService}
 	mcpService := &mcp.Service{
 		Workspace: wsp, LSP: lspService, Health: healthService, Graph: graphService, Wiki: wikiService,
-		Draw: drawService, Build: version,
+		Patch: patchService, Draw: drawService, Build: version,
 	}
+
 	return []application.Service{
 		application.NewService(appService),
 		application.NewService(logservice.New()),
@@ -101,9 +106,10 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 		application.NewService(graphService),
 		application.NewService(&search.Service{Workspace: wsp}),
 		application.NewService(wikiService),
+		application.NewService(patchService),
 		application.NewService(mcpService),
 		application.NewService(&agent.Service{Workspace: wsp, MCP: mcpService}),
 		application.NewService(gitService),
-		application.NewService(&steam.Service{Workspace: wsp, Git: gitService}),
+		application.NewService(steamService),
 	}
 }

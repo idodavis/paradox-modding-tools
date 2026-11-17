@@ -3,7 +3,8 @@
 
 export {
     Encoding,
-    Format
+    Format,
+    Hiding
 } from "./models.js";
 
 export type {

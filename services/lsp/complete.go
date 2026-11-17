@@ -1,4 +1,5 @@
-// complete.go lists what can be written at a position in a file: keys, operators, commands and values.
+// complete.go lists what can be written at a position in a file: keys,
+// keywords, commands and values.
 
 package lsp
 
@@ -8,493 +9,612 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samber/lo"
-
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Completion is one candidate in the completion list.
+// Completion is one candidate in the completion list.
 type Completion struct {
-	Label    string          `json:"label"`
-	Insert   string          `json:"insert"`           // the text inserted; the label where equal
-	Category schema.Category `json:"category"`         // what it is, for the icon and the color
-	Detail   string          `json:"detail,omitempty"` // the database's singular, the command's class
-	Blurb    string          `json:"blurb,omitempty"`  // the one line shown beside it
-	Rank     int             `json:"rank"`             // how often the game writes it there, for the order
-	Snippet  bool            `json:"snippet"`          // Insert is a snippet with placeholders
-	Image    string          `json:"image,omitempty"`  // the full path of the image file it names; "" if it names none
+	Label string `json:"label"`
+
+	// Insert is the text written when the candidate is chosen.
+	Insert string `json:"insert"`
+
+	// Category is what the candidate is, for its icon and color.
+	Category lang.Category `json:"category"`
+
+	// Detail is a few words on what the candidate is. It is "" if there are
+	// none.
+	Detail string `json:"detail,omitempty"`
+
+	Blurb string `json:"blurb,omitempty"`
+
+	// Rank sorts the list, the highest first. Most ranks count how often the
+	// game writes the candidate.
+	Rank int `json:"rank"`
+
+	// Snippet is whether Insert has placeholders.
+	Snippet bool `json:"snippet"`
+
+	// Image is the full path of the image file the candidate names, or "".
+	Image string `json:"image,omitempty"`
 }
 
-// keyLimit is the most localization keys a completion lists. The editor asks again as typing narrows them.
-const keyLimit = 200
+// CompletionList is what can be written at a position in a file.
+type CompletionList struct {
+	Candidates []Completion `json:"candidates"`
 
-// Complete returns the completion candidates at a position in a file: at a key the language's operators, commands and
-// fields, at a value what may be written there. A word written alone in a block may be a value or a key typed before
-// its equals sign, so it gets both. It returns an empty list for a file that is not script.
-func (lsp *Service) Complete(path string, line, column int) ([]Completion, error) {
-	ws, tree, err := lsp.loadTree(path)
+	// Cut is whether a limit left candidates out. The editor asks again as
+	// typing narrows a list that is cut, and filters any other itself.
+	Cut bool `json:"cut"`
+}
+
+// commandDatabases are the databases of the dumps' commands that a block may
+// take as keys, in lookup order.
+var commandDatabases = []string{lang.DumpEffects, lang.DumpTriggers}
+
+// Complete returns the candidates at a position: keywords, commands and fields
+// at a key, what may be written at a value. A word alone in a block gets both.
+// It returns an empty list for a file that is not script.
+func (s *Service) Complete(path string, line, column int) (CompletionList, error) {
+	ws, document, err := s.loadDocument(path)
 	if err != nil {
-		return nil, err
+		return CompletionList{}, err
 	}
-	mods := ws.Mods.Load()
+
+	if document.Contexts == nil {
+		return CompletionList{Candidates: []Completion{}}, nil
+	}
+
+	tree, mods := document.Tree, ws.Mods.Load()
 	place := ws.Locate(mods, path)
-	if !place.Format.IsScript() {
-		return []Completion{}, nil
-	}
-	offset := ToOffset(tree.Src, tree.Lines, line, column)
-	values := []Completion{}
+	offset := jomini.ToOffset(tree.Src, tree.Lines, line, column)
+
+	var list CompletionList
 	statement, listed, ok := findValue(tree, offset)
 	if ok {
 		current := tree.Statements[statement]
-		visitor := &hoverVisitor{tree: tree, offset: current.Span.Start}
-		ws.Schema.WalkTo(tree, place.File, visitor.offset, visitor)
 		typed := ""
 		if !current.Value.IsEmpty() && offset >= current.Value.Start {
 			typed = tree.Src[current.Value.Start:offset]
 		}
-		values = listValues(ws, mods, place.Position, tree, &visitor.context, typed, offset)
+
+		context := &document.Contexts[statement]
+		list.Candidates, list.Cut = listValues(ws, mods, place.Position, tree, context, typed, offset)
+		links := listChainLinks(ws.Schema, context, strings.TrimPrefix(typed, `"`))
+		list.Candidates = append(list.Candidates, links...)
 	}
-	if ok && !listed {
-		return values, nil
+
+	// The innermost block holding the offset gives the keys.
+	holder := tree.FindStatement(offset)
+	for holder > 0 && (offset <= tree.Statements[holder].Block.Start || offset >= tree.Statements[holder].Block.End) {
+		holder = tree.Statements[holder].Parent
 	}
-	visitor := &completeVisitor{offset: offset}
-	ws.Schema.WalkTo(tree, place.File, offset, visitor)
-	if visitor.context.Shape == "" {
-		return values, nil
+
+	if (!ok || listed) && holder > 0 && document.Contexts[holder].Shape != "" {
+		keys := listKeys(mods, place.Position, ws.Schema, lang.LookupDialect(ws.Game.ID), &document.Contexts[holder])
+		list.Candidates = slices.Concat(keys, list.Candidates)
 	}
-	keys := listKeys(mods, place.Position, ws.Schema, ws.Game, &visitor.context)
-	return lo.UniqBy(slices.Concat(keys, values), func(candidate Completion) string { return candidate.Label }), nil
+
+	list.Candidates = dropRepeats(list.Candidates)
+
+	return list, nil
 }
 
-// findValue returns the statement whose value the given offset is writing, and whether that value is written alone
-// in a block, as a listed name or a key typed before its equals sign is. It returns false if the offset is not writing
-// a value.
+// findValue returns the statement whose value the offset is writing, and
+// whether the value stands alone in a block, so that it may also be a key. It
+// returns false if the offset writes no value.
 func findValue(tree *jomini.Tree, offset int) (int32, bool, bool) {
 	prefix := strings.TrimRight(tree.Src[:offset], " \t")
 	if prefix == "" {
 		return 0, false, false
 	}
+
 	statement := tree.FindStatement(len(prefix) - 1)
 	current := tree.Statements[statement]
 	if current.IsListed() && current.Parent != 0 {
 		return statement, true, offset >= current.Value.Start && offset <= current.Value.End
 	}
+
 	if current.IsBlock() || current.Op.IsEmpty() || offset < current.Op.End {
 		return 0, false, false
 	}
+
 	pastLine := strings.Contains(tree.Src[current.Op.End:offset], "\n")
 	pastValue := !current.Value.IsEmpty() && offset > current.Value.End
+
 	return statement, false, !pastLine && !pastValue
 }
 
-// listValues returns the values that may be written at a statement's value in one file of the index, given the text
-// typed so far, with the quote it may begin with, and the offset it ends at. A call takes what its database's row
-// says, a field yes and no or its choices, and a value the walk found a reference in takes the names of that
-// reference's database. Where none of these apply, it offers the values the game's own files write there. A target
-// also takes the links and the link prefixes that lead to the scope it needs. It returns an empty list if nothing is
-// known of the value.
+// listValues returns what may be written as a statement's value: its
+// constants and the names its references can take, or failing those the values
+// the game writes there. A target also gets the links that lead to its scope.
+// It reports whether a limit cut the names short.
 func listValues(
-	ws *workspace.Session, mods *index.Index, file int32, tree *jomini.Tree, context *schema.Context, typed string,
+	ws *workspace.Session, mods *index.Index, file int32, tree *jomini.Tree, context *lang.Context, typed string,
 	offset int,
-) []Completion {
+) ([]Completion, bool) {
 	expected, vanilla := findExpected(context)
 	quoted := strings.HasPrefix(typed, `"`)
 	typed = strings.TrimPrefix(typed, `"`)
 	start := offset - len(typed)
 	rank := func(value string) int { return max(vanilla[value], vanilla[`"`+value+`"`]) }
-	makeConstant := func(value string, _ int) Completion {
+	makeConstant := func(value string) Completion {
 		insert := value
 		if !quoted && strings.Contains(value, " ") {
 			insert = `"` + value + `"`
 		}
-		return Completion{Label: value, Insert: insert, Category: schema.CategoryConstant, Rank: rank(value)}
+
+		return Completion{Label: value, Insert: insert, Category: lang.CategoryConstant, Rank: rank(value)}
 	}
-	values := []Completion{}
+
+	var constants []string
 	switch {
 	case context.Callee != nil:
-		values = lo.Map(game.Callables[context.Callee.Database].Values, makeConstant)
-	case expected.Type == schema.ValueBool:
-		values = lo.Map(game.Bools, makeConstant)
-	case expected.Type == schema.ValueChoice:
-		values = lo.Map(expected.Choices, makeConstant)
+		constants = ws.Schema.Databases[context.Callee.Database].Declaration.Values
+	case expected.Type == lang.ValueTypeBool:
+		constants = lang.Bools
+	case expected.Type == lang.ValueTypeChoice:
+		constants = expected.Choices
 	}
+
+	values := []Completion{}
+	for _, constant := range constants {
+		values = append(values, makeConstant(constant))
+	}
+
+	cut := false
 	for _, reference := range listTyped(context, expected, start, offset) {
-		// the text before the reference, such as a link's prefix, is written before each of its names
+		// A link's prefix is written before each name.
 		head := typed[:reference.Span.Start-start]
-		for _, candidate := range listNames(ws, mods, file, reference, tree.Text(reference.Span)) {
+		names, namesCut := listNames(ws, mods, file, reference, tree.Text(reference.Span))
+		cut = cut || namesCut
+		for _, candidate := range names {
 			candidate.Label = head + candidate.Label
 			candidate.Insert, candidate.Rank = candidate.Label, rank(candidate.Label)
 			values = append(values, candidate)
 		}
 	}
+
 	if len(values) == 0 {
 		values = listWritten(vanilla, makeConstant)
 	}
-	if expected.Type == schema.ValueTarget && expected.Scope != "" {
+
+	if expected.Type == lang.ValueTypeTarget && expected.Scope != "" {
 		isScope := func(scope string) bool { return scope == expected.Scope }
 		values = append(values, listPrefixes(ws, expected.Scope)...)
 		values = append(values, listScopeLinks(context, isScope, rank)...)
 	}
-	return lo.UniqBy(values, func(candidate Completion) string { return candidate.Label })
+
+	return values, cut
 }
 
-// findExpected returns what a statement's value must be, and how often the game's own files write each value there.
-// The value of a link is a target of the scope the link leads to, and the field a link has is its block's, so it
-// gives no counts. Both are empty for a statement no source knows.
-func findExpected(context *schema.Context) (schema.Expected, map[string]int) {
-	switch {
-	case context.Category == schema.CategoryLink:
-		return schema.Expected{Type: schema.ValueTarget, Scope: context.Scope}, nil
-	case context.Field == nil:
-		return schema.Expected{}, nil
+// listChainLinks returns what continues the links typed so far. After scope:
+// it is the saved scopes, whatever the field takes. After a dot it is the
+// links that run in the scope the chain leads to, written after the chain. An
+// unknown link before the dot gives none.
+func listChainLinks(language *lang.Schema, context *lang.Context, typed string) []Completion {
+	unranked := func(string) int { return 0 }
+
+	var links []Completion
+	if strings.HasPrefix(typed, lang.SavedScopes+":") {
+		links = listScopeLinks(context, func(string) bool { return true }, unranked)
 	}
-	return context.Field.Value.Value, context.Field.Vanilla.Values
+
+	position := strings.LastIndex(typed, ".")
+	if position < 0 || context.Parent == nil {
+		return links
+	}
+
+	chain := language.ResolveChain(typed[:position], context.Parent, context.Saved)
+	if slices.ContainsFunc(chain, func(link lang.ChainLink) bool { return link.Definition == nil }) {
+		return links
+	}
+
+	scope := chain[len(chain)-1].Scope
+
+	return append(links, listLinks(language, scope, typed[:position+1], unranked)...)
 }
 
-// listTyped returns the references the walk found in a value that start between the given offsets, where the typed
-// text starts and where it ends. A saved scope is left out, since only the scopes saved earlier in the definition may
-// be named there. Before anything is typed the walk has read no value, so the database the field claims stands in
-// for it. It returns none if the field claims no database either.
-func listTyped(context *schema.Context, expected schema.Expected, start, offset int) []schema.Reference {
-	references := lo.Filter(context.References, func(reference schema.Reference, _ int) bool {
-		return reference.Span.Start >= start && reference.Span.Start <= offset && reference.Database != game.SavedScopes
-	})
-	claims := expected.Type == schema.ValueReference || expected.Type == schema.ValueTarget
-	if start == offset && len(references) == 0 && claims && expected.Database != "" {
-		references = []schema.Reference{{Database: expected.Database, Span: jomini.Span{Start: offset, End: offset}}}
-	}
-	return references
-}
-
-// listNames returns the names of a reference's database that one file of the index sees, each written the way the
-// given text writes the reference: what the walk put around that text to make the name, such as an image's folder, is
-// left off. Localization keys are those that contain the reference's name, up to keyLimit, and images those under its
-// folder. A definition local to another file is left out.
-func listNames(
-	ws *workspace.Session, mods *index.Index, file int32, reference schema.Reference, text string,
-) []Completion {
-	before, after := "", ""
-	if position := strings.LastIndex(reference.Name, text); text != "" && position >= 0 {
-		before, after = reference.Name[:position], reference.Name[position+len(text):]
-	}
-	var names []Completion
-	offer := func(name, image string) {
-		if len(name) >= len(before)+len(after) && strings.EqualFold(name[:len(before)], before) &&
-			strings.EqualFold(name[len(name)-len(after):], after) {
-			names = append(names, Completion{
-				Label: name[len(before) : len(name)-len(after)], Category: schema.CategoryReference,
-				Detail: game.DescribeDefinition(reference.Database, false), Image: image,
+// listLinks returns the links written alone that run in a scope, each written
+// after the given text, such as "root.".
+func listLinks(language *lang.Schema, scope, head string, rank func(key string) int) []Completion {
+	var links []Completion
+	for _, key := range language.ListKeys(lang.DumpLinks) {
+		link := language.LookupDefinition(lang.DumpLinks, key)
+		if !link.Prefixed && link.ResolveTarget(scope) != "" {
+			links = append(links, Completion{
+				Label: head + key, Insert: head + key, Category: lang.CategoryLink,
+				Detail: findClass(lang.DumpLinks).ID, Blurb: link.Blurb, Rank: rank(key),
 			})
 		}
 	}
-	switch reference.Database {
-	case game.File:
-		for _, image := range mods.ListImages(reference.Name[:strings.LastIndex(reference.Name, "/")+1]) {
-			// script writes a path without the stage folder it sits in
-			_, rel := ws.Game.SplitStage(image.Rel)
-			offer(rel, image.Path)
+
+	return links
+}
+
+// findExpected returns what a statement's value must be, and how often the
+// game writes each value there. A link's value is a target of its scope, with
+// no counts. Both are empty for an unknown statement.
+func findExpected(context *lang.Context) (lang.Expected, map[string]int) {
+	switch {
+	case context.Category == lang.CategoryLink:
+		return lang.Expected{Type: lang.ValueTypeTarget, Scope: context.Scope}, nil
+	case context.Field == nil:
+		return lang.Expected{}, nil
+	}
+
+	return context.Field.Value.Value, context.Field.Vanilla.Values
+}
+
+// listTyped returns the walk's references in the typed text, between the two
+// offsets, except saved scopes and names the dumps declare, which links and
+// commands cover. With nothing typed, the database the field claims stands in.
+func listTyped(context *lang.Context, expected lang.Expected, start, offset int) []lang.Reference {
+	references := slices.DeleteFunc(slices.Clone(context.References), func(reference lang.Reference) bool {
+		return reference.Span.Start < start || reference.Span.Start > offset ||
+			reference.Database == lang.SavedScopes || slices.Contains(lang.Dumps, reference.Database)
+	})
+	claims := expected.Type == lang.ValueTypeReference || expected.Type == lang.ValueTypeTarget
+	if start == offset && len(references) == 0 && claims && expected.Database != "" {
+		references = []lang.Reference{{Database: expected.Database, Span: jomini.Span{Start: offset, End: offset}}}
+	}
+
+	return references
+}
+
+// keyLimit is the most localization keys a completion lists.
+const keyLimit = 200
+
+// listNames returns the names one file sees in a reference's database, written
+// as the given text writes the reference, without what the walk added around
+// it, such as an image's folder. It reports whether keyLimit cut the keys.
+func listNames(
+	ws *workspace.Session, mods *index.Index, file int32, reference lang.Reference, text string,
+) ([]Completion, bool) {
+	prefix, suffix := "", ""
+	if position := strings.LastIndex(reference.Name, text); text != "" && position >= 0 {
+		prefix, suffix = reference.Name[:position], reference.Name[position+len(text):]
+	}
+
+	var names []Completion
+	offer := func(name, image string) {
+		if len(name) >= len(prefix)+len(suffix) && strings.EqualFold(name[:len(prefix)], prefix) &&
+			strings.EqualFold(name[len(name)-len(suffix):], suffix) {
+			names = append(names, Completion{
+				Label: name[len(prefix) : len(name)-len(suffix)], Category: lang.CategoryReference,
+				Detail: lang.DescribeDefinition(reference.Database, false), Image: image,
+			})
 		}
-	case game.Localization:
-		for _, key := range mods.ListKeys(cmp.Or(ws.Language, game.BaseLanguage), reference.Name, keyLimit) {
+	}
+
+	cut := false
+	switch reference.Database {
+	case lang.File:
+		for _, image := range mods.ListImages(reference.Name[:strings.LastIndex(reference.Name, "/")+1]) {
+			// Script writes a path without its stage folder.
+			offer(image.StageRel(), image.Path)
+		}
+
+	case lang.Localization:
+		var keys []string
+		keys, cut = mods.ListKeys(ws.Languages(), reference.Name, keyLimit)
+		for _, key := range keys {
 			offer(key, "")
 		}
+
 	default:
 		for _, definition := range listDefinitions(mods, file, reference.Database) {
 			offer(definition.Label, "")
 		}
 	}
-	return names
+
+	return names, cut
 }
 
-// listWritten returns the values the game's own files write at a field, each ranked by the given function. Numbers,
-// dates, parameters and constants are left out, since none of them names one value of the game.
-func listWritten(vanilla map[string]int, makeConstant func(string, int) Completion) []Completion {
-	var values []Completion
-	for _, value := range slices.Sorted(maps.Keys(vanilla)) {
-		text := strings.Trim(value, `"`)
-		if !jomini.IsNumberKey(text) && !jomini.IsParameter(text) && !jomini.IsConstant(text) {
-			values = append(values, makeConstant(text, 0))
-		}
-	}
-	return values
-}
-
-// listPrefixes returns the link prefixes whose link leads to the given scope type, each written with its colon.
-func listPrefixes(ws *workspace.Session, scope string) []Completion {
-	var prefixes []Completion
-	for _, prefix := range slices.Sorted(maps.Keys(ws.Schema.Prefixes)) {
-		if command := ws.Schema.Commands[prefix]; command != nil && command.Target == scope {
-			prefixes = append(prefixes, Completion{
-				Label: prefix + ":", Insert: prefix + ":", Category: schema.CategoryLink, Blurb: command.Blurb,
-			})
-		}
-	}
-	return prefixes
-}
-
-// listDefinitions returns a candidate for each definition of a database that one file of the index sees: those in a
-// file the game reads, without a definition local to another file.
+// listDefinitions returns a candidate for each definition of a database that
+// one file sees: in a file the game reads, and not local to another file.
 func listDefinitions(mods *index.Index, file int32, database string) []Completion {
 	var candidates []Completion
 	for _, site := range mods.ListDefinitions(database) {
 		sees := site.File == file || !mods.Occurrence(site).Local
 		if key := mods.ToReference(site).Name; mods.IsLoaded(site.File) && sees {
 			candidates = append(candidates, Completion{
-				Label: key, Insert: key, Category: schema.CategoryReference,
-				Detail: game.DescribeDefinition(database, false),
+				Label: key, Insert: key, Category: lang.CategoryReference,
+				Detail: lang.DescribeDefinition(database, false),
 			})
 		}
 	}
+
 	return candidates
 }
 
-// listScopeLinks returns the links from where a statement is written to the scopes that the first function accepts,
-// the latest saved scope first. The second function ranks a link.
-func listScopeLinks(context *schema.Context, fits func(scope string) bool, rank func(string) int) []Completion {
+// listWritten returns the values the game writes at a field. Numbers, dates,
+// parameters and constants are left out, since none names one value.
+func listWritten(vanilla map[string]int, makeConstant func(string) Completion) []Completion {
+	var values []Completion
+	for _, value := range slices.Sorted(maps.Keys(vanilla)) {
+		text := strings.Trim(value, `"`)
+		class := jomini.Classify(text)
+		if !class.IsNumberKey() && class != jomini.ClassParameter && class != jomini.ClassConstant &&
+			class != jomini.ClassExpression {
+			values = append(values, makeConstant(text))
+		}
+	}
+
+	return values
+}
+
+// listPrefixes returns the link prefixes that lead to a scope.
+func listPrefixes(ws *workspace.Session, scope string) []Completion {
+	var prefixes []Completion
+	for _, key := range ws.Schema.ListKeys(lang.DumpLinks) {
+		if link := ws.Schema.LookupDefinition(lang.DumpLinks, key); link.Prefixed && link.Target == scope {
+			prefixes = append(prefixes, Completion{Label: key, Insert: key, Category: lang.CategoryLink, Blurb: link.Blurb})
+		}
+	}
+
+	return prefixes
+}
+
+// listScopeLinks returns this, root, prev and the saved scopes, latest first,
+// whose scope the first function accepts. The second function ranks a link.
+func listScopeLinks(context *lang.Context, fits func(scope string) bool, rank func(string) int) []Completion {
 	holder := context.Parent
 	if context.Defines || holder == nil {
 		holder = context
 	}
+
 	var links []Completion
 	offer := func(link, target, blurb string) {
 		if fits(target) {
 			links = append(links, Completion{
-				Label: link, Insert: link, Category: schema.CategoryLink, Blurb: blurb, Rank: rank(link),
+				Label: link, Insert: link, Category: lang.CategoryLink, Blurb: blurb, Rank: rank(link),
 			})
 		}
 	}
-	offer(game.ScopeLinks.This, holder.Scope, "the scope this line runs in")
-	offer(game.ScopeLinks.Root, holder.Root, "the scope the definition starts in")
-	offer(game.ScopeLinks.Previous, lo.FirstOrEmpty(holder.Previous), "the scope before this one")
-	latest := slices.Clone(context.Saved)
-	slices.Reverse(latest)
-	for _, saved := range lo.UniqBy(latest, func(saved schema.Saved) string { return saved.Name }) {
-		offer(game.SavedScopes+":"+saved.Name, saved.Type, "saved earlier in the definition")
+
+	offer(lang.LinkThis, holder.Scope, "the scope this line runs in")
+	offer(lang.LinkRoot, holder.Root, "the scope the definition starts in")
+	previous := ""
+	if len(holder.Previous) > 0 {
+		previous = holder.Previous[0]
 	}
+
+	offer(lang.LinkPrevious, previous, "the scope before this one")
+
+	// A name saved twice is offered once, with its last type.
+	offered := map[string]bool{}
+	for _, saved := range slices.Backward(context.Saved) {
+		if !offered[saved.Name] {
+			offered[saved.Name] = true
+			offer(lang.SavedScopes+":"+saved.Name, saved.Type, "saved earlier in the definition")
+		}
+	}
+
 	return links
 }
 
-// A completeVisitor finds the context of the innermost block that holds an offset.
-type completeVisitor struct {
-	offset  int
-	context schema.Context
-}
-
-// Enter keeps the context of the block if it holds the offset.
-func (visitor *completeVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
-	if block := tree.Statements[statement].Block; visitor.offset > block.Start && visitor.offset < block.End {
-		visitor.context = *context
+func dropRepeats(candidates []Completion) []Completion {
+	listed := map[string]bool{}
+	kept := []Completion{}
+	for _, candidate := range candidates {
+		if !listed[candidate.Label] {
+			listed[candidate.Label] = true
+			kept = append(kept, candidate)
+		}
 	}
-	return true
+
+	return kept
 }
 
-// Leave does nothing.
-func (visitor *completeVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
-
-// listKeys returns the keys a block takes: the language's operators, then its commands, calls and links, then its
-// fields, each kind ranked above the next. A key listed twice is kept once, as the first kind.
+// listKeys returns the keys a block takes: keywords, then commands, calls and
+// links, then fields, each kind ranked above the next.
 func listKeys(
-	mods *index.Index, file int32, language *schema.Schema, row *game.Game, holder *schema.Context,
+	mods *index.Index, file int32, language *lang.Schema, dialect *lang.Dialect, holder *lang.Context,
 ) []Completion {
 	fields := listFields(mods, file, holder)
 	floor := findTopRank(fields) + 1
-	rank := func(key string) int { return floor + countKey(language.Commands, holder, key) }
-	commands := slices.Concat(listCommands(language.Commands, holder, rank), listCalls(mods, file, language, holder, rank))
-	if isLinkShape(holder.Shape) {
+	rank := func(database, key string) int {
+		count := mods.CountUses(database, key)
+		if holder.Field != nil && holder.Field.Children[key] != nil {
+			count = max(count, holder.Field.Children[key].Vanilla.Count)
+		}
+
+		return floor + count
+	}
+	commands := slices.Concat(listCommands(language, holder, rank), listCalls(mods, file, language, holder, rank))
+	if holder.TakesLinks() {
 		commands = append(commands, listKeyLinks(language, holder, rank)...)
 	}
-	operators := listOperators(row, language.Commands, holder, findTopRank(commands)+1)
-	candidates := slices.Concat(operators, commands, fields)
-	return lo.UniqBy(candidates, func(candidate Completion) string { return candidate.Label })
+
+	keywords := listKeywords(dialect, language, holder, findTopRank(commands)+1)
+
+	return slices.Concat(keywords, commands, fields)
 }
 
-// countKey returns how often the game's own files write a key: in blocks of the given block's field, or as a command
-// anywhere, whichever is more. It returns 0 if they never write it.
-func countKey(commands map[string]*schema.Command, holder *schema.Context, key string) int {
-	count := 0
-	if holder.Field != nil && holder.Field.Children[key] != nil {
-		count = holder.Field.Children[key].Vanilla.Count
-	}
-	if command := commands[key]; command != nil {
-		count = max(count, command.Count)
-	}
-	return count
-}
-
-// isLinkShape reports whether a block of the given shape reads a key as a scope link.
-func isLinkShape(shape string) bool {
-	return slices.ContainsFunc(game.Shapes[shape].Rules, func(rule string) bool {
-		return rule == "link" || rule == "scope-link"
-	})
-}
-
-// listCalls returns the scripted definitions that the caller of a block calls. A block whose caller is any call takes
-// those of each callable that acts as a command the block allows. The given function ranks a call.
-func listCalls(
-	mods *index.Index, file int32, language *schema.Schema, holder *schema.Context, rank func(string) int,
-) []Completion {
-	caller := holder.FindCaller()
-	databases := language.Callees[caller]
-	if caller == game.AnyCall {
-		databases = lo.Filter(slices.Sorted(maps.Keys(game.Callables)), func(database string, _ int) bool {
-			return holder.Allows(game.Callables[database].Command)
-		})
-	}
-	var calls []Completion
-	for _, database := range databases {
-		for _, call := range listDefinitions(mods, file, database) {
-			call.Category, call.Rank = schema.CategoryCall, rank(call.Label)
-			calls = append(calls, makeKey(call, false))
-		}
-	}
-	return calls
-}
-
-// listKeyLinks returns the links a key in a block may be: the links the dumps declare that are written alone and run
-// in the block's scope, then this, root, prev and the scopes saved earlier, each with a block. The given function
-// ranks a link.
-func listKeyLinks(language *schema.Schema, holder *schema.Context, rank func(string) int) []Completion {
-	var links []Completion
-	for _, key := range slices.Sorted(maps.Keys(language.Commands)) {
-		command := language.Commands[key]
-		if _, ok := language.ResolveLink(key, holder.Scope); ok && command.Bare {
-			links = append(links, Completion{
-				Label: key, Category: schema.CategoryLink, Detail: findClass(game.DeclaredLink).ID, Blurb: command.Blurb,
-				Rank: rank(key),
-			})
-		}
-	}
-	links = append(links, listScopeLinks(holder, func(string) bool { return true }, rank)...)
-	for position := range links {
-		links[position] = makeKey(links[position], true)
-	}
-	return links
-}
-
-// findTopRank returns the highest rank among some candidates, or 0 if there are none.
-func findTopRank(candidates []Completion) int {
-	return lo.MaxBy(candidates, func(first, second Completion) bool { return first.Rank > second.Rank }).Rank
-}
-
-// listFields returns the keys the block's field declares, in alphabetical order, except those that begin with "<",
-// then the names of the database its keys name. It returns nil if the block has no field.
-func listFields(mods *index.Index, file int32, holder *schema.Context) []Completion {
+// listFields returns the keys the block's field declares, then the names of
+// the database its keys name. It returns nil without a field.
+func listFields(mods *index.Index, file int32, holder *lang.Context) []Completion {
 	if holder.Field == nil {
 		return nil
 	}
+
 	var fields []Completion
-	for _, key := range slices.Sorted(maps.Keys(holder.Field.Children)) {
+	for _, key := range listDeclared(holder.Field) {
 		field := holder.Field.Children[key]
-		if strings.HasPrefix(key, "<") {
-			continue
-		}
 		fields = append(fields, makeKey(Completion{
-			Label: key, Category: schema.CategoryField, Detail: string(field.Value.Value.Type), Blurb: field.Blurb.Value,
+			Label: key, Category: lang.CategoryField, Detail: string(field.Value.Value.Type), Blurb: field.Blurb.Value,
 			Rank: field.Vanilla.Count,
 		}, isBlockField(field)))
 	}
+
 	if database := holder.Field.Keys.Value; database != "" {
-		block := isBlockField(holder.Field.Children[game.AnyKey])
+		block := isBlockField(holder.Field.Children[lang.AnyKey])
 		for _, name := range listDefinitions(mods, file, database) {
 			fields = append(fields, makeKey(name, block))
 		}
 	}
+
 	return fields
 }
 
-// listOperators returns the given game's keywords that fit a block, grouped by class and ranked above the given floor.
-// A key written with a block is inserted with one.
-func listOperators(row *game.Game, commands map[string]*schema.Command, holder *schema.Context, floor int) []Completion {
-	fitting := lo.Filter(game.Keywords, func(keyword game.Keyword, _ int) bool {
-		return !strings.ContainsAny(keyword.Key, "/*<") && row.Matches(keyword.Games) &&
-			isOperatorFit(keyword, commands[keyword.Key], holder)
+// listDeclared returns the keys a field declares, sorted, without the patterns
+// such as <int> that stand for any key of a kind.
+func listDeclared(field *lang.Field) []string {
+	return slices.DeleteFunc(slices.Sorted(maps.Keys(field.Children)), func(key string) bool {
+		return strings.HasPrefix(key, "<")
 	})
-	classes := lo.Uniq(lo.Map(fitting, func(keyword game.Keyword, _ int) string { return keyword.Class }))
-	slices.SortStableFunc(fitting, func(first, second game.Keyword) int {
+}
+
+func findTopRank(candidates []Completion) int {
+	top := 0
+	for _, candidate := range candidates {
+		top = max(top, candidate.Rank)
+	}
+
+	return top
+}
+
+// listCommands returns the effects and triggers a block takes, each in
+// alphabetical order.
+func listCommands(language *lang.Schema, holder *lang.Context, rank func(database, key string) int) []Completion {
+	var candidates []Completion
+	for _, database := range commandDatabases {
+		if !holder.Takes(database) {
+			continue
+		}
+
+		for _, key := range language.ListKeys(database) {
+			command := language.LookupDefinition(database, key)
+			candidates = append(candidates, makeKey(Completion{
+				Label: key, Category: lang.CategoryCommand, Detail: findClass(database).ID, Blurb: command.Blurb,
+				Rank: rank(database, key),
+			}, isBlockCommand(command)))
+		}
+	}
+
+	return candidates
+}
+
+// listCalls returns the scripted definitions the block's caller calls. For any
+// call, they are those of each callable that acts as a command the block takes.
+func listCalls(
+	mods *index.Index, file int32, language *lang.Schema, holder *lang.Context, rank func(database, key string) int,
+) []Completion {
+	caller := holder.FindCaller()
+	databases := language.Callees[caller]
+	if caller == lang.AnyCall {
+		databases = slices.DeleteFunc(slices.Clone(lang.Called), func(database string) bool {
+			owner := language.Databases[database]
+
+			return owner == nil || !holder.Takes(owner.Declaration.Command())
+		})
+	}
+
+	var calls []Completion
+	for _, database := range databases {
+		for _, call := range listDefinitions(mods, file, database) {
+			call.Category, call.Rank = lang.CategoryCall, rank(database, call.Label)
+			calls = append(calls, makeKey(call, false))
+		}
+	}
+
+	return calls
+}
+
+// listKeyLinks returns the links a key may be: those written alone that run in
+// the block's scope, then this, root, prev and the saved scopes.
+func listKeyLinks(language *lang.Schema, holder *lang.Context, rank func(database, key string) int) []Completion {
+	rankLink := func(key string) int { return rank(lang.DumpLinks, key) }
+	links := slices.Concat(
+		listLinks(language, holder.Scope, "", rankLink),
+		listScopeLinks(holder, func(string) bool { return true }, rankLink),
+	)
+	for position := range links {
+		links[position] = makeKey(links[position], true)
+	}
+
+	return links
+}
+
+// listKeywords returns the game's keywords that fit a block, grouped by class
+// and ranked above a given rank. A keyword the dumps declare is offered only
+// where the block takes its command.
+func listKeywords(dialect *lang.Dialect, language *lang.Schema, holder *lang.Context, floor int) []Completion {
+	fitting := slices.DeleteFunc(dialect.ListKeywords(cmp.Or(holder.Shape, lang.ShapeUnknown), holder.Label), func(keyword lang.Keyword) bool {
+		return language.FindCommand(keyword.Key) != nil && findTaken(language, holder, keyword.Key) == nil
+	})
+
+	// The classes come in the order their first keyword does.
+	var classes []lang.KeywordClass
+	for _, keyword := range fitting {
+		if !slices.Contains(classes, keyword.Class) {
+			classes = append(classes, keyword.Class)
+		}
+	}
+
+	slices.SortStableFunc(fitting, func(first, second lang.Keyword) int {
 		return cmp.Compare(slices.Index(classes, first.Class), slices.Index(classes, second.Class))
 	})
-	return lo.Map(fitting, func(keyword game.Keyword, position int) Completion {
-		command := commands[keyword.Key]
-		var claim *schema.Field
+
+	keywords := make([]Completion, len(fitting))
+	for position, keyword := range fitting {
+		command := findTaken(language, holder, keyword.Key)
+		var claim *lang.Field
 		if holder.Field != nil {
 			claim = holder.Field.Children[keyword.Key]
 		}
+
 		block := isBlockShape(keyword.Shape) || isBlockField(claim) || command != nil && isBlockCommand(command)
-		return makeKey(Completion{
-			Label: keyword.Key, Category: schema.CategoryKeyword, Detail: keyword.Class, Blurb: keyword.Blurb,
+		keywords[position] = makeKey(Completion{
+			Label: keyword.Key, Category: lang.CategoryKeyword, Detail: string(keyword.Class), Blurb: keyword.Blurb,
 			Rank: floor + len(fitting) - 1 - position,
 		}, block)
-	})
+	}
+
+	return keywords
 }
 
-// isBlockShape reports whether the given shape can only be written as a block. A value or unknown shape may be plain.
-func isBlockShape(shape string) bool {
-	return shape != "" && shape != game.ShapeValue && shape != game.ShapeUnknown
+// findTaken returns the effect or trigger that a key names and a block takes,
+// the effect first. It returns nil if there is none.
+func findTaken(language *lang.Schema, holder *lang.Context, key string) *lang.Definition {
+	for _, database := range commandDatabases {
+		if command := language.LookupDefinition(database, key); command != nil && holder.Takes(database) {
+			return command
+		}
+	}
+
+	return nil
 }
 
-// isBlockField reports whether a field is written as a block. It is false for a nil field.
-func isBlockField(field *schema.Field) bool {
-	return field != nil && (field.Value.Value.Type == schema.ValueBlock || len(field.Children) > 0 ||
+func isBlockShape(shape lang.Shape) bool {
+	return shape != "" && shape != lang.ShapeValue && shape != lang.ShapeUnknown
+}
+
+func isBlockField(field *lang.Field) bool {
+	return field != nil && (field.Value.Value.Type == lang.ValueTypeBlock || len(field.Children) > 0 ||
 		field.Shape.IsStated() && isBlockShape(field.Shape.Value) ||
 		field.Vanilla.Blocks > 0 && field.Vanilla.Blocks == field.Vanilla.Count)
 }
 
-// isOperatorFit reports whether a language keyword, with the command of its key, fits the block of the context.
-func isOperatorFit(keyword game.Keyword, command *schema.Command, holder *schema.Context) bool {
-	switch {
-	case keyword.Holder != "":
-		return keyword.Holder == holder.Shape
-	case command != nil:
-		_, ok := holder.FindDeclaration(command)
-		return ok
-	}
-	return len(game.Shapes[holder.Shape].Allows) > 0
-}
-
-// listCommands returns the commands a block takes, in alphabetical order. The given function ranks a command.
-func listCommands(commands map[string]*schema.Command, holder *schema.Context, rank func(string) int) []Completion {
-	var candidates []Completion
-	for _, key := range slices.Sorted(maps.Keys(commands)) {
-		command := commands[key]
-		declaration, ok := findAllowed(command, holder)
-		if !ok {
-			continue
-		}
-		candidates = append(candidates, makeKey(Completion{
-			Label: key, Category: schema.CategoryCommand, Detail: findClass(declaration).ID, Blurb: command.Blurb,
-			Rank: rank(key),
-		}, isBlockCommand(command)))
-	}
-	return candidates
-}
-
-// findAllowed returns how the dumps declare a command, among the ways the given block takes it. It returns false if
-// the block does not take the command, or the command is a pattern that no written name matches.
-func findAllowed(command *schema.Command, holder *schema.Context) (string, bool) {
-	declaration, ok := holder.FindDeclaration(command)
-	return declaration, ok && !command.Wild
-}
-
-// isBlockCommand reports whether a command is only ever written with a block: every form of it takes block arguments,
-// or it leads to a scope or walks a list, and the game's own files never write it as a plain value.
-func isBlockCommand(command *schema.Command) bool {
-	arguments := slices.Collect(maps.Values(command.Arguments))
-	if slices.ContainsFunc(arguments, func(field *schema.Field) bool { return field != nil && len(field.Vanilla.Values) > 0 }) {
+// isBlockCommand reports whether the game only ever writes a command with a
+// block, never as a plain value.
+func isBlockCommand(command *lang.Definition) bool {
+	if command.Field != nil && len(command.Field.Vanilla.Values) > 0 {
 		return false
 	}
-	return command.Target != "" || command.Lists || len(arguments) > 0 && lo.EveryBy(arguments, isBlockField)
+
+	return command.Target != "" || command.Iterates || isBlockField(command.Field)
 }
 
-// makeKey returns the given candidate with its insert text set: the key and an equals sign, and an empty block if the
-// flag is set.
 func makeKey(candidate Completion, block bool) Completion {
 	candidate.Insert = candidate.Label + " = "
 	if block {
 		candidate.Insert, candidate.Snippet = candidate.Label+" = {\n\t$0\n}", true
 	}
+
 	return candidate
 }

@@ -34,7 +34,9 @@ declare module "@wailsio/runtime" {
             "install:scanned": string;
             "install:scanning": workspace$0.Scanning;
             "mcp:show": mcp$0.Show;
+            "patch:updated": string;
             "release:changed": string;
+            "review:changed": string;
             "search:hits": search$0.Hits;
             "shell:exited": string;
             "shell:started": string;

@@ -12,7 +12,7 @@ how far each language covers a mod. The [Health page](../../frontend/src/README.
 
 **Uses** [app](../app/README.md), [files](../../internal/files/README.md), [game](../../internal/game/README.md),
 [jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
-[schema](../../internal/schema/README.md), [index](../../internal/index/README.md), [lsp](../lsp/README.md),
+[lang](../../internal/lang/README.md), [index](../../internal/index/README.md), [lsp](../lsp/README.md),
 [workspace](../workspace/README.md) · **Used by** [mcp](../mcp/README.md).
 
 ## Building a report
@@ -28,7 +28,9 @@ flowchart TD
   group --> report(["Report"])
 ```
 
-- A preview is a load order the page asks about. It is scanned with `workspace.Session.ScanOrder` and saved nowhere.
+- A preview is a load order the page asks about. It is made with `workspace.Session.PreviewOrder`, which reads no file
+  again, and it is saved nowhere. The editor's problems in it are the ones of the workspace's own order, so a call of a
+  scripted definition that two mods declare is judged as the saved order judges it.
   The report then lists the `Changes` against the workspace's own order: each name or path whose kept copy moves to
   another mod.
 - A report is built once and kept while what it is built from stays: the session, its index and load order, the
@@ -41,13 +43,18 @@ flowchart TD
   judged.
 - The words, the fold, the groups and the sort are made in Go, so the page derives nothing again. Findings with the same
   code, owner, name and message are one: the first stands for them, and its `Count` adds theirs. A `Group` holds the
-  findings of the compatibility or of one mod, worst level first, and the heaviest first within a check. A `Tally`
-  counts a group's findings by level and words each count.
+  findings of the compatibility, of the patch question or of one mod, worst level first, and the heaviest first within
+  a check. A `Tally` counts a group's findings by level and words each count.
 
 ## Questions, levels and topics
 
-Every finding answers one of three questions: `compatibility` (how the mods touch the same things), `health` (each
-mod's own problems) or `log` (what the game's last run logged). A finding has a level by how much the game loses:
+Every finding answers one of four questions: `compatibility` (how the mods touch the same things), `health` (each
+mod's own problems), `patch` (what the game's patches changed under the mods: the version a mod is made for, a name a
+patch removed or renamed, a game file a patch changed that a mod replaces) or `log` (what the game's last run logged).
+The report holds the `patch` findings in a group of their own, as it holds the compatibility's: the report's tally
+counts them, and the own tally, which counts the mods' groups, leaves them out. `OwnPatch` counts the `patch` findings
+of the user's own mods, which is what the Patch Center's Your mods row shows. A finding has a level by how much the
+game loses:
 `critical`, `error`, `warning` or `info`. The game log rows have none.
 
 ## Contests
@@ -82,6 +89,10 @@ all the way down. One the workspace lacks is a `missing-dependency`. A mod's own
 index narrowed to the mod and its dependencies, so a name only another mod defines is that mod's
 `unresolved-reference`.
 
+Where no current dumps describe the installed version (`SourceState.Current` is false), the report has one
+`stale-dumps` finding of the patch question for the workspace as a whole. It has no owner and no site, so it is in the
+`Patch` group and in no mod's.
+
 `AddIgnoredPair` and `RemoveIgnoredPair` change the workspace's record in `config.json`, each pair sorted. Each pair
 whose two mods are in the workspace becomes an `ignored-pair` finding that counts the findings whose `Pairs` hold it.
 
@@ -113,7 +124,8 @@ is missing or empty is first made with only its header. `ListScaffolds` gives th
 
 | file | what it holds |
 |---|---|
-| `health.go` | The service, its payload types, `BuildReport` with the grouping, and the page's reads. |
+| `health.go` | The service, its payload types, the page's reads and the translation scaffold. |
+| `report.go` | `BuildReport`: the lists of findings, their grading, and the words, folds, groups and tallies. |
 | `contests.go` | Contests and shared keys: their winners, levels and pairs, and what a preview changes. |
 | `ignored.go` | The ignored pairs and their findings, and the mods the compatibility checks judge. |
 | `errorlog.go` | The game's error log: its rows, their mods, and the watch on it. |
@@ -126,13 +138,14 @@ is missing or empty is first made with only its header. `ListScaffolds` gives th
 
 ## Terms
 
-- **Question**: one of the three things Health answers: compatibility, health and the game log.
+- **Question**: one of the four things Health answers: compatibility, health, patch and the game log.
 - **Level**: how much the game loses by a finding: critical, error, warning or info.
-- **Topic**: what a check is about: syntax, references, values, localization, definitions or descriptor.
+- **Topic**: what a check is about: syntax, references, values, localization, definitions, descriptor or patch.
 - **Finding**: one row of the Health page: a problem or a fact, with the places it points at.
 - **Use**: one name a finding is about, with how often the files the game reads use it and where they first do.
 - **Report**: the findings for one load order, grouped and counted, and what that order changes.
-- **Group**: the folded and sorted findings of the workspace's compatibility or of one mod, with their tally and checks.
+- **Group**: the folded and sorted findings of the workspace's compatibility, of its patch question or of one mod, with
+  their tally and checks.
 - **Tally**: how many findings there are of each level, and the worst level.
 - **Check**: one code at one level in a group, with how many findings it has.
 - **Change**: one name or path whose kept copy moves to another mod in a previewed order.

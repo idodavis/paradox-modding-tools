@@ -82,8 +82,8 @@ flowchart TD
   download.
 - **The list.** `ListReleases` returns every published release, the newest first, without drafts, prereleases and the
   releases before `firstRelease` (0.5.0), which are an older app the repository keeps on GitHub. Each
-  says whether it is the running one and whether it is older. A build that is no release, such as a dev build, gets the
-  newest only.
+  says whether it is the running one and whether it is older. A release's notes sit under a heading of its version: the
+  notes' own headings start one level below it, however their author wrote them.
 - `FetchURL` downloads a web address with PMT's user agent, for this service and the others that read the web. It says so
   when GitHub refuses a request for a used-up limit, without GitHub's reset time, which its answers disagree on.
 
@@ -105,6 +105,7 @@ again, or after a timeout, and `window:closed` follows.
 | `app.go` | The service: its events, the log and the running mark, the settings, the windows, `FetchURL`. |
 | `config.go` | PMT's folders, the records, the catalog of settings, and `ConfigFile`. |
 | `update.go` | The check for a newer version, the install of any release, and the list of releases. |
+| `document.go` | The one document form: `Sanitize` cuts a source's HTML down to text, lists, tables, code and links, with a `LinkRule` per source, and `RenderMarkdown` makes one from markdown. The wiki's pages, the digests' articles and the releases' notes all pass through it, and one view of the page draws them. |
 
 ## Events
 

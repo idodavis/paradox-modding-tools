@@ -17,12 +17,12 @@ import (
 	"golang.org/x/time/rate"
 
 	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
 
-// newApp returns the one application the tests send events through. It is never run.
+// newApp returns the one application the tests send events through. It is never
+// run.
 var newApp = sync.OnceValue(func() *application.App { return application.New(application.Options{}) })
 
 // resolveFixture returns the absolute path of a folder under internal/testdata.
@@ -35,7 +35,8 @@ func resolveFixture(t *testing.T, parts ...string) string {
 	return dir
 }
 
-// openService opens a workspace on the CK3 fixture install and returns the wiki service over it with its session.
+// openService opens a workspace on the CK3 fixture install and returns the wiki
+// service over it with its session.
 func openService(t *testing.T) (*Service, *workspace.Session) {
 	t.Helper()
 	newApp()
@@ -67,16 +68,17 @@ func openService(t *testing.T) (*Service, *workspace.Session) {
 // keepPage caches a page with the given title and HTML in a client's folder.
 func keepPage(t *testing.T, client *Client, html, title string) {
 	t.Helper()
-	root, _ := parseFragment(html)
+	root, _ := app.ParseFragment(html)
 	page := Page{
-		Title: title, HTML: html, FetchedAt: time.Now(), Modding: hasModding(root), Released: resolveReleased(root),
+		Title: title, HTML: html, FetchedAt: time.Now(), Revision: 7, Modding: hasModding(root), Released: resolveReleased(root),
 	}
 	if err := app.SaveJSON(client.resolvePath(title), page); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// TestSanitizeKeepsAndDropsElements checks what Sanitize keeps and drops from a page of every kind of element.
+// TestSanitizeKeepsAndDropsElements checks what sanitizePage keeps and drops
+// from a page of every kind of element.
 func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 	input := `<script>alert(1)</script><style>p{}</style><noscript>none</noscript><nav>menu</nav>` +
 		`<div class="navbox"><p>navigation</p></div><div id="toc"><ul><li>contents</li></ul></div><!-- comment -->` +
@@ -101,22 +103,21 @@ func TestSanitizeKeepsAndDropsElements(t *testing.T) {
 		`<table><thead><tr><th>head</th></tr></thead><tbody><tr><td colspan="2">cell</td></tr></tbody></table>` +
 		`<details><summary>Table, 3 rows</summary><table><tbody><tr><td>1</td></tr><tr><td>2</td></tr>` +
 		`<tr><td>3</td></tr></tbody></table></details><pre>code block</pre><span>wrapped</span><h2>Last</h2><p>kept</p>`
-	if got := Sanitize(input, &url.URL{Scheme: "http", Host: "wiki.test"}); got != want {
+	client := &Client{origin: &url.URL{Scheme: "http", Host: "wiki.test"}}
+	if got := app.Sanitize(input, client.resolveLink); got != want {
 		t.Errorf("Sanitize =\n%s\nwant\n%s", got, want)
 	}
 }
 
-// TestFindPagesRanksTitles checks the order of the pages for a script file and for a GUI file.
+// TestFindPagesRanksTitles checks the order of the pages for a script file and
+// for a GUI file.
 func TestFindPagesRanksTitles(t *testing.T) {
 	wik, ws := openService(t)
 	titles := []string{
 		"Event modding", "Scripting", "Scripted effects", "GUI modding", "Script", "Advanced scripted effects tips",
 		"Scripted effect", "GUI",
 	}
-	listing := Listing{RefreshedAt: time.Now()}
-	for _, title := range titles {
-		listing.Pages = append(listing.Pages, Summary{Title: title, Category: "Modding"})
-	}
+	listing := Listing{Pages: titles, RefreshedAt: time.Now()}
 	client := wik.resolveClient(ws)
 	if err := app.SaveJSON(client.resolveListing(), listing); err != nil {
 		t.Fatal(err)
@@ -127,24 +128,21 @@ func TestFindPagesRanksTitles(t *testing.T) {
 	}{
 		{
 			filepath.Join(resolveFixture(t, "ck3"), "game", "common", "scripted_effects", "v_effects.txt"),
-			[]string{"Scripted effect", "Scripted effects", "Advanced scripted effects tips", "Script", "Scripting"},
+			[]string{"Scripted effect", "Scripted effects", "Advanced scripted effects tips", "Script"},
 		},
-		{filepath.Join(resolveFixture(t, "ck3"), "game", "gui", "window.gui"), []string{"GUI", "GUI modding"}},
+		{filepath.Join(resolveFixture(t, "ck3"), "game", "gui", "window.gui"), []string{"GUI"}},
 	}
 	for _, test := range tests {
-		pages, err := wik.FindPages(test.path)
-		var got []string
-		for _, page := range pages {
-			got = append(got, page.Title)
-		}
+		got, err := wik.FindPages(test.path)
 		if err != nil || !slices.Equal(got, test.want) {
 			t.Errorf("FindPages(%s) = %q, %v, want %q", filepath.Base(test.path), got, err, test.want)
 		}
 	}
 }
 
-// TestListNotesOrdersNewestFirst checks that the patch notes come newest first, a hotfix note after its release, and
-// that the pages with a Modding heading are marked.
+// TestListNotesOrdersNewestFirst checks that the patch notes come newest first,
+// a hotfix note after its release, and that the pages with a Modding heading
+// are marked.
 func TestListNotesOrdersNewestFirst(t *testing.T) {
 	wik, ws := openService(t)
 	client := wik.resolveClient(ws)
@@ -159,15 +157,16 @@ func TestListNotesOrdersNewestFirst(t *testing.T) {
 	keepPage(t, client, `<h3>Modding changes</h3>`, "Patch 1.30.X")
 	notes, err := wik.ListNotes()
 	want := []Note{
-		{minor, "", "2026-09-30", "Patch 1.30", false}, {"1.30.X", minor, "", "Patch 1.30.X", true},
-		{"1.10", "", "", "Patch 1.10", false}, {"1.9", "", "", "Patch 1.9", true},
+		{minor, "2026-09-30", "Patch 1.30", false}, {"1.30.X", "", "Patch 1.30.X", true},
+		{"1.10", "", "Patch 1.10", false}, {"1.9", "", "Patch 1.9", true},
 	}
 	if err != nil || !slices.Equal(notes, want) {
 		t.Errorf("ListNotes = %+v, %v, want %+v", notes, err, want)
 	}
 }
 
-// TestResolveClientFollowsGame checks that the service keeps one client for a game and makes another for the next.
+// TestResolveClientFollowsGame checks that the service keeps one client for a
+// game and makes another for the next.
 func TestResolveClientFollowsGame(t *testing.T) {
 	wik := &Service{Workspace: &workspace.Service{Config: &app.ConfigFile{Dirs: app.Dirs{Cache: t.TempDir()}}}}
 	ck3 := &workspace.Session{Game: game.LookupGame("ck3")}
@@ -181,14 +180,20 @@ func TestResolveClientFollowsGame(t *testing.T) {
 	}
 }
 
-// TestClientRefreshesFromServer checks a refresh against a test wiki. A page that is already cached is not fetched
-// again.
+// TestClientRefreshesFromServer checks a refresh against a test wiki. A page
+// that is already cached is not fetched again.
 func TestClientRefreshesFromServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
 		switch {
 		case query.Get("action") == "parse" && query.Get("page") == "Missing":
 			_, _ = writer.Write([]byte(`{"error":{"code":"missingtitle","info":"no such page"}}`))
+		case query.Get("prop") == "info":
+			var pages []string
+			for _, title := range strings.Split(query.Get("titles"), "|") {
+				pages = append(pages, fmt.Sprintf(`{"title":%q,"lastrevid":7}`, title))
+			}
+			_, _ = fmt.Fprintf(writer, `{"query":{"pages":[%s]}}`, strings.Join(pages, ","))
 		case query.Get("action") == "parse":
 			text := `<script>x</script><h2>Modding</h2><p>` + query.Get("page") + `</p><a href="/wiki/Foo">link</a>`
 			_, _ = fmt.Fprintf(writer, `{"parse":{"title":%q,"text":%q}}`, query.Get("page"), text)
@@ -204,8 +209,12 @@ func TestClientRefreshesFromServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(t.TempDir(), &game.Game{ID: "test"})
-	client.api = server.URL + "/api.php"
+	client := newClient(t.TempDir(), &game.Game{ID: "test"})
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.origin = origin
 	client.limiter = rate.NewLimiter(rate.Inf, 1)
 	keepPage(t, client, "<p>kept</p>", "Traits")
 	var lastDone, lastTotal int
@@ -216,7 +225,7 @@ func TestClientRefreshesFromServer(t *testing.T) {
 		t.Errorf("progress ended at %d of %d, want 3 of 3", lastDone, lastTotal)
 	}
 	listing, ok := client.LoadListing()
-	if !ok || len(listing.Pages) != 2 || listing.Pages[1] != (Summary{Title: "Decisions", Category: "Modding"}) ||
+	if !ok || len(listing.Pages) != 2 || listing.Pages[1] != "Decisions" ||
 		!slices.Equal(listing.Versions, []string{"1.20", "1.1.X"}) {
 		t.Errorf("listing = %+v, %v", listing, ok)
 	}
@@ -232,7 +241,8 @@ func TestClientRefreshesFromServer(t *testing.T) {
 	}
 }
 
-// TestRefreshEmitsUpdatedWithoutWorkspace checks that a refresh with no workspace open still sends wiki:updated.
+// TestRefreshEmitsUpdatedWithoutWorkspace checks that a refresh with no
+// workspace open still sends wiki:updated.
 func TestRefreshEmitsUpdatedWithoutWorkspace(t *testing.T) {
 	newApp()
 	sent := make(chan struct{}, 1)
@@ -249,91 +259,8 @@ func TestRefreshEmitsUpdatedWithoutWorkspace(t *testing.T) {
 	}
 }
 
-// TestBuildLexiconListsEffectsAndFunctions checks the effect, scope and function rows over the CK3 fixture install,
-// and the error for an unknown class.
-func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
-	wik, ws := openService(t)
-	effects, err := wik.BuildLexicon("effect")
-	if err != nil {
-		t.Fatal(err)
-	}
-	declared := 0
-	for _, command := range ws.Schema.Commands {
-		if slices.Contains(command.Declared, game.DeclaredEffect) {
-			declared++
-		}
-	}
-	mods, scripted := ws.Mods.Load(), map[string]bool{}
-	for _, site := range mods.ListDefinitions(ws.Schema.Effects) {
-		scripted[mods.ToReference(site).Name] = true
-	}
-	if len(effects) == 0 || len(effects) != declared+len(scripted) || !slices.IsSortedFunc(effects, func(first, second LexiconRow) int {
-		return strings.Compare(first.Name, second.Name)
-	}) {
-		t.Fatalf("%d effect rows for %d declared and %d scripted effects, sorted by name", len(effects), declared, len(scripted))
-	}
-	examples := 0
-	for _, row := range effects {
-		if row.Defined != nil {
-			if !scripted[row.Name] || row.Usage != "" && !strings.HasPrefix(row.Usage, row.Name+" = { ") {
-				t.Errorf("scripted row %+v", row)
-			}
-			continue
-		}
-		command := ws.Schema.Commands[row.Name]
-		if row.Class != "effect" || row.Usage != command.Usage || row.Blurb != command.Blurb ||
-			len(row.Examples) != len(command.Examples) {
-			t.Errorf("row %+v does not match command %+v", row, command)
-		}
-		for i, example := range command.Examples {
-			examples++
-			if row.Examples[i].Line != example.Line+1 || row.Examples[i].Place.Path != example.Path {
-				t.Errorf("%s example %d = %+v, want %+v", row.Name, i, row.Examples[i], example)
-			}
-		}
-	}
-	if examples == 0 {
-		t.Error("no effect has an example")
-	}
-	checkFunctions(t, wik, ws)
-	if scopes, err := wik.BuildLexicon("scope"); err != nil || len(scopes) != len(ws.Schema.Scopes) {
-		t.Errorf("%d scope rows for %d scopes, %v", len(scopes), len(ws.Schema.Scopes), err)
-	}
-	if _, err := wik.BuildLexicon("modifier"); err == nil {
-		t.Error("BuildLexicon accepted a class the lexicon does not have")
-	}
-}
-
-// checkFunctions checks that there is a function row for each data function of the schema.
-func checkFunctions(t *testing.T, wik *Service, ws *workspace.Session) {
-	t.Helper()
-	rows, err := wik.BuildLexicon("function")
-	if err != nil {
-		t.Fatal(err)
-	}
-	count := 0
-	for _, dataType := range ws.Schema.DataTypes {
-		count += len(dataType.Functions)
-	}
-	if len(rows) == 0 || len(rows) != count {
-		t.Fatalf("%d function rows for %d data functions", len(rows), count)
-	}
-	for _, row := range rows {
-		typeName, functionName, ok := strings.Cut(row.Name, ".")
-		function := ws.Schema.DataTypes[typeName].Functions[functionName]
-		if !ok || row.Class != "function" || row.Target != schema.ReturnType(function) || row.Blurb != function.Blurb ||
-			len(row.Examples) != len(function.Examples) {
-			t.Fatalf("row %+v does not match function %+v of %s", row, function, typeName)
-		}
-		for i, example := range function.Examples {
-			if row.Examples[i].Line != example.Line+1 || row.Examples[i].Place.Path != example.Path {
-				t.Errorf("%s example %d = %+v, want %+v", row.Name, i, row.Examples[i], example)
-			}
-		}
-	}
-}
-
-// TestRefreshInstalls refreshes the real wiki of each game whose PMT_TEST_INSTALL_<GAME> is set.
+// TestRefreshInstalls refreshes the real wiki of each game whose
+// PMT_TEST_INSTALL_<GAME> is set.
 func TestRefreshInstalls(t *testing.T) {
 	for _, gameID := range []string{"ck3", "vic3", "eu5"} {
 		t.Run(gameID, func(t *testing.T) {
@@ -341,7 +268,7 @@ func TestRefreshInstalls(t *testing.T) {
 			if os.Getenv(variable) == "" {
 				t.Skipf("%s is not set", variable)
 			}
-			client := NewClient(t.TempDir(), game.LookupGame(gameID))
+			client := newClient(t.TempDir(), game.LookupGame(gameID))
 			pages := 0
 			start := time.Now()
 			if err := client.Refresh(func(done, _ int) { pages = done }); err != nil {

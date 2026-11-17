@@ -1,7 +1,10 @@
-<!-- Save as DDS: writes a picture, or the pictures directly in a folder, as DDS files beside them. -->
+<!--
+  Save as DDS: writes a picture, or the pictures directly in a folder, as DDS
+  files beside them.
+-->
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
-import { useMutation, useQuery } from "@pinia/colada";
+import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 
 import * as draw from "@services/draw/service";
 import type { Place } from "@services/workspace/models";
@@ -13,17 +16,13 @@ import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
 const { place } = defineProps<{ place: Place }>();
 const emit = defineEmits<{ close: [] }>();
 
-const FORMATS = [
-  { value: "uncompressed", label: "Uncompressed", description: "Exact. Four bytes a pixel." },
-  { value: "BC3", label: "BC3", description: "A quarter of the size. Colors blur slightly within each 4×4 block." },
-];
-
 const toast = useToast();
+const cache = useQueryCache();
 const editor = useEditorStore();
 const workspace = useWorkspaceStore();
-const format = shallowRef("uncompressed");
+// The format's DXGI number, 0 until the pictures are listed.
+const format = shallowRef(0);
 const mipmaps = shallowRef(false);
-const likeness = shallowRef("");
 const { data } = useQuery(() => ddsPicturesQuery(place.path));
 const pictures = computed(() => data.value?.pictures ?? []);
 // A mod's root folder has no path inside the mod, so the mod's name labels it.
@@ -31,10 +30,29 @@ const folder = computed(() => (place.isDir ? place.rel : place.folder) || worksp
 const summary = computed(() => {
   const [first] = pictures.value;
   if (!first) return "No PNG or TGA pictures";
-  if (pictures.value.length === 1) return `${first.name} → ${toDDS(first.name)}`;
+  if (pictures.value.length === 1) return `${first.name} → ${data.value?.names?.[0]}`;
   return `${pictures.value.length} pictures → a .dds beside each`;
 });
-watch(data, preselect, { immediate: true });
+// Says which DDS files the settings were taken from, or nothing if from none.
+const likeness = computed(() => {
+  const matched = data.value?.matched ?? 0;
+  const reference = data.value?.references?.[pictures.value[0]?.path ?? ""];
+  if (matched > 1) return `Set like the ${matched} DDS files these replace`;
+  if (!matched || !reference) return "";
+  if (reference.place.origin === VANILLA) return `Set like the game's ${reference.place.rel}`;
+  return `Set like ${reference.place.name} beside it`;
+});
+// The choices start as the settings Go gives, and follow the replaced DDS
+// files' settings when the pictures are listed again.
+watch(
+  data,
+  (next) => {
+    if (!next || (!next.matched && format.value)) return;
+    format.value = next.format;
+    mipmaps.value = next.mipmaps;
+  },
+  { immediate: true },
+);
 
 const {
   mutate: save,
@@ -44,12 +62,15 @@ const {
   mutation: () =>
     draw.WriteDDS(
       pictures.value.map((picture) => picture.path),
-      format.value === "BC3",
+      format.value,
       mipmaps.value,
     ),
   onSuccess: (paths) => {
-    const [first] = pictures.value;
-    const title = pictures.value.length === 1 && first ? toDDS(first.name) : plural(pictures.value.length, "DDS file");
+    // The pictures now have a DDS beside them, whose settings the next open
+    // starts with.
+    void cache.invalidateQueries({ key: ddsPicturesQuery(place.path).key });
+    const [name] = data.value?.names ?? [];
+    const title = pictures.value.length === 1 && name ? name : plural(pictures.value.length, "DDS file");
     toast.add({
       title: `Saved ${title}`,
       color: "success",
@@ -59,33 +80,10 @@ const {
   },
 });
 
-/** toDDS returns the name of the DDS a picture of the given name is saved as. */
-function toDDS(name: string): string {
-  return name.replace(/\.[^.]+$/, ".dds");
-}
-
 /**
- * preselect sets the choices to the settings of the DDS files the pictures replace, when every picture has one and they
- * all agree. Otherwise the choices keep their defaults.
+ * open shows the file at the given path in the editor. A path with no place
+ * does nothing.
  */
-function preselect(): void {
-  const references = pictures.value.flatMap((picture) => data.value?.references?.[picture.path] ?? []);
-  const [reference] = references;
-  if (!reference || references.length < pictures.value.length) return;
-  const settings = references.map(({ header }) => ({
-    format: header.compression ? "BC3" : "uncompressed",
-    mipmaps: header.mipmaps > 1,
-  }));
-  const [first] = settings;
-  if (!first || settings.some((other) => other.format !== first.format || other.mipmaps !== first.mipmaps)) return;
-  format.value = first.format;
-  mipmaps.value = first.mipmaps;
-  if (references.length > 1) likeness.value = `Set like the ${references.length} DDS files these replace`;
-  else if (reference.place.origin === VANILLA) likeness.value = `Set like the game's ${reference.place.rel}`;
-  else likeness.value = `Set like ${reference.place.name} beside it`;
-}
-
-/** open shows the file at the given path in the editor. A path with no place does nothing. */
 async function open(path: string): Promise<void> {
   const file = await loadQuery(placeQuery(path));
   if (file) editor.show(file);
@@ -100,7 +98,7 @@ async function open(path: string): Promise<void> {
           <span class="font-mono text-12 text-highlighted">{{ summary }}</span>
           <span class="text-11 text-dimmed">in {{ folder }}</span>
         </div>
-        <URadioGroup v-model="format" legend="Format" variant="card" :items="FORMATS" />
+        <URadioGroup v-model="format" legend="Format" variant="card" value-key="dxgi" :items="data?.formats ?? []" />
         <UCheckbox
           :model-value="mipmaps"
           label="Mipmaps"

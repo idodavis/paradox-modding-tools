@@ -1,196 +1,161 @@
-// game.go holds each game's row: the facts that are its own beside the shared tables.
-
-// Package game holds every fact about the supported games: which games exist, where each is installed, and what
-// its script, GUI and coat of arms files mean. Every fact is a row of a table or a field of a game's row.
+// Package game holds the games PMT supports, Crusader Kings III, Victoria 3
+// and Europa Universalis V: each game's identity, how its mods are laid out
+// and how it is started. It also finds a game on this machine: its installs
+// and their versions, the folders an install mounts, the user-data and dump
+// folders, the Steam Workshop folders and the program that starts the game.
+//
+// # Installs
+//
+//   - The installs are found in Steam's own folders and in the libraries its
+//     libraryfolders.vdf names, each counted once after links are resolved.
+//   - The version of an install is the one in its launcher's settings.
+//     Without one, it is the version the game writes to its debug log, else
+//     "build" and the day the game was built, from its revision log. A log
+//     is read only if the game was started after the install was last
+//     updated. Without those, it is "build" and Steam's build number.
+//   - An install mounts its clausewitz, jomini and game folders, in that
+//     order, and then each DLC under game/dlc.
+//   - The user-data folder is the first that exists of the folder the
+//     launcher's gameDataPath names and the usual folders: Documents on
+//     Windows; the XDG data folder, Documents and each Proton prefix on
+//     Linux. Where none exists, it is the first of them.
+//   - An install was last updated when the newest file in its binaries
+//     folder was written, else the newest file in the install's own folder.
+//   - The Workshop folder is the game's folder under steamapps/workshop in
+//     each Steam library.
+//   - The program that starts a game is the one the launcher's exePath
+//     names, else the game's own. Its arguments are the launcher's, then
+//     the flags for debug mode.
+//
+// # Robustness
+//
+// Nothing here fails over what it reads from disk. A launcher settings file
+// that is missing or cannot be decoded is read as empty. A Steam library
+// file, a manifest or a log that cannot be read is skipped, and so is an
+// install folder that a manifest names and that does not exist.
+// ListInstallRoots returns an error only for a DLC folder that exists and
+// cannot be read. LookupGame returns nil for an id the app does not
+// support.
 package game
 
-import (
-	"fmt"
-	"regexp"
-	"slices"
-	"strings"
-
-	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/jomini"
-)
-
-// A Source is where a fact the schema learned came from. A lower value outranks a higher one, and a claim keeps its
-// best source.
-type Source uint8
-
-// The sources, by rank: each outranks the ones after it.
-const (
-	SourceNone     Source = iota // no source
-	SourceRegistry               // this package's rows: they classify and never accuse
-	SourceDumps                  // the console dumps: what the game declares about its own language
-	SourceExe                    // a message the game's executable carries
-	SourceLog                    // a line the game's own logs write
-	SourceDocs                   // the prose the install ships beside its script (.info, .md, readme.txt)
-	SourceWiki                   // the community wiki, taken where no game source contradicts it
-	SourceVanilla                // the install's own files: evidence, never a claim that accuses
-	SourceInferred               // no source states it, so it never fails a verdict
-	// SourceDefinitions is what a definition in the files says its name takes. It claims on fields of its own, so
-	// its rank is never tried.
-	SourceDefinitions
-)
-
-// A Program is how a game is started on one operating system: its executable and the flags for debug mode.
-type Program struct {
-	Executable string   // from the install root (binaries/ck3.exe); "" means none is known, so the game is not started
-	DebugArgs  []string // the flags that start it in debug mode, which hot-loads script
-	Settings   string   // the launcher settings file whose exePath and debug arguments win; "" means none
-}
-
-// A Log is one of the game's log files: where it is written under the user-data folder and how each of its lines
-// starts.
-type Log struct {
-	Rel  string
-	Line *regexp.Regexp
-}
-
-// A Game is one supported game with every fact that is its own. The tables beside it hold the facts it shares, each
-// row naming the games it holds for.
+// Game is one game the app supports: its names, how its mods are laid out
+// and how it is started.
 type Game struct {
-	ID                string             `json:"id"`
-	Name              string             `json:"name"` // also its folder under Documents
-	ShortName         string             `json:"shortName"`
-	StageRoots        []string           `json:"-"`                    // EU5's stages at a root, in the order it mounts them
-	ModDescriptor     string             `json:"descriptor,omitempty"` // the descriptor file's path from the mod's root
-	FixedModFolder    bool               `json:"fixedModFolder"`       // the launcher reads local mods only from its mod folder, so a mod made elsewhere is never loaded
-	ThumbnailDir      string             `json:"-"`                    // where a new listing image goes; "" means the root
-	SteamAppID        int                `json:"-"`
-	SteamLibrary      map[string]string  `json:"-"` // by GOOS, where its copy of Steam's library sits
-	ModFolders        []string           `json:"-"` // the folders a new mod gets, from its root
-	Program           map[string]Program `json:"-"` // by GOOS; a GOOS with no row has no build
-	ErrorLocations    []*regexp.Regexp   `json:"-"` // the forms in which the error log names a line of a script file, with the groups path and line; none means it names none
-	Events            GameEvents         `json:"-"`
-	TakesModes        bool               `json:"-"` // a definition's name may start with an entry mode, as REPLACE:x does
-	LocReplaceFolders []string           `json:"-"` // the forms of the folder whose localization overrides every other, with the language at %s, the winning one first
-	LogsRepeatedKey   bool               `json:"-"` // it logs a localization key that a mod and the game both write outside a replace folder
-	DecisionEffects   []string           `json:"-"` // the effects that run the decision they name, as its dumps declare them; none means no effect fires a decision
-	BookmarkFolder    string             `json:"-"` // the folder of the files that write its bookmarks; "" for a game with a single start
-	SetupKey          string             `json:"-"` // the key in a bookmark whose value is the folder of its start setup; "" for a game with a single start
-	GUI               GameGUI            `json:"-"`
-	Coat              GameCoat           `json:"-"`
-	Guide             Guide              `json:"guide"`
-	Example           Example            `json:"example"`
+	ID string `json:"id"`
+
+	// Name is the game's full name, which is also its folder under
+	// Documents/Paradox Interactive.
+	Name string `json:"name"`
+
+	ShortName string `json:"shortName"`
+
+	// Stages are the folders a game with load stages mounts in turn, such as
+	// EU5's main_menu and in_game. The game's folder and each mod's hold them.
+	Stages []string `json:"-"`
+
+	// ModDescriptor is the file that describes a mod, from the mod's folder.
+	ModDescriptor string `json:"descriptor,omitempty"`
+
+	// FixedModFolder is whether the launcher loads local mods only from its
+	// own mod folder.
+	FixedModFolder bool `json:"fixedModFolder"`
+
+	// ThumbnailDir is where a new mod thumbnail is saved, from the mod's
+	// folder. It is "" for the mod's folder itself.
+	ThumbnailDir string `json:"-"`
+
+	SteamAppID int `json:"-"`
+
+	// Digests is where the game's Modding Co-op publishes its digests of each
+	// patch, a GitHub repository as owner/name. It is "" for a game whose
+	// community publishes none.
+	Digests string `json:"digests"`
+
+	// SteamLibrary is the game's own copy of Steam's library, from the
+	// install's folder, by GOOS. A system that is not listed has none.
+	SteamLibrary map[string]string `json:"-"`
+
+	// ModFolders are the folders a new mod is made with.
+	ModFolders []string `json:"-"`
+
+	// Program is how the game is started, by GOOS. The game has no build for
+	// a system that is not listed.
+	Program map[string]Program `json:"-"`
+
+	Guide   Guide   `json:"guide"`
+	Example Example `json:"example"`
 }
 
-// An Example is three definitions of one database that show how a mod and the game's files work together.
+// Program is how a game is started on one system.
+type Program struct {
+	// Executable is the game's program, from the install's folder. It is ""
+	// where it is not known.
+	Executable string
+
+	// DebugArgs start the game in debug mode, where it reloads changed script
+	// while it runs.
+	DebugArgs []string
+
+	// Settings is the launcher's settings file, from the install's folder, or
+	// "" if the launcher has none. The program it names replaces Executable,
+	// and its arguments come before DebugArgs.
+	Settings string
+}
+
+// Example names three definitions the game ships in one database. The app
+// shows them where it explains how a mod changes the game.
 type Example struct {
-	Database string   `json:"database"`
-	Folder   string   `json:"folder"` // from the game's folder
-	Names    []string `json:"names"`
-	Modes    bool     `json:"modes"` // a mod changes one of the definitions by writing REPLACE: before its name, as its precedence row says
+	Database string `json:"database"`
+
+	// Folder is the database's folder, from the game's folder.
+	Folder string `json:"folder"`
+
+	Names []string `json:"names"`
+
+	// Modes is whether a mod changes these definitions by writing a mode
+	// before the name, as in REPLACE:brave.
+	Modes bool `json:"modes"`
 }
 
-// A Guide is how a game picks which copy of a file or a definition it keeps, in the sentences where the games differ.
+// Guide tells a modder how a game picks which copy of a file or of a
+// definition it keeps.
 type Guide struct {
-	Hint    string `json:"hint"`    // what the load order decides, in one sentence
-	Files   string `json:"files"`   // which of a mod's files the game reads
-	Kept    string `json:"kept"`    // which copy of a definition each database keeps
-	Changes string `json:"changes"` // what the load order changes
+	// Hint says what the load order decides, Files which of a mod's files the
+	// game reads, Kept which copy of a definition each database keeps, and
+	// Changes what moving a mod in the load order changes.
+	Hint    string `json:"hint"`
+	Files   string `json:"files"`
+	Kept    string `json:"kept"`
+	Changes string `json:"changes"`
 }
 
-// The supported games' ids.
+// The ids of the supported games.
 const (
-	ck3  = "ck3"
-	vic3 = "vic3"
-	eu5  = "eu5"
+	CK3  = "ck3"
+	Vic3 = "vic3"
+	EU5  = "eu5"
 )
 
-// The sets of two games that rows of the tables hold for.
-var (
-	ck3AndEU5  = []string{ck3, eu5}
-	ck3AndVic3 = []string{ck3, vic3}
-	vic3AndEU5 = []string{vic3, eu5}
-)
-
-// ScriptRoot is the folder under an install where the game's files start.
+// ScriptRoot is the folder of an install that holds the game's own files.
 const ScriptRoot = "game"
 
-// InstallRoots are the folders under an install that the game mounts, in the order it mounts them. A relative
-// path begins under one of them.
-var InstallRoots = []string{"clausewitz", "jomini", ScriptRoot}
-
-// BaseLanguage is the language that every other language's coverage is measured against.
-const BaseLanguage = "english"
-
-// OriginVanilla is the origin of the game's own files. A mod's files have the mod's id as their origin.
-const OriginVanilla = "vanilla"
-
-// MetadataDir is where a game whose mods are described by a metadata.json file keeps it and, for EU5, the thumbnail.
+// MetadataDir is a mod's metadata folder, which holds its metadata.json and
+// EU5's thumbnail.
 const MetadataDir = ".metadata"
 
-// PictureExtensions are the extensions a mod's pictures may have: its thumbnail and the pictures of its gallery.
+// PictureExtensions are the extensions a mod's thumbnail and gallery
+// pictures may have.
 var PictureExtensions = []string{".png", ".gif", ".jpg", ".jpeg", ".webp"}
 
-// WikiAPI is the address of a game's wiki API, with %s for the game's id.
-const WikiAPI = "https://%s.paradoxwikis.com/api.php"
+// launcherFile is the launcher's settings file, from the install's folder.
+const launcherFile = "launcher/launcher-settings.json"
 
-// A WikiTopic gives the files of a format, or under a folder, the terms the games' wikis title their pages with.
-type WikiTopic struct {
-	Format files.Format // "" for files of any format
-	Folder string       // "" for files in any folder
-	Terms  []string
-}
-
-// WikiTopics are the topics the games' wikis write pages on beside a file format's own name.
-var WikiTopics = []WikiTopic{
-	// CK3's Interface, Vic3's Interface modding and EU5's Interface modding guide, which also write of gfx/interface
-	{Format: files.FormatGUI, Terms: []string{"interface"}},
-	{Folder: "gfx/interface", Terms: []string{"interface"}},
-	// CK3's 3D models and Vic3's Model modding, which write of .asset files, meshes and gfx/models
-	{Format: files.FormatAsset, Terms: []string{"model"}},
-	{Folder: "gfx/models", Terms: []string{"model"}},
-	// CK3's Graphical assets and Vic3's Graphical asset modding, which write of .dds textures
-	{Format: files.FormatImage, Terms: []string{"graphical asset"}},
-	// the three games' Map modding, which write of gfx/map
-	{Folder: "gfx/map", Terms: []string{"map modding"}},
-}
-
-// The revision log and the debug log every start writes, the launcher's settings file and the build's checksum.
-const (
-	revisionLogRel = "logs/code_revisions.log"
-	debugLogRel    = "logs/debug.log"
-	launcherFile   = "launcher/launcher-settings.json"
-	checksumRel    = "binaries/checksum.txt"
-)
-
-// ErrorLog is the log in which the game writes its errors, each line starting with the time and the source file and
-// line that wrote it.
-var ErrorLog = Log{
-	"logs/error.log",
-	regexp.MustCompile(`^\[(\d\d):(\d\d):(\d\d)\](?:\[([A-Z])\])?\[([A-Za-z0-9_]+\.(?:cpp|h|hpp|inl)):(\d+)\]: ?(.*)$`),
-}
-
-// The forms in which an error log names a line of a script file. None matches a bare path and line: every log line's
-// header holds its source as [file.cpp:N], so a path must follow a space.
-var (
-	// errorLogFileLine is CK3's "file: P line: N", after "Script location:", "at", "location '" or "from database".
-	errorLogFileLine = regexp.MustCompile(`file: *(?P<path>\S+) line: *(?P<line>\d+)`)
-	// errorLogQuotedLine is the statement's line that a quoted message names, as all three games write in "Unknown
-	// effect: x, near line: 3501" in file: "P" near line: 3502, where the last line is where the reader stopped.
-	errorLogQuotedLine = regexp.MustCompile(`near line: (?P<line>\d+)" in file: "(?P<path>[^"]+)"`)
-	// errorLogNearLine is the reader's "in file: "P" near line: N", written by all three games.
-	errorLogNearLine = regexp.MustCompile(`in file: "(?P<path>[^"]+)" near line: (?P<line>\d+)`)
-	// errorLogPathLine is "P:N" after other text, as in "Script location: P:N" and "]: P:N - Missing file".
-	errorLogPathLine = regexp.MustCompile(`(?:^|\s)(?P<path>[^\s\[\]:'"]+\.\w+):(?P<line>\d+)\b`)
-	// errorLogLineColumn is EU5's "line N and column C in P".
-	errorLogLineColumn = regexp.MustCompile(`line (?P<line>\d+) and column \d+ in (?P<path>\S+)`)
-)
-
-// MountLog is the log line in which the game names each folder it reads.
-var MountLog = Log{"logs/debug.log", regexp.MustCompile(`Mounted Data: (.+?)\s*$`)}
-
-// DumpFolders are the folders under a game's user data where the console's dumps land.
-var DumpFolders = []string{"logs", "docs", "logs/data_types"}
-
+// steamLibrary is where CK3 and Vic3 keep their copy of Steam's library.
 var steamLibrary = map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"}
 
 var games = map[string]*Game{
-	ck3: {
-		ID:            ck3,
+	CK3: {
+		ID:            CK3,
 		Name:          "Crusader Kings III",
 		ShortName:     "CK3",
 		ModDescriptor: "descriptor.mod",
@@ -201,98 +166,27 @@ var games = map[string]*Game{
 			"windows": {Executable: "binaries/ck3.exe", DebugArgs: []string{"-debug_mode", "-develop"}, Settings: launcherFile},
 			"linux":   {DebugArgs: []string{"-debug_mode", "-develop"}, Settings: launcherFile},
 		},
-		ErrorLocations: []*regexp.Regexp{errorLogFileLine, errorLogQuotedLine, errorLogNearLine, errorLogPathLine},
-		// _events.info, _event_themes.info
-		Events: GameEvents{DefaultScope: "character", Picture: Picture{
-			Chains: []PictureChain{
-				{
-					Steps:   []PictureStep{{Key: "override_background/reference", Database: "event_backgrounds"}},
-					FileKey: "background/reference",
-				},
-				{
-					Steps: []PictureStep{
-						{Key: "theme", Database: "event_themes"}, {Key: "background/reference", Database: "event_backgrounds"},
-					},
-					FileKey: "background/reference",
-				},
-			},
-		}},
-		// the wiki's Localization page: localization/replace/english takes precedence over localization/english/replace
-		LocReplaceFolders: []string{"localization/replace/%s", "localization/%s/replace"},
-		// the wiki's Modding page; ck3.exe "Duplicate localization key. Key '%s' is defined in both '%s' and '%s'."
-		LogsRepeatedKey: true,
-		// effects.log: "execute_decision - Execute the specified decision for the scoped character"
-		DecisionEffects: []string{"execute_decision"},
-		GUI: GameGUI{
-			Undeclared: []string{"zoomarea", "text_occluder"},
-			// common/defines/graphic/00_graphics.txt:812-813: GOVERNMENT_TYPE_REALM_MASK_PATH with
-			// GOVERNMENT_TYPE_REALM_FRAME_MASK_SUFFIX
-			SuffixStems: map[string]string{"GOVERNMENT_TYPE_REALM_MASK": "GOVERNMENT_TYPE_REALM_FRAME_MASK"},
-			// common/defines/graphic/00_graphics.txt:782 writes TRAIT_ICON_PATH in NGameIcons, and :812 the realm mask's path
-			DefineGroup: "NGameIcons",
-			// seven tiers: cell 3 for a count, 4 for a duke, from 5 for a king or an emperor
-			Tiers: TierFrames{
-				Function: "GetTierFrame", Tiers: []string{"unlanded", "baron", "count", "duke", "king", "emperor", "hegemon"},
-			},
-			// gfx/interface/illustrations/scripted_illustrations/_scripted_illustrations.info
-			Illustrations: Illustrations{FolderKey: "folder", Folder: "gfx/interface/illustrations"},
-		},
-		Coat: GameCoat{
-			Folder: "common/coat_of_arms/coat_of_arms",
-			Shade: CoatShade{ // game/gfx/FX/coat_of_arms
-				Texture: "gfx/coat_of_arms/coa_mask_texture.dds",
-				Overlay: CoatStrength{Channel: "b", Strength: 0.2},
-				Grain:   CoatStrength{Channel: "g", Strength: 2},
-			},
-			// the frames of gui/shared/coa_designer.gui, without the unit's 3D banner. Each define is named in full, as
-			// common/defines/graphic/00_graphics.txt:309,319 write them in NCoatOfArms.
-			Frames: []CoatFrame{
-				{Label: "Dynasty", Define: "NCoatOfArms|DEFAULT_DYNASTY_COA_FRAME_NAME"},
-				{Label: "House", Define: "NCoatOfArms|DEFAULT_HOUSE_COA_FRAME_NAME"},
-				{Label: "Title", Mask: "gfx/interface/coat_of_arms/title_mask.dds"},
-				{Label: "Realm", Mask: "gfx/interface/icons/realm_frames/_default_mask.dds"},
-			},
-			ColorForm: jomini.ColorForm{Tag: "rgb", Example: []string{"255", "255", "255"}},
-		},
 		Guide: Guide{
 			Hint:    "The load order decides only files that two mods ship at the same path.",
 			Files:   "A mod's replace_path makes the game skip its own files in that folder; whether it also skips the folder's subfolders is not documented.",
 			Kept:    "Most things keep the copy read last; events keep the highest override priority, and on a tie the game logs an error and keeps one copy without saying which; a character takes its name, traits, skills, parents and birth from the copy with the highest override priority and combines the rest, and the game calls a tie an error without saying what it keeps; on_actions combine their lists.",
 			Changes: "Only files at the same path.",
 		},
-		// common/traits/00_traits.txt
 		Example: Example{Database: "traits", Folder: "common/traits", Names: []string{"gregarious", "shy", "brave"}},
 	},
-	vic3: {
-		ID:             vic3,
+	Vic3: {
+		ID:             Vic3,
 		Name:           "Victoria 3",
 		ShortName:      "Vic3",
 		ModDescriptor:  MetadataDir + "/metadata.json",
 		FixedModFolder: true,
 		SteamAppID:     529340,
+		Digests:        "Victoria-3-Modding-Co-op/Modding-Digests",
 		SteamLibrary:   steamLibrary,
 		ModFolders:     []string{"common", "events", "localization"},
 		Program: map[string]Program{
 			"windows": {Executable: "binaries/victoria3.exe", DebugArgs: []string{"-debug_mode"}, Settings: launcherFile},
 			"linux":   {DebugArgs: []string{"-debug_mode"}, Settings: launcherFile},
-		},
-		ErrorLocations: []*regexp.Regexp{errorLogQuotedLine, errorLogNearLine, errorLogPathLine},
-		Events: GameEvents{TypeKey: "type", TypeSuffix: "_event", DefaultScope: "country", Picture: Picture{
-			Chains: []PictureChain{{
-				Steps:   []PictureStep{{Key: "event_image/video", Database: "gfx/media_aliases"}},
-				FileKey: "video", Fallback: "fallback",
-			}},
-		}},
-		TakesModes: true,
-		// victoria3.exe matches the path part /replace/; no source says which form wins
-		LocReplaceFolders: []string{"localization/%s/replace", "localization/replace/%s"},
-		GUI: GameGUI{
-			Undeclared:  []string{"overlappingitembox", "treemapchart", "portrait_button", "axis"},
-			DropsHidden: []string{"flowcontainer"},
-		},
-		Coat: GameCoat{
-			Folder:    "common/coat_of_arms/coat_of_arms",
-			ColorForm: jomini.ColorForm{Tag: jomini.TagHSV360, Example: []string{"360", "100", "100"}},
 		},
 		Guide: Guide{
 			Hint:    "The load order decides only files that two mods ship at the same path.",
@@ -300,55 +194,28 @@ var games = map[string]*Game{
 			Kept:    "Most things keep the copy read last; events and GUI types keep the first; where a folder takes INJECT: and REPLACE:, the first plain copy stays and a later one is refused, so mods change it with those keywords, which act after every plain copy whatever their file's name, by mode (INJECT_OR_CREATE first, REPLACE last) and then by file name; character DNA copies all exist.",
 			Changes: "Only files at the same path.",
 		},
-		// common/buildings/01_industry.txt
 		Example: Example{
 			Database: "buildings", Folder: "common/buildings",
 			Names: []string{"building_food_industry", "building_textile_mill", "building_furniture_manufactory"},
 		},
 	},
-	eu5: {
-		ID:        eu5,
+	EU5: {
+		ID:        EU5,
 		Name:      "Europa Universalis V",
 		ShortName: "EU5",
-		// debug.log:5372-5394 mounts each root's stages in this order, and only them; the wiki's Mod structure, l.46-57
-		StageRoots:     []string{"loading_screen", "main_menu", "in_game"},
+		// the game mounts each root's stages in this order, and nothing else
+		Stages:         []string{"loading_screen", "main_menu", "in_game"},
 		ModDescriptor:  MetadataDir + "/metadata.json",
 		FixedModFolder: true,
-		ThumbnailDir:   MetadataDir, // where EU5 mods keep it
+		ThumbnailDir:   MetadataDir,
 		SteamAppID:     3450310,
-		SteamLibrary:   map[string]string{"windows": "binaries/steam_api64.dll"}, // no Linux build: Proton
-		ModFolders:     []string{"in_game/common", "in_game/events", "main_menu/localization"},
+		Digests:        "Europa-Universalis-5-Modding-Co-op/modding-digests",
+		// EU5 has no Linux build; there it runs under Proton with the Windows
+		// library
+		SteamLibrary: map[string]string{"windows": "binaries/steam_api64.dll"},
+		ModFolders:   []string{"in_game/common", "in_game/events", "main_menu/localization"},
 		Program: map[string]Program{
 			"windows": {Executable: "binaries/eu5.exe", DebugArgs: []string{"-debug_mode"}},
-		},
-		ErrorLocations: []*regexp.Regexp{errorLogQuotedLine, errorLogNearLine, errorLogPathLine, errorLogLineColumn},
-		Events: GameEvents{TypeKey: "type", TypeSuffix: "_event", DefaultScope: "country", Picture: Picture{
-			FileKey: "image",
-			Chains: []PictureChain{{
-				Steps: []PictureStep{
-					{Key: "illustration_tags", Database: "gfx/illustrations/database", Match: "tags"},
-					{Key: "scene", Database: "gfx/scenes"},
-					// a scene's backdrop is the layer drawn on background2_mesh (in_game/gfx/scenes/00_scenes_events.txt)
-					{Key: "ecs_illustration_image[pdxmesh=background2_mesh]/list", Database: "gfx/images", Match: "tag"},
-				},
-				FileKey: "illustration_image/texture_file",
-			}},
-		}},
-		TakesModes: true,
-		// the wiki's Mod compatibility, l.209, and Localization, l.2, name only this form
-		LocReplaceFolders: []string{"localization/%s/replace"},
-		// main_menu/common/bookmarks/00_bookmarks.txt:4
-		BookmarkFolder: "common/bookmarks", SetupKey: "setup_folder",
-		GUI: GameGUI{
-			Holders:    map[string]string{"lateralview": "lateralview_left_layer"},
-			Undeclared: []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
-			// loading_screen/common/defines/graphic/00_graphics.txt writes its icon paths in NGameIcons, such as :851
-			// UNIT_STATUS_ICON_PATH
-			DefineGroup: "NGameIcons",
-		},
-		Coat: GameCoat{
-			Folder:    "main_menu/common/coat_of_arms/coat_of_arms",
-			ColorForm: jomini.ColorForm{Tag: jomini.TagHSV360, Example: []string{"360", "100", "100"}},
 		},
 		Guide: Guide{
 			Hint:    "The load order decides only files that two mods ship at the same path, and GUI types and templates.",
@@ -356,65 +223,19 @@ var games = map[string]*Game{
 			Kept:    "Under common/ the first plain copy stays and mods change it with INJECT: and REPLACE:, which act after every plain copy whatever their file's name, by mode (INJECT_OR_CREATE first, REPLACE last) and then by file name; events keep the first; GUI types and templates follow the load order; coats of arms and defines keep the last.",
 			Changes: "Only files at the same path and GUI types and templates.",
 		},
-		// in_game/common/traits/00_ruler.txt
 		Example: Example{Database: "traits", Folder: "in_game/common/traits", Names: []string{"righteous", "cruel", "tolerant"}},
 	},
 }
 
-// CanAccuse reports whether a claim from this source is firm enough to fail a verdict. Only the dumps, the docs, the
-// wiki and the definitions are.
-func (source Source) CanAccuse() bool {
-	return source == SourceDumps || source == SourceDocs || source == SourceWiki || source == SourceDefinitions
-}
-
-// LookupGame returns the game with the given id, or nil if this build does not support it.
+// LookupGame returns the game with the given id, or nil if the app does not
+// support it.
 func LookupGame(id string) *Game {
 	return games[id]
 }
 
-// ListGames returns the supported games in the order the app shows them, each example's Modes filled from its
-// database's precedence row.
+// ListGames returns the supported games in the order the app shows them.
+// Example.Modes is left false: the language's rows know which databases take
+// modes.
 func ListGames() []Game {
-	rows := []Game{*games[ck3], *games[eu5], *games[vic3]}
-	for position := range rows {
-		row := &rows[position]
-		_, folder := row.SplitStage(row.Example.Folder)
-		row.Example.Modes = row.LookupPrecedence(row.Example.Database, folder).Modes != ""
-	}
-	return rows
-}
-
-// Matches reports whether the game is among the given games. An empty list names every game, even a nil one.
-func (game *Game) Matches(games []string) bool {
-	return len(games) == 0 || game != nil && slices.Contains(games, game.ID)
-}
-
-// SplitStage splits a path into the stage folder that opens it and the rest, for the games that keep their files
-// under stages. A path under no stage, or a game with none, gives "" and the path as it is.
-func (game *Game) SplitStage(rel string) (stage, rest string) {
-	if game == nil {
-		return "", rel
-	}
-	stage, rest, ok := strings.Cut(rel, "/")
-	if ok && slices.Contains(game.StageRoots, stage) {
-		return stage, rest
-	}
-	return "", rel
-}
-
-// FindLocReplacement returns the rank of the localization replace folder a file is in, the lowest winning. It returns
-// false if the file is in none.
-func (game *Game) FindLocReplacement(rel, language string) (int, bool) {
-	_, rel = game.SplitStage(rel)
-	rank := slices.IndexFunc(game.LocReplaceFolders, func(folder string) bool {
-		return strings.HasPrefix(rel, fmt.Sprintf(folder, language)+"/")
-	})
-	return rank, rank >= 0
-}
-
-// IsUnmounted reports whether the game never mounts a file: a mod's file outside the stage folders, in a game that
-// keeps its files under stages (EU5 debug.log:80-83, 5392; the wiki's Mod structure, l.46-48).
-func (game *Game) IsUnmounted(file files.File) bool {
-	stage, _ := game.SplitStage(strings.ToLower(file.Rel))
-	return game != nil && len(game.StageRoots) > 0 && file.Origin != OriginVanilla && stage == ""
+	return []Game{*games[CK3], *games[EU5], *games[Vic3]}
 }

@@ -1,4 +1,4 @@
-// pages.go finds and searches the wiki's pages and reads the facts of a patch note.
+// pages.go finds and searches pages and reads a patch note's facts.
 
 package wiki
 
@@ -9,56 +9,90 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samber/lo"
-	"golang.org/x/mod/semver"
 	"golang.org/x/net/html"
 
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
+	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/services/app"
 )
 
-// A Note is one patch's notes page.
+// Note is one patch's notes page.
 type Note struct {
-	Version  string `json:"version"`
-	Parent   string `json:"parent"`   // the version a hotfix belongs to, such as 1.14 for 1.14.2; "" for a release
-	Released string `json:"released"` // the release date as the note writes it; "" if it gives none
+	Version string `json:"version"`
+
+	// Released is the date the note gives for its release, or "" for none.
+	Released string `json:"released"`
 	Title    string `json:"title"`
-	Modding  bool   `json:"modding"` // the page has a Modding section
+	Modding  bool   `json:"modding"`
 }
 
-// releasePattern matches the release date in a patch note, such as "released on 2026-09-30".
-var releasePattern = regexp.MustCompile(`released on (?:the )?(\d{4}-\d{2}-\d{2})`)
+// ResolveNote returns the version of the wiki's note that holds a game
+// version. The wiki writes one note for a release, as 1.15, which also holds
+// 1.15.0, and one for its hotfixes, as 1.15.X. It returns "" for a version
+// that names no release.
+func ResolveNote(version string) string {
+	release := game.ResolveRelease(version)
+	number, _, _ := strings.Cut(version, "-")
+	rest := strings.Split(strings.TrimPrefix(number, release), ".")
+	isHotfix := slices.ContainsFunc(rest, func(part string) bool { return part != "" && part != "0" })
+	if release == "" || !isHotfix {
+		return release
+	}
 
-// releaseSpan is how many bytes of a note are searched for its release date.
-const releaseSpan = 2000
+	return release + ".X"
+}
 
-// errNoListing is the error of a call that needs the listing before a refresh has fetched it.
-var errNoListing = errors.New("the wiki's listing has not been fetched yet")
+// ErrNoListing is the error of ListNotes before a refresh has fetched the
+// wiki's listing.
+var ErrNoListing = errors.New("the wiki's listing has not been fetched yet")
 
-// FindPages returns the wiki pages that belong to the file at the given path, best match first. It returns an error if
-// no workspace is open or no refresh has fetched the listing yet.
-func (wik *Service) FindPages(path string) ([]Summary, error) {
-	ws, err := wik.Workspace.Session()
+// pageTopics are the words the games' wikis put in the titles of the pages
+// about a format's files or a folder's, beside the format's own name. A row
+// with no format or no folder holds for any.
+var pageTopics = []struct {
+	Format files.Format
+	Folder string
+	Terms  []string
+}{
+	{Format: files.FormatGUI, Terms: []string{"interface", "gui script", "scripted gui"}},
+	{Folder: "gfx/interface", Terms: []string{"interface"}},
+	{Format: files.FormatAsset, Terms: []string{"model"}},
+	{Folder: "gfx/models", Terms: []string{"model"}},
+	{Format: files.FormatImage, Terms: []string{"graphical asset"}},
+	{Folder: "gfx/map", Terms: []string{"map modding"}},
+}
+
+// FindPages returns the wiki pages that belong to a file, best match first. It
+// returns nil, with no error, until a refresh has fetched the listing, and an
+// error if no workspace is open. A file with no page gets an empty slice.
+func (s *Service) FindPages(path string) ([]string, error) {
+	ws, err := s.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
-	listing, ok := wik.resolveClient(ws).LoadListing()
+
+	listing, ok := s.resolveClient(ws).LoadListing()
 	if !ok {
-		return nil, errNoListing
+		return nil, nil
 	}
+
 	place := ws.Locate(ws.Mods.Load(), path)
-	singular := strings.ToLower(game.DescribeDefinition(place.Database, false))
-	plural := strings.ToLower(game.DescribeDefinition(place.Database, true))
-	topics := []string{strings.ToLower(string(place.Format))}
-	for _, topic := range game.WikiTopics {
+	singular := strings.ToLower(lang.DescribeDefinition(place.Database, false))
+	plural := strings.ToLower(lang.DescribeDefinition(place.Database, true))
+	format := strings.ToLower(string(place.Format))
+	var topics []string
+	for _, topic := range pageTopics {
 		inFolder := topic.Folder == "" || strings.HasPrefix(strings.ToLower(place.Rel), topic.Folder+"/")
 		if (topic.Format == "" || topic.Format == place.Format) && inFolder {
 			topics = append(topics, topic.Terms...)
 		}
 	}
+
+	// rank orders the titles that belong to the file, and is -1 for the rest.
+	// The format's name ranks a page only as its whole title: "script" is in
+	// the title of every page about scripting, and so of none about this file.
 	holds := func(title, term string) bool { return term != "" && strings.Contains(title, term) }
-	holdsTopic := func(title string) bool {
-		return slices.ContainsFunc(topics, func(term string) bool { return holds(title, term) })
-	}
 	rank := func(title string) int {
 		title = strings.ToLower(title)
 		switch {
@@ -68,74 +102,86 @@ func (wik *Service) FindPages(path string) ([]Summary, error) {
 			return 1
 		case holds(title, singular) || holds(title, plural):
 			return 2
-		case slices.Contains(topics, title):
+		case title == format || slices.Contains(topics, title):
 			return 3
+		case slices.ContainsFunc(topics, func(term string) bool { return holds(title, term) }):
+			return 4
 		}
-		return 4
+
+		return -1
 	}
-	pages := lo.Filter(listing.Pages, func(summary Summary, _ int) bool {
-		title := strings.ToLower(summary.Title)
-		return holds(title, singular) || holds(title, plural) || holdsTopic(title)
-	})
-	slices.SortStableFunc(pages, func(first, second Summary) int {
-		return cmp.Compare(rank(first.Title), rank(second.Title))
-	})
+
+	pages := make([]string, 0, len(listing.Pages))
+	for _, title := range listing.Pages {
+		if rank(title) >= 0 {
+			pages = append(pages, title)
+		}
+	}
+
+	slices.SortStableFunc(pages, func(first, second string) int { return cmp.Compare(rank(first), rank(second)) })
+
 	return pages, nil
 }
 
-// SearchPages returns the wiki's modding pages that hold the given text, letter case aside, those with it in the title
-// first. A page that is not cached is searched by its title alone. It returns an error if no workspace is open or no
-// refresh has fetched the listing yet.
-func (wik *Service) SearchPages(term string) ([]Summary, error) {
-	ws, err := wik.Workspace.Session()
+// SearchPages returns the modding pages that hold a text, title matches first.
+// A page that is not cached is searched by its title alone. It returns nil
+// until a refresh has fetched the listing, and an error if no workspace is
+// open.
+func (s *Service) SearchPages(term string) ([]string, error) {
+	ws, err := s.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
-	client := wik.resolveClient(ws)
+
+	client := s.resolveClient(ws)
 	listing, ok := client.LoadListing()
 	if !ok {
-		return nil, errNoListing
+		return nil, nil
 	}
+
 	term = strings.ToLower(term)
-	pages, rest := lo.FilterReject(listing.Pages, func(summary Summary, _ int) bool {
-		return strings.Contains(strings.ToLower(summary.Title), term)
-	})
-	return append(pages, lo.Filter(rest, func(summary Summary, _ int) bool {
-		page, ok := client.LoadPage(summary.Title)
-		if !ok {
-			return false
+	pages := make([]string, 0, len(listing.Pages))
+	var rest []string
+	for _, title := range listing.Pages {
+		if strings.Contains(strings.ToLower(title), term) {
+			pages = append(pages, title)
+		} else {
+			rest = append(rest, title)
 		}
-		root, err := parseFragment(page.HTML)
-		return err == nil && strings.Contains(strings.ToLower(textOf(root)), term)
-	})...), nil
+	}
+
+	for _, title := range rest {
+		if text, ok := client.loadText(title); ok && strings.Contains(text, term) {
+			pages = append(pages, title)
+		}
+	}
+
+	return pages, nil
 }
 
-// resolveReleased returns the release date a patch note gives, or "" if it gives none.
+var releasePattern = regexp.MustCompile(`released on (?:the )?(\d{4}-\d{2}-\d{2})`)
+
+const releaseSpan = 2000
+
+// resolveReleased returns the date a patch note says it was released on, as
+// in "released on 2026-09-30" near the start of its text, or "" for none.
 func resolveReleased(root *html.Node) string {
-	text := textOf(root)
-	return lo.NthOr(releasePattern.FindStringSubmatch(text[:min(len(text), releaseSpan)]), 1, "")
+	text := app.TextOf(root)
+	match := releasePattern.FindStringSubmatch(text[:min(len(text), releaseSpan)])
+	if len(match) < 2 {
+		return ""
+	}
+
+	return match[1]
 }
 
-// compareVersions orders two patch versions as semver does, except that a minor version's hotfix notes, "1.20.X",
-// sort below every other version of that minor version.
-func compareVersions(first, second string) int {
-	hotfixFirst, hotfixSecond := strings.HasSuffix(first, ".X"), strings.HasSuffix(second, ".X")
-	first, second = strings.TrimSuffix(first, ".X"), strings.TrimSuffix(second, ".X")
-	if minors := semver.Compare(semver.MajorMinor("v"+first), semver.MajorMinor("v"+second)); minors != 0 {
-		return minors
-	}
-	if hotfixFirst != hotfixSecond {
-		return lo.Ternary(hotfixFirst, -1, 1)
-	}
-	return semver.Compare("v"+first, "v"+second)
-}
-
-// hasModding reports whether a page has a heading that holds the word "Modding".
+// hasModding reports whether a heading of the page holds the word Modding.
 func hasModding(root *html.Node) bool {
 	for node := range root.Descendants() {
-		if elements[node.DataAtom].heading && strings.Contains(textOf(node), "Modding") {
+		if app.LevelOf(node) > 0 && strings.Contains(app.TextOf(node), "Modding") {
 			return true
 		}
 	}
+
 	return false
 }

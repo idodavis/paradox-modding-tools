@@ -10,12 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
@@ -55,7 +54,8 @@ var (
 	modCoatPath   = filepath.Join("common", "coat_of_arms", "coat_of_arms", "d_coats.txt")
 )
 
-// listsPath is the file the fixture install gets for its template lists, from the install's folder.
+// listsPath is the file the fixture install gets for its template lists, from
+// the install's folder.
 var listsPath = filepath.Join("game", "common", "coat_of_arms", "template_lists", "v_lists.txt")
 
 // listsText is what the fixture install's template lists file holds.
@@ -75,7 +75,8 @@ const listsText = `coat_of_arms_template_lists = {
 }
 `
 
-// modFiles are the files the fixture mod adds: windows, types and templates, and coats.
+// modFiles are the files the fixture mod adds: windows, types and templates,
+// and coats.
 var modFiles = map[string]string{
 	modWindowPath: `template d_tint {
 	alpha = 0.5
@@ -195,7 +196,8 @@ d_alias = d_parent
 `,
 }
 
-// createApp makes the application the workspace service sends its events through, once for the whole test run.
+// createApp makes the application the workspace service sends its events
+// through, once for the whole test run.
 var createApp = sync.OnceFunc(func() { application.New(application.Options{}) })
 
 // resolveFixture returns the absolute path of a folder under internal/testdata.
@@ -208,7 +210,8 @@ func resolveFixture(t *testing.T, parts ...string) string {
 	return dir
 }
 
-// createMod copies the CK3 fixture mod into a temporary folder, adds the given files and returns its record.
+// createMod copies the CK3 fixture mod into a temporary folder, adds the given
+// files and returns its record.
 func createMod(t *testing.T, added map[string]string) app.Mod {
 	t.Helper()
 	dir := t.TempDir()
@@ -219,8 +222,8 @@ func createMod(t *testing.T, added map[string]string) app.Mod {
 	return app.Mod{ID: modID, Dir: dir}
 }
 
-// createInstall copies the CK3 fixture install into a temporary folder, adds a file of template lists and returns its
-// folder.
+// createInstall copies the CK3 fixture install into a temporary folder, adds a
+// file of template lists and returns its folder.
 func createInstall(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -245,7 +248,8 @@ func writeFiles(t *testing.T, dir string, added map[string]string) {
 	}
 }
 
-// openService opens a workspace on an install with the given mods and returns the draw service over it.
+// openService opens a workspace on an install with the given mods and returns
+// the draw service over it.
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	createApp()
@@ -273,38 +277,72 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	return &Service{Workspace: wsp}
 }
 
-// openFixture opens a copy of the CK3 fixture install with the fixture mod, and returns the service with the path of
-// the install's GUI file and the folder of the mod.
+// openFixture opens a copy of the CK3 fixture install with the fixture mod, and
+// returns the service with the path of the install's GUI file and the folder of
+// the mod.
 func openFixture(t *testing.T) (drw *Service, installFile, modDir string) {
 	t.Helper()
 	mod, install := createMod(t, modFiles), createInstall(t)
 	return openService(t, "ck3", install, mod), filepath.Join(install, "game", "gui", "v_window.gui"), mod.Dir
 }
 
-// findWidget returns the widget of a window with the given name, and fails the test if it has none.
+// findWidget returns the widget of a window with the given name, and fails the
+// test if it has none.
 func findWidget(t *testing.T, window Window, name string) Widget {
 	t.Helper()
-	widget, ok := lo.Find(window.Widgets, func(widget Widget) bool { return widget.Name == name })
-	if !ok {
+	position := slices.IndexFunc(window.Widgets, func(widget Widget) bool { return widget.Name == name })
+	if position < 0 {
 		t.Fatalf("window %s has no widget %s", window.Name, name)
 	}
-	return widget
+	return window.Widgets[position]
 }
 
-// listChildNames returns the names of the widgets directly inside a widget, in order.
+// listChildNames returns the names of the widgets directly inside a widget, in
+// order.
 func listChildNames(window Window, parent int32) []string {
-	return lo.FilterMap(window.Widgets, func(widget Widget, _ int) (string, bool) {
-		return widget.Name, widget.Parent == parent
-	})
+	var names []string
+	for _, widget := range window.Widgets {
+		if widget.Parent == parent {
+			names = append(names, widget.Name)
+		}
+	}
+	return names
 }
 
 // listNames returns the names of the widgets of a window.
 func listNames(window Window) []string {
-	return lo.Map(window.Widgets, func(widget Widget, _ int) string { return widget.Name })
+	names := make([]string, len(window.Widgets))
+	for position, widget := range window.Widgets {
+		names[position] = widget.Name
+	}
+	return names
 }
 
-// makeEditor returns a function that applies the editor's edits to a text and parses the result again. It fails the
-// test if the edits are an error or leave the text with a parse error.
+// mustResolveCoat resolves a coat with no picks, and fails the test on an
+// error.
+func mustResolveCoat(t *testing.T, drw *Service, path, name string) Coat {
+	t.Helper()
+	coat, err := drw.ResolveCoat(path, name, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return coat
+}
+
+// mustFindChild returns the child of a statement with a key, and fails the
+// test if there is none.
+func mustFindChild(t *testing.T, tree *jomini.Tree, parent int32, key string) int32 {
+	t.Helper()
+	child, ok := tree.FindChild(parent, key)
+	if !ok {
+		t.Fatalf("statement %d has no %s", parent, key)
+	}
+	return child
+}
+
+// makeEditor returns a function that applies the editor's edits to a text and
+// parses the result again. It fails the test if the edits are an error or leave
+// the text with a parse error.
 func makeEditor(t *testing.T, text string) func(edits []lsp.Edit, err error) (string, *jomini.Tree) {
 	t.Helper()
 	return func(edits []lsp.Edit, err error) (string, *jomini.Tree) {
@@ -313,39 +351,46 @@ func makeEditor(t *testing.T, text string) func(edits []lsp.Edit, err error) (st
 	}
 }
 
-// applyEdits returns a text with the editor's edits applied and parsed again. It fails the test if the edits are an
-// error or leave the text with a parse error.
+// applyEdits returns a text with the editor's edits applied and parsed again.
+// It fails the test if the edits are an error or leave the text with a parse
+// error.
 func applyEdits(t *testing.T, text string, edits []lsp.Edit, err error) (string, *jomini.Tree) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines := jomini.NewLines(text)
-	converted := lo.Map(edits, func(edit lsp.Edit, _ int) jomini.Edit {
-		return jomini.Edit{
+	converted := make([]jomini.Edit, len(edits))
+	for position, edit := range edits {
+		converted[position] = jomini.Edit{
 			Span: jomini.Span{
-				Start: lsp.ToOffset(text, lines, edit.Range.StartLine, edit.Range.StartColumn),
-				End:   lsp.ToOffset(text, lines, edit.Range.EndLine, edit.Range.EndColumn),
+				Start: jomini.ToOffset(text, lines, edit.Range.StartLine, edit.Range.StartColumn),
+				End:   jomini.ToOffset(text, lines, edit.Range.EndLine, edit.Range.EndColumn),
 			},
 			Text: edit.Text,
 		}
-	})
+	}
 	edited := jomini.ApplyEdits(text, converted)
 	tree := jomini.Parse(edited)
-	if len(tree.Errors) != 0 {
-		t.Fatalf("the edited file has errors %v: %s", tree.Errors, edited)
+	if len(tree.Problems) != 0 {
+		t.Fatalf("the edited file has problems %v: %s", tree.Problems, edited)
 	}
 	return edited, tree
 }
 
-// listKeys returns the keys written directly inside a top-level statement of a text.
-func listKeys(tree *jomini.Tree, name string) []string {
-	return lo.Map(slices.Collect(tree.Children(lo.Must(tree.FindChild(0, name)))), func(child int32, _ int) string {
-		return tree.Text(tree.Statements[child].Key)
-	})
+// listKeys returns the keys written directly inside a top-level statement of a
+// text, and fails the test if there is no such statement.
+func listKeys(t *testing.T, tree *jomini.Tree, name string) []string {
+	t.Helper()
+	var keys []string
+	for child := range tree.Children(mustFindChild(t, tree, 0, name)) {
+		keys = append(keys, tree.Text(tree.Statements[child].Key))
+	}
+	return keys
 }
 
-// openCoatFile opens the fixture and returns the service, the path of the mod's coat file and its text.
+// openCoatFile opens the fixture and returns the service, the path of the mod's
+// coat file and its text.
 func openCoatFile(t *testing.T) (drw *Service, coatFile, text string) {
 	t.Helper()
 	drw, _, modDir := openFixture(t)
@@ -357,8 +402,9 @@ func openCoatFile(t *testing.T) (drw *Service, coatFile, text string) {
 	return drw, coatFile, string(data)
 }
 
-// TestResolveWindowAppliesTypesTemplatesAndOverrides checks a widget made of a type, a template and an override, and
-// that each property is the last written, with where it was written.
+// TestResolveWindowAppliesTypesTemplatesAndOverrides checks a widget made of a
+// type, a template and an override, and that each property is the last written,
+// with where it was written.
 func TestResolveWindowAppliesTypesTemplatesAndOverrides(t *testing.T) {
 	drw, installFile, _ := openFixture(t)
 	window, err := drw.ResolveWindow(installFile, "v_layout_window")
@@ -369,7 +415,12 @@ func TestResolveWindowAppliesTypesTemplatesAndOverrides(t *testing.T) {
 		t.Fatalf("window %s: %d widgets, root %+v", window.Name, len(window.Widgets), window.Widgets[0])
 	}
 	box := window.Widgets[1]
-	inside := lo.FilterMap(window.Widgets, func(widget Widget, _ int) (string, bool) { return widget.Type, widget.Parent == box.ID })
+	var inside []string
+	for _, widget := range window.Widgets {
+		if widget.Parent == box.ID {
+			inside = append(inside, widget.Type)
+		}
+	}
 	if want := []string{typeButton, typeButton, typeLabel, "icon", "vbox", typeWidget, typeWidget}; box.Type != "v_box" ||
 		box.Row.Holding != "column" || !slices.Equal(inside, want) {
 		t.Errorf("box: type %s, holding %s, children %v", box.Type, box.Row.Holding, inside)
@@ -407,8 +458,9 @@ func TestResolveWindowAppliesTypesTemplatesAndOverrides(t *testing.T) {
 	}
 }
 
-// TestResolveWindowPassesOverridesDown checks that an override reaches the types of a widget's children, that a type is
-// found written in another case, and that a type that holds itself nests once.
+// TestResolveWindowPassesOverridesDown checks that an override reaches the
+// types of a widget's children, that a type is found written in another case,
+// and that a type that holds itself nests once.
 func TestResolveWindowPassesOverridesDown(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -429,8 +481,9 @@ func TestResolveWindowPassesOverridesDown(t *testing.T) {
 	}
 }
 
-// TestResolveWindowOrdersChildrenAndOpensStates checks the order of a widget's children, that an attachment is not a
-// child, and that the end values of an opening state are the widget's own.
+// TestResolveWindowOrdersChildrenAndOpensStates checks the order of a widget's
+// children, that an attachment is not a child, and that the end values of an
+// opening state are the widget's own.
 func TestResolveWindowOrdersChildrenAndOpensStates(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	window, err := drw.ResolveWindow(filepath.Join(modDir, modWindowPath), "d_order_window")
@@ -441,7 +494,7 @@ func TestResolveWindowOrdersChildrenAndOpensStates(t *testing.T) {
 	if got, want := listChildNames(window, holder.ID), []string{"d_label", "d_plain", "d_slash", "d_state", "d_item", "d_row_item"}; !slices.Equal(got, want) {
 		t.Errorf("children %v, want %v", got, want)
 	}
-	if label := findWidget(t, window, "d_label"); label.Role != game.GUI.Slots["buttontext"].Role {
+	if label := findWidget(t, window, "d_label"); label.Role != widgetSlots["buttontext"].Role {
 		t.Errorf("label %+v", label)
 	}
 	if file := filepath.ToSlash(findWidget(t, window, "d_slash").Textures["texture"]); !strings.HasSuffix(file, "gfx/interface/v_bg.dds") {
@@ -452,8 +505,9 @@ func TestResolveWindowOrdersChildrenAndOpensStates(t *testing.T) {
 	}
 }
 
-// TestResolveWindowDrawsTypesAndTemplatesAlone checks that a window wins over a type of its name, a type is drawn as a
-// widget of it, and a template as a plain widget that uses it.
+// TestResolveWindowDrawsTypesAndTemplatesAlone checks that a window wins over a
+// type of its name, a type is drawn as a widget of it, and a template as a
+// plain widget that uses it.
 func TestResolveWindowDrawsTypesAndTemplatesAlone(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -481,8 +535,8 @@ func TestResolveWindowDrawsTypesAndTemplatesAlone(t *testing.T) {
 	}
 }
 
-// TestResolveWindowMarksMissingTemplate checks that a template nothing defines is a property marked missing, and one
-// the file defines is applied.
+// TestResolveWindowMarksMissingTemplate checks that a template nothing defines
+// is a property marked missing, and one the file defines is applied.
 func TestResolveWindowMarksMissingTemplate(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -490,10 +544,13 @@ func TestResolveWindowMarksMissingTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	missing := lo.Filter(slices.Collect(window.listProperties(window.Widgets[0])), func(property Property, _ int) bool {
-		return property.Origin == originMissing
-	})
-	if len(missing) != 1 || missing[0].Key != game.GUI.TemplateCalls || missing[0].Value != "d_nowhere" {
+	var missing []Property
+	for property := range window.listProperties(window.Widgets[0]) {
+		if property.Origin == originMissing {
+			missing = append(missing, property)
+		}
+	}
+	if len(missing) != 1 || missing[0].Key != lang.GUITemplateCalls || missing[0].Value != "d_nowhere" {
 		t.Errorf("missing properties %+v", missing)
 	}
 	inner := findWidget(t, window, "d_inner")
@@ -505,7 +562,8 @@ func TestResolveWindowMarksMissingTemplate(t *testing.T) {
 	}
 }
 
-// TestResolveWindowShowsTextsAndBindings checks the texts a localization key, a data call and a raw text show.
+// TestResolveWindowShowsTextsAndBindings checks the texts a localization key, a
+// data call and a raw text show.
 func TestResolveWindowShowsTextsAndBindings(t *testing.T) {
 	drw, installFile, modDir := openFixture(t)
 	window, err := drw.ResolveWindow(installFile, "v_concepts")
@@ -538,8 +596,10 @@ func TestResolveWindowShowsTextsAndBindings(t *testing.T) {
 	}
 }
 
-// TestEvaluateStatesHidesByPick checks the groups a window's conditions make, the values the window opens with, that a
-// pick changes which widgets are hidden, and that a choice between two values gives the one its condition chooses.
+// TestEvaluateStatesHidesByPick checks the groups a window's conditions make,
+// the values the window opens with, that a pick changes which widgets are
+// hidden, and that a choice between two values gives the one its condition
+// chooses.
 func TestEvaluateStatesHidesByPick(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -571,7 +631,11 @@ func TestEvaluateStatesHidesByPick(t *testing.T) {
 		t.Errorf("values %v", states.Values)
 	}
 	names := func(hidden []int32) []string {
-		return lo.Map(hidden, func(id int32, _ int) string { return window.Widgets[id].Name })
+		names := make([]string, len(hidden))
+		for position, id := range hidden {
+			names[position] = window.Widgets[id].Name
+		}
+		return names
 	}
 	want := []string{"d_both", "d_outer", "d_inner", "d_off", "d_parent"}
 	if got := names(states.Hidden); !slices.Equal(got, want) {
@@ -592,8 +656,8 @@ func TestEvaluateStatesHidesByPick(t *testing.T) {
 	}
 }
 
-// TestRevealPicksShowWidget checks that the picks that reveal a widget satisfy the conditions above it, and that
-// contradicting conditions give no picks.
+// TestRevealPicksShowWidget checks that the picks that reveal a widget satisfy
+// the conditions above it, and that contradicting conditions give no picks.
 func TestRevealPicksShowWidget(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile := filepath.Join(modDir, modWindowPath)
@@ -625,8 +689,9 @@ func TestRevealPicksShowWidget(t *testing.T) {
 	}
 }
 
-// TestResolveCoatReadsLayersParentsAndLists checks a coat's layers, colors and instances, a coat with a parent, one
-// that is the name of another, and the option a template list draws.
+// TestResolveCoatReadsLayersParentsAndLists checks a coat's layers, colors and
+// instances, a coat with a parent, one that is the name of another, and the
+// option a template list draws.
 func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	coatFile := filepath.Join(modDir, modCoatPath)
@@ -638,8 +703,8 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 		t.Fatalf("coat %+v", coat)
 	}
 	pattern, emblem := coat.Layers[0], coat.Layers[1]
-	wantColors := []string{game.Coat.Fallback, cssRed, cssBlue, "", "", ""}
-	if pattern.Role != game.Coat.PatternKey || pattern.Texture != patternFile || !strings.HasSuffix(filepath.ToSlash(pattern.Path), "patterns/v_pattern.dds") ||
+	wantColors := []string{fallbackColor, cssRed, cssBlue, "", "", ""}
+	if pattern.Role != lang.CoatPatternKey || pattern.Texture != patternFile || !strings.HasSuffix(filepath.ToSlash(pattern.Path), "patterns/v_pattern.dds") ||
 		!slices.Equal(pattern.Colors, wantColors) {
 		t.Errorf("pattern %+v", pattern)
 	}
@@ -673,11 +738,11 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 		t.Errorf("the heaviest option outside the special selection: %+v", heavy)
 	}
 	if equal.Texture != "first.dds" || equal.Lists[0].Picked != "first.dds" || listed.Layers[2].Texture != "missing:d_nowhere_list" ||
-		listed.Layers[2].Path != "" || listed.Layers[3].Role != game.Coat.SubKey || listed.Layers[3].Sub.Name != coatParent ||
+		listed.Layers[2].Path != "" || listed.Layers[3].Role != subKey || listed.Layers[3].Sub.Name != coatParent ||
 		len(listed.Layers[3].Sub.Layers) != 2 || listed.Layers[3].Instances[0].Position != [2]float64{0.5, 0} {
 		t.Errorf("a list of equal weights, a list that is missing and a sub: %+v", listed.Layers)
 	}
-	if len(equal.Instances) != 1 || equal.Instances[0].Range != (lsp.Range{}) {
+	if len(equal.Instances) != 1 || equal.Instances[0].Range != (jomini.Range{}) {
 		t.Errorf("a default instance has no range: %+v", equal.Instances)
 	}
 	picked, err := drw.ResolveCoat(coatFile, "d_listed", map[string]string{heavy.Lists[0].ID: otherFile})
@@ -689,8 +754,9 @@ func TestResolveCoatReadsLayersParentsAndLists(t *testing.T) {
 	}
 }
 
-// TestEditPropertiesReplacesOrAddsKey checks that an edit replaces a key the block writes and adds one it does not, and
-// that a range where no block starts is an error.
+// TestEditPropertiesReplacesOrAddsKey checks that an edit replaces a key the
+// block writes and adds one it does not, and that a range where no block starts
+// is an error.
 func TestEditPropertiesReplacesOrAddsKey(t *testing.T) {
 	drw, _, modDir := openFixture(t)
 	modFile, coatFile := filepath.Join(modDir, modWindowPath), filepath.Join(modDir, modCoatPath)
@@ -712,17 +778,17 @@ func TestEditPropertiesReplacesOrAddsKey(t *testing.T) {
 		t.Errorf("value replaced in a block on one line: %s", edited)
 	}
 	edit := makeEditor(t, string(coatText))
-	listed := lo.Must(drw.ResolveCoat(coatFile, "d_listed", nil))
-	_, replaced := edit(drw.EditProperties(coatFile, []Setting{{Block: listed.Range, Key: game.Coat.PatternKey, Value: `"v_pattern.dds"`}}))
-	pattern := replaced.Statements[lo.Must(replaced.FindChild(lo.Must(replaced.FindChild(0, "d_listed")), game.Coat.PatternKey))]
+	listed := mustResolveCoat(t, drw, coatFile, "d_listed")
+	_, replaced := edit(drw.EditProperties(coatFile, []Setting{{Block: listed.Range, Key: lang.CoatPatternKey, Value: `"v_pattern.dds"`}}))
+	pattern := replaced.Statements[mustFindChild(t, replaced, mustFindChild(t, replaced, 0, "d_listed"), lang.CoatPatternKey)]
 	if !pattern.Tag.IsEmpty() || replaced.Text(pattern.Value) != `"v_pattern.dds"` {
 		t.Errorf("a list replaced by a plain value, tag and all: %q", replaced.Text(pattern.Span))
 	}
-	parent := lo.Must(drw.ResolveCoat(coatFile, coatParent, nil))
+	parent := mustResolveCoat(t, drw, coatFile, coatParent)
 	emblem, instance := parent.Layers[1], parent.Layers[1].Instances[0]
-	_, retextured := edit(drw.EditProperties(coatFile, []Setting{{Block: emblem.Range, Key: game.Coat.TextureKey, Value: `"v_textured.dds"`}}))
-	block := lo.Must(retextured.FindChild(lo.Must(retextured.FindChild(0, coatParent)), emblemKey))
-	if got := retextured.Unquoted(retextured.Statements[lo.Must(retextured.FindChild(block, game.Coat.TextureKey))].Value); got != "v_textured.dds" {
+	_, retextured := edit(drw.EditProperties(coatFile, []Setting{{Block: emblem.Range, Key: lang.CoatTextureKey, Value: `"v_textured.dds"`}}))
+	block := mustFindChild(t, retextured, mustFindChild(t, retextured, 0, coatParent), emblemKey)
+	if got := retextured.Unquoted(retextured.Statements[mustFindChild(t, retextured, block, lang.CoatTextureKey)].Value); got != "v_textured.dds" {
 		t.Errorf("texture after the edit: %s", got)
 	}
 	deeper, _ := edit(drw.EditProperties(coatFile, []Setting{{Block: instance.Range, Key: "depth", Value: "5"}}))
@@ -734,7 +800,7 @@ func TestEditPropertiesReplacesOrAddsKey(t *testing.T) {
 		t.Errorf("a color added to the emblem, in the file's indentation:\n%s", added)
 	}
 	_, colored := edit(drw.EditProperties(coatFile, []Setting{{Block: parent.Range, Key: "color3", Value: `"white"`}}))
-	if _, ok := colored.FindChild(lo.Must(colored.FindChild(0, coatParent)), "color3"); !ok {
+	if _, ok := colored.FindChild(mustFindChild(t, colored, 0, coatParent), "color3"); !ok {
 		t.Error("a color was not added to the coat")
 	}
 	if _, err := drw.EditProperties(coatFile, []Setting{{Block: parent.Layers[0].Range, Key: slotOne, Value: "red"}}); err == nil {
@@ -742,30 +808,31 @@ func TestEditPropertiesReplacesOrAddsKey(t *testing.T) {
 	}
 }
 
-// TestEditCoatLayers checks that each edit of a coat's layers leaves the coat as the edit says, and that a second
-// pattern and a coat written as another's name are errors.
+// TestEditCoatLayers checks that each edit of a coat's layers leaves the coat
+// as the edit says, and that a second pattern and a coat written as another's
+// name are errors.
 func TestEditCoatLayers(t *testing.T) {
 	drw, coatFile, text := openCoatFile(t)
 	edit := makeEditor(t, text)
 	_, added := edit(drw.AddLayer(coatFile, coatParent, emblemKey, 1))
-	if got := listKeys(added, coatParent); !slices.Equal(got, []string{game.Coat.PatternKey, emblemKey, slotOne, slotTwo, emblemKey}) {
+	if got := listKeys(t, added, coatParent); !slices.Equal(got, []string{lang.CoatPatternKey, emblemKey, slotOne, slotTwo, emblemKey}) {
 		t.Errorf("keys after adding an emblem: %v", got)
 	}
-	emblem := lo.Must(drw.ResolveCoat(coatFile, coatParent, nil)).Layers[1]
+	emblem := mustResolveCoat(t, drw, coatFile, coatParent).Layers[1]
 	_, removed := edit(drw.RemoveBlock(coatFile, emblem.Range))
-	if got := listKeys(removed, coatParent); !slices.Equal(got, []string{game.Coat.PatternKey, slotOne, slotTwo}) {
+	if got := listKeys(t, removed, coatParent); !slices.Equal(got, []string{lang.CoatPatternKey, slotOne, slotTwo}) {
 		t.Errorf("keys after removing the emblem: %v", got)
 	}
 	_, moved := edit(drw.MoveLayer(coatFile, coatParent, 1, 0))
-	if got := listKeys(moved, coatParent); !slices.Equal(got, []string{emblemKey, game.Coat.PatternKey, slotOne, slotTwo}) {
+	if got := listKeys(t, moved, coatParent); !slices.Equal(got, []string{emblemKey, lang.CoatPatternKey, slotOne, slotTwo}) {
 		t.Errorf("keys after moving the emblem first: %v", got)
 	}
 	_, later := edit(drw.MoveLayer(coatFile, coatParent, 0, 1))
-	if got := listKeys(later, coatParent); !slices.Equal(got, []string{slotOne, slotTwo, emblemKey, game.Coat.PatternKey}) {
+	if got := listKeys(t, later, coatParent); !slices.Equal(got, []string{slotOne, slotTwo, emblemKey, lang.CoatPatternKey}) {
 		t.Errorf("keys after moving the pattern last: %v", got)
 	}
 	for name, err := range map[string]error{
-		"a second pattern":      errOf(drw.AddLayer(coatFile, coatParent, game.Coat.PatternKey, 0)),
+		"a second pattern":      errOf(drw.AddLayer(coatFile, coatParent, lang.CoatPatternKey, 0)),
 		"a layer after nothing": errOf(drw.AddLayer(coatFile, coatParent, emblemKey, 9)),
 		"a layer of an alias":   errOf(drw.AddLayer(coatFile, "d_alias", emblemKey, 0)),
 	} {
@@ -780,8 +847,9 @@ func errOf(_ []lsp.Edit, err error) error {
 	return err
 }
 
-// TestResolveWindowsOnInstalls resolves every window of each real install that PMT_TEST_INSTALL_<GAME> names, with no
-// mods, and evaluates its states. A window that fails to resolve fails the test.
+// TestResolveWindowsOnInstalls resolves every window of each real install that
+// PMT_TEST_INSTALL_<GAME> names, with no mods, and evaluates its states. A
+// window that fails to resolve fails the test.
 func TestResolveWindowsOnInstalls(t *testing.T) {
 	for _, gameID := range installGames {
 		t.Run(gameID, func(t *testing.T) {
@@ -807,8 +875,9 @@ func TestResolveWindowsOnInstalls(t *testing.T) {
 	}
 }
 
-// TestResolveCoatsOnInstalls resolves every coat of each real install that PMT_TEST_INSTALL_<GAME> names, with no
-// mods. A coat that fails to resolve fails the test.
+// TestResolveCoatsOnInstalls resolves every coat of each real install that
+// PMT_TEST_INSTALL_<GAME> names, with no mods. A coat that fails to resolve
+// fails the test.
 func TestResolveCoatsOnInstalls(t *testing.T) {
 	for _, gameID := range installGames {
 		t.Run(gameID, func(t *testing.T) {
@@ -845,7 +914,8 @@ type gateTotals struct {
 	missing                                                       map[string][]string
 }
 
-// add resolves every window of a GUI file, evaluates its states and counts the result.
+// add resolves every window of a GUI file, evaluates its states and counts the
+// result.
 func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 	t.Helper()
 	if totals.missing == nil {
@@ -857,7 +927,7 @@ func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 	}
 	ws, _ := drw.Workspace.Session()
 	for _, drawable := range drawables {
-		if drawable.Database != game.GUI.WidgetDatabase {
+		if drawable.Database != lang.GUIWidgetDatabase {
 			continue
 		}
 		window, err := drw.ResolveWindow(path, drawable.Name)
@@ -877,8 +947,9 @@ func (totals *gateTotals) add(t *testing.T, drw *Service, path string) {
 	}
 }
 
-// count adds the missing types and templates, texts and textures of one of a window's widgets to the totals. A picture
-// written as a data call is one only the running game answers.
+// count adds the missing types and templates, texts and textures of one of a
+// window's widgets to the totals. A picture written as a data call is one only
+// the running game answers.
 func (totals *gateTotals) count(ws *workspace.Session, window *Window, path string, widget Widget) {
 	mods := resolveIndex(ws, path)
 	for property := range window.listProperties(widget) {
@@ -887,21 +958,30 @@ func (totals *gateTotals) count(ws *workspace.Session, window *Window, path stri
 		case property.Origin == originMissing:
 			label := property.Key + " " + property.Value
 			totals.missing[label] = append(totals.missing[label], path)
-		case slices.Contains(game.GUI.PictureKeys, property.Key) && !strings.HasPrefix(property.Value, "["):
+		case slices.Contains(pictureKeys, property.Key) && !strings.HasPrefix(property.Value, "["):
 			totals.paths++
-			totals.pathsMissing += lo.Ternary(textured, 0, 1)
-		case slices.Contains(game.GUI.PictureKeys, property.Key):
+			totals.pathsMissing += toCount(!textured)
+		case slices.Contains(pictureKeys, property.Key):
 			totals.calls++
-			totals.callsMissing += lo.Ternary(textured, 0, 1)
+			totals.callsMissing += toCount(!textured)
 		case isLocalized(property.Key) && !strings.Contains(property.Value, "["):
 			_, _, listed := ws.LookupText(mods, property.Value)
 			totals.texts++
-			totals.textsMissing += lo.Ternary(listed, 0, 1)
+			totals.textsMissing += toCount(!listed)
 		}
 	}
 }
 
-// log prints the totals, then each missing type or template with the files that use it.
+// toCount returns 1 for true and 0 for false.
+func toCount(holds bool) int {
+	if holds {
+		return 1
+	}
+	return 0
+}
+
+// log prints the totals, then each missing type or template with the files that
+// use it.
 func (totals *gateTotals) log(t *testing.T, elapsed time.Duration) {
 	t.Helper()
 	t.Logf("%d windows, %d errors, %d widgets, %d groups, %d hidden as the windows open, %s", totals.windows, totals.errors,
@@ -909,11 +989,10 @@ func (totals *gateTotals) log(t *testing.T, elapsed time.Duration) {
 	t.Logf("texts: %d found, %d not found; paths and icon names: %d found, %d not found; data calls: %d found, %d not found",
 		totals.texts-totals.textsMissing, totals.textsMissing, totals.paths-totals.pathsMissing, totals.pathsMissing,
 		totals.calls-totals.callsMissing, totals.callsMissing)
-	labels := lo.Keys(totals.missing)
-	slices.Sort(labels)
+	labels := slices.Sorted(maps.Keys(totals.missing))
 	t.Logf("%d missing types and templates", len(labels))
 	for _, label := range labels {
-		paths := lo.Uniq(totals.missing[label])
+		paths := slices.Compact(slices.Sorted(slices.Values(totals.missing[label])))
 		t.Logf("missing %s: %d times in %d files: %s", label, len(totals.missing[label]), len(paths), strings.Join(paths, ", "))
 	}
 }
@@ -950,22 +1029,22 @@ func (totals *coatTotals) count(coat Coat) {
 		totals.instances += len(layer.Instances)
 		totals.lists += len(layer.Lists)
 		switch layer.Role {
-		case game.Coat.PatternKey:
+		case lang.CoatPatternKey:
 			totals.patterns++
-		case game.Coat.SubKey:
+		case subKey:
 			totals.subs++
 			totals.count(*layer.Sub)
 		default:
 			totals.emblems++
 		}
-		if layer.Role != game.Coat.SubKey && layer.Texture != "" {
-			totals.found += lo.Ternary(layer.Path != "", 1, 0)
-			totals.lost += lo.Ternary(layer.Path == "", 1, 0)
+		if layer.Role != subKey && layer.Texture != "" {
+			totals.found += toCount(layer.Path != "")
+			totals.lost += toCount(layer.Path == "")
 		}
-		totals.missing += lo.Ternary(strings.HasPrefix(layer.Texture, missingList), 1, 0)
-		for _, color := range lo.Drop(layer.Colors, 1) {
-			totals.colored += lo.Ternary(color != "", 1, 0)
-			totals.uncolored += lo.Ternary(color == "", 1, 0)
+		totals.missing += toCount(strings.HasPrefix(layer.Texture, missingList))
+		for _, color := range layer.Colors[min(1, len(layer.Colors)):] {
+			totals.colored += toCount(color != "")
+			totals.uncolored += toCount(color == "")
 		}
 	}
 }

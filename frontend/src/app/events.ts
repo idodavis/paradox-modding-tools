@@ -3,7 +3,7 @@ import { useQueryCache, type EntryKey } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { nextTick } from "vue";
 
-import { errorLogQuery, isGitStatus, keys } from "../queries";
+import { errorLogQuery, isGitStatus, keys, reviewsQuery } from "../queries";
 
 /**
  * An EventRow is what an event makes stale, from its data. A row that forgets empties the cached data and makes
@@ -26,8 +26,10 @@ const WORKSPACE_KEYS = [
   keys.health,
   keys.graph,
   keys.wiki,
+  keys.patch,
   keys.gits,
   keys.releases,
+  keys.reviews,
   keys.lsp,
   keys.search,
 ] as const;
@@ -35,7 +37,7 @@ const WORKSPACE_KEYS = [
 /** SECTIONS holds the queries each section of config.json feeds. */
 const SECTIONS: Record<string, readonly (readonly unknown[])[]> = {
   settings: [keys.settings, keys.folders],
-  workspaces: [keys.workspaces, keys.state, keys.health, keys.gits, keys.releases],
+  workspaces: [keys.workspaces, keys.state, keys.health, keys.patch, keys.gits, keys.releases],
   installs: [keys.installs, keys.state],
   agents: [keys.agents],
 };
@@ -52,7 +54,9 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
       keys.folders,
       keys.place(path),
       keys.draws,
-      ...(descriptor ? [keys.workspaces] : []),
+      keys.health,
+      keys.patch,
+      ...(descriptor ? [keys.workspaces, keys.releases] : []),
       ...useQueryCache()
         .getEntries({ key: keys.gits })
         .filter((entry) => isGitStatus(entry.key))
@@ -63,7 +67,9 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
   // The start page's reads of the repositories go stale last, after the reads they are made of.
   "git:changed": { stale: (dir) => [keys.git(dir), keys.repositoryWork] },
   "release:changed": { stale: (modId) => [keys.release(modId), keys.ownListings] },
-  "wiki:updated": { stale: () => [keys.wiki] },
+  "review:changed": { stale: (path) => [reviewsQuery.key, keys.baseline(path)] },
+  "wiki:updated": { stale: () => [keys.wiki, keys.patch] },
+  "patch:updated": { stale: () => [keys.patch, keys.health, keys.lsp, keys.workspaces] },
   "errorlog:changed": { stale: () => [errorLogQuery.key] },
   "game:exited": { stale: () => [keys.state] },
   "shell:started": { stale: () => [keys.shells] },

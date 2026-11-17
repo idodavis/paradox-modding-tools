@@ -25,17 +25,21 @@ const WAIT = 400;
  */
 export function markChanges(codeEditor: monaco.editor.IStandaloneCodeEditor, model: Model): () => void {
   const bars = codeEditor.createDecorationsCollection();
+  let isStopped = false;
   const mark = useDebounceFn(async () => {
+    if (isStopped) return;
+
     const isInRepository = !!useGitStore().findRoot(model.place);
     const changes = isInRepository
       ? await gitApi.DiffFile(model.place.path, model.model.getValue()).catch(() => [])
       : [];
-    bars.set((changes ?? []).map(toDecoration));
+    if (!isStopped) bars.set((changes ?? []).map(toDecoration));
   }, WAIT);
   void mark();
   const edits = model.model.onDidChangeContent(() => void mark());
   const stop = Events.On("git:changed", () => void mark());
   return () => {
+    isStopped = true;
     edits.dispose();
     stop();
     bars.clear();

@@ -1,4 +1,8 @@
-<!-- A Monaco editor over one Model, with the hover card, merge conflict links and a context menu. -->
+<!--
+  A Monaco editor over one Model, with the hover card, merge conflict links and
+  a context menu. While an agent's edits to the file are under review it is the
+  diff editor, with Keep and Undo over each change.
+-->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -13,20 +17,24 @@ import type { Card, Site } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 
 import {
+  canCopyToMod,
   compareWithFile,
   compareWithGame,
+  copyToMod,
   findCommand,
   findGameCopy,
   findKbds,
   findOverride,
+  hideDisabled,
   overrideEntry,
 } from "../../app/commands";
-import { copiesQuery, detailQuery, loadQuery, reportQuery, wikiPagesQuery } from "../../queries";
+import { baselineQuery, copiesQuery, detailQuery, loadQuery, reportQuery, wikiPagesQuery } from "../../queries";
 import { useAgentStore } from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
 import { COMMAND_BUS, useWindowsStore, type WikiLookup } from "../../stores/windows";
 import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import { DIFF_OPTIONS } from "../../ui/CompareView.vue";
 import HoverCard from "../../ui/HoverCard.vue";
 import { markChanges } from "./editor/changes";
 import { decorate } from "./editor/conflicts";
@@ -34,11 +42,18 @@ import { attachHover } from "./editor/hover";
 import type { Model } from "./editor/models";
 import { editorOptions } from "./editor/monaco";
 import { SHOW_DETAILS } from "./editor/providers";
+import { attachReview, closeReview, followBaseline, keepChange, undoChange, type LineChange } from "./editor/review";
 
 const { model, active } = defineProps<{ model: Model; active: boolean }>();
 
 /** JUMP_LINES is how many lines the caret must move at once for the history to record the place it left. */
 const JUMP_LINES = 10;
+/** The keys the hover card's foot names, each with what it does. */
+const HOVER_KEYS = [
+  ["F12", "definition"],
+  ["Alt F12", "peek"],
+  ["Shift F12", "references"],
+];
 /** CARD_CONTENT places the hover card flush against the word and keeps the focus in the editor. */
 const CARD_CONTENT: PopoverProps["content"] = {
   side: "top",
@@ -56,6 +71,7 @@ const workspace = useWorkspaceStore();
 const commandBus = useEventBus(COMMAND_BUS);
 const host = useTemplateRef("host");
 const view = shallowRef<editor.IStandaloneCodeEditor>();
+const diff = shallowRef<editor.IStandaloneDiffEditor>();
 const hovering = shallowRef<ReturnType<typeof attachHover>>();
 const anchor = { getBoundingClientRect: () => hovering.value?.hover.value?.anchor ?? new DOMRect() };
 let stopChanges = () => {};
@@ -65,12 +81,13 @@ const { mutate: loadCaret, data: caretFacts } = useMutation({
   mutation: async () => {
     const caret = view.value?.getPosition() ?? { lineNumber: 1, column: 1 };
     const covering = model.problems.filter((problem) => Range.containsPosition(problem.range, caret));
-    const [card, fixes, override] = await Promise.all([
+    const [card, fixes, override, within] = await Promise.all([
       lsp.Hover(model.place.path, caret.lineNumber, caret.column),
       covering.length ? lsp.ListFixes(model.place.path, covering) : null,
       findOverride(model.place, caret.lineNumber, caret.column),
+      lsp.ListAncestors(model.place.path, caret.lineNumber, caret.column),
     ]);
-    return { card, fixes: fixes ?? [], override };
+    return { card, fixes: fixes ?? [], override, within: within ?? [] };
   },
 });
 const card = computed(() => caretFacts.value?.card);
@@ -98,7 +115,7 @@ const { data: pages } = useQuery(() => ({
 /** lookup is the card's wiki look-up: its lexicon row, else its file's first wiki page, else undefined. */
 const lookup = computed((): WikiLookup | undefined => {
   if (card.value?.lexicon) return { class: card.value.lexicon, name: card.value.title };
-  const title = pages.value?.[0]?.title;
+  const title = pages.value?.[0];
   return title ? { title } : undefined;
 });
 const { data: copies } = useQuery(() => ({
@@ -113,19 +130,70 @@ const { data: report } = useQuery(() => ({
   enabled: menuOpen.value && workspace.isOpen(),
 }));
 const hasFinding = computed(() =>
-  [report.value?.compatibility, ...(report.value?.mods ?? [])].some((group) =>
+  [report.value?.compatibility, report.value?.patch, ...(report.value?.mods ?? [])].some((group) =>
     group?.findings?.some((finding) => finding.name === card.value?.title),
   ),
 );
 
+const isUnderReview = computed(() => !!agent.findReview(model.place.path));
+const { data: baseline } = useQuery(() => ({
+  ...baselineQuery(model.place.path),
+  enabled: isUnderReview.value,
+}));
+// The baseline of the file while its review is on show, else undefined.
+const reviewBaseline = computed(() => (isUnderReview.value ? baseline.value : undefined));
+const reviewing = shallowRef<ReturnType<typeof attachReview>>();
+// The focus goes back to the editor, so that no key presses the next
+// change's button.
+const { mutate: keep } = useMutation({
+  mutation: (change: LineChange) => keepChange(model, change),
+  onSettled: () => view.value?.focus(),
+});
+const { mutate: undo } = useMutation({
+  mutation: (change: LineChange) => undoChange(model, change),
+  onSettled: () => view.value?.focus(),
+});
+// Whether the first change is still to be shown: the file was opened under
+// review, at its start, with no range asked.
+let isRevealing = false;
+
 onMounted(() => {
+  const isAsked = active && !!editorStore.findRequest(model.place.key);
+  isRevealing = isUnderReview.value && !isAsked && model.caret.line === 1 && model.caret.column === 1;
+  build();
+});
+onBeforeUnmount(teardown);
+
+/**
+ * build makes the editor of the file: the diff editor while its review is on
+ * show, else the plain editor.
+ */
+function build(): void {
   if (!host.value) return;
-  const codeEditor = editor.create(host.value, {
+
+  const options = {
     ...editorOptions(),
-    model: model.model,
     readOnly: model.place.readOnly,
     readOnlyMessage: { value: describeReadOnly(model.place) },
-  });
+  };
+  const text = reviewBaseline.value;
+  let codeEditor: editor.IStandaloneCodeEditor;
+  if (text === undefined) {
+    if (!isUnderReview.value) closeReview(model);
+    codeEditor = editor.create(host.value, { ...options, model: model.model });
+  } else {
+    diff.value = editor.createDiffEditor(host.value, {
+      ...options,
+      ...DIFF_OPTIONS,
+      renderSideBySide: false,
+      renderMarginRevertIcon: false,
+      hideUnchangedRegions: { enabled: false },
+    });
+    reviewing.value = attachReview(diff.value, model, text, isRevealing);
+    isRevealing = false;
+    codeEditor = diff.value.getModifiedEditor();
+  }
+
   const caret = { lineNumber: model.caret.line, column: model.caret.column };
   codeEditor.setPosition(caret);
   codeEditor.revealPositionInCenterIfOutsideViewport(caret);
@@ -152,14 +220,30 @@ onMounted(() => {
   view.value = codeEditor;
   decorate(model);
   stopChanges = markChanges(codeEditor, model);
-});
-onBeforeUnmount(() => {
+}
+
+/** teardown takes everything off the editor and disposes it. */
+function teardown(): void {
   hovering.value?.detach();
   stopChanges();
-  view.value?.dispose();
-});
+  reviewing.value?.detach();
+  reviewing.value = undefined;
+  (diff.value ?? view.value)?.dispose();
+  diff.value = undefined;
+  view.value = undefined;
+}
 
-watch(editorOptions, (options) => view.value?.updateOptions(options));
+// The editor turns into the other kind as the review starts or ends. The caret
+// is kept in the model.
+watch(
+  () => reviewBaseline.value !== undefined,
+  () => {
+    teardown();
+    build();
+  },
+);
+watch(reviewBaseline, (text) => text !== undefined && followBaseline(model, text));
+watch(editorOptions, (options) => (diff.value ?? view.value)?.updateOptions(options));
 // A range requested when the file was shown is selected once, in the active group's editor. The editor takes focus
 // unless Follow the agent opened the file, so the focus stays where the user is typing.
 watch(
@@ -185,8 +269,11 @@ function listReferences(heading: string, sites: Site[]): void {
 
 /** describeReadOnly returns what the editor says when typing is tried in a read only file. */
 function describeReadOnly(place: Place): string {
-  if (place.origin === VANILLA) return "Game files are read only. To change this, use Override, or Copy into a mod.";
-  return `${workspace.originName(place.origin)} is Steam's copy of a Workshop mod, so PMT keeps it read only. Make a mod for your changes.`;
+  if (place.origin === VANILLA)
+    return "Game files are read only. Right-click to override an entry in a mod, or to copy the file into one.";
+  const isWorkshop = workspace.listMods().some((mod) => mod.id === place.origin && mod.workshop);
+  const advice = isWorkshop ? "" : " If it is your own mod, switch off External mod on its card in Settings.";
+  return `${workspace.originName(place.origin)} is an external mod, so PMT keeps it read only. Make a mod for your changes.${advice}`;
 }
 
 /** keepMovedFocus stops the menu from taking focus back after an item moved it to another text box. */
@@ -214,8 +301,8 @@ function replaceSelections(text: string): void {
   );
 }
 
-// The name of the entry the caret is in, or "" if the card names none.
-const entry = computed(() => card.value?.within?.[0] ?? "");
+// The name of the entry the caret is in, or "" if it is in none.
+const entry = computed(() => caretFacts.value?.within[0] ?? "");
 
 const groups = computed<ContextMenuItem[][]>(() => [
   [
@@ -231,6 +318,12 @@ const groups = computed<ContextMenuItem[][]>(() => [
           },
         ]
       : []),
+    {
+      label: "Copy this file into a mod…",
+      icon: "i-lucide-copy-plus",
+      disabled: !model.place.readOnly || !canCopyToMod(model.place),
+      onSelect: () => copyToMod(model.place),
+    },
     ...(caretFacts.value?.fixes ?? []).map((fix) => ({
       label: fix.title,
       icon: "i-lucide-lightbulb",
@@ -304,7 +397,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
   ],
   [{ label: "Command palette", kbds: findKbds("palette.open"), onSelect: () => commandBus.emit("palette.open") }],
 ]);
-const menu = computed(() => groups.value.filter((group) => group.length));
+const menu = computed(() => hideDisabled(groups.value));
 </script>
 
 <template>
@@ -317,6 +410,29 @@ const menu = computed(() => groups.value.filter((group) => group.length));
   >
     <div class="flex min-h-0 flex-1">
       <div ref="host" class="min-w-0 flex-1 border-s-12 border-(--bg-0)" />
+      <!--
+        Each change's toolbar is a widget of the editor. These buttons fill it.
+      -->
+      <Teleport v-for="bar in reviewing?.toolbars.value" :key="bar.id" :to="bar.node">
+        <div class="flex overflow-hidden rounded-md border border-default bg-elevated shadow-sm">
+          <UButton
+            label="Keep"
+            icon="i-lucide-check"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            @click="keep(bar.change)"
+          />
+          <UButton
+            label="Undo"
+            icon="i-lucide-undo-2"
+            size="xs"
+            color="error"
+            variant="ghost"
+            @click="undo(bar.change)"
+          />
+        </div>
+      </Teleport>
       <UPopover
         :open="!!hovering?.hover.value"
         :reference="anchor"
@@ -331,7 +447,21 @@ const menu = computed(() => groups.value.filter((group) => group.length));
             @mouseenter="hovering.hold(true)"
             @mouseleave="hovering.hold(false)"
           >
-            <HoverCard :card="hovering.hover.value.card" :problems="hovering.hover.value.problems" />
+            <HoverCard
+              :card="hovering.hover.value.card"
+              :problems="hovering.hover.value.problems"
+              class="w-max max-w-198"
+            >
+              <template #footer>
+                <span v-for="[key, action] in HOVER_KEYS" :key="key" class="flex items-center gap-1">
+                  <UKbd :value="key" />{{ action }}
+                </span>
+                <span v-if="hovering.hover.value.card?.node" class="flex items-center gap-1">
+                  <UKbd value="Ctrl Shift G" />graph
+                </span>
+                <span class="ms-auto">Right-click for more</span>
+              </template>
+            </HoverCard>
           </div>
         </template>
       </UPopover>

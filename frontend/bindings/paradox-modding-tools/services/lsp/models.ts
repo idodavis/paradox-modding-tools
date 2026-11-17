@@ -6,354 +6,285 @@
 import * as files$0 from "../../internal/files/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as index$0 from "../../internal/index/models.js";
+import * as jomini$0 from "../../internal/jomini/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as jomini$0 from "../../internal/jomini/models.js";
+import * as lang$0 from "../../internal/lang/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as schema$0 from "../../internal/schema/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as texture$0 from "../../internal/texture/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as workspace$0 from "../workspace/models.js";
 
 /**
- * A Card is a hover card: the facts about a key or a value, for the page to lay out.
+ * A Card is a hover card: what a key or a value is, and its facts.
  */
 export interface Card {
     "title": string;
 
     /**
-     * what it is: the database's singular, "effect", "keyword"
+     * What is what the word is, such as "effect". Class is a keyword's class,
+     * such as "logical", and "" for any other word.
      */
     "what": string;
-
-    /**
-     * an operator's class
-     */
     "class"?: string;
     "blurb"?: string;
 
     /**
-     * the game's own text for the word, in the workspace's language: a localization key's text, or the title of a definition
+     * Quote is the game's text for the word: a key's text or a definition's
+     * title.
      */
     "quote"?: string;
 
     /**
-     * what the key's value may be, in words
-     */
-    "takes"?: string;
-
-    /**
-     * whether a field is required: optional, always or conditional
-     */
-    "need"?: string;
-
-    /**
-     * the text the game shows as an entry's description
+     * Description is the game's description of a definition. Comment is the
+     * comment lines above it, without hashes.
      */
     "description"?: string;
-
-    /**
-     * the comment lines just above an entry, without their hashes
-     */
     "comment"?: string;
 
     /**
-     * the parameters a scripted effect or trigger takes, without dollars
+     * Rows are the card's facts, in the order rowLabels lists their labels.
      */
-    "parameters"?: string[] | null;
+    "rows"?: CardRow[] | null;
 
     /**
-     * the scripted effect or trigger a parameter is given to; "" for any other key
-     */
-    "callee"?: string;
-
-    /**
-     * the game's eight most written values for an undeclared field
-     */
-    "writes"?: string[] | null;
-
-    /**
-     * what a call of a scripted definition gives
-     */
-    "returns"?: string;
-
-    /**
-     * the kind of command a workspace's scripted definition acts as
-     */
-    "command"?: string;
-
-    /**
-     * the id of the lexicon class that lists it; "" for none
+     * Lexicon is the id of the lexicon class that lists the word, "" if none.
      */
     "lexicon"?: string;
 
     /**
-     * what its block holds, in words
-     */
-    "holds"?: string;
-
-    /**
-     * the scope its block runs in, where a command or link moves it
-     */
-    "leads"?: string;
-
-    /**
-     * the scope its value must be for a command or link with no block
-     */
-    "target"?: string;
-
-    /**
-     * a fact comes from dumps older than the install
+     * Stale is whether a fact comes from dumps older than the install, and
+     * Inferred whether one comes from the game's files only.
      */
     "stale"?: boolean;
+    "inferred": boolean;
 
     /**
-     * a branch of a random list: its percent of the branches' numbers
-     */
-    "weight"?: number;
-
-    /**
-     * the Event Graph's id of the name; "" if it is not drawn
+     * Node is the Event Graph's id of the name, "" if the graph does not draw
+     * it.
      */
     "node"?: string;
 
     /**
-     * the definition the position is in, then the blocks inside it
-     */
-    "within"?: string[] | null;
-
-    /**
-     * the scopes the dumps give a command, else "The game does not say"
-     */
-    "runs"?: string;
-    "date"?: CardDate | null;
-
-    /**
-     * a CSS color
+     * Color is the CSS color the word stands for, "" for none.
      */
     "color"?: string;
-
-    /**
-     * the number a constant stands for
-     */
-    "number"?: number | null;
-    "image"?: texture$0.Header | null;
     "sites"?: Site[] | null;
 
     /**
-     * a fact was learned from the game's files
+     * History holds what each patch did to a lexicon key, oldest first: the
+     * patch's version and its change in words. It is empty for any other card.
      */
-    "inferred": boolean;
+    "history"?: CardRow[] | null;
 
     /**
-     * what the card is about
+     * Range is the word the card is about.
      */
-    "range": Range;
+    "range": jomini$0.Range;
+
+    /**
+     * Token is the token type the editor colors the word by, as ListLegend
+     * names it, "" for none.
+     */
+    "token"?: string;
 }
 
 /**
- * A CardDate is a date read in the mod's calendar: its era and the month's name as the mod names it.
+ * A CardRow is one fact of a card: a label and the fact in words.
  */
-export interface CardDate {
-    "date": jomini$0.Date;
-    "era"?: string;
-    "month": string;
+export interface CardRow {
+    "label": string;
+    "text": string;
 }
 
 /**
- * A Class is one class of the wiki's lexicon, by which a card and a completion name the commands the game declares.
+ * A Class is one class of the lexicon of the game's commands.
  */
 export interface Class {
     /**
-     * such as effect
+     * ID is the class's name, such as effect. Label is its tab's name, such as
+     * Effects.
      */
     "id": string;
+    "label": string;
 
     /**
-     * the lexicon tab's, such as Effects
+     * Database is the database that holds the class's keys, and that a
+     * patch's changes of them name.
      */
-    "label": string;
+    "database": string;
 }
 
 /**
- * A Code is one kind of problem.
+ * Code is one kind of problem.
  */
 export interface Code {
     /**
-     * the code's name in kebab case, such as wrong-scope
+     * ID is the code's name in kebab case, such as wrong-scope.
      */
     "id": string;
 
     /**
-     * compatibility, health or log
+     * Question is the Health question the code is asked under. Level and Topic
+     * are "" for the game's log.
      */
     "question": string;
-
-    /**
-     * critical, error, warning or info, or "" for the game log
-     */
     "level": string;
-
-    /**
-     * such as syntax or localization, or "" for the log
-     */
     "topic": string;
-
-    /**
-     * the code's title
-     */
     "label": string;
-
-    /**
-     * one plain sentence on what the check looks for
-     */
     "description": string;
 
     /**
-     * a template the facts fill, such as {name}
+     * Message is a template the facts fill, such as {name}.
      */
     "message": string;
-
-    /**
-     * what to do about it, in plain words; it repeats no fact of the message
-     */
     "advice": string;
 
     /**
-     * the message where a mod the file's mod does not depend on defines the name; "" if the code has none
+     * Elsewhere is the message for a name that a mod the file's mod does not
+     * depend on defines. It is "" for none.
      */
     "elsewhere"?: string;
 
     /**
-     * the editor never gives the code and only Health's report finds it
+     * HealthOnly is set for a code that only Health's report finds.
      */
     "healthOnly": boolean;
 }
 
 /**
- * A ColorSite is one color written in a file: where it is and the color it stands for.
+ * A ColorSite is one color written in a file.
  */
 export interface ColorSite {
-    "range": Range;
+    "range": jomini$0.Range;
     "color": jomini$0.RGBA;
 }
 
 /**
- * A Completion is one candidate in the completion list.
+ * Completion is one candidate in the completion list.
  */
 export interface Completion {
     "label": string;
 
     /**
-     * the text inserted; the label where equal
+     * Insert is the text written when the candidate is chosen.
      */
     "insert": string;
 
     /**
-     * what it is, for the icon and the color
+     * Category is what the candidate is, for its icon and color.
      */
-    "category": schema$0.Category;
+    "category": lang$0.Category;
 
     /**
-     * the database's singular, the command's class
+     * Detail is a few words on what the candidate is. It is "" if there are
+     * none.
      */
     "detail"?: string;
-
-    /**
-     * the one line shown beside it
-     */
     "blurb"?: string;
 
     /**
-     * how often the game writes it there, for the order
+     * Rank sorts the list, the highest first. Most ranks count how often the
+     * game writes the candidate.
      */
     "rank": number;
 
     /**
-     * Insert is a snippet with placeholders
+     * Snippet is whether Insert has placeholders.
      */
     "snippet": boolean;
 
     /**
-     * the full path of the image file it names; "" if it names none
+     * Image is the full path of the image file the candidate names, or "".
      */
     "image"?: string;
 }
 
 /**
- * A Diagnostic is one problem found in a file.
+ * CompletionList is what can be written at a position in a file.
+ */
+export interface CompletionList {
+    "candidates": Completion[] | null;
+
+    /**
+     * Cut is whether a limit left candidates out. The editor asks again as
+     * typing narrows a list that is cut, and filters any other itself.
+     */
+    "cut": boolean;
+}
+
+/**
+ * Diagnostic is one problem found in a file.
  */
 export interface Diagnostic {
     "code": string;
 
     /**
-     * its code's
+     * Label and Level are the code's, Label as Settings names the check.
+     * Message is the code's template filled with the facts, as plain text.
      */
+    "label": string;
     "level": string;
-
-    /**
-     * its code's template filled with its facts, as text
-     */
     "message": string;
-    "range": Range;
+    "range": jomini$0.Range;
     "facts": { [_ in string]?: string } | null;
 
     /**
-     * where the workspace defines a name the file's mod does not, in a mod it does not depend on
+     * Defined is where a mod the file's mod does not depend on defines the
+     * name.
      */
     "defined"?: Site[] | null;
 }
 
 /**
- * A Draft is the file New file makes in a folder of a mod: the name it suggests and the text the file starts with.
+ * Draft is the file New file makes in a folder of a mod.
  */
 export interface Draft {
     "name": string;
 
     /**
-     * the header of a localization file, the namespace line in an events folder, else empty
+     * Text is the header of a localization file, the namespace line in an
+     * events folder, else empty.
      */
     "text": files$0.Text;
 }
 
 /**
- * An Edit is one change to a file's text: the range replaced and the text that replaces it.
+ * An Edit is one change to a file's text.
  */
 export interface Edit {
-    "range": Range;
+    "range": jomini$0.Range;
     "text": string;
 }
 
 /**
- * A Fix is one quick fix for a problem. It carries the edits that apply it, grouped by file.
+ * Fix is one quick fix, with its edits grouped by file.
  */
 export interface Fix {
     "title": string;
-
-    /**
-     * the diagnostic it fixes
-     */
     "code": string;
     "edits": { [_ in string]?: Edit[] | null } | null;
 
     /**
-     * a file written first: a localization file has only its header
+     * Creates is a file made first. It is "" for none.
      */
     "creates"?: string;
 
     /**
-     * where the caret goes once the fix is applied
+     * Reveal is where the caret goes after the fix, or nil.
      */
     "reveal"?: Site | null;
+
+    /**
+     * Note says what the fix leaves the game doing. It is "" for none.
+     */
+    "note"?: string;
 }
 
 /**
- * A Fold is one foldable region: its first and last lines, counted from one.
+ * A Fold is one foldable region, in lines counting from 1.
  */
 export interface Fold {
     "start": number;
@@ -361,22 +292,24 @@ export interface Fold {
 }
 
 /**
- * A Hint is a text drawn inline beside the code, such as a date read in the mod's calendar. Its line and column are
- * Monaco's, counted from one, the column in UTF-16 code units.
+ * A Hint is a text drawn inline beside the code.
  */
 export interface Hint {
+    /**
+     * Line and Column are Monaco's, counting from 1.
+     */
     "line": number;
     "column": number;
     "text": string;
 
     /**
-     * HintDate or HintText
+     * Kind is HintDate or HintText.
      */
     "kind": string;
 }
 
 /**
- * A Legend is the list of token types and modifiers that the semantic tokens are encoded against.
+ * Legend is what tokens are encoded against.
  */
 export interface Legend {
     "tokenTypes": string[] | null;
@@ -384,159 +317,147 @@ export interface Legend {
 }
 
 /**
- * A Level is one level of a finding: its wording, its icon and color on the page, whether it counts as a problem and
- * whether the game loses something.
+ * Level is one level of a finding.
  */
 export interface Level {
     "id": string;
     "label": string;
-
-    /**
-     * the page's icon
-     */
     "icon": string;
-
-    /**
-     * the page's color
-     */
     "color": string;
-
-    /**
-     * such as critical problem
-     */
     "noun": string;
     "nouns": string;
 
     /**
-     * it counts as a problem; info does not
+     * Problem is set for the levels that count as problems, and Fix for those
+     * where the game loses something, so a mod needs a fix. Cost says what the
+     * game loses.
      */
     "problem": boolean;
-
-    /**
-     * the game loses something, so a mod needs a fix
-     */
     "fix": boolean;
-
-    /**
-     * what the player loses, in a sentence
-     */
     "cost": string;
 }
 
 /**
- * A Part is one piece of a sentence: plain text, or a fact drawn in its style, such as a mod's name, a code, a count
- * or a path.
+ * LexiconRow is one key of the dumps: an effect, a trigger, an event target, a
+ * scope, a modifier, an on_action or a data function. It is also one scripted
+ * effect or trigger.
+ */
+export interface LexiconRow {
+    "class": string;
+    "name": string;
+    "blurb": string;
+    "usage": string;
+    "scopes"?: string[] | null;
+    "target"?: string;
+
+    /**
+     * Status is what the latest patch of the range did to the key, and
+     * Version is that patch's version. Both are "" in a lexicon built with no
+     * range.
+     */
+    "status": schema$0.Status;
+    "version": string;
+
+    /**
+     * Defined is where the game's copy of a scripted effect or trigger is. It
+     * is nil for what the dumps declare.
+     */
+    "defined"?: Site | null;
+}
+
+/**
+ * Part is one piece of a sentence: plain text, or a fact drawn in its style.
  */
 export interface Part {
     "text": string;
 
     /**
-     * "", mod, code, count or path
+     * Style is mod, code, count or path. It is "" for plain text.
      */
     "style"?: string;
 }
 
 /**
- * A Range is a span as Monaco counts it: lines and columns from one, the column in UTF-16 code units, the end
- * exclusive.
- */
-export interface Range {
-    "startLineNumber": number;
-    "startColumn": number;
-    "endLineNumber": number;
-    "endColumn": number;
-}
-
-/**
- * A Signature is the parameter list of a scripted definition at a call, with the parameter the position is on.
+ * A Signature is the parameter list of a scripted definition at a call.
  */
 export interface Signature {
     "label": string;
     "parameters": string[] | null;
 
     /**
-     * the parameter the position is on; absent if none
+     * Active is the index of the parameter the position is on, or nil.
      */
     "active"?: number | null;
 }
 
 /**
- * A Site is one place in a file that an answer points at: the file's place and a line. Where the answer has them, it
- * also has a range, the text of the line, and whether the game keeps the definition and why. A whole-file site lists
- * the names the file defines.
+ * A Site is one place in a file that an answer points at.
  */
 export interface Site {
     "place": workspace$0.Place;
 
     /**
-     * counted from one
+     * Line counts from 1. Range and Text are empty where the answer did not
+     * read the file.
      */
     "line": number;
-
-    /**
-     * the zero range where the answer has none
-     */
-    "range": Range;
-
-    /**
-     * the text of the line, where the answer read the file
-     */
+    "range": jomini$0.Range;
     "text"?: string;
-    "kept": boolean;
 
     /**
-     * as index.ResolveSite gives it; unsettled where no source says
+     * Kept is whether the game keeps the definition, and Reason why. A copy in
+     * a file the game does not read has no reason, and its place says what
+     * hides the file.
      */
-    "reason"?: index$0.Reason;
+    "kept": boolean;
+    "reason"?: lang$0.Reason;
 
     /**
-     * the reason in words, naming the mod that hides a copy
+     * Label is the reason in words, or what hides the copy's file.
      */
     "label"?: string;
+
+    /**
+     * Defines lists the names a whole-file site defines.
+     */
     "defines"?: string[] | null;
 
     /**
-     * the name of the definition that holds a copy the game keeps whole
+     * Holder is the name of the definition that holds a copy the game keeps
+     * whole, or "".
      */
     "holder"?: string;
 }
 
 /**
- * A Symbol is one entry of a file: a definition, with the symbols nested inside it, or a localization key.
+ * Symbol is one entry of a file: a definition with its nested symbols, or a
+ * localization key.
  */
 export interface Symbol {
     "name": string;
 
     /**
-     * the text the game shows for it in the workspace's language; "" if none
+     * Title is the text the game shows for it, or "".
      */
     "title": string;
     "database": string;
 
     /**
-     * what a definition of its database is called, such as "window"
+     * What is the word for a definition of the symbol's database, such as
+     * "window".
      */
     "what": string;
 
     /**
-     * the whole statement
+     * Range is the whole statement, and NameRange the name alone.
      */
-    "range": Range;
-
-    /**
-     * the name alone
-     */
-    "nameRange": Range;
+    "range": jomini$0.Range;
+    "nameRange": jomini$0.Range;
     "children"?: Symbol[] | null;
-
-    /**
-     * for the icon
-     */
-    "category": schema$0.Category;
 }
 
 /**
- * A Topic is one topic of the checks, in words.
+ * Topic is one topic of the checks, in words.
  */
 export interface Topic {
     "id": string;
@@ -544,11 +465,10 @@ export interface Topic {
 }
 
 /**
- * A WorkspaceSymbol is one definition found by the symbol search across the workspace.
+ * WorkspaceSymbol is a definition the workspace search found.
  */
 export interface WorkspaceSymbol {
     "name": string;
     "database": string;
     "site": Site;
-    "category": schema$0.Category;
 }

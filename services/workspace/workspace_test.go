@@ -21,6 +21,7 @@ import (
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/app"
 )
 
@@ -145,7 +146,7 @@ func TestOpenLoadsCachesOnSecondOpen(t *testing.T) {
 	}
 	dumpsAt := ws.Schema.Dumps.WrittenAt.Unix()
 	checksum := game.LoadChecksum(resolveFixture(t, ck3))
-	folder := filepath.Join(config.Dirs.Cache, ck3, fmt.Sprintf("%s-%s-%d-test", ws.Schema.Version, checksum, dumpsAt))
+	folder := filepath.Join(config.Dirs.Cache, ck3, fmt.Sprintf("%s-%s-%d-0-test", ws.Schema.Version, checksum, dumpsAt))
 	for _, name := range []string{schemaFile, indexFile} {
 		if _, err := os.Stat(filepath.Join(folder, name)); err != nil {
 			t.Errorf("no cache: %v", err)
@@ -215,7 +216,7 @@ func TestLocateSaysWhereFileSits(t *testing.T) {
 		t.Errorf("a mod's file: %+v", events.File)
 	}
 	vanilla := ws.Locate(ws.Mods.Load(), filepath.Join(resolveFixture(t, ck3), "game", "events", "v_events.txt"))
-	if vanilla.Rel != "events/v_events.txt" || vanilla.Origin != game.OriginVanilla || !vanilla.ReadOnly {
+	if vanilla.Rel != "events/v_events.txt" || vanilla.Origin != files.OriginVanilla || !vanilla.ReadOnly {
 		t.Errorf("a game's file: %+v", vanilla)
 	}
 	if fresh := ws.Locate(ws.Mods.Load(), filepath.Join(dir, "events", "m_fresh.txt")); fresh.Root != dir {
@@ -232,7 +233,7 @@ func TestListRootsPutsModsBeforeGame(t *testing.T) {
 	ws, dir := openFixture(t)
 	want := []files.Root{
 		{Dir: dir, Origin: fixtureModID},
-		{Dir: filepath.Join(resolveFixture(t, ck3), "game"), Origin: game.OriginVanilla},
+		{Dir: filepath.Join(resolveFixture(t, ck3), "game"), Origin: files.OriginVanilla},
 	}
 	isRoot := func(place Place, root files.Root) bool { return place.Path == root.Dir && place.Origin == root.Origin }
 	if roots := (&Service{session: ws}).ListRoots(); !slices.EqualFunc(roots, want, isRoot) {
@@ -250,7 +251,7 @@ func TestLookupTextPrefersReplaceFolder(t *testing.T) {
 	if !ok || text != "Replaced text" || mods.File(winner.Site).Origin != fixtureModID {
 		t.Errorf("v_key: %q %v %v", text, winner, ok)
 	}
-	if text, winner, ok = ws.LookupText(mods, "v.1.t"); !ok || text != "Hello" || mods.File(winner.Site).Origin != game.OriginVanilla {
+	if text, winner, ok = ws.LookupText(mods, "v.1.t"); !ok || text != "Hello" || mods.File(winner.Site).Origin != files.OriginVanilla {
 		t.Errorf("v.1.t: %q %v %v", text, winner, ok)
 	}
 	ws.Language = "french"
@@ -287,7 +288,7 @@ func TestLookupDefinitionTextReadsTitleKey(t *testing.T) {
 		{"on_action", "on_birth", ""},      // no title key, and no message of its name
 	} {
 		site := findDefinition(t, mods, want.database, want.name)
-		if title := ws.LookupDefinitionText(mods, site, game.TitleKey); title != want.title {
+		if title := ws.LookupDefinitionText(mods, site, lang.TitleKey); title != want.title {
 			t.Errorf("title of %s %s: %q, want %q", want.database, want.name, title, want.title)
 		}
 	}
@@ -353,6 +354,10 @@ func TestLoadTreeUsesBufferThenCache(t *testing.T) {
 // of the install does nothing.
 func TestRescanFollowsDisk(t *testing.T) {
 	ws, dir := openFixture(t)
+
+	// The test rescans by hand. The watcher would rescan the files it writes
+	// a moment later, which gives a new index while the last check runs.
+	ws.watcher.Close()
 	before := ws.Mods.Load()
 	fresh := filepath.Join(dir, "events", "m_fresh.txt")
 	if err := os.WriteFile(fresh, []byte("namespace = m\n\nm.9 = { type = character_event }\n"), 0o644); err != nil {
@@ -618,7 +623,7 @@ func TestCreateModFolderMakesSkeleton(t *testing.T) {
 		}
 	}
 	for version, want := range map[string]string{"1.3.11": "1.3.*", "1.20": "1.20.*", "build 7": "", "1.x": "", "": ""} {
-		if got := toSupportedVersion(version); got != want {
+		if got := ToSupportedVersion(version); got != want {
 			t.Errorf("supported version of %q: %q, want %q", version, got, want)
 		}
 	}
@@ -688,7 +693,7 @@ func TestServiceRefusesGameFiles(t *testing.T) {
 	_, deleteRootErr := wsp.Delete(filepath.Join(resolveFixture(t, ck3), "game"))
 	refusals := map[string]error{
 		"Write":         wsp.Write(vanilla, files.Text{}),
-		"Create":        wsp.Create(filepath.Join(filepath.Dir(vanilla), "new.txt"), false),
+		"CreateFile":    wsp.CreateFile(filepath.Join(filepath.Dir(vanilla), "new.txt")),
 		"Rename from":   wsp.Rename(vanilla, filepath.Join(mod, "moved.txt")),
 		"Rename to":     wsp.Rename(mine, filepath.Join(filepath.Dir(vanilla), "moved.txt")),
 		"Delete":        deleteErr,

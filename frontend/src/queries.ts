@@ -1,5 +1,5 @@
 /** The queries that read Go, one per RPC, and the keys that events and mutations refresh. */
-import { defineQueryOptions, useMutation, useQueryCache, type UseQueryOptions } from "@pinia/colada";
+import { defineQueryOptions, useMutation, useQuery, useQueryCache, type UseQueryOptions } from "@pinia/colada";
 
 import * as agent from "@services/agent/service";
 import * as app from "@services/app/service";
@@ -9,31 +9,34 @@ import * as graph from "@services/graph/service";
 import * as health from "@services/health/service";
 import * as lsp from "@services/lsp/service";
 import * as mcp from "@services/mcp/service";
+import * as patch from "@services/patch/service";
 import * as search from "@services/search/service";
 import * as steam from "@services/steam/service";
 import * as terminal from "@services/terminal/service";
 import * as wiki from "@services/wiki/service";
 import * as workspace from "@services/workspace/service";
+import type { Format } from "@internal/files/models";
 import type { Coat, PictureList, States } from "@services/draw/models";
 import type { Filter } from "@services/graph/models";
 import type { Site } from "@services/lsp/models";
 
-/** fileUrl returns the URL that serves a file. */
 export function fileUrl(path: string): string {
   return `/files?path=${encodeURIComponent(path)}`;
 }
 
 /**
- * loadQuery reads a query outside a component, from the cache if it is fresh. A read that a refresh cancels runs
- * again, so a query that has never had data always gets its answer. It throws if Go fails.
+ * loadQuery reads a query outside a component, from the cache if it is fresh. A query with no answer yet always
+ * gets one from Go: one a closing workspace emptied, and one whose read a refresh cancelled. It throws if Go fails.
  */
 export async function loadQuery<T>(options: UseQueryOptions<T>): Promise<T | undefined> {
   const cache = useQueryCache();
   const entry = cache.ensure(options);
   let state = await cache.refresh(entry);
 
-  // A cancelled read's answer never reaches the entry, which stays pending.
-  while (state.status === "pending") state = await cache.refresh(entry);
+  // An emptied entry is pending and still fresh, so the cache would answer
+  // "pending" again at once, with no pause for the page, until the entry went
+  // stale. Each turn here waits on Go: the read under way, else a new one.
+  while (state.status === "pending") state = await (entry.pending?.refreshCall ?? cache.fetch(entry));
   return state.data;
 }
 
@@ -47,6 +50,7 @@ const KINDS = {
   draws: ["draw"],
   gits: ["git"],
   releases: ["release"],
+  reviews: ["review"],
 } as const;
 
 /** keys holds the query keys that events and mutations refresh. A kind's plural covers the whole kind. */
@@ -64,18 +68,19 @@ export const keys = {
   health: ["health"] as const,
   graph: ["graph"] as const,
   wiki: ["wiki"] as const,
+  patch: ["patch"] as const,
   git: (dir: string) => [...KINDS.gits, dir] as const,
   repositoryWork: [...KINDS.gits, "repository-work"] as const,
   ownListings: [...KINDS.releases, "own"] as const,
   gitStatus: (dir: string) => [...KINDS.gits, dir, GIT_STATUS] as const,
   release: (modId: string) => [...KINDS.releases, modId] as const,
+  baseline: (path: string) => [...KINDS.reviews, "baseline", path] as const,
   lsp: ["lsp"] as const,
   search: ["search"] as const,
   shells: ["terminal", "shells"] as const,
   agents: ["agent"] as const,
 };
 
-/** isGitStatus reports whether a query key is a repository's status. */
 export function isGitStatus(key: readonly unknown[]): boolean {
   return key.length === 3 && key[0] === KINDS.gits[0] && key[2] === GIT_STATUS;
 }
@@ -121,7 +126,6 @@ export const noticesQuery = defineQueryOptions({
   query: async () => (await Object.values(NOTICES)[0]?.()) ?? "",
 });
 export const stateQuery = defineQueryOptions({ key: keys.state, query: () => workspace.State() });
-/** useRescan returns a mutation that scans the install with the given id again. */
 export function useRescan() {
   return useMutation({ mutation: (installId: string) => workspace.RescanInstall(installId) });
 }
@@ -141,6 +145,21 @@ export const folderQuery = defineQueryOptions((dir: string) => ({
   key: keys.folder(dir),
   query: () => workspace.ListFolder(dir),
 }));
+
+export const reviewsQuery = defineQueryOptions({
+  key: [...keys.reviews, "list"],
+  query: () => workspace.ListReviews(),
+});
+
+/**
+ * baselineQuery reads a file's baseline: its text before the agent's edits
+ * that are not kept yet.
+ */
+export const baselineQuery = defineQueryOptions((path: string) => ({
+  key: keys.baseline(path),
+  query: () => workspace.Baseline(path),
+}));
+
 export const rootsQuery = defineQueryOptions({ key: keys.roots, query: () => workspace.ListRoots() });
 export const placeQuery = defineQueryOptions((path: string) => ({
   key: keys.place(path),
@@ -163,12 +182,6 @@ export const modFolderQuery = defineQueryOptions(
   ({ installId, dir, name }: { installId: string; dir: string; name: string }) => ({
     key: ["workspace", "mod-folder", installId, dir, name],
     query: () => workspace.ResolveModFolder(installId, dir, name),
-  }),
-);
-export const precedenceQuery = defineQueryOptions(
-  ({ gameId, database, folder }: { gameId: string; database: string; folder: string }) => ({
-    key: ["workspace", "precedence", gameId, database, folder],
-    query: () => workspace.DescribePrecedence(gameId, database, folder),
   }),
 );
 
@@ -212,6 +225,15 @@ export const reportQuery = defineQueryOptions((order: string[]) => ({
 }));
 export const codesQuery = defineQueryOptions({ key: [...keys.health, "codes"], query: () => health.ListCodes() });
 export const levelsQuery = defineQueryOptions({ key: [...keys.health, "levels"], query: () => health.ListLevels() });
+
+/**
+ * useLevels returns Health's levels and the lookup of one by its id. The
+ * lookup finds none for an id no level has.
+ */
+export function useLevels() {
+  const { data: levels } = useQuery(levelsQuery);
+  return { levels, findLevel: (id: string | undefined) => levels.value?.find((level) => level.id === id) };
+}
 export const topicsQuery = defineQueryOptions({ key: [...keys.health, "topics"], query: () => health.ListTopics() });
 export const overviewQuery = defineQueryOptions({
   key: [...keys.health, "overview"],
@@ -248,6 +270,12 @@ export const symbolsQuery = defineQueryOptions(({ query, localization }: { query
   key: [...keys.lsp, "symbols", query, localization],
   query: () => lsp.FindSymbols(query, localization, 50),
 }));
+export const textColorsQuery = defineQueryOptions(
+  ({ path, format, text, line }: { path: string; format: Format; text: string; line: number }) => ({
+    key: [...keys.lsp, "colors", path, format, text, line],
+    query: () => lsp.ColorText(path, format, text, line),
+  }),
+);
 
 export const graphQuery = defineQueryOptions(({ root, filter }: { root: string; filter: Filter }) => ({
   key: [...keys.graph, root, filter],
@@ -287,12 +315,23 @@ export const wikiSearchQuery = defineQueryOptions((term: string) => ({
   key: [...keys.wiki, "search", term],
   query: () => wiki.SearchPages(term),
 }));
-export const notesQuery = defineQueryOptions({ key: [...keys.wiki, "notes"], query: () => wiki.ListNotes() });
-export const lexiconQuery = defineQueryOptions((cls: string) => ({
-  key: [...keys.wiki, "lexicon", cls],
-  query: () => wiki.BuildLexicon(cls),
+export const notesQuery = defineQueryOptions({ key: [...keys.patch, "notes"], query: () => patch.ListPatches() });
+export const tiesQuery = defineQueryOptions({ key: [...keys.patch, "ties"], query: () => patch.ListTies() });
+export const patchQuery = defineQueryOptions((version: string) => ({
+  key: [...keys.patch, "version", version],
+  query: () => patch.FindPatch(version),
 }));
-export const classesQuery = defineQueryOptions({ key: [...keys.wiki, "classes"], query: () => wiki.ListClasses() });
+export const lexiconQuery = defineQueryOptions(
+  ({ kind, start = "", end = "" }: { kind: string; start?: string; end?: string }) => ({
+    key: [...keys.lsp, "lexicon", kind, start, end],
+    query: () => lsp.BuildLexicon(kind, start, end),
+  }),
+);
+export const lexiconKeyQuery = defineQueryOptions(({ kind, name }: { kind: string; name: string }) => ({
+  key: [...keys.lsp, "lexicon-key", kind, name],
+  query: () => lsp.DescribeKey(kind, name),
+}));
+export const classesQuery = defineQueryOptions({ key: [...keys.lsp, "classes"], query: () => lsp.ListClasses() });
 
 export const gitInstalledQuery = defineQueryOptions({
   key: ["app", "git"],
@@ -364,7 +403,6 @@ export const listingQuery = defineQueryOptions(({ modId, key }: { modId: string;
   key: [...keys.release(modId), "listing", key],
   query: () => steam.ReadListing(modId, key),
 }));
-/** ownListingsQuery reads the own listing of each of the given mods. */
 export const ownListingsQuery = defineQueryOptions((modIds: string[]) => ({
   key: [...keys.ownListings, modIds],
   query: () => Promise.all(modIds.map((modId) => steam.ReadListing(modId, ""))),

@@ -9,7 +9,7 @@ There is no protocol, no stream and no document table. Each of Monaco's provider
 the bindings type it from end to end. The session's buffers are the open files. An answer is computed when asked and
 nothing is kept between calls.
 
-It decides nothing about the language. What a key means is the [schema](../../internal/schema/README.md)'s, where a name
+It decides nothing about the language. What a key means is [lang](../../internal/lang/README.md)'s, where a name
 is defined and which copy the game keeps is the [index](../../internal/index/README.md)'s, and the open session is the
 [workspace](../workspace/README.md)'s. This package adds the editor's view of them: the cards, the lists and the
 problems in words.
@@ -17,9 +17,9 @@ problems in words.
 **Uses** [app](../app/README.md), [workspace](../workspace/README.md), [files](../../internal/files/README.md),
 [game](../../internal/game/README.md), [index](../../internal/index/README.md),
 [jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
-[schema](../../internal/schema/README.md), [texture](../../internal/texture/README.md) · **Used by**
+[lang](../../internal/lang/README.md), [texture](../../internal/texture/README.md) · **Used by**
 [draw](../draw/README.md), [graph](../graph/README.md), [health](../health/README.md), [mcp](../mcp/README.md),
-[search](../search/), [terminal](../terminal/README.md), [wiki](../wiki/README.md).
+[search](../search/), [terminal](../terminal/README.md).
 
 ## One answer
 
@@ -27,7 +27,7 @@ problems in words.
 flowchart LR
   monaco["Monaco's provider"] -->|path, line, column| method["A Service method"]
   method --> tree["The file's tree<br/>the editor's text if open, else the disk"]
-  tree --> walk["schema.Walk or WalkTo<br/>with this answer's visitor"]
+  tree --> walk["lang.Schema.Walk<br/>a Context for each statement"]
   walk --> index["The index<br/>sites, winners"]
   walk --> answer["The answer<br/>in Monaco's ranges"]
   index --> answer
@@ -58,20 +58,28 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
 
 ## The answers
 
-- **Hover.** `Hover` walks to the position and returns a `Card`: what the key or value is, what it takes, where it
-  leads, a date in the mod's calendar, a color, an image's header, a localization key's text and the sites that
-  define the name, the one the game keeps first. What a value takes is worded in the game's words. A definition's card
-  also has its localized name and description, the comment lines just above it and, for a scripted effect or trigger,
-  its parameters. A key in a call of one is a parameter, and its card names the definition it is given to
-  (`Card.Callee`). A value that is one of the choices its key takes, such as an event's type, is named by the key,
-  with the choices and the key's own text. A command's card shows the scopes the dumps give it, or says they name
-  none. A fact learned only
-  from the game's files marks the card inferred. `Classes` are the wiki lexicon's, in the
-  order of its tabs, and `Card.Lexicon` names the one that lists what the card is about.
-- **Completion.** `Complete` returns what fits at a key: the language's operators for the block, then its commands,
-  the scripted definitions the block's caller calls and, where the block reads links, the links written alone that
-  run in its scope, `this`, `root`, `prev` and the scopes saved earlier, each ranked by how often the game writes it,
-  then its fields and the names of the database its keys name. A block whose caller is any call, such as a command's
+- **Hover.** In a mod's descriptor, `Hover` says what the key under the pointer is for, as
+  `workspace.FindDescriptorKey` gives it. In any
+  other file it walks to the position and returns a `Card`: what the key or value is, a localization key's
+  text, a color, the sites that define the name, the one the game keeps first, and its facts as `Card.Rows`. A row is
+  a label and the fact in words, worded here and kept in the one order `rowLabels` lists: what the word takes, where
+  it leads, a date in the mod's calendar, an image's size and format. The page draws the rows as given. A scope is
+  worded one way on every row (`describeScope`), and a date as the date hint words it (`describeDate`). A definition's
+  card also has its localized name and description, the comment lines just above it and, for a scripted effect or
+  trigger, its parameters. A key in a call of one is a parameter, and its card names the definition it is given to. A
+  value that is one of the choices its key takes, such as an event's type, is named by the key, with the choices and
+  the key's own text. A command's card shows the scopes the dumps give it, or says they name none. Each link of a
+  chain has its own card, and so has a link written as a value: it says the scope the link leads to. A fact learned
+  only from the game's files marks the card inferred. `Classes` are the lexicon's, in the order of its tabs, and
+  `Card.Lexicon` names the one that lists what the card is about. `Card.Token` is the token type the editor colors
+  the word by, so the page draws the card's label in the word's own color.
+- **Completion.** `Complete` returns a `CompletionList`: the candidates, and whether a limit cut them short. Only the
+  localization keys have a limit, and a key typed in full is listed first, before the cut. The editor asks again as
+  typing narrows a list that is cut, and filters any other itself. At a key it returns what fits: the language's
+  keywords for the block, then its commands, the scripted definitions the block's caller calls and, where the block
+  reads links, the links written alone that run in its scope, `this`, `root`, `prev` and the scopes saved earlier,
+  each ranked by its uses in the index, then its fields and the names of the database its keys name. The commands
+  and the links are listed from each database's keys, which the schema sorts once. A block whose caller is any call, such as a command's
   block or a random list's branch, gets the definitions that act as a command it allows: scripted effects among
   effects, scripted triggers among triggers. At a value it returns what a call's row says it
   writes, yes and no or the field's choices, and the names of each database the walk finds the value refers to: its
@@ -82,23 +90,45 @@ variable, a list, a flag) and no key that only switches a name on. Peek and Find
   written alone in a block gets both lists, the values and the block's keys, since it may also be a key typed before
   its equals sign. A definition local to another file is never offered.
 - **Navigation.** `Definition` returns where a name is defined, the kept definition first. `References` adds where it is
-  used. `Rename` returns its edits grouped by the mod file they change, and `PrepareRename` refuses a name the game
-  defines too, or one no mod defines. `ListSymbols` is a file's outline, and `FindSymbols` searches the workspace's
+  used. `Rename` returns its edits grouped by the file they change, and `PrepareRename` refuses a name that a
+  read-only file defines too (the game's or a Workshop mod's), or one nothing defines. All three read a file that is
+  open in the editor from the editor's own text, since the index holds the saved file's positions. `ListSymbols` is a file's outline, and `FindSymbols` searches the workspace's
   definitions, or its localization keys, best match first. Only a script file is walked to a position, since the
   schema has no rules for the keys of any other file.
-- **Tokens.** `Tokens` returns the color category of every key and value in a range, from the walk, encoded as Monaco's
-  semantic tokens against `ListLegend`. A key or value the walk gives no category is a link if it starts a chain of
-  links. The service keeps the last file's tokens while its tree and the mods' index stay the same, so the editor
-  asking for the next lines as it scrolls does not walk the file again.
-- **Edits.** `Format` keeps the file's own indentation, and gives no edits for a read-only file, a file that does not
-  parse, or one that would change in more than its spacing. `ListFixes` gives the quick fixes: the nearest defined
-  name for one nothing defines, which for a call is also a command the block allows, a missing key with its default, an entry mode out of place removed, and the file's
+- **Tokens.** `Tokens` returns the color of every key and value of a script file in a range, from the walk the
+  document keeps, and of every key and piece of markup of a localization file, from `loc`'s segments, encoded as
+  Monaco's semantic tokens against `ListLegend`. Where the walk gives no category, a number, a date and a yes or
+  no are numbers and any other key is a field. A list iterator such as `every_vassal` is a keyword, though the walk
+  holds it as the command it also is. `ColorText` colors a text that is no open file, such as a snippet a
+  page shows: it adds the comments, quoted texts and operators that Monaco colors by itself in the editor.
+- **Edits.** `Format` keeps the file's own indentation, and gives no edits for a read-only file or a file that does
+  not parse; its edits only ever replace white space. `ListFixes` gives the quick fixes: the nearest defined
+  name for one nothing defines, which for a call is also a command the block allows, a missing key with its default, an entry mode out of place removed, the install's release where a descriptor names another game version, and the file's
   localization keys that have no base-language text added to the mod's localization file, which the fix creates first
   if it is missing. `BuildOverride` copies an entry into a mod, and `DraftFile` names and starts a new file.
 - **Details.** `ListFolds` returns every block that spans lines. `ListHints` reads each date in the mod's calendar and
   the text of each localization key a script file names. `ListColorSites` lists the colors a file writes, and
   `PresentColor` writes a color in the form the file already uses. `Signature` returns the parameters of the scripted
   definition a call names.
+
+## The lexicon
+
+`ListClasses` returns the lexicon's classes in the order the Wiki pane's Lexicon tab shows them, and `BuildLexicon`
+builds the rows of one class from the definitions the dumps fill in the [schema](../../internal/lang/README.md): the
+effects, the triggers, the links, the scope types, the modifiers, the on_actions and the data functions. A `LexiconRow`
+carries the dump's blurb and usage, the scopes it runs in and the scope it leads to. Effects and triggers also take in
+the scripted ones the game and the workspace's mods define, one row for each name the game keeps a copy of, with
+`Defined` where that copy is. Rows are built each time they are asked for: the largest class of each game, the data
+functions, builds in 40 to 60 ms.
+
+With a start version, `BuildLexicon` returns only the rows of the keys that `Patches.ListRange(start, end)` changed,
+each with the `Status` and `Version` of its key's latest change, matching a patch's dump changes by the class's
+database. The data functions' is `lang.DataFunctions`, and the on_actions' is the one the schema names for the game;
+`ListClasses` sends each class with its database. A key the range changed that the game no longer has is a row of its
+own, with that change's blurb. `DescribeKey` returns the card of one row, made by the same `describeDefinition` as
+hover's card of a command, with what each patch did to the key as `Card.History`, a row of the patch's version and
+its change in words, and the key's uses in the mods' own files as `Card.Sites`. The index already holds the uses of a
+built-in effect or trigger as inferred references.
 
 ## Diagnostics
 
@@ -115,13 +145,26 @@ and Health's rows both read the level from it. `SplitMessage` fills a template a
   change through PMT's tools, and is not bound to the page.
 - A file of the game has its parse errors only. A mod's file is judged with the index narrowed to its mod and the mods
   it depends on. A name nothing defines there, but a mod it does not depend on does, has an `Elsewhere` message.
+- The `patch` question holds what the game's patches changed under a mod, judged against the mod's range of versions
+  (`Session.ListModPatches`). A name that a patch of the range renamed or removed is `patch-renamed` or `patch-removed`
+  in place of the `unknown-key`, `unresolved-reference` or `unknown-loc-key` the name would have, with the patch's
+  version and, for a rename, the new name; a rename wins over a removal, and a name another mod defines keeps its own
+  problem. A name is removed where the patch's `DumpChanges` or, for the two codes that name a definition or a text,
+  its `DefinitionChanges` list it removed. The codes that a patch finding replaces are the table `patchable`. A key
+  that a patch only changed raises nothing. A mod file whose game file a patch of the range lists
+  (`Session.FindGameChange`) has one `stale-copy` at its start, with the newest patch that lists the file. The lookups are
+  [patch](../../internal/patch/README.md)'s (`FindRename`, `FindRemoval`, `FindFile`, `Changes`); lsp only picks the
+  code. A picture or other file
+  the editor does not judge has none. New patches store a new load order, which drops the kept problems of every file.
 - The parse errors and the localization checks come from `jomini` and `loc`, under the same table.
 
-**A check accuses only on firm ground.** A reference is dangling only where its database is known, holds no names made
-as the script runs, and the claim that makes it is not inferred from the game's files alone. A name the game's own
+**A check accuses only on firm ground.** A reference is dangling only where the walk did not mark it `Inferred`: its
+database is known, holds no names made as the script runs, and the claim that makes it is not inferred from the
+game's files alone (`lang`'s `judge` gives the one verdict). A name the game's own
 files use is never dangling, unless every definition of it lies in a file the game does not read. A key is unknown, or
 a value of the wrong type, only where a source that can accuse describes the block and the game's own files never
-write otherwise.
+write otherwise. A name the walk marks `Literal`, a GUI widget's `text` or `title`, is shown as written when no key
+has it, so it is only a note (`literal-text`), never an unknown key.
 
 **A name others share is judged by what the game keeps** (`index.FindWinner`):
 
@@ -136,10 +179,10 @@ write otherwise.
 |---|---|
 | `lsp.go` | `Service`, Monaco's ranges and their conversion, sites, and `SetText` and `CloseFile`. |
 | `hover.go` | The hover card and the lexicon classes. |
+| `lexicon.go` | The lexicon's rows and the card of one key. |
 | `complete.go` | Completion. |
 | `navigate.go` | Definitions, references, rename and symbols. |
-| `diagnostics.go` | The table of codes, levels and topics, the messages, and the checks of a script file. |
-| `messages.go` | The checks of a localization file. |
+| `diagnostics.go` | The table of codes, levels and topics, the messages, and the checks of a file. |
 | `tokens.go` | The semantic tokens. |
 | `edits.go` | Formatting, quick fixes, overrides and new files. |
 | `details.go` | Folds, hints, color sites and signature help. |
@@ -150,9 +193,13 @@ write otherwise.
 - **Site**: one place in a file that an answer points at, with its range, the text of its line and whether the game
   keeps it where the answer has them.
 - **Edit**: one change to a file's text, as a range and the text that replaces it.
-- **Card**: a hover card, the facts about a key or a value for the page to lay out.
-- **CardDate**: a date read in the mod's calendar.
-- **Class**: one class of the wiki's lexicon, which lists the commands the game declares in one way.
+- **Card**: a hover card: what a key or a value is, and the facts about it in the words and the order the page shows.
+- **CardRow**: one fact of a card, a label and the fact in words.
+- **CompletionList**: what can be written at a position, with whether a limit cut the list short.
+- **Class**: one class of the lexicon, which lists the keys the dumps declare in one way.
+- **LexiconRow**: one effect, trigger, event target, scope, modifier, on_action or data function the dumps declare, or
+  one scripted effect or trigger, with what the range's patches last did to it.
+- **History**: the patches that changed one lexicon key, each holding only that key's change, oldest first.
 - **Completion**: one candidate in the completion list.
 - **Symbol**: one entry of a file's outline.
 - **WorkspaceSymbol**: one definition found by the symbol search across the workspace.

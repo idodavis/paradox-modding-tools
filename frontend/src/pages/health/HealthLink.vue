@@ -1,10 +1,9 @@
 <!-- A sentence about a finding in another view, after that finding's level mark. It opens that finding. -->
 <script setup lang="ts">
 import { computed } from "vue";
-import { useQuery } from "@pinia/colada";
 import type { Part } from "@services/lsp/models";
 
-import { levelsQuery } from "../../queries";
+import { useLevels } from "../../queries";
 import FactText from "../../ui/FactText.vue";
 
 const { level, parts } = defineProps<{
@@ -14,8 +13,8 @@ const { level, parts } = defineProps<{
 }>();
 const emit = defineEmits<{ open: [] }>();
 
-const { data: levels } = useQuery(levelsQuery);
-const mark = computed(() => levels.value?.find((candidate) => candidate.id === level));
+const { findLevel } = useLevels();
+const mark = computed(() => findLevel(level));
 </script>
 
 <template>

@@ -1,0 +1,385 @@
+<!-- The agent pane, docked beside the workspace pages or in a window of its own. -->
+<script setup lang="ts">
+import type { DropdownMenuItem } from "@nuxt/ui";
+import { useMutation, useQuery } from "@pinia/colada";
+import { until, useEventBus } from "@vueuse/core";
+import { sumBy } from "es-toolkit";
+import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
+
+import type { Task } from "@services/mcp/models";
+import type { Place } from "@services/workspace/models";
+import * as workspaceApi from "@services/workspace/service";
+import { abbreviate, describeAge, plural } from "../../lib/format";
+import { agentsQuery } from "../../queries";
+import { describeTitle, useAgentStore, type SessionRecord } from "../../stores/agent";
+import { useCompletionStore } from "../../stores/completion";
+import { confirmUndo } from "../../stores/edits";
+import { useToolViewStore } from "../../stores/toolView";
+import { COMMAND_BUS, THIS_WINDOW } from "../../stores/windows";
+import { useWorkspaceStore } from "../../stores/workspace";
+import LineCounts from "../../ui/LineCounts.vue";
+import AgentSession from "./AgentSession.vue";
+
+const IS_WINDOW = THIS_WINDOW === "agent";
+
+const agent = useAgentStore();
+const completion = useCompletionStore();
+const commandBus = useEventBus(COMMAND_BUS);
+const toolView = useToolViewStore();
+const workspace = useWorkspaceStore();
+const { data: agents } = useQuery(agentsQuery);
+const field = useTemplateRef("field");
+const isFullscreen = shallowRef(false);
+const draft = shallowRef<string | null>(null);
+
+const session = computed(() => agent.active);
+const lacksCompletion = computed(() => !!agents.value && !agents.value.some((row) => row.completion && row.installed));
+const reviewed = computed(() => agent.reviews ?? []);
+watch(
+  () => workspace.activeId(),
+  () => void agent.resumeLatest(),
+  { immediate: true },
+);
+// Keep leaves files as the agents wrote them; Undo asks first, then takes the
+// edits back.
+const { mutate: keep } = useMutation({
+  mutation: (places: Place[]) => Promise.all(places.map((place) => workspaceApi.KeepFile(place.path))),
+});
+const { mutate: undo } = useMutation({
+  mutation: async (places: Place[]) => {
+    if (await confirmUndo(places)) await Promise.all(places.map((place) => workspaceApi.UndoFile(place.path)));
+  },
+});
+const recent = computed(() =>
+  agent
+    .listRecords()
+    .filter((record) => !record.isArchived)
+    .flatMap((record) => {
+      const row = agent.ready.find((candidate) => candidate.id === record.agent);
+      return row ? [{ record, line: `${row.name} · ${describeAge(new Date(record.updatedAt), "short")}` }] : [];
+    })
+    .slice(0, 8),
+);
+
+/**
+ * The session menu: the workspace's sessions with each agent, the shown
+ * session's agent first.
+ */
+const menu = computed(() => {
+  const shown = session.value;
+  const records = agent.listRecords();
+  const archived = records.filter((record) => record.isArchived);
+  const agents = [...agent.ready].sort(
+    (first, second) => Number(second.id === shown?.agent.id) - Number(first.id === shown?.agent.id),
+  );
+  const toItem = (record: SessionRecord) => {
+    const title = describeTitle(record);
+    const isUntitled = !title || title === "New session";
+    return {
+      label: isUntitled ? `Untitled session · ${describeAge(new Date(record.updatedAt), "short")}` : title,
+      slot: "session" as const,
+      record,
+      onSelect: () => agent.open(record),
+    };
+  };
+  const groups = agents.flatMap((row) => {
+    const listed = records.filter((record) => record.agent === row.id && !record.isArchived);
+    return listed.length
+      ? [[{ type: "label" as const, label: `Sessions with ${row.name}` }, ...listed.map(toItem)]]
+      : [];
+  });
+  return [
+    ...groups,
+    [
+      ...(archived.length
+        ? [{ label: `Archived (${archived.length})`, icon: "i-lucide-archive", children: archived.map(toItem) }]
+        : []),
+      ...(shown ? [{ label: "New session", icon: "i-lucide-plus", onSelect: () => agent.start(shown.agent.id) }] : []),
+      {
+        label: "Another agent",
+        icon: "i-lucide-bot",
+        children: agent.ready.map((row) => ({ label: row.name, onSelect: () => agent.start(row.id) })),
+      },
+      { label: "Agents and tools", icon: "i-lucide-settings", onSelect: openSettings },
+    ],
+    shown ? [{ type: "label" as const, label: `${plural(agent.sessions.length, "session")} running here` }] : [],
+  ] satisfies DropdownMenuItem[][];
+});
+
+/** openSettings shows Settings at the agents' section. */
+function openSettings(): void {
+  commandBus.emit("settings.open", "agents");
+}
+
+/** startRename readies a session's title, the shown one's by default, to be typed over. */
+async function startRename(record?: SessionRecord): Promise<void> {
+  if (record) agent.open(record);
+  draft.value = record?.title ?? session.value?.title ?? "";
+  await nextTick();
+  field.value?.inputRef?.select();
+}
+
+/** endRename gives the shown session the typed title, unless the rename is cancelled. */
+function endRename(isKept: boolean): void {
+  if (isKept && session.value?.id && draft.value !== null) agent.rename(session.value.id, draft.value);
+  draft.value = null;
+}
+
+/** runTask starts a session with the agent used last and sends a starter task once the agent is ready. */
+async function runTask(task: Task): Promise<void> {
+  if (!agent.current) return;
+  const taskSession = agent.start(agent.current.id);
+  await until(() => taskSession.state).not.toBe("starting");
+  if (taskSession.state === "idle") await agent.prompt(taskSession, task.text, []);
+}
+</script>
+
+<template>
+  <aside
+    class="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-default"
+    :class="!IS_WINDOW && 'border-s border-default'"
+    aria-label="Agent pane"
+  >
+    <div class="flex h-10 shrink-0 items-center gap-1 border-b border-default ps-2.5 pe-1.5">
+      <template v-if="session">
+        <UAvatar :text="abbreviate(session.agent.name)" size="xs" class="rounded-sm" />
+        <form
+          v-if="draft !== null"
+          class="min-w-0 grow"
+          @submit.prevent="endRename(true)"
+          @keydown.escape="endRename(false)"
+        >
+          <UInput
+            ref="field"
+            v-model="draft"
+            size="sm"
+            aria-label="The session's title"
+            class="w-full"
+            @blur="endRename(true)"
+          />
+        </form>
+        <UDropdownMenu v-else :items="menu" :content="{ align: 'start' }">
+          <span class="flex min-w-0" :title="session.title" @dblclick="session.id && startRename()">
+            <UButton
+              :label="describeTitle(session)"
+              trailing-icon="i-lucide-chevron-down"
+              variant="ghost"
+              size="sm"
+              class="min-w-0 font-semibold"
+              :ui="{ label: 'truncate', trailingIcon: 'text-dimmed' }"
+            />
+          </span>
+          <template #session-label="{ item }">
+            <span class="truncate" :title="item.record.title">{{ item.label }}</span>
+          </template>
+          <!-- The buttons keep their pointer to themselves, so the item does not open the session too. -->
+          <template #session-trailing="{ item }">
+            <span class="ms-auto flex" @pointerdown.stop @pointerup.stop @click.stop>
+              <UButton
+                icon="i-lucide-pencil"
+                variant="ghost"
+                size="xs"
+                square
+                aria-label="Rename"
+                @click="startRename(item.record)"
+              />
+              <UButton
+                :icon="item.record.isArchived ? 'i-lucide-archive-restore' : 'i-lucide-archive'"
+                variant="ghost"
+                size="xs"
+                square
+                :aria-label="item.record.isArchived ? 'Restore' : 'Archive'"
+                @click="agent.archive(item.record, !item.record.isArchived)"
+              />
+              <UButton
+                icon="i-lucide-trash-2"
+                color="error"
+                variant="ghost"
+                size="xs"
+                square
+                aria-label="Delete"
+                @click="agent.deleteSession(item.record)"
+              />
+            </span>
+          </template>
+        </UDropdownMenu>
+      </template>
+      <span v-else class="ps-1 text-13 font-semibold">Agent</span>
+      <span class="grow" />
+      <UTooltip v-if="session" text="New session">
+        <UButton
+          icon="i-lucide-plus"
+          variant="ghost"
+          size="sm"
+          square
+          aria-label="New session"
+          @click="agent.start(session.agent.id)"
+        />
+      </UTooltip>
+      <template v-if="!IS_WINDOW">
+        <UTooltip v-if="session" text="Show over the whole window">
+          <UButton
+            icon="i-lucide-maximize-2"
+            variant="ghost"
+            size="sm"
+            square
+            aria-label="Show over the whole window"
+            @click="isFullscreen = true"
+          />
+        </UTooltip>
+        <UTooltip text="Open in its own window">
+          <UButton
+            icon="i-lucide-app-window"
+            variant="ghost"
+            size="sm"
+            square
+            aria-label="Open in its own window"
+            :disabled="!!session && !session.resumable"
+            @click="agent.popOut(session)"
+          />
+        </UTooltip>
+        <UTooltip text="Close the pane">
+          <UButton
+            icon="i-lucide-x"
+            variant="ghost"
+            size="sm"
+            square
+            aria-label="Close the pane"
+            @click="agent.isPaneOpen = false"
+          />
+        </UTooltip>
+      </template>
+    </div>
+
+    <!-- The files under review, from every session. Its buttons keep their
+         click to themselves, so the list does not open or close too. -->
+    <UCollapsible v-if="reviewed.length" class="shrink-0 border-b border-default">
+      <template #default="{ open }">
+        <div class="flex h-8 cursor-pointer items-center gap-1.5 ps-2.5 pe-1.5 hover:bg-elevated">
+          <UIcon :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5 text-dimmed" />
+          <span class="grow text-12 font-medium">{{ plural(reviewed.length, "file") }} to review</span>
+          <LineCounts
+            :added="sumBy(reviewed, (review) => review.added)"
+            :removed="sumBy(reviewed, (review) => review.removed)"
+          />
+          <UButton
+            label="Keep all"
+            icon="i-lucide-check-check"
+            variant="ghost"
+            size="xs"
+            @click.stop="keep(reviewed)"
+          />
+          <UButton
+            label="Undo all"
+            icon="i-lucide-undo-2"
+            color="error"
+            variant="ghost"
+            size="xs"
+            @click.stop="undo(reviewed)"
+          />
+        </div>
+      </template>
+      <template #content>
+        <div class="flex max-h-48 flex-col overflow-y-auto pb-1">
+          <span v-for="place in reviewed" :key="place.key" class="flex items-center gap-1 ps-7.5 pe-1.5">
+            <button
+              type="button"
+              class="min-w-0 grow truncate text-start font-mono text-11 hover:underline"
+              :title="place.rel"
+              @click="agent.showFile(place.path)"
+            >
+              {{ place.name }}
+            </button>
+            <LineCounts :added="place.added" :removed="place.removed" />
+            <UButton icon="i-lucide-check" variant="ghost" size="xs" square aria-label="Keep" @click="keep([place])" />
+            <UButton
+              icon="i-lucide-undo-2"
+              color="error"
+              variant="ghost"
+              size="xs"
+              square
+              aria-label="Undo"
+              @click="undo([place])"
+            />
+          </span>
+        </div>
+      </template>
+    </UCollapsible>
+
+    <AgentSession v-if="session && !isFullscreen" :key="session.key" :session="session" :narrow="!IS_WINDOW" />
+    <div v-else-if="!session" class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3.5 py-4">
+      <span class="text-12 text-dimmed">Start a session with an agent, or with a task.</span>
+      <div
+        v-if="completion.signInNotice"
+        class="flex items-center gap-2.5 rounded-md border border-default bg-muted px-2.5 py-2"
+      >
+        <UIcon name="i-lucide-triangle-alert" class="size-4 shrink-0 text-warning" />
+        <span class="grow text-12">{{ completion.signInNotice }}</span>
+        <UButton label="Sign in" size="xs" @click="openSettings" />
+      </div>
+      <div
+        v-else-if="lacksCompletion"
+        class="flex items-center gap-2.5 rounded-md border border-default bg-muted px-2.5 py-2"
+      >
+        <UIcon name="i-lucide-info" class="size-4 shrink-0 text-dimmed" />
+        <span class="grow text-12">Tab completion needs GitHub Copilot</span>
+        <UButton label="Set up" size="xs" @click="openSettings" />
+      </div>
+      <div
+        v-for="row in agent.ready"
+        :key="row.id"
+        class="flex items-center gap-2.5 rounded-md border border-default bg-muted px-2.5 py-2"
+      >
+        <UAvatar :text="abbreviate(row.name)" size="xs" class="rounded-sm" />
+        <span class="grow truncate text-13 font-medium">{{ row.name }}</span>
+        <UButton label="Start" size="xs" @click="agent.start(row.id)" />
+      </div>
+      <template v-if="recent.length">
+        <span class="mt-2 text-11 font-semibold text-dimmed">Recent sessions</span>
+        <button
+          v-for="{ record, line } in recent"
+          :key="record.id"
+          type="button"
+          class="flex items-center gap-2 rounded-md px-2 py-1.5 text-start text-12 hover:bg-accented"
+          :title="record.title"
+          @click="agent.open(record)"
+        >
+          <UIcon name="i-lucide-message-circle" class="size-3.5 shrink-0 text-dimmed" />
+          <span class="flex min-w-0 grow flex-col">
+            <span class="truncate">{{ describeTitle(record) }}</span>
+            <span class="text-11 text-dimmed">{{ line }}</span>
+          </span>
+        </button>
+      </template>
+      <template v-if="agent.current">
+        <UButton
+          v-for="task in toolView.tasks"
+          :key="task.name"
+          :label="task.title"
+          icon="i-lucide-sparkles"
+          variant="outline"
+          class="self-start"
+          @click="runTask(task)"
+        />
+      </template>
+      <UButton
+        label="Set up agents"
+        icon="i-lucide-settings"
+        variant="ghost"
+        class="self-start"
+        @click="openSettings"
+      />
+    </div>
+
+    <UModal
+      v-model:open="isFullscreen"
+      :title="session ? describeTitle(session) : ''"
+      fullscreen
+      :ui="{ body: 'flex min-h-0 flex-1 flex-col p-0 sm:p-0' }"
+    >
+      <template #body>
+        <AgentSession v-if="session" :key="session.key" :session="session" />
+      </template>
+    </UModal>
+  </aside>
+</template>

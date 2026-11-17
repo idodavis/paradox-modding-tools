@@ -21,9 +21,9 @@ const level = shallowRef(0);
 const { data: header } = useQuery(() => ({ ...headerQuery(place.path), enabled: place.format === Format.FormatImage }));
 const facts = computed(() => {
   if (!header.value) return "";
-  const { width, height, format, compression, mipmaps, bytes: size } = header.value;
+  const { width, height, format, pixelFormat, mipmaps, bytes: size } = header.value;
   const mipText = mipmaps > 1 ? `${mipmaps} mip levels` : "";
-  return [`${width} × ${height}`, format.toUpperCase(), compression, mipText, bytes(size)].filter(Boolean).join(" · ");
+  return [`${width} × ${height}`, format.toUpperCase(), pixelFormat, mipText, bytes(size)].filter(Boolean).join(" · ");
 });
 const levels = computed(() => {
   const { width = 0, height = 0, mipmaps = 1 } = header.value ?? {};

@@ -91,7 +91,9 @@ function updateMonth(index: number, text: string): void {
         <span class="truncate text-16">{{ mod.descriptor.name }}</span>
         <span class="truncate font-mono text-12 text-dimmed">{{ mod.dir }}</span>
         <span v-if="mod.broken" class="text-12 text-error">Its folder was not found. Pick where it is now.</span>
-        <span v-if="mod.workshop" class="text-12 text-dimmed">External mod · Steam's copy, read only</span>
+        <span v-if="mod.external" class="text-12 text-dimmed">
+          External mod · {{ mod.workshop ? "Steam's copy, read only" : "read only" }}
+        </span>
       </div>
       <UButton label="Open folder" icon="i-lucide-folder" :disabled="mod.broken" @click="showFolder()" />
       <UButton label="Remove from workspace" variant="ghost" class="text-error" @click="remove()" />
@@ -100,7 +102,7 @@ function updateMonth(index: number, text: string): void {
     <section class="border-b border-default px-5 py-4">
       <UFormField
         label="External mod"
-        description="Someone else's mod, which your mods are checked against. PMT never publishes it, and Health keeps its problems out of your totals."
+        description="Someone else's mod, which your mods are checked against. PMT keeps it read only and never publishes it, and Health keeps its problems out of your totals."
         orientation="horizontal"
         :ui="{ root: 'px-0' }"
       >

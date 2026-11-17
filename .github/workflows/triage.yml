@@ -34,7 +34,7 @@ jobs:
               "Language / scan / cache": "area: ide",
               "Event Graph": "area: event graph",
               "Health": "area: health",
-              "Patch Notes": "area: patch notes",
+              "Patch Center": "area: patch notes",
               "Publish / Steam Workshop": "area: publish",
               "Settings": "area: settings",
               "Appearance / themes": "area: settings",

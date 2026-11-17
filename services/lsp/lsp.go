@@ -1,186 +1,208 @@
-// Package lsp is the editor's language service. It answers what the editor asks about a file: hover cards,
-// completions, definitions, diagnostics, tokens, folds and the rest. Every range is in the editor's own form.
+// Package lsp is the editor's language service. It answers what the editor
+// asks about a file: hover cards, completions, definitions, renames, problems,
+// tokens, folds, hints, colors, signatures, formatting and quick fixes. It also
+// builds the lexicon of the game's commands.
+//
+// Every range is in Monaco's form: lines and columns count from 1, the column
+// in UTF-16 code units, and the end is exclusive. Every other package keeps
+// UTF-8 byte offsets.
+//
+// The package decides nothing about the language: the schema says what a key
+// means, and the index where a name is defined. An answer is computed when
+// asked, from the editor's text if the file is open, else from the disk.
+//
+// It applies these rules:
+//
+//   - A hover card lists only what files define: no second name of a
+//     definition, no name a command makes (a saved scope, a variable, a flag)
+//     and no key that only switches a name on.
+//   - Where no source says which copy of a name the game keeps, no site is
+//     marked kept.
+//   - A check accuses only on firm ground. A name the game's own files use is
+//     never dangling, and a key is unknown only where a source that can accuse
+//     describes the block.
+//   - A file of the game has its parse errors only. A mod's file is judged
+//     against its mod and the mods it depends on.
+//   - Only a script file is walked to a position.
+//
+// # Robustness
+//
+// A call with no workspace open, or for a file that cannot be read, returns an
+// error. Rename refuses an empty name. PrepareRename refuses a name nothing
+// defines and one a read-only file defines too. Format gives no edits for a
+// read-only file, a file that is not script and a file that does not parse.
+//
+// A position on nothing gives nil or an empty list. A file shorter than when it
+// was scanned gives a site with no range and no text.
 package lsp
 
 import (
+	"cmp"
 	"strings"
-	"sync/atomic"
-	"unicode/utf16"
 
-	"github.com/samber/lo"
-
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the language service. It asks the workspace service for the open session at each call, and keeps only
-// the colors of the last file it colored.
+// Service is the editor's language service.
 type Service struct {
 	Workspace *workspace.Service
-	coloring  atomic.Pointer[fileColors] // the last file's colors, kept while its text and the mods' index stay the same
 }
 
-// A Range is a span as Monaco counts it: lines and columns from one, the column in UTF-16 code units, the end
-// exclusive.
-type Range struct {
-	StartLine   int `json:"startLineNumber"`
-	StartColumn int `json:"startColumn"`
-	EndLine     int `json:"endLineNumber"`
-	EndColumn   int `json:"endColumn"`
-}
-
-// An Edit is one change to a file's text: the range replaced and the text that replaces it.
+// An Edit is one change to a file's text.
 type Edit struct {
-	Range Range  `json:"range"`
-	Text  string `json:"text"`
+	Range jomini.Range `json:"range"`
+	Text  string       `json:"text"`
 }
 
-// A Site is one place in a file that an answer points at: the file's place and a line. Where the answer has them, it
-// also has a range, the text of the line, and whether the game keeps the definition and why. A whole-file site lists
-// the names the file defines.
+// A Site is one place in a file that an answer points at.
 type Site struct {
-	Place   workspace.Place `json:"place"`
-	Line    int             `json:"line"`           // counted from one
-	Range   Range           `json:"range"`          // the zero range where the answer has none
-	Text    string          `json:"text,omitempty"` // the text of the line, where the answer read the file
-	Kept    bool            `json:"kept"`
-	Reason  index.Reason    `json:"reason,omitempty"` // as index.ResolveSite gives it; unsettled where no source says
-	Label   string          `json:"label,omitempty"`  // the reason in words, naming the mod that hides a copy
-	Defines []string        `json:"defines,omitempty"`
-	Holder  string          `json:"holder,omitempty"` // the name of the definition that holds a copy the game keeps whole
+	Place workspace.Place `json:"place"`
+
+	// Line counts from 1. Range and Text are empty where the answer did not
+	// read the file.
+	Line  int          `json:"line"`
+	Range jomini.Range `json:"range"`
+	Text  string       `json:"text,omitempty"`
+
+	// Kept is whether the game keeps the definition, and Reason why. A copy in
+	// a file the game does not read has no reason, and its place says what
+	// hides the file.
+	Kept   bool        `json:"kept"`
+	Reason lang.Reason `json:"reason,omitempty"`
+
+	// Label is the reason in words, or what hides the copy's file.
+	Label string `json:"label,omitempty"`
+
+	// Defines lists the names a whole-file site defines.
+	Defines []string `json:"defines,omitempty"`
+
+	// Holder is the name of the definition that holds a copy the game keeps
+	// whole, or "".
+	Holder string `json:"holder,omitempty"`
 }
 
-// MakeSite returns the site of an occurrence in the mods index: its place and its line. It reads no file, so the
+// MakeSite returns the site of an occurrence without reading its file, so the
 // site has no range and no text.
 func MakeSite(ws *workspace.Session, mods *index.Index, site index.Site) Site {
 	return Site{Place: ws.Locate(mods, mods.File(site).Path), Line: int(mods.Occurrence(site).Line) + 1}
 }
 
-// MakeSites returns the sites of a name's definitions, each with whether the winner keeps it, why, and the reason in
-// words. A nil winner keeps none. A definition written inside another one, in a database whose copies the game all
-// keeps, also has the name of the one that holds it.
-func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Site, winner *index.Winner) []Site {
-	return lo.Map(definitions, func(definition index.Site, _ int) Site {
-		site := MakeSite(ws, mods, definition)
-		site.Holder = findHolder(ws, mods, definition)
-		var hider string
-		if winner != nil {
-			site.Kept, site.Reason, hider = mods.ResolveSite(*winner, definition)
-		} else {
-			site.Reason, hider = mods.FindHider(definition.File)
-		}
-		site.Label = strings.ReplaceAll(index.Reasons[site.Reason].Label, "{mod}", ws.DescribeMod(hider))
-		return site
-	})
+// hidingLabels says why the game does not read a file. {mod} stands for the
+// mod that hides it.
+var hidingLabels = map[files.Hiding]string{
+	files.HidingShadowed:  "The copy of this file in {mod} replaces it",
+	files.HidingDropped:   "A replace_path in {mod} drops this folder",
+	files.HidingUnmounted: "The game reads no file in this folder",
 }
 
-// findHolder returns the name of the definition that holds a definition, where the game keeps every copy of the name.
-// It returns "" for a definition at the top of its file or in a database that keeps one copy.
+// MakeSites returns the sites of a name's definitions, each with whether the
+// winner keeps it and why. A nil winner keeps none.
+func MakeSites(ws *workspace.Session, mods *index.Index, definitions []index.Site, winner *index.Winner) []Site {
+	sites := make([]Site, len(definitions))
+	for position, definition := range definitions {
+		site := MakeSite(ws, mods, definition)
+		site.Holder = findHolder(ws, mods, definition)
+		if winner != nil {
+			outcome := mods.ResolveSite(*winner, definition)
+			site.Kept, site.Reason = outcome.Kept, outcome.Reason
+		}
+
+		label := cmp.Or(hidingLabels[site.Place.Hiding], lang.Reasons[site.Reason].Label)
+		site.Label = strings.ReplaceAll(label, "{mod}", ws.DescribeMod(site.Place.Hider))
+		sites[position] = site
+	}
+
+	return sites
+}
+
+// findHolder returns the name of the definition a nested copy is written in,
+// for a database where the game keeps every copy. It returns "" otherwise.
 func findHolder(ws *workspace.Session, mods *index.Index, definition index.Site) string {
 	database := ws.Schema.Databases[mods.ToReference(definition).Database]
 	holder, nested := mods.FindDefinition(definition)
 	if database == nil || !database.Precedence.KeepsEvery() || !nested {
 		return ""
 	}
+
 	return mods.ToReference(holder).Name
 }
 
-// LocateSite returns the site of an occurrence with the range of its name and the text of its line. The range stays
-// empty and the text "" if the file cannot be read.
+// LocateSite returns the site of an occurrence with the range of its name and
+// the text of its line. They stay empty if the file cannot be read.
 func LocateSite(ws *workspace.Session, mods *index.Index, handle index.Site) Site {
 	site := MakeSite(ws, mods, handle)
-	if tree, err := ws.LoadTree(site.Place.Path); err == nil {
-		span := mods.Occurrence(handle).Span
-		line := tree.Lines.LineSpan(tree.Lines.ToPosition(span.Start).Line)
-		site.Range, site.Text = ToRange(tree.Src, tree.Lines, span), tree.Src[line.Start:line.End]
+	span := mods.Occurrence(handle).Span
+	if source, err := ws.LoadSource(site.Place.Path); err == nil && span.End <= len(source) {
+		site = LocateSpan(site.Place, source, jomini.NewLines(source), span)
 	}
+
 	return site
 }
 
-// ToRange converts a byte span in a text to a Monaco range, using the text's line index.
-func ToRange(text string, lines jomini.Lines, span jomini.Span) Range {
-	start, end := lines.ToPosition(span.Start), lines.ToPosition(span.End)
-	return Range{
-		StartLine: start.Line + 1, StartColumn: countColumn(text, lines, start) + 1,
-		EndLine: end.Line + 1, EndColumn: countColumn(text, lines, end) + 1,
-	}
+// LocateSpan returns the site of a span in a file's text, with its range and
+// the text of its line.
+func LocateSpan(place workspace.Place, text string, lines jomini.Lines, span jomini.Span) Site {
+	line := lines.ToPosition(span.Start).Line
+	row := lines.LineSpan(line)
+
+	return Site{Place: place, Line: line + 1, Range: jomini.ToRange(text, lines, span), Text: text[row.Start:row.End]}
 }
 
-// ToSpan converts a Monaco range to a byte span in a text, using the text's line index.
-func ToSpan(text string, lines jomini.Lines, bounds Range) jomini.Span {
-	return jomini.Span{
-		Start: ToOffset(text, lines, bounds.StartLine, bounds.StartColumn),
-		End:   ToOffset(text, lines, bounds.EndLine, bounds.EndColumn),
-	}
-}
-
-// ToLineRange returns the empty range at the start of a line, counted from one.
-func ToLineRange(line int) Range {
-	return Range{StartLine: line, StartColumn: 1, EndLine: line, EndColumn: 1}
-}
-
-// ToOffset converts a line and a column as Monaco counts them to a byte offset in the text.
-func ToOffset(text string, lines jomini.Lines, line, column int) int {
-	span := lines.LineSpan(min(max(line-1, 0), lines.CountLines()-1))
-	units := 0
-	for offset, character := range text[span.Start:span.End] {
-		if units >= column-1 {
-			return span.Start + offset
-		}
-		units += utf16.RuneLen(character)
-	}
-	return span.End
-}
-
-// ToEdits converts the engine's byte-offset edits to Monaco edits over a text.
+// ToEdits converts the engine's edits over a text to the editor's.
 func ToEdits(text string, lines jomini.Lines, edits []jomini.Edit) []Edit {
-	return lo.Map(edits, func(edit jomini.Edit, _ int) Edit {
-		return Edit{Range: ToRange(text, lines, edit.Span), Text: edit.Text}
-	})
-}
-
-// CountUnits returns the length of a text in UTF-16 code units, the units Monaco counts columns in. A character above
-// U+FFFF counts two.
-func CountUnits(text string) int {
-	units := 0
-	for _, character := range text {
-		units += utf16.RuneLen(character)
+	converted := make([]Edit, len(edits))
+	for position, edit := range edits {
+		converted[position] = Edit{Range: jomini.ToRange(text, lines, edit.Span), Text: edit.Text}
 	}
-	return units
+
+	return converted
 }
 
-// countColumn returns the column of a position as Monaco counts it from zero: how many UTF-16 code units of its line
-// lie before it.
-func countColumn(text string, lines jomini.Lines, position jomini.Position) int {
-	start := lines.LineSpan(position.Line).Start
-	return CountUnits(text[start : start+position.Column])
-}
-
-// SetText gives the session the text the editor holds for an open file. It returns the file's problems.
-func (lsp *Service) SetText(path, text string) ([]Diagnostic, error) {
-	ws, err := lsp.Workspace.Session()
+// SetText gives the session the editor's text of an open file and returns the
+// file's problems.
+func (s *Service) SetText(path, text string) ([]Diagnostic, error) {
+	ws, err := s.Workspace.Session()
 	if err != nil {
 		return nil, err
 	}
+
 	ws.SetText(path, text)
-	return lsp.Diagnose(path)
+
+	return s.Diagnose(path)
 }
 
-// CloseFile drops an open file's text from the session. It does nothing if no workspace is open.
-func (lsp *Service) CloseFile(path string) {
-	if ws, err := lsp.Workspace.Session(); err == nil {
+// CloseFile drops an open file's text from the session. It does nothing if no
+// workspace is open.
+func (s *Service) CloseFile(path string) {
+	if ws, err := s.Workspace.Session(); err == nil {
 		ws.CloseBuffer(path)
 	}
 }
 
-// loadTree returns the open session and the tree of a file, from the editor's text if the file is open. It returns an
-// error if there is no session or the file cannot be read.
-func (lsp *Service) loadTree(path string) (*workspace.Session, *jomini.Tree, error) {
-	ws, err := lsp.Workspace.Session()
+func (s *Service) loadDocument(path string) (*workspace.Session, lang.Document, error) {
+	ws, err := s.Workspace.Session()
+	if err != nil {
+		return nil, lang.Document{}, err
+	}
+
+	document, err := ws.WalkDocument(path)
+
+	return ws, document, err
+}
+
+// loadTree is loadDocument without the walk, for an answer that needs only
+// the file's tree.
+func (s *Service) loadTree(path string) (*workspace.Session, *jomini.Tree, error) {
+	ws, err := s.Workspace.Session()
 	if err != nil {
 		return nil, nil, err
 	}
+
 	tree, err := ws.LoadTree(path)
+
 	return ws, tree, err
 }

@@ -11,10 +11,9 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 
 import type { Place } from "@services/workspace/models";
 
-import { matchQuery } from "../../lib/format";
 import {
   classesQuery,
-  lexiconQuery,
+  notesQuery,
   placeQuery,
   stateQuery,
   wikiPageQuery,
@@ -25,9 +24,8 @@ import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
 import { THIS_WINDOW, useWindowsStore, type WikiLookup } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
-import ScriptSnippet from "../../ui/ScriptSnippet.vue";
-import SourceLink from "../../ui/SourceLink.vue";
-import WikiArticle from "../../ui/WikiArticle.vue";
+import LexiconList from "../../ui/LexiconList.vue";
+import DocumentView from "../../ui/DocumentView.vue";
 
 const props = defineProps<{ place: Place | null }>();
 
@@ -55,12 +53,11 @@ watch(
   },
   { immediate: true },
 );
-const {
-  data: summaries,
-  error,
-  isPending,
-} = useQuery(() => ({ ...wikiPagesQuery(file.value?.path ?? ""), enabled: !!file.value && workspace.isOpen() }));
-const pages = computed(() => summaries.value ?? []);
+const { data: titles, error } = useQuery(() => ({
+  ...wikiPagesQuery(file.value?.path ?? ""),
+  enabled: !!file.value && workspace.isOpen(),
+}));
+const pages = computed(() => titles.value ?? []);
 const { data: readme } = useQuery(() => ({
   ...placeQuery(file.value?.readme ?? ""),
   enabled: !!file.value?.readme,
@@ -69,17 +66,17 @@ watch(
   () => file.value?.key,
   () => (title.value = ""),
 );
-const current = computed(() => title.value || pages.value[0]?.title || "");
+const current = computed(() => title.value || pages.value[0] || "");
 const { data: article } = useQuery(() => ({
   ...wikiPageQuery(current.value),
   enabled: !!current.value && view.value === "pages",
 }));
 const host = computed(() => (article.value ? new URL(article.value.url).host : ""));
 const morePages = computed<DropdownMenuItem[]>(() =>
-  pages.value.map((summary) => ({
-    label: summary.title,
-    icon: summary.title === current.value ? "i-lucide-check" : undefined,
-    onSelect: () => (title.value = summary.title),
+  pages.value.map((page) => ({
+    label: page,
+    icon: page === current.value ? "i-lucide-check" : undefined,
+    onSelect: () => (title.value = page),
   })),
 );
 // The page tabs that fit in the strip whole; the menu holds every page once some do not.
@@ -95,12 +92,6 @@ function measureTabs(): void {
   const tabs = [...element.children] as HTMLElement[];
   const overflow = tabs.findIndex((tab) => tab.offsetLeft + tab.offsetWidth > element.clientWidth);
   fitting.value = overflow < 0 ? tabs.length : overflow;
-}
-
-/** follow shows the wiki page a clicked link in the article points to, if it points to one. */
-function follow(event: MouseEvent): void {
-  const link = event.target instanceof Element ? event.target.closest("a") : null;
-  if (link?.dataset.page) title.value = link.dataset.page;
 }
 
 // A look-up from the editor shows its page, or its lexicon entry.
@@ -128,39 +119,14 @@ const {
 }));
 
 const { data: classes } = useQuery(classesQuery);
-const { data: rows } = useQuery(() => ({
-  ...lexiconQuery(lexiconClass.value),
-  enabled: workspace.isOpen() && view.value === "lexicon",
-}));
-const visible = computed(() => (rows.value ?? []).filter((row) => matchQuery(filter.value, row.name, row.blurb)));
-
-// The letter index beside the list: each first letter with the first row it begins.
-const list = useTemplateRef("list");
-const letters = computed(() =>
-  visible.value.reduce<{ letter: string; index: number }[]>((starts, row, index) => {
-    const letter = initial(row.name);
-    return starts.at(-1)?.letter === letter ? starts : [...starts, { letter, index }];
-  }, []),
+const { data: notes } = useQuery(() => ({ ...notesQuery, enabled: workspace.isOpen() && view.value === "lexicon" }));
+// The lexicon marks what the patches since this version changed.
+const since = shallowRef<string | null>(null);
+const releases = computed(() =>
+  (notes.value ?? [])
+    .filter((note) => note.known && !note.beta && note.version !== state.value?.install.version)
+    .map((note) => note.version),
 );
-const topLetter = shallowRef("");
-
-/** initial returns the given text's first letter in upper case. */
-function initial(text: string): string {
-  return text.charAt(0).toUpperCase();
-}
-
-/** markLetter marks the first letter of the first row in view. */
-function markLetter(): void {
-  const virtualizer = list.value?.virtualizer;
-  const top = virtualizer?.scrollOffset ?? 0;
-  const first = virtualizer?.getVirtualItems().find((item) => item.end > top)?.index ?? 0;
-  topLetter.value = initial(visible.value[first]?.name ?? "");
-}
-
-/** jump scrolls the lexicon list to the row at the given index. */
-function jump(index: number): void {
-  list.value?.virtualizer?.scrollToIndex(index, { align: "start" });
-}
 </script>
 
 <template>
@@ -198,19 +164,19 @@ function jump(index: number): void {
       <div class="flex h-7.5 shrink-0 items-stretch border-b border-default">
         <div ref="strip" class="relative flex min-w-0 flex-1 items-stretch overflow-hidden">
           <button
-            v-for="(summary, index) in pages"
-            :key="summary.title"
+            v-for="(page, index) in pages"
+            :key="page"
             type="button"
             class="relative flex h-7.5 shrink-0 items-center border-e border-default ps-2.5 pe-1.5 text-12 whitespace-nowrap"
             :class="[
-              summary.title === current
+              page === current
                 ? 'bg-default text-highlighted before:absolute before:inset-x-0 before:bottom-0 before:h-0.5 before:bg-primary'
                 : 'text-dimmed hover:text-toned',
               index >= fitting && 'invisible',
             ]"
-            @click="title = summary.title"
+            @click="title = page"
           >
-            {{ summary.title }}
+            {{ page }}
           </button>
         </div>
         <UTooltip v-if="readme" :text="`Open the game's readme/info, ${readme.name}`">
@@ -245,8 +211,6 @@ function jump(index: number): void {
           :loading="isLoading"
           :placeholder="`Search the ${state?.game?.name ?? 'game'} wiki`"
           icon="i-lucide-search"
-          value-key="title"
-          label-key="title"
           size="sm"
           class="w-full"
           @update:model-value="(next) => next && (title = next)"
@@ -255,9 +219,7 @@ function jump(index: number): void {
         </UInputMenu>
       </div>
       <template v-if="article">
-        <div class="flex min-h-0 flex-1 flex-col" @click="follow">
-          <WikiArticle :key="article.title" :page="article" />
-        </div>
+        <DocumentView :key="article.title" :html="article.html" save-id="wiki" />
         <div class="flex shrink-0 items-center gap-1 border-t border-default px-3 py-2 text-11 text-dimmed">
           <UButton
             :label="`Open on ${host}`"
@@ -272,76 +234,34 @@ function jump(index: number): void {
         </div>
       </template>
       <p v-else-if="error" class="px-3.5 py-3 text-12 text-error">{{ error.message }}</p>
-      <p v-else-if="isPending && file" class="px-3.5 py-3 text-12 text-dimmed">Reading the wiki…</p>
-      <p v-else class="px-3.5 py-3 text-12 text-dimmed">
-        {{ file ? "The wiki has no page for this file." : "Open a file to see its wiki pages." }}
-      </p>
+      <p v-else-if="!titles && file" class="px-3.5 py-3 text-12 text-dimmed">Reading the wiki…</p>
+      <UEmpty
+        v-else
+        icon="i-lucide-book-open"
+        :title="file ? 'The wiki has no page for this file' : 'Open a file to see its wiki pages'"
+        size="sm"
+        class="m-auto"
+      />
     </template>
     <template v-else>
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default px-3 py-2">
-        <UTabs
-          :model-value="lexiconClass"
-          :items="classes ?? []"
-          value-key="id"
-          :content="false"
+      <LexiconList
+        v-model:kind="lexiconClass"
+        v-model:filter="filter"
+        :classes="classes ?? []"
+        :start="since ?? ''"
+        :end="since ? (state?.install.version ?? '') : ''"
+      >
+        <span class="shrink-0 text-12 text-dimmed">Changed since</span>
+        <USelectMenu
+          v-model="since"
+          :items="releases"
+          :search-input="false"
+          placeholder="No version"
           size="xs"
-          @update:model-value="lexiconClass = String($event)"
+          clear
+          class="w-32 shrink-0"
         />
-        <UInput
-          v-model="filter"
-          placeholder="Filter the lexicon"
-          size="xs"
-          icon="i-lucide-filter"
-          class="ms-auto w-48"
-        />
-      </div>
-      <div v-if="visible.length" class="flex min-h-0 flex-1">
-        <UScrollArea
-          ref="list"
-          v-slot="{ item }"
-          :items="visible"
-          :virtualize="{ estimateSize: (index) => (visible[index]?.blurb || visible[index]?.usage ? 140 : 52) }"
-          class="min-h-0 flex-1"
-          @scroll="markLetter"
-        >
-          <div
-            class="flex flex-col gap-1.5 border-b border-default px-3.5"
-            :class="item.blurb || item.usage ? 'py-2.5' : 'py-1.5'"
-          >
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="font-mono text-13 font-semibold break-all text-highlighted">{{ item.name }}</span>
-              <UBadge v-for="scope in item.scopes ?? []" :key="scope" :label="scope" size="sm" />
-              <span v-if="item.target" class="font-mono text-11 text-dimmed">→ {{ item.target }}</span>
-            </div>
-            <UTooltip v-if="item.defined" :text="item.defined.place.rel" class="self-start">
-              <SourceLink :place="item.defined.place" :line="item.defined.line" short class="text-11 text-dimmed" />
-            </UTooltip>
-            <p v-if="item.blurb" class="text-12 text-toned">{{ item.blurb }}</p>
-            <ScriptSnippet
-              v-if="item.usage"
-              :text="item.usage"
-              language="paradox-script"
-              class="rounded-md border border-default px-2.5 pb-1.5"
-            />
-          </div>
-        </UScrollArea>
-        <nav class="flex w-6 shrink-0 flex-col items-center overflow-y-auto border-s border-default py-1 text-10">
-          <button
-            v-for="{ letter, index } in letters"
-            :key="letter"
-            type="button"
-            class="w-full shrink-0 rounded-sm py-0.5 text-center font-medium"
-            :class="letter === topLetter ? 'bg-(--accent-soft) text-highlighted' : 'text-dimmed hover:text-toned'"
-            :aria-label="`Rows beginning with ${letter}`"
-            @click="jump(index)"
-          >
-            {{ letter }}
-          </button>
-        </nav>
-      </div>
-      <p v-else class="px-3.5 py-3 text-12 text-dimmed">
-        {{ rows ? "Nothing in the lexicon matches." : "Reading the game's dumps…" }}
-      </p>
+      </LexiconList>
     </template>
   </aside>
 </template>

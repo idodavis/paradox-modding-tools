@@ -5,17 +5,19 @@ import * as monaco from "monaco-editor/editor/editor.api";
 import "monaco-editor/features/register.all";
 import "monaco-editor/editor/contrib/semanticTokens/browser/viewportSemanticTokens";
 import "monaco-editor/languages/definitions/markdown/register";
+import { jsonDefaults } from "monaco-editor/languages/features/json/register";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import { watch } from "vue";
 
 import type { editor, languages } from "monaco-editor";
+import { SYNTAX } from "../../../lib/syntax";
 import { legendQuery, loadQuery, placeQuery } from "../../../queries";
 import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
 import { COMMAND_BUS } from "../../../stores/windows";
 import { registerConflicts } from "./conflicts";
-import { LOCALIZATION, SCRIPT } from "./grammars";
-import { openModel, setupModels } from "./models";
+import { DESCRIPTOR, LOCALIZATION, SCRIPT } from "./grammars";
+import { openModel, repaintModels, setupModels } from "./models";
 import { labelService, registerProviders } from "./providers";
 
 /** LANGUAGES lists each Paradox language with its label, grammar and word pattern. */
@@ -26,6 +28,8 @@ const LANGUAGES = [
   // a game's readme/info is prose around script examples: the script's colors, and Go's answers where an example
   // names something, though Go reports no problem in it
   { id: "paradox-readme", label: "Game readme/info", grammar: SCRIPT, word: /[\w.:@$-]+/ },
+  // a .mod descriptor is written as script; metadata.json is Monaco's own JSON
+  { id: "paradox-descriptor", label: "Mod descriptor", grammar: DESCRIPTOR, word: /[\w.:@$-]+/ },
 ];
 const PAIRS = [
   { open: "{", close: "}" },
@@ -48,29 +52,6 @@ const CONFIGURATION: languages.LanguageConfiguration = {
   ],
 };
 
-// Each token the grammars and the legend use, with the `--syn-<name>` theme variable that colors it.
-const SYNTAX: Record<string, string> = {
-  comment: "comment",
-  string: "string",
-  number: "number",
-  literal: "number",
-  choice: "number",
-  operator: "operator",
-  block: "field",
-  field: "field",
-  entry: "name",
-  variable: "macro",
-  scope: "command",
-  keyword: "keyword",
-  command: "command",
-  definition: "name",
-  reference: "name",
-  link: "link",
-  call: "command",
-  parameter: "macro",
-  constant: "macro",
-};
-
 const defined = new Set<string>();
 
 /** setupMonaco sets Monaco up once, before the first editor is created. */
@@ -84,6 +65,10 @@ export function setupMonaco(): void {
       {
         textModelService: {
           createModelReference: async (uri: monaco.Uri) => {
+            // A compare's or a baseline's model is held, and is no file.
+            const held = uri.scheme === "file" ? null : monaco.editor.getModel(uri);
+            if (held) return { object: { textEditorModel: held }, dispose: () => undefined };
+
             const place = await loadQuery(placeQuery(uri.fsPath));
             if (!place) throw new Error(`${uri.fsPath} could not be read`);
             return { object: { textEditorModel: (await openModel(place)).model }, dispose: () => undefined };
@@ -93,6 +78,8 @@ export function setupMonaco(): void {
       },
     )
     .dispose();
+  // JSON gets its colors only: Monaco's other JSON features need a worker.
+  jsonDefaults.setModeConfiguration({ tokens: true });
   for (const { id, label, grammar, word } of LANGUAGES) {
     monaco.languages.register({ id, aliases: [label] });
     monaco.languages.setMonarchTokensProvider(id, grammar);
@@ -139,6 +126,7 @@ function applyTheme(family: string, dark: boolean): void {
     monaco.editor.defineTheme(id, makeTheme(`${family}-${dark ? "dark" : "light"}`, dark));
   }
   monaco.editor.setTheme(id);
+  repaintModels();
 }
 
 /** editorOptions returns the Monaco editor options built from the settings. */
@@ -165,7 +153,8 @@ export function editorOptions(): editor.IStandaloneEditorConstructionOptions {
     autoClosingBrackets: settings.isOn("ide.closeBrackets") ? "languageDefined" : "never",
     autoClosingQuotes: settings.isOn("ide.closeBrackets") ? "languageDefined" : "never",
     quickSuggestions: settings.isOn("ide.complete") ? { other: true, comments: false, strings: true } : false,
-    inlineSuggest: { enabled: settings.isOn("ide.predict") },
+    // PMT's predicted text and Copilot's suggestions each check their own.
+    inlineSuggest: { enabled: settings.isOn("ide.predict") || settings.isOn("agents.completion") },
     parameterHints: { enabled: settings.isOn("ide.signature") },
     minimap: { enabled: settings.isOn("ide.minimap") },
     folding: settings.isOn("ide.folding"),
@@ -183,14 +172,22 @@ function makeTheme(pageTheme: string, dark: boolean): editor.IStandaloneThemeDat
   const probe = document.body.appendChild(document.createElement("div"));
   probe.dataset.theme = pageTheme;
   const style = getComputedStyle(probe);
+  // A token written as a mix of other tokens is worked out by the browser.
+  // Every token is written out as six or eight hex digits: a built app's
+  // CSS shortens #ff5555 to #f55, and Monaco refuses a rule's color in
+  // three digits, which leaves the whole theme undrawn.
   const token = (key: string): string => {
     const color = style.getPropertyValue(`--${key}`).trim();
-    return !color || color.startsWith("#") ? color : new Color(color).to("srgb").toString({ format: "hex" });
+    if (!color) return color;
+    probe.style.color = color;
+    return new Color(style.color).to("srgb").toString({ format: "hex", collapse: false });
   };
+  // A theme may give a syntax color a weight, which Monaco takes as a font
+  // style.
   const rules = Object.entries(SYNTAX).map(([type, syntax]) => ({
     token: type,
     foreground: token(`syn-${syntax}`),
-    fontStyle: type === "comment" ? "italic" : "",
+    fontStyle: type === "comment" ? "italic" : style.getPropertyValue(`--syn-${syntax}-weight`).trim(),
   }));
   const theme: editor.IStandaloneThemeData = {
     base: dark ? "vs-dark" : "vs",
@@ -227,9 +224,9 @@ function buildColors(token: (key: string) => string, dark: boolean): Record<stri
     "editorIndentGuide.background1": token("line-1"),
     "editorIndentGuide.activeBackground1": token("line-2"),
     "editorWhitespace.foreground": token("line-2"),
-    "editorBracketHighlight.foreground1": token("syn-command"),
-    "editorBracketHighlight.foreground2": token("syn-name"),
-    "editorBracketHighlight.foreground3": token("syn-number"),
+    "editorBracketHighlight.foreground1": token("bracket-1"),
+    "editorBracketHighlight.foreground2": token("bracket-2"),
+    "editorBracketHighlight.foreground3": token("bracket-3"),
     "editorBracketMatch.background": `${accent}26`,
     "editorBracketMatch.border": `${accent}80`,
     "editorError.foreground": token("red"),

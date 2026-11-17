@@ -8,84 +8,130 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samber/lo"
-
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Detail is what the page shows about one node: its texts, its keys, its firings and the game rules it reads.
+// Detail is what the page shows about one node: its texts, its keys, its
+// firings and the game rules it reads.
 type Detail struct {
-	Node     Node            `json:"node"`     // its Fires are every firing it makes
-	Language string          `json:"language"` // the workspace's language, or the base language if it has none
-	Source   string          `json:"source"`   // the definition as written
-	Sections []Section       `json:"sections"` // the keys at the top of the definition, except its options
-	Options  []Section       `json:"options"`  // the definition's option blocks
-	FiredBy  []Edge          `json:"firedBy"`
-	Linked   map[string]Node `json:"linked"`         // the node at the other end of each of its firings, by its id
-	Rules    []Rule          `json:"rules"`          // the game rules the definition reads
-	Copy     *Node           `json:"copy,omitempty"` // the copy of its name that the definition hides; nil for none
+	// Node is the node, with every firing it makes as its Fires.
+	Node Node `json:"node"`
+
+	// Language is the workspace's language, else the base language.
+	Language string `json:"language"`
+
+	// Source is the definition as written.
+	Source string `json:"source"`
+
+	// Sections are the keys at the top of the definition but its option
+	// blocks, which are Options.
+	Sections []Section `json:"sections"`
+	Options  []Section `json:"options"`
+
+	FiredBy []Edge `json:"firedBy"`
+
+	// Linked holds the node at the other end of each firing, by id.
+	Linked map[string]Node `json:"linked"`
+
+	// Rules are the game rules the definition reads.
+	Rules []Rule `json:"rules"`
+
+	// Copy is the copy of its name the definition hides, nil for none.
+	Copy *Node `json:"copy,omitempty"`
 }
 
-// A Section is one key at the top of a definition, as the page shows it.
+// Section is one key at the top of a definition.
 type Section struct {
-	Key   string      `json:"key"`
-	Value string      `json:"value"`          // a scalar as written; "" for a block
-	Line  int         `json:"line"`           // counted from one
-	When  []Condition `json:"when,omitempty"` // a block's own limit, else its trigger, in words
-	Texts []Version   `json:"texts,omitempty"`
+	Key string `json:"key"`
+
+	// Value is a plain value as written, "" for a block.
+	Value string `json:"value"`
+
+	// Line counts from one.
+	Line int `json:"line"`
+
+	// When is a block's own limit, else its trigger, in words.
+	When []Condition `json:"when,omitempty"`
+
+	Texts []Version `json:"texts,omitempty"`
 }
 
-// A Version is one text a key can show, with the trigger that decides it.
+// Version is one text a key can show, with the trigger that decides it.
 type Version struct {
-	Key      string        `json:"key"` // its localization key
-	Text     string        `json:"text"`
-	Segments []loc.Segment `json:"segments"`          // the text's pieces, each data call in words
-	Missing  bool          `json:"missing,omitempty"` // the detail's language has no message with its key
-	When     []Condition   `json:"when,omitempty"`    // its trigger in words; nil if it always can
-	Line     int           `json:"line"`              // counted from one
+	// Key is the text's localization key.
+	Key  string `json:"key"`
+	Text string `json:"text"`
+
+	// Segments are the pieces of the text, each data call in words.
+	Segments []loc.Segment `json:"segments"`
+
+	// Missing is set where the detail's language has no message for the key.
+	Missing bool `json:"missing,omitempty"`
+
+	// When is the text's trigger in words, nil for a text that always shows.
+	When []Condition `json:"when,omitempty"`
+
+	// Line counts from one.
+	Line int `json:"line"`
 }
 
-// A Rule is one game rule a definition reads, with its settings.
+// Rule is one game rule a definition reads, with its settings.
 type Rule struct {
-	ID      string       `json:"id"` // the rule's name
+	// ID is the rule's name.
+	ID      string       `json:"id"`
 	Options []RuleOption `json:"options"`
 }
 
-// A RuleOption is one setting of a game rule.
+// RuleOption is one setting of a game rule.
 type RuleOption struct {
-	Key         string `json:"key"`
-	Text        string `json:"text"`        // its localized name; "" if it has none
-	Description string `json:"description"` // its localized description; "" if it has none
-	Default     bool   `json:"default,omitempty"`
+	Key string `json:"key"`
+
+	// Text and Description are the setting's localized name and
+	// description, "" where it has none.
+	Text        string `json:"text"`
+	Description string `json:"description"`
+
+	Default bool `json:"default,omitempty"`
 }
 
-// callKind is the kind of a data call's segment once it holds the call's words.
+// callKind is the kind of a text's piece that holds a data call in words.
 const callKind = "text"
 
-// textKeys are the keys at the top of a definition whose value is always a localization key.
-var textKeys = []string{game.TitleKey, game.DescriptionKey}
+// textKeys are the top keys whose value is always a localization key, so
+// they show a text even where its message is missing.
+var textKeys = []string{lang.TitleKey, lang.DescriptionKey}
 
-// BuildDetail returns the detail of the node with the given id. It returns an error if no workspace is open, the game
-// keeps no definition of the node or its file cannot be read.
-func (gph *Service) BuildDetail(id string) (Detail, error) {
-	ws, err := gph.Workspace.Session()
+// optionKey is an event's option, and optionTitleKey the key that names
+// it: a localization key, or a block that chooses one.
+const (
+	optionKey      = "option"
+	optionTitleKey = "name"
+)
+
+// BuildDetail returns the detail of a node. It returns an error if no
+// workspace is open, the game keeps no definition of the node, or its file
+// cannot be read.
+func (s *Service) BuildDetail(id string) (Detail, error) {
+	ws, err := s.Workspace.Session()
 	if err != nil {
 		return Detail{}, err
 	}
+
 	mods := ws.Mods.Load()
 	site, err := resolveNode(ws, mods, id)
 	if err != nil {
 		return Detail{}, err
 	}
+
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
 		return Detail{}, err
 	}
+
 	node := drawNode(ws, mods, site, 0)
 	fires, firedBy := listFires(ws, mods, site, true), mods.ListFiredBy(ws.Schema, site, true)
 	node.Fires = makeEdges(ws, mods, fires)
@@ -94,32 +140,40 @@ func (gph *Service) BuildDetail(id string) (Detail, error) {
 		target := makeNode(ws, mods, fire.Target, 0)
 		linked[target.ID] = target
 	}
+
 	for _, fire := range firedBy {
 		source := makeNode(ws, mods, fire.Source, 0)
 		linked[source.ID] = source
 	}
-	sections := lo.Map(slices.Collect(tree.Children(statement)), func(child int32, _ int) Section {
-		return makeSection(ws, mods, tree, child)
-	})
-	sections, options := lo.FilterReject(sections, func(section Section, _ int) bool { return section.Key != game.OptionKey })
+
 	detail := Detail{
 		Node:     node,
 		Language: resolveLanguage(ws),
 		Source:   tree.Text(tree.Statements[statement].Span),
-		Sections: sections,
-		Options:  options,
+		Sections: []Section{},
+		Options:  []Section{},
 		FiredBy:  makeEdges(ws, mods, firedBy),
 		Linked:   linked,
 		Rules:    listRules(ws, mods, tree, statement),
 	}
+	for child := range tree.Children(statement) {
+		if section := makeSection(ws, mods, tree, child); section.Key == optionKey {
+			detail.Options = append(detail.Options, section)
+		} else {
+			detail.Sections = append(detail.Sections, section)
+		}
+	}
+
 	if hidden, ok := findCopy(ws, mods, site); ok {
 		other := makeNode(ws, mods, hidden, 0)
 		detail.Copy = &other
 	}
+
 	return detail, nil
 }
 
-// makeSection returns the section of one statement at the top of a definition, with its texts.
+// makeSection returns the section of one statement at the top of a
+// definition, with its texts.
 func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Section {
 	current := tree.Statements[statement]
 	section := Section{Key: tree.Text(current.Key), Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Key)}
@@ -128,102 +182,136 @@ func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, st
 		if ok && (version.Text != "" || slices.Contains(textKeys, section.Key)) {
 			section.Texts = []Version{version}
 		}
+
 		return section
 	}
+
 	section.When = findCondition(ws, mods, tree, statement)
 	section.Texts = listVersions(ws, mods, tree, statement)
+
 	return section
 }
+
+// triggeredText is a description's text shown when its trigger holds, and
+// textChoices the description blocks that choose one text inside them.
+const triggeredText = "triggered_desc"
+
+var textChoices = []string{"first_valid", "random_valid"}
 
 // listVersions returns the texts a block can show, in the order written.
 func listVersions(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Version {
 	var versions []Version
 	for child := range tree.Children(statement) {
-		key := tree.Text(tree.Statements[child].Key)
-		row, _ := ws.Game.LookupKeyword(game.ShapeDescription, "", key, "")
+		key := strings.ToLower(tree.Text(tree.Statements[child].Key))
 		switch {
-		case row.Shows == "leaf" || key == game.DescriptionKey || key == game.OptionTitleKey:
+		case key == triggeredText || key == lang.DescriptionKey || key == optionTitleKey:
 			if version, ok := makeVersion(ws, mods, tree, child); ok {
 				version.When = findCondition(ws, mods, tree, child)
 				versions = append(versions, version)
 			}
-		case row.Shows != "":
+
+		case slices.Contains(textChoices, key):
 			versions = append(versions, listVersions(ws, mods, tree, child)...)
 		}
 	}
+
 	return versions
 }
 
-// makeVersion returns the text a statement shows. It returns false if the statement writes no localization key.
+// makeVersion returns the text a statement shows. It returns false if it
+// names no localization key.
 func makeVersion(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) (Version, bool) {
 	label := statement
 	if tree.Statements[statement].IsBlock() {
-		// FindChild leaves 0 when there is no desc, and statement 0 is the file, which has no value.
-		label, _ = tree.FindChild(statement, game.DescriptionKey)
+		// A block with neither key leaves label at 0, the file, which has
+		// no value.
+		label, _ = tree.FindChild(statement, lang.DescriptionKey)
 		if label == 0 {
-			label, _ = tree.FindChild(statement, game.LabelKey)
+			label, _ = tree.FindChild(statement, lang.LabelKey)
 		}
 	}
+
 	value := tree.Statements[label].Value
 	if value.IsEmpty() {
 		return Version{}, false
 	}
+
+	// A value that is no identifier is shown as written, so it is never
+	// missing.
 	key := tree.Unquoted(value)
 	text, winner, ok := ws.LookupText(mods, key)
-	// A key that is not an identifier is shown as written, so it is never missing.
-	missing := jomini.IsIdentifier(key) && (!ok || mods.Language(winner.Site) != resolveLanguage(ws))
+	isMissing := tree.Statements[label].ValueClass.IsIdentifier() && (!ok || mods.Language(winner.Site) != resolveLanguage(ws))
+
 	return Version{
-		Key: key, Text: text, Segments: describeCalls(ws, mods, text), Missing: missing,
+		Key: key, Text: text, Segments: describeCalls(ws, mods, text), Missing: isMissing,
 		Line: toSourceLine(tree, tree.Statements[label].Key),
 	}, true
 }
 
-// describeCalls returns a text's pieces with each data call replaced by its words, which leave out the function's
-// ending that only turns off its tooltip. A call keeps its markup and has the kind callKind.
+// describeCalls returns the pieces of a text with each data call in words,
+// without the ending of a function's name that only turns off its tooltip.
 func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.Segment {
 	segments := loc.Segments(text, 0)
 	for position, segment := range segments {
-		call, ok := jomini.ParseCall(segment.Text, 0)
-		if segment.Markup != loc.MarkupCall || !ok || len(call.Steps) == 0 {
+		call := segment.Call
+		if call == nil {
 			continue
 		}
+
 		step := call.Steps[len(call.Steps)-1]
-		step.Text = strings.TrimSuffix(step.Text, game.GUI.NoTooltip)
-		segments[position].Text = cmp.Or(describeCustom(ws, mods, step), schema.DescribeStep(step, true))
+		step.Text = strings.TrimSuffix(step.Text, lang.GUINoTooltip)
+		segments[position].Text = cmp.Or(describeCustom(ws, mods, step), lang.DescribeStep(step, true))
 		segments[position].Kind = callKind
 	}
+
 	return segments
 }
 
-// describeCustom returns the texts a call's customizable localization can show, joined by slashes, such as
-// "daughter/son". It returns "" for a call that names none, or one the workspace does not define.
+// A customizable localization holds a block for each text it can show,
+// which names the text's localization key.
+const (
+	customTextBlock = "text"
+	customTextKey   = "localization_key"
+)
+
+// describeCustom returns the texts the customizable localization a call
+// names can show, each once, joined by slashes, as "daughter/son". It
+// returns "" if the call names none the workspace defines.
 func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) string {
-	position := slices.Index(game.GUI.CallTargets[step.Text], game.CustomLocalization)
+	position := slices.Index(lang.GUICallTargets[step.Text], lang.CustomLocalization)
 	if position < 0 || position >= len(step.Arguments) || !step.Arguments[position].Quoted {
 		return ""
 	}
-	reference := schema.Reference{Database: game.CustomLocalization, Name: step.Arguments[position].Text}
+
+	reference := lang.Reference{Database: lang.CustomLocalization, Name: step.Arguments[position].Text}
 	winner, ok := mods.FindKept(ws.Schema, reference)
 	if !ok {
 		return ""
 	}
+
 	tree, statement, err := ws.FindStatement(mods, winner.Site)
 	if err != nil {
 		return ""
 	}
+
 	var texts []string
 	for child := range tree.Children(statement) {
-		key, ok := tree.FindChildValue(child, game.CustomTexts.Key)
-		if !ok || tree.Text(tree.Statements[child].Key) != game.CustomTexts.Block {
+		key, ok := tree.FindChildValue(child, customTextKey)
+		if !ok || tree.Text(tree.Statements[child].Key) != customTextBlock {
 			continue
 		}
-		text, _, _ := ws.LookupText(mods, key)
-		texts = append(texts, strings.TrimSpace(loc.ToPlain(loc.Segments(text, 0))))
+
+		message, _, _ := ws.LookupText(mods, key)
+		if text := strings.TrimSpace(loc.ToPlain(loc.Segments(message, 0))); text != "" && !slices.Contains(texts, text) {
+			texts = append(texts, text)
+		}
 	}
-	return strings.Join(lo.Uniq(lo.Compact(texts)), "/")
+
+	return strings.Join(texts, "/")
 }
 
-// toTitle returns a text as the one line a player reads, each data call in its words between brackets.
+// toTitle returns a text as the one line a player sees, each data call in
+// its words between brackets.
 func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
 	var title strings.Builder
 	for _, segment := range describeCalls(ws, mods, text) {
@@ -231,18 +319,19 @@ func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
 		case loc.MarkupText:
 			title.WriteString(segment.Text)
 		case loc.MarkupCall:
-			title.WriteString("[" + segment.Text + "]")
+			title.WriteString("[")
+			title.WriteString(segment.Text)
+			title.WriteString("]")
 		}
 	}
+
 	return strings.TrimSpace(title.String())
 }
 
-// resolveLanguage returns the workspace's language, or the game's base language if it has none.
 func resolveLanguage(ws *workspace.Session) string {
-	return cmp.Or(ws.Language, game.BaseLanguage)
+	return cmp.Or(ws.Language, loc.BaseLanguage)
 }
 
-// toSourceLine returns the line of a span in a tree, counted from one.
 func toSourceLine(tree *jomini.Tree, span jomini.Span) int {
 	return tree.Lines.ToPosition(span.Start).Line + 1
 }
@@ -251,46 +340,67 @@ func toSourceLine(tree *jomini.Tree, span jomini.Span) int {
 func listRules(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) []Rule {
 	rules := []Rule{}
 	for child := statement + 1; child < tree.Statements[statement].Last; child++ {
-		if tree.Text(tree.Statements[child].Key) != game.GameRules.Trigger {
+		if tree.Text(tree.Statements[child].Key) != lang.GameRuleTrigger {
 			continue
 		}
-		rule, ok := findRule(ws, mods, tree.Unquoted(tree.Statements[child].Value))
-		if ok && !slices.ContainsFunc(rules, func(other Rule) bool { return other.ID == rule.ID }) {
+
+		if rule, ok := findRule(ws, mods, tree.Unquoted(tree.Statements[child].Value)); ok {
 			rules = append(rules, rule)
 		}
 	}
-	return rules
+
+	return dropRepeats(rules, func(rule Rule) string { return rule.ID })
 }
 
-// findRule returns the game rule that holds the given setting, or false if none does.
+// How a game rule is written.
+const (
+	// ruleDefaultKey names a rule's default setting. A rule without it
+	// defaults to its first.
+	ruleDefaultKey = "default"
+
+	// ruleCategoriesKey is the one block in a rule that is no setting.
+	ruleCategoriesKey = "categories"
+
+	// ruleSettingText and ruleSettingDescription are the localization keys
+	// of a setting's name and description.
+	ruleSettingText        = "setting_%s"
+	ruleSettingDescription = "setting_%s_desc"
+)
+
+// findRule returns the game rule a setting belongs to, with its settings.
+// It returns false if nothing defines the setting.
 func findRule(ws *workspace.Session, mods *index.Index, setting string) (Rule, bool) {
-	for _, winner := range mods.ListKept(ws.Schema, game.GameRules.Database) {
-		tree, statement, err := ws.FindStatement(mods, winner.Site)
-		if err != nil {
-			continue
-		}
-		if child, ok := tree.FindChild(statement, setting); ok && tree.Statements[child].IsBlock() {
-			return makeRule(ws, mods, tree, statement), true
-		}
+	winner, ok := mods.FindKept(ws.Schema, lang.Reference{Database: lang.GameRuleSettings, Name: setting})
+	if !ok {
+		return Rule{}, false
 	}
-	return Rule{}, false
-}
 
-// makeRule returns the game rule a statement defines. Its default is the setting it names as one, else its first.
-func makeRule(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Rule {
-	preset, hasDefault := tree.FindChildValue(statement, game.GameRules.DefaultKey)
+	site, ok := mods.FindDefinition(winner.Site)
+	if !ok {
+		return Rule{}, false
+	}
+
+	tree, statement, err := ws.FindStatement(mods, site)
+	if err != nil {
+		return Rule{}, false
+	}
+
+	preset, hasDefault := tree.FindChildValue(statement, ruleDefaultKey)
 	options := []RuleOption{}
 	for child := range tree.Children(statement) {
 		key := tree.Text(tree.Statements[child].Key)
-		if !tree.Statements[child].IsBlock() || key == game.GameRules.CategoriesKey {
+		if !tree.Statements[child].IsBlock() || key == ruleCategoriesKey {
 			continue
 		}
-		text, _, _ := ws.LookupText(mods, fmt.Sprintf(game.GameRules.Setting, key))
-		description, _, _ := ws.LookupText(mods, fmt.Sprintf(game.GameRules.Description, key))
+
+		text, _, _ := ws.LookupText(mods, fmt.Sprintf(ruleSettingText, key))
+		description, _, _ := ws.LookupText(mods, fmt.Sprintf(ruleSettingDescription, key))
 		options = append(options, RuleOption{Key: key, Text: text, Description: description, Default: key == preset})
 	}
+
 	if !hasDefault && len(options) > 0 {
 		options[0].Default = true
 	}
-	return Rule{ID: tree.Text(tree.Statements[statement].Key), Options: options}
+
+	return Rule{ID: tree.Text(tree.Statements[statement].Key), Options: options}, true
 }

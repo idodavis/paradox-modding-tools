@@ -10,6 +10,8 @@ defineProps<{
   column?: number;
   /** Whether it shows the file's name alone, without its folders. */
   short?: boolean;
+  /** Whether it leaves out the origin's dot, where the origin is already shown. */
+  plain?: boolean;
 }>();
 
 const editor = useEditorStore();
@@ -24,7 +26,7 @@ const editor = useEditorStore();
     :ui="{ label: 'truncate' }"
     @click="editor.show(place, line ? { lineNumber: line, column: column ?? 1 } : undefined)"
   >
-    <template #leading>
+    <template v-if="!plain" #leading>
       <slot name="leading"><OriginChip :origin="place.origin" dot /></slot>
     </template>
   </UButton>

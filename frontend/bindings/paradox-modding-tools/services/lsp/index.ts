@@ -8,11 +8,12 @@ export {
 
 export type {
     Card,
-    CardDate,
+    CardRow,
     Class,
     Code,
     ColorSite,
     Completion,
+    CompletionList,
     Diagnostic,
     Draft,
     Edit,
@@ -21,8 +22,8 @@ export type {
     Hint,
     Legend,
     Level,
+    LexiconRow,
     Part,
-    Range,
     Signature,
     Site,
     Symbol,

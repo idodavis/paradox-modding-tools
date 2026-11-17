@@ -34,13 +34,14 @@ const { model, coat } = defineProps<{ model: Model; coat: Coat }>();
 type Row = { layer: Layer; index: number };
 
 const SORTING = { handle: ".pmt-grip", animation: 150, watchElement: true };
-// The instance columns. A column with isPair holds two numbers, across and down, that can be locked.
+// The instance columns, in order. One whose input is a pair holds two
+// numbers, across and down, that can be locked.
 const COLUMNS = [
-  { key: "position", title: "Position", isPair: true },
-  { key: "offset", title: "Offset", isPair: true },
-  { key: "scale", title: "Scale", isPair: true },
-  { key: "rotation", title: "Turn", isPair: false },
-  { key: "depth", title: "Depth", isPair: false },
+  { key: "position", title: "Position" },
+  { key: "offset", title: "Offset" },
+  { key: "scale", title: "Scale" },
+  { key: "rotation", title: "Turn" },
+  { key: "depth", title: "Depth" },
 ];
 
 const store = useDrawStore();
@@ -564,11 +565,11 @@ sort(useTemplateRef<HTMLElement>("subList"), subs);
           <thead class="font-sans text-11 text-dimmed">
             <tr class="h-5.5">
               <th class="w-7 font-normal">#</th>
-              <th v-for="{ key, title, isPair } in columns" :key="key" class="ps-2 text-start font-normal">
+              <th v-for="{ key, title } in columns" :key="key" class="ps-2 text-start font-normal">
                 <span class="flex items-center gap-0.5">
                   {{ title }}
                   <UTooltip
-                    v-if="isPair"
+                    v-if="current.layer.inputs?.[key] === 'pair'"
                     :text="locks.has(key) ? 'Both numbers change together' : 'Each number changes on its own'"
                   >
                     <UButton

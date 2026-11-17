@@ -14,7 +14,7 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 import ScriptSnippet from "../../ui/ScriptSnippet.vue";
 import SourceLink from "../../ui/SourceLink.vue";
-import ConditionList, { describeStep, groupConditions } from "./ConditionList.vue";
+import ConditionList from "./ConditionList.vue";
 import { listRoute, lookupLook } from "./layout";
 
 // CHIP is the classes of the chip a data call or a key in a text is drawn as.
@@ -79,8 +79,8 @@ const way = computed(() => {
 });
 const wayConditions = computed(() =>
   way.value.map(({ node: stop, edge }) => {
-    const trigger = groupConditions(stop.trigger ?? []);
-    const steps = (edge?.steps ?? []).flatMap(describeStep);
+    const trigger = stop.trigger ?? [];
+    const steps = (edge?.steps ?? []).flatMap((step) => step.conditions ?? []);
     return [
       ...(trigger.length ? [{ text: "when", conditions: trigger, line: 0 }] : []),
       ...(steps.length ? [{ text: "then", conditions: steps, line: 0 }] : []),
@@ -309,7 +309,7 @@ function show(place: Place, line: number): void {
               <template v-for="section in properties" :key="section.line">
                 <dt class="text-dimmed">{{ section.key }}</dt>
                 <dd class="min-w-0 wrap-anywhere">
-                  <ScriptSnippet :text="section.value" language="paradox-script" inline />
+                  <ScriptSnippet :text="section.value" :path="node.site.place.path" inline />
                 </dd>
               </template>
             </dl>
@@ -349,7 +349,7 @@ function show(place: Place, line: number): void {
             <p v-if="version.missing" class="text-12 text-warning">Missing in {{ detail.language }}</p>
             <ConditionList
               v-if="version.when?.length"
-              :conditions="[{ text: 'when', conditions: groupConditions(version.when), line: version.line }]"
+              :conditions="[{ text: 'when', conditions: version.when, line: version.line }]"
               class="text-11"
             />
           </li>
@@ -397,7 +397,12 @@ function show(place: Place, line: number): void {
                 @click="show(node.site.place, node.site.line)"
               />
             </div>
-            <ScriptSnippet :text="detail.source" :line="node.site.line" language="paradox-script" class="px-3 pb-1.5" />
+            <ScriptSnippet
+              :text="detail.source"
+              :line="node.site.line"
+              :path="node.site.place.path"
+              class="px-3 pb-1.5"
+            />
           </div>
         </div>
       </div>

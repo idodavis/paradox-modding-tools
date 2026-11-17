@@ -8,7 +8,7 @@ import { useSavedPixelSize } from "../lib/splitter";
 import { useAgentStore } from "../stores/agent";
 import { THIS_WINDOW } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
-import AgentPane from "./AgentPane.vue";
+import AgentPane from "./agent/AgentPane.vue";
 import { registerShortcuts } from "./commands";
 import CommandPalette from "./CommandPalette.vue";
 import { isWorkspacePage } from "./pages";
@@ -43,6 +43,7 @@ const panes = computed<SplitterItem[]>(() => [
           :items="panes"
           class="min-w-0 flex-1"
           @layout="panes.length === 2 && agentWidth.keep($event)"
+          @dragging="agentWidth.save"
         >
           <template #page>
             <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">

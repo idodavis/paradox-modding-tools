@@ -23,9 +23,11 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import FactText from "../../ui/FactText.vue";
 import LeftOutMark from "../../ui/LeftOutMark.vue";
 import LevelCounts from "../../ui/LevelCounts.vue";
+import LevelMeter from "../../ui/LevelMeter.vue";
 import LoadOrder from "../../ui/LoadOrder.vue";
 import ModAvatar from "../../ui/ModAvatar.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
+import VerdictHead from "../../ui/VerdictHead.vue";
 
 const {
   mods,
@@ -191,22 +193,13 @@ function resolveColor(tally: Tally): string {
   return problemLevels.value.find((level) => level.id === tally.worst)?.color ?? "success";
 }
 
-/** describeRing returns the style of a panel's ring in a Nuxt UI color. */
-function describeRing(color: string): Record<string, string> {
-  const base = color === "neutral" ? "var(--ui-text-muted)" : `var(--ui-${color})`;
-  return {
-    color: base,
-    background: `color-mix(in oklab, ${base} 16%, transparent)`,
-    boxShadow: `0 0 0 4px color-mix(in oklab, ${base} 8%, transparent)`,
-  };
-}
-
-/** describeMeter returns the segments of a mod's meter, one for each level of problem. */
-function describeMeter(counts: Tally["counts"] | undefined): { color: string; width: string }[] {
-  if (!problemLevels.value.some((level) => counts?.[level.id])) return [{ color: "success", width: "100%" }];
-  // A level with any problem keeps a sliver, so it never reads as clean.
-  const share = (count: number): string => `${count ? Math.max(3, (count / busiest.value) * 100) : 0}%`;
-  return problemLevels.value.map((level) => ({ color: level.color, width: share(counts?.[level.id] ?? 0) }));
+/**
+ * describeMeter returns the segments of a mod's meter, one for each level of
+ * problem. With none, it returns one whole segment.
+ */
+function describeMeter(counts: Tally["counts"] | undefined): { color: string; count: number }[] {
+  const segments = problemLevels.value.map((level) => ({ color: level.color, count: counts?.[level.id] ?? 0 }));
+  return segments.some((segment) => segment.count) ? segments : [{ color: "success", count: busiest.value }];
 }
 
 /** describeLogPlace returns the mod a log row is about and the file it names, as parts. */
@@ -234,22 +227,20 @@ function describeLogPlace(finding: Finding): Part[] {
         :key="panel.view"
         class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-muted"
       >
-        <div class="flex shrink-0 items-center gap-3 border-b border-default px-4 py-3.5">
-          <span
-            class="flex size-10 shrink-0 items-center justify-center rounded-full"
-            :style="describeRing(panel.color)"
-          >
-            <UIcon :name="panel.icon" class="size-5" />
-          </span>
-          <span class="flex min-w-0 grow flex-col">
-            <span class="text-11 font-semibold text-dimmed">{{ panel.kicker }}</span>
-            <span class="line-clamp-2 text-20 leading-tight text-highlighted">{{ panel.verdict }}</span>
-            <span class="line-clamp-2 text-11 text-dimmed">{{ panel.note }}</span>
-          </span>
-          <span v-if="panel.view === 'log'" class="flex shrink-0 items-center gap-1.5 self-start text-11 text-dimmed">
-            <span class="size-1.5 rounded-full" style="background: var(--ui-success)" />Live
-          </span>
-        </div>
+        <VerdictHead
+          :color="panel.color"
+          :icon="panel.icon"
+          :kicker="panel.kicker"
+          :note="panel.note"
+          class="shrink-0 border-b border-default px-4 py-3.5"
+        >
+          {{ panel.verdict }}
+          <template v-if="panel.view === 'log'" #trailing>
+            <span class="flex shrink-0 items-center gap-1.5 self-start text-11 text-dimmed">
+              <span class="size-1.5 rounded-full" style="background: var(--ui-success)" />Live
+            </span>
+          </template>
+        </VerdictHead>
         <div class="flex min-h-0 grow flex-col overflow-y-auto py-1">
           <template v-if="panel.view === 'compatibility'">
             <button
@@ -287,14 +278,7 @@ function describeLogPlace(finding: Finding): Part[] {
                     <LevelCounts :levels="modRow.group?.counts" />
                   </span>
                   <UTooltip text="Problems by level, against the mod with the most">
-                    <span class="flex h-1.5 overflow-hidden rounded-full bg-accented">
-                      <span
-                        v-for="segment in describeMeter(modRow.group?.counts)"
-                        :key="segment.color"
-                        class="h-full"
-                        :style="{ width: segment.width, background: `var(--ui-${segment.color})` }"
-                      />
-                    </span>
+                    <LevelMeter :segments="describeMeter(modRow.group?.counts)" :scale="busiest" />
                   </UTooltip>
                 </span>
               </button>

@@ -27,11 +27,13 @@ export const useToolViewStore = defineStore("toolView", () => {
   const promptChip = computed(() => (chipLeftOut.value ? null : chip.value));
   const { data: starters } = useQuery(tasksQuery);
   /**
-   * The starter tasks the page shown offers. A file's task needs a file open, and one that edits the file needs one
-   * the user can change. A mod's task needs a mod of the user's own, and the event's an event open in the Event Graph.
+   * The starter tasks the page shown offers. A task that names pages is offered only on those. A file's task needs a
+   * file open, and one that edits the file needs one the user can change. A mod's task needs a mod of the user's own,
+   * and the event's an event open in the Event Graph.
    */
   const tasks = computed(() =>
     (starters.value ?? []).filter((task) => {
+      if (task.pages?.length && !task.pages.includes(String(route.name))) return false;
       if (task.chip === "file") return !!chip.value?.path && !(task.edits && editor.activeFile()?.readOnly);
       if (task.chip === "mod") return workspace.listOwnMods().length > 0;
       if (task.chip === "event") return route.name === "event-graph" && !!chip.value;
@@ -65,10 +67,10 @@ export const useToolViewStore = defineStore("toolView", () => {
   };
 
   /** followFile shows a file an agent's tool call names, at the given line, without changing the chip or the focus. */
-  async function followFile(path: string, line: number, source: "agent" | "edit"): Promise<void> {
+  async function followFile(path: string, line: number): Promise<void> {
     const place = await loadQuery(placeQuery(path)).catch(() => undefined);
     if (!place?.root) return;
-    editor.show(place, { lineNumber: line, column: 1 }, source);
+    editor.show(place, { lineNumber: line, column: 1 }, "agent");
   }
 
   /** show brings to the front what an agent asked to show. */

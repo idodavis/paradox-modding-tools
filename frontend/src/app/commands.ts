@@ -1,6 +1,6 @@
 /** The command table: each command of the app is one row, shaped as a menu item, with an id and a `when`. */
-import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
-import { useMutation, useQueryCache } from "@pinia/colada";
+import type { CommandPaletteGroup, CommandPaletteItem, ContextMenuItem } from "@nuxt/ui";
+import { useQueryCache } from "@pinia/colada";
 import { useEventBus } from "@vueuse/core";
 import { Dialogs } from "@wailsio/runtime";
 import * as monaco from "monaco-editor/editor/editor.api";
@@ -13,9 +13,9 @@ import * as lsp from "@services/lsp/service";
 import * as workspaceApi from "@services/workspace/service";
 import type { Fix } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
-import { confirm, copyText, toast } from "../lib/feedback";
+import { confirm, copyText, reportError, toast } from "../lib/feedback";
 import { findModel, save, saveUnsaved, unsavedModels, type Model } from "../pages/ide/editor/models";
-import { copiesQuery, loadQuery, placeQuery, precedenceQuery } from "../queries";
+import { copiesQuery, loadQuery, placeQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
 import { canSplit, useEditorStore, type Tab } from "../stores/editor";
 import { STAGE, UNSTAGE, useGitStore } from "../stores/git";
@@ -57,8 +57,10 @@ const changedBindings = computed<Record<string, string[]>>(() => {
   }
 });
 
-// Runs work as a mutation, so a failure reaches the app's error handler. It is set when the shortcuts are registered.
-let run: (work: () => Promise<unknown>) => void = () => undefined;
+/** run does a piece of work and reports its failure as a toast and a log line. */
+function run(work: () => Promise<unknown>): void {
+  void work().catch((error: unknown) => reportError(error, "command"));
+}
 
 const activeTab = () => useEditorStore().activeTab();
 const activeFile = () => useEditorStore().activeFile();
@@ -522,8 +524,6 @@ export const COMMANDS: readonly Command[] = [
 
 /** registerShortcuts registers every command's keyboard shortcuts, on while the command's `when` holds. */
 export function registerShortcuts(): void {
-  const { mutate } = useMutation({ mutation: (work: () => Promise<unknown>) => work() });
-  run = mutate;
   defineShortcuts(
     computed(() => {
       const shortcuts: Record<string, { handler: () => void; usingInput: boolean }> = {};
@@ -582,6 +582,15 @@ export function findCommand(id: string): Command | undefined {
 export function findKbds(id: string): string[] {
   const command = findCommand(id);
   return (command && listBindings(command)[0]) ?? [];
+}
+
+/**
+ * hideDisabled returns a context menu's groups without their disabled items,
+ * and without a group that has none left. A context menu lists only what can
+ * be chosen.
+ */
+export function hideDisabled(groups: ContextMenuItem[][]): ContextMenuItem[][] {
+  return groups.map((group) => group.filter((item) => !item.disabled)).filter((group) => group.length);
 }
 
 /** joinShortcut returns keys as Nuxt UI writes a shortcut, such as meta_shift_p. */
@@ -644,10 +653,10 @@ function chooseMod(id: string, label: string, mods: string[], act: (modId: strin
   choicesBus.emit({ id, label, items });
 }
 
-/** listCopyTargets lists the mods a file can be copied into: every writable mod but the file's own. */
+/** listCopyTargets lists the mods a file can be copied into: the user's own. */
 function listCopyTargets(place: Place): string[] {
   return useWorkspaceStore()
-    .listWritableMods()
+    .listOwnMods()
     .filter((mod) => mod.id !== place.origin)
     .map((mod) => mod.id);
 }
@@ -687,13 +696,9 @@ export function overrideEntry(place: Place, line: number, column: number, text: 
             // Saving puts the copy in the index, so the entry cannot be overridden into the mod a second time.
             const model = findModel(copy.key);
             if (model) await save(model);
-            const gameId = useWorkspaceStore().active()?.game?.id ?? "";
-            const precedence = await loadQuery(
-              precedenceQuery({ gameId, database: copy.database, folder: copy.folder }),
-            );
             toast?.add({
               title: `${text || "The entry"} copied into ${copy.rel}`,
-              description: precedence,
+              description: fix.note,
               color: "success",
             });
           } finally {
@@ -855,5 +860,5 @@ async function openGraph(model: Model): Promise<void> {
 async function createPath(place: Place, folder: boolean): Promise<void> {
   const title = folder ? "New folder" : "New file";
   const path = await Dialogs.SaveFile({ Title: title, Directory: place.root, ButtonText: "Create" });
-  if (path) await workspaceApi.Create(path, folder);
+  if (path) await (folder ? workspaceApi.CreateFolder(path) : workspaceApi.CreateFile(path));
 }

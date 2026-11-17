@@ -1,174 +1,275 @@
-// fires.go lists which definitions fire which: an event, an on_action or a decision that triggers another, directly or
-// through the scripted effects between them.
+// fires.go lists which definitions fire which: an event, an on_action or a
+// decision that triggers another, directly or through the scripted effects
+// between them.
 
 package index
 
 import (
 	"slices"
 
-	"github.com/samber/lo"
-
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 )
 
-// A Fire is one firing: one definition fires another, through the reference that names it and the scripted
-// effects the firing passes through.
+// Fire is one firing: one definition fires another, through the reference
+// that names it and the scripted effects the firing passes through.
 type Fire struct {
-	Source Site   `json:"source"`
-	Target Site   `json:"target"`
-	Use    Site   `json:"use"`           // the reference that names the target, beside which a delay is written
-	Via    []Site `json:"via,omitempty"` // the scripted effects entered between them, in order
+	Source Site `json:"source"`
+	Target Site `json:"target"`
+
+	// Use is the reference that names the target, beside which a delay is
+	// written.
+	Use Site `json:"use"`
+
+	// Via holds the scripted effects entered between the two, in order.
+	Via []Site `json:"via,omitempty"`
 }
 
-// ListFires returns the events, on_actions and decisions a definition fires, through its scripted effects if asked. It
-// returns nil if it fires nothing.
-func (index *Index) ListFires(schema *schema.Schema, site Site, follow bool) []Fire {
-	targets, effects := schema.FireDatabases, schema.Effects
-	var fires []Fire
-	// The scripted effects on the way from the definition are open, so that effects calling each other end the walk.
-	open := map[Site]bool{}
-	var walk func(current Site, effectSites []Site)
-	walk = func(current Site, effectSites []Site) {
-		open[current] = true
-		defer delete(open, current)
-		for _, use := range index.listReferences(current) {
-			if !index.Occurrence(use).Firing {
-				continue
-			}
-			for _, reference := range ListCallees(index.ToReference(use)) {
-				targeted := slices.Contains(targets, reference.Database)
-				if !targeted && (!follow || reference.Database != effects) {
-					continue
-				}
-				for _, target := range index.ListActing(schema, reference, use.File) {
-					switch {
-					case targeted:
-						fires = append(fires, Fire{Source: site, Target: target, Use: use, Via: effectSites})
-					case !open[target]:
-						walk(target, append(slices.Clone(effectSites), target))
-					}
-				}
-			}
-		}
-	}
-	walk(site, nil)
-	return fires
+// fireWalk is one walk along the firings from one definition, through the
+// scripted effects between if asked. The definitions on the way are kept
+// open, so effects that call each other end the walk.
+type fireWalk struct {
+	index  *Index
+	schema *lang.Schema
+
+	start Site
+
+	// follow is set for a walk that goes through scripted effects.
+	follow bool
+
+	open map[Site]bool
+
+	fires []Fire
 }
 
-// ListFiredBy returns the definitions that fire a definition, through scripted effects if asked. It returns nil if
-// nothing fires it.
-func (index *Index) ListFiredBy(schema *schema.Schema, site Site, follow bool) []Fire {
-	targets, effects := schema.FireDatabases, schema.Effects
-	if !slices.Contains(targets, index.ToReference(site).Database) {
+// ListFires returns the events, on_actions and decisions a definition fires,
+// through its scripted effects if asked. It returns nil if it fires nothing.
+func (i *Index) ListFires(schema *lang.Schema, site Site, follow bool) []Fire {
+	walk := &fireWalk{index: i, schema: schema, start: site, follow: follow, open: map[Site]bool{}}
+	walk.forward(site, nil)
+
+	return walk.fires
+}
+
+// ListFiredBy returns the definitions that fire a definition, through
+// scripted effects if asked. It returns nil if nothing fires it.
+func (i *Index) ListFiredBy(schema *lang.Schema, site Site, follow bool) []Fire {
+	if !slices.Contains(schema.FireDatabases, i.ToReference(site).Database) {
 		return nil
 	}
-	var fires []Fire
-	// As in ListFires, the scripted effects on the way are open so that a cycle ends the walk.
-	open := map[Site]bool{}
-	// The use passed down is the reference that names the fired definition, found at the first step.
-	var walk func(current Site, effectSites []Site, use Site)
-	walk = func(current Site, effectSites []Site, use Site) {
-		open[current] = true
-		defer delete(open, current)
-		// Only a definition that acts is called by name.
-		reference := index.ToReference(current)
-		if winner, ok := index.FindKeptLocal(schema, reference, current.File); !ok || !index.isActing(winner, current) {
-			return
+
+	walk := &fireWalk{index: i, schema: schema, start: site, follow: follow, open: map[Site]bool{}}
+	walk.backward(site, nil, Site{})
+
+	return walk.fires
+}
+
+// forward adds what a definition fires, and goes on into each scripted effect
+// it calls where the walk follows them.
+func (f *fireWalk) forward(current Site, effects []Site) {
+	f.open[current] = true
+	defer delete(f.open, current)
+
+	for _, use := range f.index.listReferences(current) {
+		if f.index.Occurrence(use).Firing == 0 {
+			continue
 		}
-		for _, referrer := range index.ListUses(reference.Database, reference.Name) {
-			parent, enclosed := index.FindDefinition(referrer)
-			if !enclosed || !index.Occurrence(referrer).Firing {
+
+		for _, reference := range ListCallees(f.index.ToReference(use)) {
+			targeted := slices.Contains(f.schema.FireDatabases, reference.Database)
+			if !targeted && (!f.follow || reference.Database != f.schema.Effects) {
 				continue
 			}
-			fired := use
-			if current == site {
-				fired = referrer
-			}
-			holder := index.ToReference(parent)
-			switch {
-			case holder.Database != effects || !follow:
-				// A firer the game drops fires nothing, and a merged one stands as the definition the game keeps.
-				if winner, ok := index.FindKeptLocal(schema, holder, parent.File); ok && index.isActing(winner, parent) {
-					source := lo.Ternary(winner.Reason == ReasonUnsettled, parent, winner.Site)
-					fires = append(fires, Fire{Source: source, Target: site, Use: fired, Via: effectSites})
+
+			for _, target := range f.index.ListActing(f.schema, reference, use.File) {
+				switch {
+				case targeted:
+					f.fires = append(f.fires, Fire{Source: f.start, Target: target, Use: use, Via: effects})
+				case !f.open[target]:
+					f.forward(target, append(slices.Clone(effects), target))
 				}
-			case !open[parent]:
-				walk(parent, slices.Insert(slices.Clone(effectSites), 0, parent), fired)
 			}
 		}
 	}
-	walk(site, nil, Site{})
-	return fires
 }
 
-// ListActing returns the copies of a name that a reference in a file reaches. It returns none if the game keeps none.
-func (index *Index) ListActing(schema *schema.Schema, reference schema.Reference, file int32) []Site {
-	winner, ok := index.FindKeptLocal(schema, reference, file)
-	if !ok {
-		return nil
+// backward adds what fires a definition, and goes on back from each scripted
+// effect that fires it where the walk follows them. The given use is the
+// reference that names the start, found at the first step.
+func (f *fireWalk) backward(current Site, effects []Site, use Site) {
+	f.open[current] = true
+	defer delete(f.open, current)
+
+	// Only a definition that acts is called by name.
+	reference := f.index.ToReference(current)
+	if winner, ok := f.index.FindKeptLocal(f.schema, reference, current.File); !ok || !f.index.isActing(winner, current) {
+		return
 	}
-	return lo.Filter(index.ResolveLocal(reference, file), func(site Site, _ int) bool {
-		return index.isActing(winner, site)
-	})
+
+	for _, referrer := range f.index.ListUses(reference.Database, reference.Name) {
+		parent, nested := f.index.FindDefinition(referrer)
+		if !nested || f.index.Occurrence(referrer).Firing == 0 {
+			continue
+		}
+
+		startUse := use
+		if current == f.start {
+			startUse = referrer
+		}
+
+		holder := f.index.ToReference(parent)
+		switch {
+		case holder.Database != f.schema.Effects || !f.follow:
+			// A firer the game drops fires nothing, and a merged one stands as
+			// the definition the game keeps.
+			winner, ok := f.index.FindKeptLocal(f.schema, holder, parent.File)
+			if !ok || !f.index.isActing(winner, parent) {
+				continue
+			}
+
+			source := winner.Site
+			if winner.Reason == lang.ReasonUnsettled {
+				source = parent
+			}
+
+			f.fires = append(f.fires, Fire{Source: source, Target: f.start, Use: startUse, Via: effects})
+
+		case !f.open[parent]:
+			f.backward(parent, slices.Insert(slices.Clone(effects), 0, parent), startUse)
+		}
+	}
 }
 
-// isActing reports whether a definition of the name a winner won takes part in what the game runs: the one it keeps,
-// one merged into it, or, where no source says which it keeps, any copy in a file it reads.
-func (index *Index) isActing(winner Winner, site Site) bool {
-	kept, reason, _ := index.ResolveSite(winner, site)
-	return kept || reason == ReasonUnsettled
-}
-
-// listReferences returns the references that sit directly inside a definition, in source order.
-func (index *Index) listReferences(definition Site) []Site {
+// listReferences returns the references that sit directly inside a
+// definition, in source order. They follow it without a break, so the list
+// ends at the first occurrence outside it.
+func (i *Index) listReferences(definition Site) []Site {
 	var sites []Site
-	// A definition's references follow it without a break, so the list ends at the first occurrence that is not
-	// inside it.
-	occurrences := index.Occurrences[definition.File]
+
+	occurrences := i.Occurrences[definition.File]
 	for position := definition.Occurrence + 1; int(position) < len(occurrences); position++ {
 		occurrence := occurrences[position]
-		if !occurrence.Nested || occurrence.Parent < definition.Occurrence {
+		if occurrence.Parent < definition.Occurrence {
 			break
 		}
+
 		if occurrence.Role == RoleRefers && occurrence.Parent == definition.Occurrence {
 			sites = append(sites, Site{File: definition.File, Occurrence: position})
 		}
 	}
+
 	return sites
 }
 
-// isFiring reports whether a reference fires the event, on_action or decision it names.
-func (collector *collector) isFiring(context *schema.Context, reference schema.Reference) bool {
-	if context.Conditional || context.Preview || context.Category == schema.CategoryLink {
+// ListActing returns the copies of a name that a reference in a file reaches.
+// It returns none if the game keeps none.
+func (i *Index) ListActing(schema *lang.Schema, reference lang.Reference, file int32) []Site {
+	winner, ok := i.FindKeptLocal(schema, reference, file)
+	if !ok {
+		return nil
+	}
+
+	return slices.DeleteFunc(i.ResolveLocal(reference, file), func(site Site) bool { return !i.isActing(winner, site) })
+}
+
+// isActing reports whether a copy of a winner's name takes part in what the
+// game runs: the one it keeps, one merged into it, or, where no source says
+// which it keeps, any copy in a file it reads.
+func (i *Index) isActing(winner Winner, site Site) bool {
+	outcome := i.ResolveSite(winner, site)
+
+	return outcome.Kept || outcome.Reason == lang.ReasonUnsettled
+}
+
+// firingFields holds, by database, the key paths in its definitions where
+// the game runs the event, on_action or decision a name names, as effect
+// script would. A row holds for the games its Games lists.
+var firingFields = map[string][]lang.KeyReference{
+	"council_tasks":        {{Games: []string{game.CK3}, KeyPath: "monthly_on_action"}},
+	"schemes/scheme_types": {{Games: []string{game.CK3}, KeyPath: "on_monthly/**"}},
+	"defines.define": {
+		{Games: []string{game.CK3}, KeyPath: "DEFAULT_HOLDER_INFECTION_EVENT"},
+		{Games: []string{game.CK3}, KeyPath: "DEFAULT_LIEGE_INFECTION_EVENT"},
+		{Games: []string{game.CK3}, KeyPath: "DEFAULT_REALM_INFECTION_EVENT"},
+	},
+	"puppets/actions": {{Games: []string{game.CK3}, KeyPath: "decision"}},
+	"journal_entries": {
+		{Games: []string{game.Vic3}, KeyPath: "on_weekly_pulse/random_events/<number>"},
+		{Games: []string{game.Vic3}, KeyPath: "on_weekly_pulse/events"},
+		{Games: []string{game.Vic3}, KeyPath: "on_monthly_pulse/random_events/<number>"},
+		{Games: []string{game.Vic3}, KeyPath: "on_monthly_pulse/events"},
+		{Games: []string{game.Vic3}, KeyPath: "on_yearly_pulse/random_events/<number>"},
+		{Games: []string{game.Vic3}, KeyPath: "on_yearly_pulse/events"},
+	},
+}
+
+// countFiring returns the Firing an occurrence of a reference keeps. It
+// climbs from the reference through the blocks that only hold it: a list, a
+// numbered branch of a random list, or an effect's own fields.
+func (c *collector) countFiring(tree *jomini.Tree, statement int32, context *lang.Context, reference lang.Reference) uint8 {
+	if !c.isFiring(context, reference) {
+		return 0
+	}
+
+	effects, blocks := c.schema.Effects, uint8(1)
+	for blocks < 255 {
+		current, parent := tree.Statements[statement], context.Parent
+		isField := parent != nil && isEffect(parent, effects) && !isEffect(context, effects)
+		isHeld := current.IsListed() || current.KeyClass.IsNumberKey() || isField
+		if current.Parent == 0 || parent == nil || !isHeld {
+			break
+		}
+
+		statement, context, blocks = current.Parent, parent, blocks+1
+	}
+
+	return blocks
+}
+
+// isFiring reports whether a reference fires the event, on_action or decision
+// it names.
+func (c *collector) isFiring(context *lang.Context, reference lang.Reference) bool {
+	if context.Conditional || context.Preview || context.Category == lang.CategoryLink {
 		return false
 	}
-	row := collector.index.row
+
 	effect := context
-	if !isEffect(effect, collector.schema.Effects) {
+	if !isEffect(effect, c.schema.Effects) {
 		effect = context.Parent
 	}
-	if effect != nil && isEffect(effect, collector.schema.Effects) {
-		target := collector.schema.Databases[reference.Database]
-		return target == nil || target.Row.Contents != game.ContentsDecisions || slices.Contains(row.DecisionEffects, effect.Label)
+
+	if effect != nil && isEffect(effect, c.schema.Effects) {
+		target := c.schema.Databases[reference.Database]
+
+		return target == nil || target.Declaration.Contents != lang.ContentsDecisions ||
+			slices.Contains(c.index.dialect().DecisionEffects, effect.Label)
 	}
-	if holder := collector.schema.Databases[context.Database]; holder != nil && holder.Row.Contents == game.ContentsOnActions {
+
+	if holder := c.schema.Databases[context.Database]; holder != nil && holder.Declaration.Contents == lang.ContentsOnActions {
 		return true
 	}
+
+	fields := firingFields[context.Database]
+	if len(fields) == 0 {
+		return false
+	}
+
 	keys := context.Path
 	if context.Label != "" {
 		keys = slices.Concat(keys, []string{context.Label})
 	}
-	return slices.ContainsFunc(row.ListFiringFields(), func(field game.Reference) bool {
-		return field.Database == context.Database && jomini.MatchKeyPath(field.KeyPath, keys)
+
+	return slices.ContainsFunc(fields, func(field lang.KeyReference) bool {
+		return c.index.dialect().Matches(field.Games) && jomini.MatchKeyPath(field.KeyPath, keys)
 	})
 }
 
-// isEffect reports whether a statement is an effect or a call of a scripted effect.
-func isEffect(context *schema.Context, effects string) bool {
-	return context.Declaration == game.DeclaredEffect ||
-		slices.ContainsFunc(context.References, func(reference schema.Reference) bool {
-			return reference.Database == effects || reference.Database == game.AnyCall
+// isEffect reports whether a statement is an effect or a call of a scripted
+// effect.
+func isEffect(context *lang.Context, effects string) bool {
+	return context.Command != nil && context.Command.Database == lang.DumpEffects ||
+		slices.ContainsFunc(context.References, func(reference lang.Reference) bool {
+			return reference.Database == effects || reference.Database == lang.AnyCall
 		})
 }

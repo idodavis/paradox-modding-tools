@@ -5,87 +5,129 @@ package draw
 import (
 	"slices"
 
-	"github.com/samber/lo"
-
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/internal/loc"
-	"paradox-modding-tools/internal/schema"
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Font is one style of a font a window's texts are written in, with the file the game reads it from.
+// Font is one style of a font a window's texts are written in, with the file
+// the game loads it from.
 type Font struct {
-	Name  string `json:"name"`
-	Style string `json:"style"` // the style's words: regular, bold, italic or bold|italic
-	Path  string `json:"path"`
+	Name string `json:"name"`
+
+	// Style is the style in the font file's words, such as bold|italic.
+	Style string `json:"style"`
+
+	Path string `json:"path"`
 }
 
-// findFonts returns every style of each font the widgets of a window name, and of the font a text with none of its own
-// is drawn in, each with its file. A font the game does not define and a style with no file are left out.
+// The keys of a font file. A font has a block per style, which names a
+// definition of files. That definition has a group per set of languages,
+// each listing the files those languages load, the font's own first.
+const (
+	// fontSizeKey sets the size of a widget's text.
+	fontSizeKey = "fontsize"
+
+	// fontTextType is the built-in type of a text. The game's own type of
+	// that name gives a text that sets no font its font and size.
+	fontTextType = "textbox"
+
+	fontStyleKey      = "fontstyle"
+	fontStyleValueKey = "style"
+	fontFilesKey      = "fontfiles"
+	fontFilesDatabase = "font.fontfiles"
+	fontGroupKey      = "group"
+	fontLanguagesKey  = "languages"
+	fontPathsKey      = "files"
+)
+
+// findFonts returns every style of each font the window's widgets name, and
+// of the font a text that sets none is drawn in, each with its file. A font
+// the game does not define, and a style with no file, are left out.
 func findFonts(ws *workspace.Session, mods *index.Index, window *Window) []Font {
-	rules := game.GUI.Fonts
-	labels := lo.Uniq(lo.Compact(append(lo.Map(window.Widgets, func(widget Widget, _ int) string {
-		return findProperty(window.listProperties(widget), rules.Key).Value
-	}), window.TextFont)))
+	var labels []string
+	for _, widget := range window.Widgets {
+		labels = appendNew(labels, findProperty(window.listProperties(widget), lang.GUIFontKey).Value)
+	}
+
+	labels = appendNew(labels, window.TextFont)
 	fonts := []Font{}
 	for _, label := range labels {
-		definition, ok := findKeptClause(ws, mods, schema.Reference{Database: rules.Database, Name: label})
+		definition, ok := findKeptClause(ws, mods, lang.Reference{Database: lang.GUIFontDatabase, Name: label})
 		if !ok {
 			continue
 		}
-		for _, style := range listChildren(definition) {
-			key, _, _ := splitField(style)
-			words, _ := style.tree.FindChildValue(style.statement, rules.StyleValueKey)
-			files, _ := style.tree.FindChildValue(style.statement, rules.FilesKey)
-			if path := findFontFile(ws, mods, files); key == rules.StyleKey && path != "" {
-				fonts = append(fonts, Font{Name: label, Style: words, Path: path})
+
+		for _, block := range listChildren(definition) {
+			key, _, _ := splitField(block)
+			style, _ := block.tree.FindChildValue(block.statement, fontStyleValueKey)
+			files, _ := block.tree.FindChildValue(block.statement, fontFilesKey)
+			if path := findFontFile(ws, mods, files); key == fontStyleKey && path != "" {
+				fonts = append(fonts, Font{Name: label, Style: style, Path: path})
 			}
 		}
 	}
+
 	return fonts
 }
 
-// findFontFile returns the file a definition of a font's files gives the session's language, else the base language,
-// else the first group. It returns "" if the game does not define the files or the workspace has no such file.
+// findFontFile returns the file a definition of a font's files gives the
+// workspace's language, else the base language, else its first group. It
+// returns "" if the game does not define the files or no such file exists.
 func findFontFile(ws *workspace.Session, mods *index.Index, label string) string {
-	rules := game.GUI.Fonts
-	definition, ok := findKeptClause(ws, mods, schema.Reference{Database: rules.FilesDatabase, Name: label})
+	definition, ok := findKeptClause(ws, mods, lang.Reference{Database: fontFilesDatabase, Name: label})
 	if !ok {
 		return ""
 	}
-	groups := lo.Filter(listChildren(definition), func(field clause, _ int) bool {
+
+	groups := slices.DeleteFunc(listChildren(definition), func(field clause) bool {
 		key, _, _ := splitField(field)
-		return key == rules.GroupKey
+
+		return key != fontGroupKey
 	})
 	if len(groups) == 0 {
 		return ""
 	}
-	position := -1
-	for _, language := range []string{ws.Language, game.BaseLanguage} {
-		if position < 0 {
-			position = slices.IndexFunc(groups, func(group clause) bool {
-				return slices.Contains(listValues(group, rules.LanguagesKey), loc.ToLanguageKey(language))
-			})
+
+	position := 0
+	for _, language := range []string{ws.Language, loc.BaseLanguage} {
+		found := slices.IndexFunc(groups, func(group clause) bool {
+			return slices.Contains(listValues(group, fontLanguagesKey), loc.ToLanguageKey(language))
+		})
+		if found >= 0 {
+			position = found
+
+			break
 		}
 	}
-	paths := listValues(groups[max(position, 0)], rules.PathsKey)
+
+	paths := listValues(groups[position], fontPathsKey)
 	if len(paths) == 0 {
 		return ""
 	}
-	loaded, _, isLoaded := mods.FindLoaded(paths[0])
-	return lo.Ternary(isLoaded, loaded.Path, "")
+
+	if loaded, _, isLoaded := mods.FindLoaded(paths[0]); isLoaded {
+		return loaded.Path
+	}
+
+	return ""
 }
 
-// listValues returns the values written inside the block a clause holds under the given key, or none if it holds no
-// such block.
+// listValues returns the values written alone in the block a clause holds
+// under a key, or none if it holds no such block.
 func listValues(holder clause, key string) []string {
 	field, ok := findField(listChildren(holder), key)
 	if !ok {
 		return nil
 	}
-	return lo.FilterMap(listChildren(field), func(inner clause, _ int) (string, bool) {
-		current := inner.tree.Statements[inner.statement]
-		return inner.tree.Unquoted(current.Value), current.IsListed()
-	})
+
+	var values []string
+	for _, inner := range listChildren(field) {
+		if current := inner.tree.Statements[inner.statement]; current.IsListed() {
+			values = append(values, inner.tree.Unquoted(current.Value))
+		}
+	}
+
+	return values
 }

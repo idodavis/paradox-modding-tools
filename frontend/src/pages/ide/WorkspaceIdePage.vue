@@ -15,7 +15,7 @@ import type { Place } from "@services/workspace/models";
 
 import { PAGES, useShown } from "../../app/pages";
 import { joinParts, matchQuery, plural } from "../../lib/format";
-import { useKeptPixelSize } from "../../lib/splitter";
+import { useKeptPixelSize, useSavedPixelSize } from "../../lib/splitter";
 import {
   codesQuery,
   fileQuery,
@@ -37,7 +37,6 @@ import CompareView from "../../ui/CompareView.vue";
 import AddModMenu from "../../ui/AddModMenu.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import ProblemRow from "../../ui/ProblemRow.vue";
-import { EDITOR_LANGUAGES } from "../../ui/ScriptSnippet.vue";
 import { STATUS_ITEM } from "../../ui/StatusFacts.vue";
 import CoatDialog from "./draw/CoatDialog.vue";
 import SaveDdsModal from "./SaveDdsModal.vue";
@@ -198,15 +197,17 @@ const own = computed(() => {
   return folderPlace.value ? [folderPlace.value] : [];
 });
 
+const hasSidebar = computed(() => layout.value === "full" || layout.value === "files");
+const sidebarWidth = useSavedPixelSize(splitter, 0, "pmt.ide.sidebarWidth", 396);
 const panes = computed<SplitterItem[]>(() => [
-  ...(layout.value === "full" || layout.value === "files"
+  ...(hasSidebar.value
     ? [
         {
           id: "sidebar",
           slot: "sidebar",
           order: 1,
           sizeUnit: PIXELS,
-          defaultSize: 264,
+          defaultSize: sidebarWidth.size(),
           minSize: 170,
           collapsible: layout.value === "full",
           collapsedSize: 36,
@@ -238,7 +239,6 @@ const editorPanes = computed<SplitterItem[]>(() => [
     : []),
 ]);
 const editorSplitter = useTemplateRef("editorSplitter");
-const keepSidebarWidth = useKeptPixelSize(splitter, 0);
 const keepModsHeight = useKeptPixelSize(useTemplateRef("explorerSplitter"), 0);
 watch(
   () => editor.panel,
@@ -315,7 +315,9 @@ const rows = computed<Row[]>(() =>
   panelProblems.value.flatMap(({ place, problems: listed }) => {
     const shown = listed
       .map((entry) => ({ place, ...entry }))
-      .filter(({ problem }) => matchQuery(problemFilter.value, problem.message, problem.code, place.rel));
+      .filter(({ problem }) =>
+        matchQuery(problemFilter.value, problem.message, problem.label, problem.code, place.rel),
+      );
     return shown.length ? [{ place, count: shown.length }, ...shown] : [];
   }),
 );
@@ -330,7 +332,7 @@ const { data: status } = useQuery(() => ({
   enabled: !!git.findRoot(editor.activeFile()),
 }));
 const activeModel = computed(() => findModel(editor.activeFile()?.key ?? ""));
-const languageName = computed(() => describeLanguage(EDITOR_LANGUAGES[activeModel.value?.place.format ?? ""]));
+const languageName = computed(() => describeLanguage(activeModel.value?.place.language ?? "plaintext"));
 const { mutate: saveWithEncoding } = useMutation({
   mutation: ({ model, encoding }: { model: Model; encoding: Encoding }) => {
     model.encoding = encoding;
@@ -430,10 +432,13 @@ function toggleWiki(): void {
   else editor.showWiki();
 }
 
-/** listProblems lists the editor's problems and Health's findings for each file open in a tab. */
+/** listProblems lists the editor's problems and Health's findings for each file open in a tab, the active file first. */
 function listProblems(): { place: Place; problems: Problem[] }[] {
+  const active = editor.activeFile()?.key;
   const places = editor.listTabs().flatMap((tab) => editor.placeOf(tab.key) ?? []);
-  return [...new Map(places.map((place) => [place.key, place])).values()].flatMap((place) => {
+  const files = [...new Map(places.map((place) => [place.key, place])).values()];
+  files.sort((first, second) => Number(second.key === active) - Number(first.key === active));
+  return files.flatMap((place) => {
     const editorProblems = (findModel(place.key)?.problems ?? []).map((problem) => ({ problem }));
     const listed = [...editorProblems, ...listFindings(place)];
     return listed.length ? [{ place, problems: listed }] : [];
@@ -443,7 +448,7 @@ function listProblems(): { place: Place; problems: Problem[] }[] {
 /** listFindings returns Health's findings in a file that the editor does not make itself, as problems. */
 function listFindings(place: Place): Problem[] {
   const disabled = settings.value("ide.checks").split(",");
-  const groups = report.value ? [report.value.compatibility, ...(report.value.mods ?? [])] : [];
+  const groups = report.value ? [report.value.compatibility, report.value.patch, ...(report.value.mods ?? [])] : [];
   return groups
     .flatMap((group) => group.findings ?? [])
     .flatMap((finding) => {
@@ -456,7 +461,9 @@ function listFindings(place: Place): Problem[] {
         const shown = range.startLineNumber
           ? range
           : { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 };
-        return [{ problem: { code, level, message, range: shown, facts }, health: true as const }];
+        return [
+          { problem: { code, label: finding.label, level, message, range: shown, facts }, health: true as const },
+        ];
       });
     });
 }
@@ -495,7 +502,13 @@ function collapseAll(): void {
         />
       </UTooltip>
     </DefineFilterButton>
-    <USplitter ref="splitter" :items="panes" class="min-w-0 flex-1" @layout="keepSidebarWidth">
+    <USplitter
+      ref="splitter"
+      :items="panes"
+      class="min-w-0 flex-1"
+      @layout="hasSidebar && sidebarWidth.keep($event)"
+      @dragging="sidebarWidth.save"
+    >
       <template #sidebar="{ collapsed, collapse }">
         <aside
           v-if="layout === 'full'"
@@ -780,7 +793,7 @@ function collapseAll(): void {
                       >
                         <template #message>{{ item.problem.message }}</template>
                         <template #trailing>
-                          <span class="shrink-0 font-mono text-11 text-dimmed">{{ item.problem.code }}</span>
+                          <span class="shrink-0 text-11 text-dimmed">{{ item.problem.label }}</span>
                           <span class="shrink-0 font-mono text-11 text-dimmed">
                             {{ item.problem.range.startLineNumber }}:{{ item.problem.range.startColumn }}
                           </span>
@@ -884,9 +897,12 @@ function collapseAll(): void {
           </p>
           <CompareView
             v-else-if="leftFile.data.value && rightFile.data.value"
+            :key="`${comparing.left.key} ${comparing.right.key}`"
             :left="leftFile.data.value.text.text"
             :right="rightFile.data.value.text.text"
-            :language="EDITOR_LANGUAGES[comparing.right.format]"
+            :left-path="comparing.left.path"
+            :right-path="comparing.right.path"
+            :language="comparing.right.language"
             :left-label="describePlace(comparing.left)"
             :right-label="describePlace(comparing.right)"
           />

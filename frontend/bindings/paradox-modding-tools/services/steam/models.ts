@@ -6,61 +6,54 @@
 import * as files$0 from "../../internal/files/models.js";
 
 /**
- * A ChangeNote is one draft of a change note.
+ * ChangeNote is one draft of the note an upload sends.
  */
 export interface ChangeNote {
     /**
-     * git, or the name of the changelog file
+     * Source is "git", or the name of the changelog file.
      */
     "source": string;
     "text": string;
 
     /**
-     * the number of commits it is drafted from
+     * Count is the number of commits the draft is made from.
      */
     "count": number;
 
     /**
-     * the time of the upload it starts after, or zero for every commit
+     * Since is the time of the upload the draft starts after, or zero for every
+     * commit.
      */
     "since": string;
 }
 
 /**
- * A Comparison is what the next upload changes against what Steam has of the item.
+ * Comparison is what the next upload changes against what Steam has.
  */
 export interface Comparison {
     "page": Difference[] | null;
 
     /**
-     * the version first, then each file by its path
+     * Files is the version first, then each file by its path.
      */
     "files": Difference[] | null;
-
-    /**
-     * the files the next upload sends and leaves out
-     */
     "upload": Upload;
-
-    /**
-     * when Steam was last asked for the item
-     */
     "checkedAt": string;
     "steam"?: Details | null;
 
     /**
-     * why Steam's side is missing, or ""
+     * Reason is why Steam's side is missing, or "".
      */
     "reason": string;
 
     /**
-     * new, same, changed, or unknown when Steam could not be asked
+     * Status is new, same, changed, or unknown when Steam could not be asked.
      */
     "status": string;
 }
 
 /**
- * A DLC is one of the game's DLCs that an item may require.
+ * DLC is one of the game's DLCs that an item may require.
  */
 export interface DLC {
     "id": string;
@@ -68,16 +61,13 @@ export interface DLC {
 }
 
 /**
- * A Dependency is one mod that a listing's mod depends on.
+ * Dependency is one mod that a listing's mod depends on.
  */
 export interface Dependency {
-    /**
-     * as the descriptor names it
-     */
     "name": string;
 
     /**
-     * the Workshop id of the workspace mod it names, or ""
+     * WorkshopID is the Workshop id of the workspace mod it names, or "".
      */
     "workshopId": string;
 }
@@ -90,70 +80,53 @@ export interface Details {
     "description": string;
     "updatedAt": string;
     "visibility": string;
-
-    /**
-     * the signed-in Steam user owns the item
-     */
     "owned": boolean;
     "tags": string[] | null;
     "previews": Preview[] | null;
 
     /**
-     * nil when Steam's library cannot read them
+     * DLC and Dependencies are nil when Steam's library cannot read them.
      */
     "dlc": string[] | null;
 
     /**
-     * how many DLC it requires, which may be more than DLC holds
+     * DLCCount is how many DLC the item requires, which may be more than DLC
+     * holds.
      */
     "dlcCount": number;
-
-    /**
-     * the Workshop ids of the items it requires, or nil as for DLC
-     */
     "dependencies": string[] | null;
 }
 
 /**
- * A Difference is one thing the next upload changes on Steam.
+ * Difference is one thing the next upload changes on Steam.
  */
 export interface Difference {
     /**
-     * title, description, tags, previews, dlc, dependencies, version or file
+     * Field is title, description, tags, previews, dlc, dependencies, version
+     * or file.
      */
     "field": string;
     "rel"?: string;
-
-    /**
-     * added, changed or removed
-     */
     "status": string;
     "before"?: string;
     "after"?: string;
-
-    /**
-     * the tags, pictures, DLC or items the upload adds
-     */
     "added"?: string[] | null;
-
-    /**
-     * those it takes away
-     */
     "removed"?: string[] | null;
 
     /**
-     * the lines the upload adds, or paragraphs for the description
+     * Gained and Lost are lines, or paragraphs for the description.
      */
     "gained": number;
     "lost": number;
 }
 
 /**
- * A Listing is one of a mod's Workshop pages, as the mod's own files hold it.
+ * Listing is one of a mod's Workshop pages, as the mod's own files hold it.
  */
 export interface Listing {
     /**
-     * "" for the mod's own listing, else the game version of an older one
+     * Key is "" for the mod's own listing, else the game version of an older
+     * one.
      */
     "key": string;
     "workshopId": string;
@@ -162,68 +135,52 @@ export interface Listing {
     "supportedVersion": string;
 
     /**
-     * BBCode
+     * Description and Changelog are BBCode.
      */
     "description": string;
-
-    /**
-     * BBCode, the next upload's change note
-     */
     "changelog": string;
     "thumbnail": string;
     "previews": Preview[] | null;
 
     /**
-     * the category tags
+     * Tags are the category tags. VersionTag is "" for none.
      */
     "tags": string[] | null;
-
-    /**
-     * the version tag the supported version picks, or "" for none
-     */
     "versionTag": string;
     "dlc": string[] | null;
     "dependencies": Dependency[] | null;
 
     /**
-     * the zip of an older listing, or "" for the mod's folder
+     * Source is the zip of an older listing, or "" for the mod's folder.
      */
     "source": string;
 }
 
 /**
- * A Preview is one picture or video in the Workshop page's gallery.
+ * Preview is one picture or video in the Workshop page's gallery.
  */
 export interface Preview {
     "path": string;
 
     /**
-     * image or video
+     * Type is image or video.
      */
     "type": string;
 
     /**
-     * the address of a video
+     * URL and Video are the address and the id of a video.
      */
     "url": string;
-
-    /**
-     * the id of a video
-     */
     "video": string;
-
-    /**
-     * the size of a picture, up to 1 MB on Steam
-     */
     "bytes": number;
 }
 
 /**
- * A Progress is one step of an upload, as the steam:progress event reports it.
+ * Progress is one step of an upload.
  */
 export interface Progress {
     /**
-     * preparing, uploading, committing or done
+     * Stage is preparing, uploading, committing or done.
      */
     "stage": string;
     "done": number;
@@ -231,7 +188,7 @@ export interface Progress {
 }
 
 /**
- * A Rule is one pattern of files an upload leaves out, with the reason shown for it.
+ * Rule is one pattern of files an upload leaves out, with its reason.
  */
 export interface Rule {
     "pattern": string;
@@ -242,30 +199,19 @@ export interface Rule {
  * Tags is the set of Workshop tags a listing may carry.
  */
 export interface Tags {
-    /**
-     * Steam's category tags
-     */
     "categories": string[] | null;
-
-    /**
-     * Steam's version tags
-     */
     "versions": string[] | null;
 }
 
 /**
- * An Upload is the files that a mod's next upload sends.
+ * Upload is the files that a mod's next upload sends.
  */
 export interface Upload {
     "files": files$0.File[] | null;
-
-    /**
-     * the total size of the files
-     */
     "bytes": number;
 
     /**
-     * the paths the rules leave out, each with why
+     * Excluded maps each path the rules leave out to why.
      */
     "excluded": { [_ in string]?: string } | null;
 }

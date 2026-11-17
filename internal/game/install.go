@@ -1,9 +1,13 @@
-// install.go finds where a game is on this machine: its installs, version, user-data and dump folders, and program.
+// install.go finds a game on this machine: its installs, their versions and
+// the folders and program each one uses.
 
 package game
 
 import (
+	"cmp"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,130 +17,123 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samber/lo"
-
 	"paradox-modding-tools/internal/files"
 )
 
-// A DetectedInstall is an install found under a Steam library, with its version.
+// DetectedInstall is one install of a game found in a Steam library.
 type DetectedInstall struct {
-	Name    string `json:"name"`
-	Path    string `json:"path"`    // the install folder
-	Version string `json:"version"` // "" means none was found
+	Name string `json:"name"`
+	Path string `json:"path"`
+
+	// Version is "" where none was found.
+	Version string `json:"version"`
 }
 
-// launcherSettings is the part of launcher-settings.json the app reads.
+// launcherSettings is the part of an install's launcher settings the app
+// reads.
 type launcherSettings struct {
-	RawVersion   string   `json:"rawVersion"`   // the version as the game writes it (1.12.5)
-	Version      string   `json:"version"`      // the version with its codename (1.13.11 (Chamomile))
-	GameDataPath string   `json:"gameDataPath"` // the user-data folder, %USER_DOCUMENTS% allowed
-	ExePath      string   `json:"exePath"`      // the game's executable, from the launcher settings' folder
-	ExeArgs      []string `json:"exeArgs"`      // the arguments the launcher starts it with
+	// RawVersion is the bare version, as 1.12.5. Version may add a code name,
+	// as 1.13.11 (Chamomile).
+	RawVersion string `json:"rawVersion"`
+	Version    string `json:"version"`
+
+	// GameDataPath is the user-data folder. It may hold %USER_DOCUMENTS%.
+	GameDataPath string `json:"gameDataPath"`
+
+	// ExePath is the game's program, from the settings file's folder.
+	ExePath string   `json:"exePath"`
+	ExeArgs []string `json:"exeArgs"`
 }
 
-// DLCFolder is the folder under the game folder that holds each DLC's own files, laid out as the game's are.
+// DLCFolder holds each DLC's files, under the game's own folder.
 const DLCFolder = "dlc"
 
-// LauncherModFolder is the folder under a game's user-data folder where its launcher keeps mods.
+// LauncherModFolder is the launcher's mod folder, under the user-data folder.
 const LauncherModFolder = "mod"
 
-// The patterns that read Steam's library file, an app manifest and its build id, the day the game was built in its
-// revision log and the version it checks in its debug log.
-var (
-	vdfPathRe       = regexp.MustCompile(`"path"\s*"([^"]+)"`)
-	installDirRe    = regexp.MustCompile(`"installdir"\s*"([^"]+)"`)
-	buildIDRe       = regexp.MustCompile(`"buildid"\s*"(\d+)"`)
-	gameTimestampRe = regexp.MustCompile(`\]: game_timestamp: (\d{4}-\d{2}-\d{2})`)
-	gameVersionRe   = regexp.MustCompile(`\]: Feeding game version into checksum: (\S+)`)
-)
+// DebugLogRel is the game's debug log, from the user-data folder.
+const DebugLogRel = "logs/debug.log"
 
-// FindInstalls returns the installs of the game that Steam's libraries hold.
-func (game *Game) FindInstalls() []DetectedInstall {
+// installDirRe finds the game's folder in a Steam app manifest.
+var installDirRe = regexp.MustCompile(`"installdir"\s*"([^"]+)"`)
+
+// manifestName is the file name of the game's Steam app manifest.
+func (g *Game) manifestName() string {
+	return "appmanifest_" + strconv.Itoa(g.SteamAppID) + ".acf"
+}
+
+// FindInstalls returns the game's installs in Steam's libraries, each with
+// its version. A library whose manifest is unreadable or names a missing
+// folder is skipped.
+func (g *Game) FindInstalls() []DetectedInstall {
 	var installs []DetectedInstall
 	for _, library := range findSteamLibraries() {
-		manifest := filepath.Join(library, "steamapps", "appmanifest_"+strconv.Itoa(game.SteamAppID)+".acf")
-		data, err := os.ReadFile(manifest)
+		data, err := os.ReadFile(filepath.Join(library, "steamapps", g.manifestName()))
 		if err != nil {
 			continue
 		}
+
 		match := installDirRe.FindSubmatch(data)
 		if match == nil {
 			continue
 		}
+
 		path := filepath.Join(library, "steamapps", "common", string(match[1]))
 		if !files.IsFolder(path) {
 			continue
 		}
-		installs = append(installs, DetectedInstall{
-			Name:    game.Name,
-			Path:    path,
-			Version: game.LoadVersion(path),
-		})
+
+		installs = append(installs, DetectedInstall{Name: g.Name, Path: path, Version: g.LoadVersion(path)})
 	}
+
 	return installs
 }
 
-// IsWorkshopFolder reports whether a folder is under the game's Steam Workshop folder in one of Steam's libraries.
-func (game *Game) IsWorkshopFolder(dir string) bool {
-	return slices.ContainsFunc(game.listWorkshopRoots(), func(root string) bool { return files.IsUnder(root, dir) })
-}
+// vdfPathRe finds a library's folder in libraryfolders.vdf.
+var vdfPathRe = regexp.MustCompile(`"path"\s*"([^"]+)"`)
 
-// ListWorkshopFolders returns the folder of each Workshop item Steam has downloaded for the game, in each of Steam's
-// libraries. It returns none if Steam has none.
-func (game *Game) ListWorkshopFolders() []string {
-	var folders []string
-	for _, root := range game.listWorkshopRoots() {
-		entries, _ := os.ReadDir(root)
-		for _, entry := range entries {
-			if entry.IsDir() {
-				folders = append(folders, filepath.Join(root, entry.Name()))
-			}
-		}
-	}
-	return folders
-}
-
-// listWorkshopRoots returns the game's Steam Workshop folder in each of Steam's libraries.
-func (game *Game) listWorkshopRoots() []string {
-	appID := strconv.Itoa(game.SteamAppID)
-	return lo.Map(findSteamLibraries(), func(library string, _ int) string {
-		return filepath.Join(library, "steamapps", "workshop", "content", appID)
-	})
-}
-
-// findSteamLibraries returns each default Steam folder and the library roots its libraryfolders.vdf names.
+// findSteamLibraries returns Steam's own folders and the libraries its
+// libraryfolders.vdf names, each once after links are resolved.
 func findSteamLibraries() []string {
 	seen := map[string]bool{}
 	var libraries []string
-	// links are resolved before dedup: ~/.steam/steam is usually a link to ~/.local/share/Steam
+
+	// ~/.steam/steam is usually a link to ~/.local/share/Steam
 	add := func(path string) {
 		if path == "" {
 			return
 		}
+
 		if resolved, err := filepath.EvalSymlinks(path); err == nil {
 			path = resolved
 		}
+
 		if seen[path] {
 			return
 		}
+
 		seen[path] = true
 		libraries = append(libraries, path)
 	}
+
 	for _, root := range listDefaultSteamRoots() {
 		add(root)
+
 		vdf := filepath.Join(root, "steamapps", "libraryfolders.vdf")
 		data, err := os.ReadFile(vdf)
 		if err != nil {
 			continue
 		}
+
 		for _, match := range vdfPathRe.FindAllSubmatch(data, -1) {
 			add(filepath.FromSlash(strings.ReplaceAll(string(match[1]), `\\`, `/`)))
 		}
 	}
+
 	return libraries
 }
 
-// listDefaultSteamRoots returns the folders Steam is usually installed in on this platform.
+// listDefaultSteamRoots returns the folders Steam is usually installed in.
 func listDefaultSteamRoots() []string {
 	switch runtime.GOOS {
 	case "windows":
@@ -146,9 +143,12 @@ func listDefaultSteamRoots() []string {
 				roots = append(roots, filepath.Join(base, "Steam"))
 			}
 		}
+
 		return roots
+
 	default:
 		home, _ := os.UserHomeDir()
+
 		return []string{
 			filepath.Join(home, ".steam", "steam"),
 			filepath.Join(home, ".local", "share", "Steam"),
@@ -157,219 +157,404 @@ func listDefaultSteamRoots() []string {
 	}
 }
 
-// LoadVersion returns the version of an install of the game, from its launcher settings, else its debug log if the
-// game started since the last update, else its revision log in the same case as "build <date>", else its Steam manifest
-// as "build <id>". It returns "" if none of them says.
-func (game *Game) LoadVersion(installPath string) string {
+// revisionLogRel is the log the game writes its build day to, from the
+// user-data folder.
+const revisionLogRel = "logs/code_revisions.log"
+
+// gameVersionRe finds the version in the debug log, gameTimestampRe the
+// build day in the revision log, and buildIDRe the build number in Steam's
+// manifest.
+var (
+	gameVersionRe   = regexp.MustCompile(`\]: Feeding game version into checksum: (\S+)`)
+	gameTimestampRe = regexp.MustCompile(`\]: game_timestamp: (\d{4}-\d{2}-\d{2})`)
+	buildIDRe       = regexp.MustCompile(`"buildid"\s*"(\d+)"`)
+)
+
+// LoadVersion returns an install's version: the launcher's, else the one
+// the game logged, else "build" and its build day or Steam build number.
+// Logs written before the install's last update are ignored, since they
+// belong to the version before. It returns "" if nothing gives a version.
+func (g *Game) LoadVersion(installPath string) string {
 	settings := loadLauncher(installPath)
 	if settings.RawVersion != "" {
 		return settings.RawVersion
 	}
+
 	version, _, _ := strings.Cut(settings.Version, " (")
 	if version = strings.TrimSpace(version); version != "" {
 		return version
 	}
-	if user := game.FindUserDataDir(installPath); user != "" {
-		if match := findCurrentMatch(installPath, files.Join(user, debugLogRel), gameVersionRe); match != "" {
+
+	if user := g.findUserDataDir(settings.GameDataPath); user != "" {
+		updatedAt := ReadInstallUpdatedAt(installPath)
+		if match := findCurrentMatch(files.Join(user, DebugLogRel), updatedAt, gameVersionRe); match != "" {
 			return match
 		}
-		if match := findCurrentMatch(installPath, files.Join(user, revisionLogRel), gameTimestampRe); match != "" {
+
+		if match := findCurrentMatch(files.Join(user, revisionLogRel), updatedAt, gameTimestampRe); match != "" {
 			return "build " + match
 		}
 	}
-	manifest, err := os.ReadFile(filepath.Join(installPath, "..", "..", "appmanifest_"+strconv.Itoa(game.SteamAppID)+".acf"))
+
+	manifest, err := os.ReadFile(filepath.Join(installPath, "..", "..", g.manifestName()))
 	if match := buildIDRe.FindSubmatch(manifest); err == nil && match != nil {
 		return "build " + string(match[1])
 	}
+
 	return ""
 }
 
-// findCurrentMatch returns the first group of the pattern's first match in a log of the game, if the game wrote the log
-// since the install was last updated. It returns "" if the log is older, missing or unread, or the pattern matches
-// nothing in it.
-func findCurrentMatch(installPath, path string, pattern *regexp.Regexp) string {
-	info, err := os.Stat(path)
-	if err != nil || info.ModTime().Before(ReadInstallUpdatedAt(installPath)) {
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if match := pattern.FindSubmatch(data); err == nil && match != nil {
-		return string(match[1])
-	}
-	return ""
-}
-
-// loadLauncher reads an install's launcher settings. It returns the zero value if there are none.
+// loadLauncher returns an install's launcher settings, empty if the file is
+// missing or cannot be decoded.
 func loadLauncher(installPath string) (settings launcherSettings) {
 	if installPath == "" {
 		return settings
 	}
+
 	if data, err := os.ReadFile(files.Join(installPath, launcherFile)); err == nil {
 		_ = json.Unmarshal(data, &settings)
 	}
+
 	return settings
 }
 
-// ListInstallRoots returns the folders of an install that the game reads, in the order it mounts them, with each DLC's
-// last. It returns an error if the DLC folder exists and cannot be read.
-func ListInstallRoots(installPath string) ([]files.Root, error) {
-	var roots []files.Root
-	for _, folder := range InstallRoots {
-		if dir := filepath.Join(installPath, folder); files.IsFolder(dir) {
-			roots = append(roots, files.Root{Dir: dir, Origin: OriginVanilla})
-		}
-	}
-	dlcFolder := filepath.Join(installPath, ScriptRoot, DLCFolder)
-	dlcs, err := os.ReadDir(dlcFolder)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
-	}
-	for _, dlc := range dlcs {
-		if dlc.IsDir() {
-			roots = append(roots, files.Root{Dir: filepath.Join(dlcFolder, dlc.Name()), Origin: OriginVanilla})
-		}
-	}
-	return roots, nil
+// FindUserDataDir returns the folder the game keeps the user's data in, or
+// "" if there is none it could be.
+func (g *Game) FindUserDataDir(installPath string) string {
+	return g.findUserDataDir(loadLauncher(installPath).GameDataPath)
 }
 
-// FindDumpDirs returns the folders the game's console dumps land in.
-func (game *Game) FindDumpDirs(installPath string) []string {
-	user := game.FindUserDataDir(installPath)
-	if user == "" {
-		return nil
-	}
-	var dirs []string
-	for _, dir := range DumpFolders {
-		dirs = append(dirs, files.Join(user, dir))
-	}
-	return dirs
-}
-
-// FindUserDataDir returns the game's user-data folder, or the most likely one if none exists.
-func (game *Game) FindUserDataDir(installPath string) string {
-	candidates := game.listUserDataCandidates(installPath)
-	for _, candidate := range candidates {
-		if files.IsFolder(candidate) {
-			return candidate
-		}
-	}
-	if len(candidates) > 0 {
-		return candidates[0]
-	}
-	return ""
-}
-
-// listUserDataCandidates returns the folders a game may keep its user data in, most likely first.
-func (game *Game) listUserDataCandidates(installPath string) []string {
-	name := game.Name
+// findUserDataDir returns the first folder that exists of those the user's
+// data may be in, else the first of them. They are the launcher's
+// gameDataPath, then the usual folders of this system, Proton's prefixes
+// among them on Linux.
+func (g *Game) findUserDataDir(gameDataPath string) string {
 	var candidates []string
 	add := func(path string) {
 		if path != "" {
 			candidates = append(candidates, filepath.Clean(path))
 		}
 	}
-	add(expandGameDataPath(loadLauncher(installPath).GameDataPath))
+
+	add(expandGameDataPath(gameDataPath))
+
 	home, homeErr := os.UserHomeDir()
 	nativeDocs := ""
 	if homeErr == nil {
-		nativeDocs = filepath.Join(home, "Documents", "Paradox Interactive", name)
+		nativeDocs = filepath.Join(home, "Documents", "Paradox Interactive", g.Name)
 	}
+
 	switch runtime.GOOS {
 	case "windows":
 		add(nativeDocs)
+
 	default:
 		xdg := os.Getenv("XDG_DATA_HOME")
 		if xdg == "" && homeErr == nil {
 			xdg = filepath.Join(home, ".local", "share")
 		}
+
 		if xdg != "" {
-			add(filepath.Join(xdg, "Paradox Interactive", name))
+			add(filepath.Join(xdg, "Paradox Interactive", g.Name))
 		}
+
 		add(nativeDocs)
-		appID := strconv.Itoa(game.SteamAppID)
+
+		appID := strconv.Itoa(g.SteamAppID)
 		for _, steam := range findSteamLibraries() {
 			add(filepath.Join(
 				steam, "steamapps", "compatdata", appID,
 				"pfx", "drive_c", "users", "steamuser",
-				"Documents", "Paradox Interactive", name,
+				"Documents", "Paradox Interactive", g.Name,
 			))
 		}
 	}
-	return candidates
+
+	for _, candidate := range candidates {
+		if files.IsFolder(candidate) {
+			return candidate
+		}
+	}
+
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+
+	return ""
 }
 
-// expandGameDataPath returns the launcher's gameDataPath with %USER_DOCUMENTS% filled in, or "" if there is none.
+// expandGameDataPath turns the launcher's gameDataPath into a path of this
+// system, with %USER_DOCUMENTS% replaced by the user's Documents folder.
 func expandGameDataPath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return ""
 	}
+
 	if strings.Contains(path, "%USER_DOCUMENTS%") {
 		home, err := os.UserHomeDir()
 		docs := ""
 		if err == nil {
 			docs = filepath.Join(home, "Documents")
 		}
+
 		path = strings.ReplaceAll(path, "%USER_DOCUMENTS%", docs)
 	}
+
 	return filepath.Clean(filepath.FromSlash(path))
 }
 
-// ResolveProgram returns the executable that starts a game from an install and its debug arguments, the row's flags
-// last; the launcher settings win over the row. It returns false if the game has no executable on this system.
-func (game *Game) ResolveProgram(installPath string) (path string, args []string, ok bool) {
-	program := game.Program[runtime.GOOS]
+// findCurrentMatch returns the pattern's first group in a game log. It
+// returns "" if the log is missing, was written before the install's last
+// update, or has no match.
+func findCurrentMatch(path string, updatedAt time.Time, pattern *regexp.Regexp) string {
+	info, err := os.Stat(path)
+	if err != nil || info.ModTime().Before(updatedAt) {
+		return ""
+	}
+
+	data, err := os.ReadFile(path)
+	if match := pattern.FindSubmatch(data); err == nil && match != nil {
+		return string(match[1])
+	}
+
+	return ""
+}
+
+// ReadInstallUpdatedAt returns when an install was last updated: the time of
+// the newest file in its binaries folder, else in the install's own folder.
+// It returns the zero time if neither holds a file.
+func ReadInstallUpdatedAt(installPath string) time.Time {
+	if installPath == "" {
+		return time.Time{}
+	}
+
+	// a folder's own time is no use: replacing a file in place leaves it
+	// unchanged
+	for _, dir := range []string{filepath.Join(installPath, "binaries"), installPath} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+
+		var newest time.Time
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+
+			if info.ModTime().After(newest) {
+				newest = info.ModTime()
+			}
+		}
+
+		if !newest.IsZero() {
+			return newest
+		}
+	}
+
+	return time.Time{}
+}
+
+// CompareVersions orders two versions part by part, so 1.20.1.2 comes after
+// 1.20.1. A missing part counts as 0, and a part that is not a number, as the
+// X of 1.20.X, comes before any number. An open beta comes before the release
+// of the same number: 1.14.4-openbeta is after 1.14.3 and before 1.14.4.
+func CompareVersions(first, second string) int {
+	firstParts := strings.Split(strings.TrimSuffix(first, betaSuffix), ".")
+	secondParts := strings.Split(strings.TrimSuffix(second, betaSuffix), ".")
+	for position := range max(len(firstParts), len(secondParts)) {
+		firstNumber, firstErr := toVersionPart(firstParts, position)
+		secondNumber, secondErr := toVersionPart(secondParts, position)
+		switch {
+		case firstErr != nil && secondErr != nil:
+			if order := strings.Compare(firstParts[position], secondParts[position]); order != 0 {
+				return order
+			}
+
+		case firstErr != nil:
+			return -1
+
+		case secondErr != nil:
+			return 1
+
+		case firstNumber != secondNumber:
+			return cmp.Compare(firstNumber, secondNumber)
+		}
+	}
+
+	switch {
+	case IsBeta(first) == IsBeta(second):
+		return 0
+	case IsBeta(first):
+		return -1
+	}
+
+	return 1
+}
+
+// releaseNumber is the two numbers a version starts with, which name its
+// release.
+var releaseNumber = regexp.MustCompile(`^\d+\.\d+`)
+
+// ResolveRelease returns the release of a version: the two numbers it starts
+// with, as 1.15 for 1.15.1, for 1.15.X and for 1.15.*. It returns "" for a
+// version that does not start with two numbers.
+func ResolveRelease(version string) string {
+	return releaseNumber.FindString(version)
+}
+
+// betaSuffix ends the version of an open beta, as in 1.14.4-openbeta, which
+// is how the Modding Co-ops' digests name its folder.
+const betaSuffix = "-openbeta"
+
+// IsBeta reports whether a version is an open beta, which is a version that
+// ends in -openbeta.
+func IsBeta(version string) bool {
+	return strings.HasSuffix(version, betaSuffix)
+}
+
+// IsInstalled reports whether a version is the one an install is on. An open
+// beta is named by its number and -openbeta, and the install is on it where
+// its own version is that number.
+func IsInstalled(version, installVersion string) bool {
+	return version == installVersion || IsBeta(version) && strings.HasPrefix(version, installVersion+"-")
+}
+
+// toVersionPart returns one part of a version as a number, 0 for a part the
+// version does not have, and an error for a part that is not a number.
+func toVersionPart(parts []string, position int) (int, error) {
+	if position >= len(parts) {
+		return 0, nil
+	}
+
+	return strconv.Atoi(parts[position])
+}
+
+// IsWorkshopFolder reports whether a folder is inside one of the Workshop
+// roots ListWorkshopRoots returns. A caller asking about many folders lists
+// the roots once, since listing them reads Steam's library file.
+func IsWorkshopFolder(roots []string, dir string) bool {
+	return slices.ContainsFunc(roots, func(root string) bool { return files.IsUnder(root, dir) })
+}
+
+// ListWorkshopFolders returns the folder of each of the game's Workshop items
+// that Steam has downloaded.
+func (g *Game) ListWorkshopFolders() []string {
+	var folders []string
+	for _, root := range g.ListWorkshopRoots() {
+		entries, _ := os.ReadDir(root)
+		for _, entry := range entries {
+			if entry.IsDir() {
+				folders = append(folders, filepath.Join(root, entry.Name()))
+			}
+		}
+	}
+
+	return folders
+}
+
+// ListWorkshopRoots returns the game's Workshop folder in each Steam library.
+// It reads Steam's library file on each call.
+func (g *Game) ListWorkshopRoots() []string {
+	appID := strconv.Itoa(g.SteamAppID)
+
+	var roots []string
+	for _, library := range findSteamLibraries() {
+		roots = append(roots, filepath.Join(library, "steamapps", "workshop", "content", appID))
+	}
+
+	return roots
+}
+
+// installRoots are the folders of an install the game mounts, in order.
+var installRoots = []string{"clausewitz", "jomini", ScriptRoot}
+
+// ListInstallRoots returns the folders of an install the game mounts, in
+// order: the engine's two, the game's own, then each DLC's. It fails only if
+// the DLC folder exists and cannot be read.
+func (g *Game) ListInstallRoots(installPath string) ([]files.Root, error) {
+	var roots []files.Root
+	for _, folder := range installRoots {
+		if dir := filepath.Join(installPath, folder); files.IsFolder(dir) {
+			roots = append(roots, files.Root{Dir: dir, Origin: files.OriginVanilla, Stages: g.Stages})
+		}
+	}
+
+	dlcFolder := filepath.Join(installPath, ScriptRoot, DLCFolder)
+	dlcs, err := os.ReadDir(dlcFolder)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+
+	for _, dlc := range dlcs {
+		if dlc.IsDir() {
+			roots = append(roots, files.Root{
+				Dir: filepath.Join(dlcFolder, dlc.Name()), Origin: files.OriginVanilla, Stages: g.Stages,
+			})
+		}
+	}
+
+	return roots, nil
+}
+
+// dumpFolders are where the game writes its dump files, under the user-data
+// folder.
+var dumpFolders = []string{"logs", "docs", "logs/data_types"}
+
+// FindDumpDirs returns the folders of an install's dump files, or none if
+// the game has no user-data folder.
+func (g *Game) FindDumpDirs(installPath string) []string {
+	user := g.FindUserDataDir(installPath)
+	if user == "" {
+		return nil
+	}
+
+	var dirs []string
+	for _, dir := range dumpFolders {
+		dirs = append(dirs, files.Join(user, dir))
+	}
+
+	return dirs
+}
+
+// ResolveProgram returns the program that starts the game and its arguments.
+// Where the game has launcher settings, their program wins and their
+// arguments come before the debug flags. It returns false if no program is
+// known.
+func (g *Game) ResolveProgram(installPath string) (path string, args []string, ok bool) {
+	program := g.Program[runtime.GOOS]
 	if program.Executable != "" {
 		path = files.Join(installPath, program.Executable)
 	}
+
 	if program.Settings != "" {
 		settings := loadLauncher(installPath)
 		if settings.ExePath != "" {
 			folder := filepath.Dir(files.Join(installPath, program.Settings))
 			path = files.Join(folder, settings.ExePath)
 		}
+
 		args = settings.ExeArgs
 	}
+
 	return path, append(args, program.DebugArgs...), path != ""
 }
 
-// ReadInstallUpdatedAt returns when an install was last updated. A dump older than that is stale. It returns the zero
-// time if that is unknown, which never counts as stale.
-func ReadInstallUpdatedAt(installPath string) time.Time {
-	if installPath == "" {
-		return time.Time{}
-	}
-	// a folder's own time is no use: replacing a file in place leaves it unchanged
-	for _, dir := range []string{filepath.Join(installPath, "binaries"), installPath} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		var newest time.Time
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			info, err := entry.Info()
-			if err != nil {
-				continue
-			}
-			if info.ModTime().After(newest) {
-				newest = info.ModTime()
-			}
-		}
-		if !newest.IsZero() {
-			return newest
-		}
-	}
-	return time.Time{}
-}
+const checksumRel = "binaries/checksum.txt"
 
-// LoadChecksum returns the hash an install's build writes beside its executable. It returns "" if the install has none.
+// LoadChecksum returns the checksum written beside an install's program, or
+// "" if there is none.
 func LoadChecksum(installPath string) string {
 	data, err := os.ReadFile(filepath.Join(installPath, checksumRel))
 	if err != nil {
 		return ""
 	}
+
 	return strings.TrimSpace(string(data))
 }

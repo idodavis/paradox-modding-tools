@@ -14,14 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
@@ -49,7 +47,8 @@ const (
 	artifactsShippedPath = "game/common/artifacts/v_artifacts.txt"
 )
 
-// startApp makes the application that the workspace service sends its events through, once for the whole run.
+// startApp makes the application that the workspace service sends its events
+// through, once for the whole run.
 var startApp sync.Once
 
 // resolveFixture returns the absolute path of a folder under internal/testdata.
@@ -62,7 +61,8 @@ func resolveFixture(t *testing.T, parts ...string) string {
 	return dir
 }
 
-// copyFolder copies a folder into a temporary one, so that a test may change its files, and returns it.
+// copyFolder copies a folder into a temporary one, so that a test may change
+// its files, and returns it.
 func copyFolder(t *testing.T, source string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -72,7 +72,8 @@ func copyFolder(t *testing.T, source string) string {
 	return dir
 }
 
-// writeFiles writes each text at its path under a folder, making the folders it needs.
+// writeFiles writes each text at its path under a folder, making the folders it
+// needs.
 func writeFiles(t *testing.T, dir string, texts map[string]string) {
 	t.Helper()
 	for rel, text := range texts {
@@ -86,12 +87,13 @@ func writeFiles(t *testing.T, dir string, texts map[string]string) {
 	}
 }
 
-// openService opens a workspace of English on an install with the given mods, and returns the language service
-// over it.
+// openService opens a workspace of English on an install with the given mods,
+// and returns the language service over it.
 func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Service {
 	t.Helper()
 	startApp.Do(func() { application.New(application.Options{}) })
-	// PMT reads its folders from these variables, so the test points them at temporary ones.
+	// PMT reads its folders from these variables, so the test points them at
+	// temporary ones.
 	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
@@ -116,8 +118,9 @@ func openService(t *testing.T, gameID, installPath string, mods ...app.Mod) *Ser
 	return &Service{Workspace: wsp}
 }
 
-// openFixtures opens the fixture install of a game with a copy of its fixture mod for each of the given file sets, in
-// order, named mod-a, mod-b and so on. It returns the service and the folders of the copies.
+// openFixtures opens the fixture install of a game with a copy of its fixture
+// mod for each of the given file sets, in order, named mod-a, mod-b and so on.
+// It returns the service and the folders of the copies.
 func openFixtures(t *testing.T, gameID string, texts ...map[string]string) (*Service, []string) {
 	t.Helper()
 	var dirs []string
@@ -131,8 +134,9 @@ func openFixtures(t *testing.T, gameID string, texts ...map[string]string) (*Ser
 	return openService(t, gameID, resolveFixture(t, gameID), mods...), dirs
 }
 
-// openFixture opens the fixture install of a game with a copy of its fixture mod, mod-a, with the given files added. It
-// returns the service and the copy's folder.
+// openFixture opens the fixture install of a game with a copy of its fixture
+// mod, mod-a, with the given files added. It returns the service and the copy's
+// folder.
 func openFixture(t *testing.T, gameID string, texts map[string]string) (*Service, string) {
 	t.Helper()
 	ide, dirs := openFixtures(t, gameID, texts)
@@ -141,12 +145,16 @@ func openFixture(t *testing.T, gameID string, texts map[string]string) (*Service
 
 // listCodes returns the codes of some diagnostics, sorted.
 func listCodes(diagnostics []Diagnostic) []string {
-	codes := lo.Map(diagnostics, func(diagnostic Diagnostic, _ int) string { return diagnostic.Code })
+	codes := make([]string, len(diagnostics))
+	for position, diagnostic := range diagnostics {
+		codes[position] = diagnostic.Code
+	}
 	slices.Sort(codes)
 	return codes
 }
 
-// checkCodes diagnoses each file under a folder and checks that its codes are the ones listed for it.
+// checkCodes diagnoses each file under a folder and checks that its codes are
+// the ones listed for it.
 func checkCodes(t *testing.T, ide *Service, dir string, want map[string][]string) {
 	t.Helper()
 	for rel, codes := range want {
@@ -155,33 +163,34 @@ func checkCodes(t *testing.T, ide *Service, dir string, want map[string][]string
 			t.Errorf("%s: %v, %v, want %v", rel, got, err, codes)
 		}
 		for _, diagnostic := range diagnostics {
-			if !lo.ContainsBy(Codes, func(row Code) bool { return row.ID == diagnostic.Code }) {
+			if !slices.ContainsFunc(Codes, func(row Code) bool { return row.ID == diagnostic.Code }) {
 				t.Errorf("%s: %s is in no row of Codes", rel, diagnostic.Code)
 			}
 		}
 	}
 }
 
-// TestToRangeCountsUtf16Units checks that a range counts its columns in UTF-16 code units, and that its lines and
-// columns start from one.
+// TestToRangeCountsUtf16Units checks that a range counts its columns in UTF-16
+// code units, and that its lines and columns start from one.
 func TestToRangeCountsUtf16Units(t *testing.T) {
 	text := "a = \"é😀x\"\nnext = 1\n"
 	lines := jomini.NewLines(text)
 	start := strings.Index(text, "x")
-	if got, want := ToRange(text, lines, jomini.Span{Start: start, End: start + 1}), (Range{1, 9, 1, 10}); got != want {
+	if got, want := jomini.ToRange(text, lines, jomini.Span{Start: start, End: start + 1}), (jomini.Range{StartLine: 1, StartColumn: 9, EndLine: 1, EndColumn: 10}); got != want {
 		t.Errorf("after a surrogate pair: %+v, want %+v", got, want)
 	}
 	start = strings.Index(text, "next")
-	if got, want := ToRange(text, lines, jomini.Span{Start: start, End: start + 4}), (Range{2, 1, 2, 5}); got != want {
+	if got, want := jomini.ToRange(text, lines, jomini.Span{Start: start, End: start + 4}), (jomini.Range{StartLine: 2, StartColumn: 1, EndLine: 2, EndColumn: 5}); got != want {
 		t.Errorf("on the next line: %+v, want %+v", got, want)
 	}
-	if got, want := ToRange(text, lines, jomini.Span{Start: 0, End: len(text)}), (Range{1, 1, 3, 1}); got != want {
+	if got, want := jomini.ToRange(text, lines, jomini.Span{Start: 0, End: len(text)}), (jomini.Range{StartLine: 1, StartColumn: 1, EndLine: 3, EndColumn: 1}); got != want {
 		t.Errorf("the whole text: %+v, want %+v", got, want)
 	}
 }
 
-// TestToOffsetInvertsToRange checks that every character boundary of a text converts to a range start and back to
-// the same offset, and that a position past the end gives the nearest offset.
+// TestToOffsetInvertsToRange checks that every character boundary of a text
+// converts to a range start and back to the same offset, and that a position
+// past the end gives the nearest offset.
 func TestToOffsetInvertsToRange(t *testing.T) {
 	text := "a = \"é😀x\"\nnext = 1\n"
 	lines := jomini.NewLines(text)
@@ -189,21 +198,22 @@ func TestToOffsetInvertsToRange(t *testing.T) {
 		if offset < len(text) && !strings.HasPrefix(text[offset:], string([]rune(text[offset:])[:1])) {
 			continue
 		}
-		span := ToRange(text, lines, jomini.Span{Start: offset, End: offset})
-		if got := ToOffset(text, lines, span.StartLine, span.StartColumn); got != offset {
+		span := jomini.ToRange(text, lines, jomini.Span{Start: offset, End: offset})
+		if got := jomini.ToOffset(text, lines, span.StartLine, span.StartColumn); got != offset {
 			t.Errorf("offset %d came back as %d from %+v", offset, got, span)
 		}
 	}
-	if got := ToOffset(text, lines, 1, 99); got != strings.Index(text, "\n") {
+	if got := jomini.ToOffset(text, lines, 1, 99); got != strings.Index(text, "\n") {
 		t.Errorf("a column past the end of the line: %d", got)
 	}
-	if got := ToOffset(text, lines, 99, 1); got != len(text) {
+	if got := jomini.ToOffset(text, lines, 99, 1); got != len(text) {
 		t.Errorf("a line past the end of the text: %d", got)
 	}
 }
 
-// TestSetTextAnswersWithProblemsUntilFileCloses checks that SetText judges the editor's text, that Hover reads the same
-// text, and that CloseFile gives back the file's own.
+// TestSetTextAnswersWithProblemsUntilFileCloses checks that SetText judges the
+// editor's text, that Hover reads the same text, and that CloseFile gives back
+// the file's own.
 func TestSetTextAnswersWithProblemsUntilFileCloses(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, filepath.FromSlash(traitsPath))
@@ -211,7 +221,7 @@ func TestSetTextAnswersWithProblemsUntilFileCloses(t *testing.T) {
 	if err != nil || !slices.Equal(listCodes(diagnostics), []string{"wrong-value"}) {
 		t.Fatalf("SetText answered %+v, %v", diagnostics, err)
 	}
-	if want := (Range{3, 14, 3, 25}); diagnostics[0].Range != want {
+	if want := (jomini.Range{StartLine: 3, StartColumn: 14, EndLine: 3, EndColumn: 25}); diagnostics[0].Range != want {
 		t.Errorf("the wrong value is at %+v, want %+v", diagnostics[0].Range, want)
 	}
 	if card, err := ide.Hover(target, 3, 3); err != nil || card == nil || card.Title != "diplomacy" || card.What != "field" {
@@ -223,8 +233,8 @@ func TestSetTextAnswersWithProblemsUntilFileCloses(t *testing.T) {
 	}
 }
 
-// TestDiagnoseReportsEachVerdict checks the code of each problem in the CK3 fixture's files and in two mods written
-// for it.
+// TestDiagnoseReportsEachVerdict checks the code of each problem in the CK3
+// fixture's files and in two mods written for it.
 func TestDiagnoseReportsEachVerdict(t *testing.T) {
 	ide, dirs := openFixtures(t, ck3, map[string]string{
 		eventsPath: "namespace = t\n\nt.1 = {\n\ttype = character_event\n\ttrigger_event = t.99\n" +
@@ -238,7 +248,8 @@ func TestDiagnoseReportsEachVerdict(t *testing.T) {
 		"events/u_tie.txt":     "namespace = v\n\nv.1 = {\n\tid_override_priority = 5\n\ttype = character_event\n}\n",
 		"events/u_default.txt": "namespace = n\n\nn.1 = {\n\ttype = character_event\n}\n",
 	})
-	// each mod is judged on its own, so a priority the two share is no tie of either; Health reports it once
+	// each mod is judged on its own, so a priority the two share is no tie of
+	// either; Health reports it once
 	checkCodes(t, ide, dirs[0], map[string][]string{
 		eventsPath:                   {unresolvedReference, wrongNamespace, "wrong-scope"},
 		"events/t_tie.txt":           {},
@@ -255,7 +266,8 @@ func TestDiagnoseReportsEachVerdict(t *testing.T) {
 	})
 }
 
-// TestDiagnoseGradesEntryModes checks in the Vic3 fixture that only an entry mode out of place is reported.
+// TestDiagnoseGradesEntryModes checks in the Vic3 fixture that only an entry
+// mode out of place is reported.
 func TestDiagnoseGradesEntryModes(t *testing.T) {
 	ide, dirs := openFixtures(t, vic3, map[string]string{genesPath: "INJECT:hair = {\n\tgenes = { }\n}\n"})
 	checkCodes(t, ide, dirs[0], map[string][]string{
@@ -264,8 +276,8 @@ func TestDiagnoseGradesEntryModes(t *testing.T) {
 	})
 }
 
-// TestDiagnoseReportsKeysEveryShippedDefinitionWrites checks that a missing key is reported only if every definition
-// the game ships writes it.
+// TestDiagnoseReportsKeysEveryShippedDefinitionWrites checks that a missing key
+// is reported only if every definition the game ships writes it.
 func TestDiagnoseReportsKeysEveryShippedDefinitionWrites(t *testing.T) {
 	docs := "weight = <int> # How heavy it is. Required.\n"
 	for shipped, want := range map[string][]string{
@@ -285,7 +297,8 @@ func TestDiagnoseReportsKeysEveryShippedDefinitionWrites(t *testing.T) {
 	}
 }
 
-// TestHoverNamesWhatItIs checks the card of each kind of thing a position can be on in the CK3 fixture.
+// TestHoverNamesWhatItIs checks the card of each kind of thing a position can
+// be on in the CK3 fixture.
 func TestHoverNamesWhatItIs(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, "events", "m_events.txt")
@@ -298,20 +311,20 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 		return card
 	}
 	if card := hover(3, 1); card == nil || card.What != "event" || len(card.Sites) != 1 || !card.Sites[0].Kept ||
-		card.Sites[0].Place.Origin != fixtureModID || card.Sites[0].Line != 3 || card.Range != (Range{3, 1, 3, 4}) {
+		card.Sites[0].Place.Origin != fixtureModID || card.Sites[0].Line != 3 || card.Range != (jomini.Range{StartLine: 3, StartColumn: 1, EndLine: 3, EndColumn: 4}) {
 		t.Errorf("a definition: %+v", card)
 	}
 	if card := hover(11, 19); card == nil || card.What != "event" || card.Title != "v.2" || len(card.Sites) != 1 ||
-		card.Sites[0].Place.Origin != game.OriginVanilla || !card.Sites[0].Place.ReadOnly {
+		card.Sites[0].Place.Origin != files.OriginVanilla || !card.Sites[0].Place.ReadOnly {
 		t.Errorf("a reference: %+v", card)
 	}
-	if card := hover(14, 5); card == nil || card.What != "effect" || card.Runs != "The game does not say" {
+	if card := hover(14, 5); card == nil || card.What != "effect" || findRow(card, rowScopes) != "The game does not say" {
 		t.Errorf("an effect: %+v", card)
 	}
-	if card := hover(13, 5); card == nil || card.What != "keyword" || card.Class != "saving" || card.Blurb == "" {
+	if card := hover(7, 3); card == nil || card.What != "keyword" || card.Class != "logical" || card.Blurb == "" {
 		t.Errorf("a keyword: %+v", card)
 	}
-	if card := hover(4, 3); card == nil || card.What != "field" || card.Takes == "" || !card.Inferred {
+	if card := hover(4, 3); card == nil || card.What != "field" || findRow(card, rowTakes) == "" || !card.Inferred {
 		t.Errorf("a field: %+v", card)
 	}
 	if card := hover(15, 10); card == nil || card.What != "saved scope" || card.Title != "made" || len(card.Sites) != 0 {
@@ -321,13 +334,29 @@ func TestHoverNamesWhatItIs(t *testing.T) {
 		t.Errorf("a position on nothing: %+v", card)
 	}
 	window := filepath.Join(resolveFixture(t, ck3), "game", "gui", "v_window.gui")
-	if card, err := ide.Hover(window, 20, 16); err != nil || card == nil || card.Image == nil || card.Image.Format != "dds" {
+	if card, err := ide.Hover(window, 20, 16); err != nil || card == nil || !strings.Contains(findRow(card, rowImage), " dds") {
 		t.Errorf("a written path: %+v, %v", card, err)
 	}
 }
 
-// TestHoverReadsDatesAndColors checks that a date is read in the calendar of the mod that owns the file and that a
-// color block gets its CSS color.
+// findRow returns the text of the row of a card with the given label. It
+// returns "" for a nil card and a card with no such row.
+func findRow(card *Card, label string) string {
+	if card == nil {
+		return ""
+	}
+
+	for _, row := range card.Rows {
+		if row.Label == label {
+			return row.Text
+		}
+	}
+
+	return ""
+}
+
+// TestHoverReadsDatesAndColors checks that a date is read in the calendar of
+// the mod that owns the file and that a color block gets its CSS color.
 func TestHoverReadsDatesAndColors(t *testing.T) {
 	install := copyFolder(t, resolveFixture(t, ck3))
 	writeFiles(t, install, map[string]string{artifactsShippedPath: "anvil = {\n\tmade = 1000.1.1\n\tage = 7.5\n}\n"})
@@ -340,11 +369,10 @@ func TestHoverReadsDatesAndColors(t *testing.T) {
 		t.Fatal(err)
 	}
 	card, err := ide.Hover(target, 2, 12)
-	want := CardDate{Date: jomini.Date{Year: 1066, Month: 9, Day: 15}, Era: "New", Month: "I"}
-	if err != nil || card == nil || card.Date == nil || *card.Date != want {
-		t.Errorf("a date: %+v, %v, want %+v", card, err, want)
+	if want := "15 I 1066 New"; err != nil || findRow(card, rowDate) != want {
+		t.Errorf("a date: %+v, %v, want %q", card, err, want)
 	}
-	if card, err = ide.Hover(target, 4, 10); err != nil || card != nil && card.Date != nil {
+	if card, err = ide.Hover(target, 4, 10); err != nil || findRow(card, rowDate) != "" {
 		t.Errorf("a number that reads as a date: %+v, %v", card, err)
 	}
 	if card, err = ide.Hover(target, 3, 3); err != nil || card == nil || card.Color != "rgba(255, 0, 0, 1)" {
@@ -352,8 +380,8 @@ func TestHoverReadsDatesAndColors(t *testing.T) {
 	}
 }
 
-// TestDiagnoseJudgesOnlySyntaxOfGameFiles checks that a file of the game's own gets its parse errors and no
-// verdict, whatever the text says.
+// TestDiagnoseJudgesOnlySyntaxOfGameFiles checks that a file of the game's own
+// gets its parse errors and no verdict, whatever the text says.
 func TestDiagnoseJudgesOnlySyntaxOfGameFiles(t *testing.T) {
 	ide, _ := openFixture(t, ck3, nil)
 	vanilla := filepath.Join(resolveFixture(t, ck3), "game", "common", "traits", "v_traits.txt")
@@ -363,13 +391,14 @@ func TestDiagnoseJudgesOnlySyntaxOfGameFiles(t *testing.T) {
 	}
 }
 
-// TestEncodeTokensWritesDeltas checks that tokens are sorted and written as deltas.
+// TestEncodeTokensWritesDeltas checks that tokens are sorted and written as
+// deltas.
 func TestEncodeTokensWritesDeltas(t *testing.T) {
 	text := "ab cd\nef\n  gh😀i\n\"x\ny\" z\n"
 	tokens := []token{
-		{jomini.Span{Start: 11, End: 18}, schema.CategoryReference}, {jomini.Span{Start: 3, End: 5}, schema.CategoryCommand},
-		{jomini.Span{Start: 0, End: 2}, schema.CategoryKeyword}, {jomini.Span{Start: 6, End: 8}, schema.CategoryField},
-		{jomini.Span{Start: 19, End: 24}, schema.CategoryField}, {jomini.Span{Start: 9, End: 10}, schema.CategoryNone},
+		{jomini.Span{Start: 11, End: 18}, lang.CategoryReference}, {jomini.Span{Start: 3, End: 5}, lang.CategoryCommand},
+		{jomini.Span{Start: 0, End: 2}, lang.CategoryKeyword}, {jomini.Span{Start: 6, End: 8}, lang.CategoryField},
+		{jomini.Span{Start: 19, End: 24}, lang.CategoryField}, {jomini.Span{Start: 9, End: 10}, lang.CategoryNone},
 	}
 	want := []uint32{0, 0, 2, 0, 0, 0, 3, 2, 1, 0, 1, 0, 2, 3, 0, 1, 2, 5, 5, 0}
 	if got := encodeTokens(text, jomini.NewLines(text), tokens); !slices.Equal(got, want) {
@@ -377,10 +406,11 @@ func TestEncodeTokensWritesDeltas(t *testing.T) {
 	}
 }
 
-// TestTokensEncodeWholeFile checks that Tokens writes five integers per token and that each type is in the legend.
+// TestTokensEncodeWholeFile checks that Tokens writes five integers per token
+// and that each type is in the legend.
 func TestTokensEncodeWholeFile(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
-	whole := Range{StartLine: 1, StartColumn: 1, EndLine: 1 << 20, EndColumn: 1}
+	whole := jomini.Range{StartLine: 1, StartColumn: 1, EndLine: 1 << 20, EndColumn: 1}
 	tokens, err := ide.Tokens(filepath.Join(dir, "events", "m_events.txt"), whole)
 	if err != nil || len(tokens) < 50 || len(tokens)%5 != 0 {
 		t.Fatalf("%d integers, %v", len(tokens), err)
@@ -392,8 +422,8 @@ func TestTokensEncodeWholeFile(t *testing.T) {
 	}
 }
 
-// TestFormatKeepsLinesAndStaysIdempotent checks that Format only indents and spaces, and that formatting the result
-// changes nothing.
+// TestFormatKeepsLinesAndStaysIdempotent checks that Format only indents and
+// spaces, and that formatting the result changes nothing.
 func TestFormatKeepsLinesAndStaysIdempotent(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, "common", "traits", "m_traits.txt")
@@ -418,28 +448,29 @@ func TestFormatKeepsLinesAndStaysIdempotent(t *testing.T) {
 	if again := format(want); again != want {
 		t.Errorf("a second format changed %q to %q", want, again)
 	}
-	stray, fixed := "x = {\r\r\n\ta = 1\r\n}\r\n", "x = {\r\n\ta = 1\r\n}\r\n"
-	strayTree := jomini.Parse(stray)
-	if got := encodeTree(strayTree, listPieces(strayTree), "\t"); got != fixed {
-		t.Errorf("a stray carriage return: %q, want %q", got, fixed)
-	}
 }
 
 // toByteEdits converts Monaco edits over a tree's text back to byte edits.
 func toByteEdits(tree *jomini.Tree, edits []Edit) []jomini.Edit {
-	return lo.Map(edits, func(edit Edit, _ int) jomini.Edit {
-		return jomini.Edit{
-			Span: jomini.Span{
-				Start: ToOffset(tree.Src, tree.Lines, edit.Range.StartLine, edit.Range.StartColumn),
-				End:   ToOffset(tree.Src, tree.Lines, edit.Range.EndLine, edit.Range.EndColumn),
-			},
-			Text: edit.Text,
-		}
-	})
+	converted := make([]jomini.Edit, len(edits))
+	for position, edit := range edits {
+		converted[position] = jomini.Edit{Span: jomini.ToSpan(tree.Src, tree.Lines, edit.Range), Text: edit.Text}
+	}
+	return converted
 }
 
-// TestCompleteListsKeysAndValues checks that a key gets the language's operators, commands and fields, and that a value
-// gets the field's choices and the image files under the folder typed.
+// listLabels returns the labels of some candidates, in their order.
+func listLabels(candidates []Completion) []string {
+	labels := make([]string, len(candidates))
+	for position, candidate := range candidates {
+		labels[position] = candidate.Label
+	}
+	return labels
+}
+
+// TestCompleteListsKeysAndValues checks that a key gets the language's
+// operators, commands and fields, and that a value gets the field's choices and
+// the image files under the folder typed.
 func TestCompleteListsKeysAndValues(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	install := copyFolder(t, resolveFixture(t, ck3))
@@ -452,7 +483,7 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, err := artifacts.Complete(things, 2, 24)
-	if labels := lo.Map(paths, func(candidate Completion, _ int) string { return candidate.Label }); err != nil ||
+	if labels := listLabels(paths.Candidates); err != nil ||
 		!slices.Contains(labels, "gfx/interface/v_bg.dds") || slices.Contains(labels, "gfx/coat_of_arms/patterns/v_pattern.dds") {
 		t.Errorf("image paths: %v, %v", labels, err)
 	}
@@ -461,32 +492,35 @@ func TestCompleteListsKeysAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	choices, _ := ide.Complete(traits, 2, 13)
-	if labels := lo.Map(choices, func(candidate Completion, _ int) string { return candidate.Label }); !slices.Equal(labels, []string{"personality", "education"}) &&
+	if labels := listLabels(choices.Candidates); !slices.Equal(labels, []string{"personality", "education"}) &&
 		!slices.Equal(labels, []string{"education", "personality"}) {
 		t.Errorf("choices: %v", labels)
 	}
-	// a value typed in a block written on one line is a value position too, and offers no keys
+	// a value typed in a block written on one line is a value position too, and
+	// offers no keys
 	if _, err := ide.SetText(traits, "x = { category = pe }\n"); err != nil {
 		t.Fatal(err)
 	}
 	inline, _ := ide.Complete(traits, 1, 20)
-	if labels := lo.Map(inline, func(candidate Completion, _ int) string { return candidate.Label }); len(labels) != 2 {
+	if labels := listLabels(inline.Candidates); len(labels) != 2 {
 		t.Errorf("choices in a block on one line: %v", labels)
 	}
 	events := filepath.Join(dir, "events", "t_events.txt")
 	if _, err := ide.SetText(events, "namespace = t\nt.1 = {\n\timmediate = {\n\t\t\n\t}\n}\n"); err != nil {
 		t.Fatal(err)
 	}
-	keys, err := ide.Complete(events, 4, 3)
-	if err != nil || len(keys) == 0 || keys[0].Category != schema.CategoryKeyword ||
-		!lo.ContainsBy(keys, func(candidate Completion) bool {
-			return candidate.Label == "add_gold" && candidate.Category == schema.CategoryCommand
+	list, err := ide.Complete(events, 4, 3)
+	keys := list.Candidates
+	if err != nil || len(keys) == 0 || keys[0].Category != lang.CategoryKeyword ||
+		!slices.ContainsFunc(keys, func(candidate Completion) bool {
+			return candidate.Label == "add_gold" && candidate.Category == lang.CategoryCommand
 		}) {
 		t.Errorf("keys: %d, %v", len(keys), err)
 	}
 }
 
-// TestNavigationFollowsNamesAcrossFiles checks Definition, References, PrepareRename and Rename across files.
+// TestNavigationFollowsNamesAcrossFiles checks Definition, References,
+// PrepareRename and Rename across files.
 func TestNavigationFollowsNamesAcrossFiles(t *testing.T) {
 	ide, dir := openFixture(t, ck3, nil)
 	target := filepath.Join(dir, "events", "m_events.txt")
@@ -498,7 +532,7 @@ func TestNavigationFollowsNamesAcrossFiles(t *testing.T) {
 	if err != nil || len(uses) != 2 {
 		t.Errorf("References: %+v, %v", uses, err)
 	}
-	if renamable, err := ide.PrepareRename(target, 3, 1); err != nil || renamable == nil || *renamable != (Range{3, 1, 3, 4}) {
+	if renamable, err := ide.PrepareRename(target, 3, 1); err != nil || renamable == nil || *renamable != (jomini.Range{StartLine: 3, StartColumn: 1, EndLine: 3, EndColumn: 4}) {
 		t.Errorf("PrepareRename on a mod's name: %+v, %v", renamable, err)
 	}
 	if refused, err := ide.PrepareRename(target, 11, 19); err != nil || refused != nil {
@@ -510,8 +544,8 @@ func TestNavigationFollowsNamesAcrossFiles(t *testing.T) {
 	}
 }
 
-// TestHoverReadsLocalizationFiles checks the cards of a localization file: a message's key, a key between dollar signs
-// and a step of a data call.
+// TestHoverReadsLocalizationFiles checks the cards of a localization file: a
+// message's key, a key between dollar signs and a step of a data call.
 func TestHoverReadsLocalizationFiles(t *testing.T) {
 	ide, dir := openFixture(t, ck3, map[string]string{
 		messagesPath: "l_english:\n a:0 \"Hello $b$ [Root.GetName]\"\n b:0 \"Bee\"\n",
@@ -528,6 +562,74 @@ func TestHoverReadsLocalizationFiles(t *testing.T) {
 	}
 }
 
+// TestBuildLexiconListsEffectsAndFunctions checks the effect, scope and
+// function rows over the CK3 fixture install, and the error for an unknown
+// class.
+func TestBuildLexiconListsEffectsAndFunctions(t *testing.T) {
+	ide := openService(t, ck3, resolveFixture(t, ck3))
+	ws, err := ide.Workspace.Session()
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects, err := ide.BuildLexicon("effect", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := len(ws.Schema.ListKeys(lang.DumpEffects))
+	mods, scripted := ws.Mods.Load(), map[string]bool{}
+	for _, site := range mods.ListDefinitions(ws.Schema.Effects) {
+		scripted[mods.ToReference(site).Name] = true
+	}
+	if len(effects) == 0 || len(effects) != declared+len(scripted) || !slices.IsSortedFunc(effects, func(first, second LexiconRow) int {
+		return strings.Compare(first.Name, second.Name)
+	}) {
+		t.Fatalf("%d effect rows for %d declared and %d scripted effects, sorted by name", len(effects), declared, len(scripted))
+	}
+	for _, row := range effects {
+		if row.Defined != nil {
+			if !scripted[row.Name] || row.Usage != "" && !strings.HasPrefix(row.Usage, row.Name+" = { ") {
+				t.Errorf("scripted row %+v", row)
+			}
+			continue
+		}
+		command := ws.Schema.LookupDefinition(lang.DumpEffects, row.Name)
+		if row.Class != "effect" || row.Usage != command.Usage || row.Blurb != command.Blurb {
+			t.Errorf("row %+v does not match command %+v", row, command)
+		}
+	}
+	checkFunctions(t, ide, ws)
+	if scopes, err := ide.BuildLexicon("scope", "", ""); err != nil || len(scopes) != len(ws.Schema.ListKeys(lang.DumpTypes)) {
+		t.Errorf("%d scope rows for %d scopes, %v", len(scopes), len(ws.Schema.ListKeys(lang.DumpTypes)), err)
+	}
+	if _, err := ide.BuildLexicon("nothing", "", ""); err == nil {
+		t.Error("BuildLexicon accepted a class the lexicon does not have")
+	}
+}
+
+// checkFunctions checks that there is a function row for each data function of
+// the schema.
+func checkFunctions(t *testing.T, ide *Service, ws *workspace.Session) {
+	t.Helper()
+	rows, err := ide.BuildLexicon("function", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, dataType := range ws.Schema.DataTypes {
+		count += len(dataType.Functions)
+	}
+	if len(rows) == 0 || len(rows) != count {
+		t.Fatalf("%d function rows for %d data functions", len(rows), count)
+	}
+	for _, row := range rows {
+		typeName, functionName, ok := strings.Cut(row.Name, ".")
+		function := ws.Schema.DataTypes[typeName].Functions[functionName]
+		if !ok || row.Class != "function" || row.Target != lang.ReturnType(function) || row.Blurb != function.Blurb {
+			t.Fatalf("row %+v does not match function %+v of %s", row, function, typeName)
+		}
+	}
+}
+
 // A problem is one diagnostic with the file it was found in.
 type problem struct {
 	code, rel string
@@ -535,13 +637,14 @@ type problem struct {
 	facts     map[string]string
 }
 
-// vanillaClean holds the codes that no file of the three games gets, each found so by reading every finding of the
-// installs.
+// vanillaClean holds the codes that no file of the three games gets, each found
+// so by reading every finding of the installs.
 var vanillaClean = []string{"else-without-if", "invalid-date", "unknown-data-call", "unknown-loc-key", "unused-argument"}
 
-// TestDiagnoseInstalls judges the files of each real install that PMT_TEST_INSTALL_<GAME> names as a mod's files are
-// judged, and logs the problems by code. It fails if a file panics, or if a file of the game gets one of vanillaClean's
-// codes.
+// TestDiagnoseInstalls judges the files of each real install that
+// PMT_TEST_INSTALL_<GAME> names as a mod's files are judged, and logs the
+// problems by code. It fails if a file panics, or if a file of the game gets
+// one of vanillaClean's codes.
 func TestDiagnoseInstalls(t *testing.T) {
 	for _, gameID := range []string{ck3, vic3, eu5} {
 		t.Run(gameID, func(t *testing.T) {
@@ -568,8 +671,9 @@ func TestDiagnoseInstalls(t *testing.T) {
 	}
 }
 
-// TestSweepMods judges every mod in the folder that PMT_TEST_MODS_<GAME> names, each folder in it one mod, over the
-// install PMT_TEST_INSTALL_<GAME> names, and logs the problems by code. It fails only if a file panics.
+// TestSweepMods judges every mod in the folder that PMT_TEST_MODS_<GAME> names,
+// each folder in it one mod, over the install PMT_TEST_INSTALL_<GAME> names,
+// and logs the problems by code. It fails only if a file panics.
 func TestSweepMods(t *testing.T) {
 	for _, gameID := range []string{ck3, vic3, eu5} {
 		t.Run(gameID, func(t *testing.T) {
@@ -605,25 +709,27 @@ func TestSweepMods(t *testing.T) {
 	}
 }
 
-// judgeAsMod returns a function that judges a file of a workspace as a mod's file is judged, a file of the game too.
+// judgeAsMod returns a function that judges a file of a workspace as a mod's
+// file is judged, a file of the game too.
 func judgeAsMod(ws *workspace.Session) func(path string) ([]Diagnostic, error) {
-	mods, parameters := ws.Mods.Load(), &sync.Map{}
+	mods := ws.Mods.Load()
 	return func(path string) ([]Diagnostic, error) {
 		place := ws.Locate(mods, path)
 		if !isDiagnosed(place) {
 			return nil, nil
 		}
-		document, err := ws.LoadDocument(path)
+		document, err := ws.WalkDocument(path)
 		if err != nil {
 			return nil, err
 		}
-		visitor := newVisitor(ws, mods, place, parameters)
-		visitor.parseOnly = false
-		return visitor.diagnoseTree(document), nil
+		// a file under no root is judged in full, against every mod
+		place.Origin = ""
+		return diagnoseDocument(ws, mods, place, document), nil
 	}
 }
 
-// reportFailures fails the test for each file that panicked, and logs each file that could not be read.
+// reportFailures fails the test for each file that panicked, and logs each file
+// that could not be read.
 func reportFailures(t *testing.T, failures []error) {
 	t.Helper()
 	for _, failure := range failures {
@@ -635,8 +741,9 @@ func reportFailures(t *testing.T, failures []error) {
 	}
 }
 
-// diagnoseAll judges the files of a list in parallel with the given function. It returns the problems, sorted by code
-// and place, how many files it checked and why each failed file failed.
+// diagnoseAll judges the files of a list in parallel with the given function.
+// It returns the problems, sorted by code and place, how many files it checked
+// and why each failed file failed.
 func diagnoseAll(judge func(path string) ([]Diagnostic, error), listing []files.File) (problems []problem, checked int, failures []error) {
 	var mu sync.Mutex
 	var group errgroup.Group
@@ -670,7 +777,8 @@ func diagnoseAll(judge func(path string) ([]Diagnostic, error), listing []files.
 // errCrash is the error a panic becomes.
 var errCrash = errors.New("panic")
 
-// diagnoseSafely judges a file with the given function, and turns a panic into an error.
+// diagnoseSafely judges a file with the given function, and turns a panic into
+// an error.
 func diagnoseSafely(judge func(path string) ([]Diagnostic, error), target string) (diagnostics []Diagnostic, err error) {
 	defer func() {
 		if crash := recover(); crash != nil {
@@ -680,7 +788,8 @@ func diagnoseSafely(judge func(path string) ([]Diagnostic, error), target string
 	return judge(target)
 }
 
-// logProblems logs the first problems of each code, then the count of each code.
+// logProblems logs the first problems of each code, then the count of each
+// code.
 func logProblems(t *testing.T, problems []problem) {
 	t.Helper()
 	counts := map[string]int{}

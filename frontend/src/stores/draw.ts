@@ -34,10 +34,16 @@ export const useDrawStore = defineStore("draw", () => {
   const backdrop = useLocalStorage("pmt.draw.backdrop", "dark");
   /** The colors copied from a layer, each as a coat writes it, by the key of its slot. */
   const colors = shallowRef<Record<string, string>>({});
-  /** Whether the panel beside the picture is open. It closes when another workspace opens. */
-  const isPanelOpen = shallowRef(false);
-  /** Whether the code beside the picture is open. It closes when another workspace opens. */
-  const isCodeOpen = shallowRef(false);
+  /**
+   * Whether the panel beside the picture is open. It stays so across a
+   * reload, and closes when another workspace opens.
+   */
+  const isPanelOpen = useLocalStorage("pmt.draw.panel", false);
+  /**
+   * Whether the code beside the picture is open. It stays so across a reload,
+   * and closes when another workspace opens.
+   */
+  const isCodeOpen = useLocalStorage("pmt.draw.code", false);
   // The value picked for each group, by group ID, by workspace ID.
   const saved = useLocalStorage<Record<string, Record<string, string>>>("pmt.draw.picks", {});
   /** The open workspace's picks, by the ID of each group. */

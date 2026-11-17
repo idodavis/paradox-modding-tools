@@ -24,11 +24,11 @@ flowchart LR
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `main.ts`    | The bootstrap: plugins, the one error handler, Monaco's setup, the mount.                                                                                                           |
 | `app/`       | The frame every page sits in: the top bar, the status bar, the command palette, the agent pane, Settings, and the tables the whole app reads (pages, commands, events, the router). |
-| `pages/`     | One folder per page: `library`, `wizard`, `newmod`, `ide`, `graph`, `health`, `notes`, `publish`.                                                                                   |
+| `pages/`     | One folder per page: `library`, `wizard`, `newmod`, `ide`, `graph`, `health`, `patch`, `publish`.                                                                                   |
 | `ui/`        | Components more than one page uses, such as the hover card, a source link or the load order.                                                                                        |
 | `stores/`    | The Pinia stores.                                                                                                                                                                   |
 | `queries.ts` | Every query that reads Go, and the keys that events and mutations refresh.                                                                                                          |
-| `lib/`       | Plain functions: confirmations and toasts, the sentences the UI writes from facts, placeholders.                                                                                    |
+| `lib/`       | Plain functions: confirmations, toasts and error reports, the sentences the UI writes from facts, placeholders.                                                                     |
 | `styles/`    | `themes.css`, the one palette, and Nuxt UI's and the articles' styles.                                                                                                              |
 | `assets/`    | Fonts, game icons and the logo.                                                                                                                                                     |
 
@@ -52,6 +52,24 @@ Data from Go lives in the query cache, not in stores. A store holds what belongs
 groups and tabs, the search being typed, the shells, the windows and what passes between them. `stores/workspace.ts`
 holds the active workspace's id and what every page reads of the open workspace.
 
+## Agents
+
+The agent pane and the editor's tab completion speak the Agent Client Protocol to an agent's program over a stream that
+Go carries. [The editor](#the-editor) holds the review of an agent's edits and the tab completion. The rest:
+
+- `stores/agent.ts`: the window's chats with agents.
+- `stores/edits.ts`: the edits an agent's tool calls make to files, which it hands to Go to review.
+- `stores/completion.ts`: the window's one connection to the agent that completes code in the editor. It starts with the
+  window's first open file while an installed agent offers completion and the setting is on, and holds whether the
+  agent is ready, needs the user to sign in, or failed, which Settings shows.
+- `lib/stream.ts`: opens the stream to an agent's program, which the chats and the completion connection both use.
+- `app/agent/AgentPane.vue`: the pane, with its sessions menu and the files under review.
+- `app/agent/AgentSession.vue`: one chat, with its prompt box.
+- `app/agent/AgentUsage.vue`: the ring in the prompt box and its panel of the context window and the plan's usage.
+- `ui/AgentSignIn.vue`: the ways to sign in to an agent, a button each, which the pane and Settings show.
+- `ui/AgentLink.vue`: a link an agent asks to open, with its host marked, and the choice to open or decline it.
+- `ui/LineCounts.vue`: the lines a change adds and removes, in the pane, the chat and the editor.
+
 ## Pages and commands
 
 `app/pages.ts` is the catalog of pages: each page's title, icon, help and whether it needs a workspace. The router
@@ -72,19 +90,30 @@ Wails' runtime acts only on the window that calls it.
 `pages/ide/editor/` sets up Monaco once and holds what the editor is made of:
 
 - `monaco.ts`: the Paradox languages, their providers, the themes and the options.
-- `grammars.ts`: Monarch grammars that color shapes only; the meaning comes from Go's semantic tokens on top.
+- `grammars.ts`: Monarch grammars that color shapes only; the meaning comes from Go's semantic tokens on top. A mod's
+  descriptor is the exception: Go colors nothing in it, so its grammar colors its keys and values.
 - `providers.ts`: Monaco's providers, each handing the lsp service's answer to Monaco.
-- `models.ts`: the open files as Monaco models, which follow their files on disk and show Go's problems.
+- `models.ts`: the open files as Monaco models, which follow their files on disk and show Go's problems. A model is
+  made already in Go's colors, fetched beside its text: Monaco asks a provider for colors only 100 ms or more after an
+  editor shows a model, so a file would open bare. `lib/syntax.ts`'s `paintModel` sets them, through Monaco's own
+  modules for a model's coloring, which `env.d.ts` gives types. The compare (`ui/CompareView.vue`) paints its two
+  sides the same way before it makes its editor.
+- `completion.ts`: tab completion. It tells the completion agent of the open files and shows its suggestions as Monaco's
+  inline completions, which PMT's own ghost text gives way to.
+- `review.ts`: an agent's edits to a file, shown as the file against its text from before them, with Keep and Undo for
+  each change and for the file.
 - `hover.ts`: PMT's hover card, in place of Monaco's own.
-- `tabs.ts`, `conflicts.ts`, `changes.ts`: how a tab shows each format, merge conflicts, and an agent's changes.
+- `tabs.ts`, `conflicts.ts`, `changes.ts`: how a tab shows each format, merge conflicts, and the lines changed since
+  the last commit.
 
 ## Look
 
 - **Nuxt UI first.** A component that Nuxt UI has is used through its own props, such as `:items` for menus, tabs
   and selects, rather than built from `v-if` and `v-model`. Table filters live in `UTable`'s column state.
 - **One palette.** `styles/themes.css` is the only place colors are set: a block of tokens for each `data-theme`, a
-  dark and a light one per family, bridged to Nuxt UI's `--ui-*` variables. Code is colored by ten `--syn-<category>`
-  tokens.
+  dark and a light one per family, bridged to Nuxt UI's `--ui-*` variables. Code is colored by twelve `--syn-<category>`
+  tokens, which `lib/syntax.ts` maps each token type to; Go gives every key, value and piece of markup its type. A
+  theme may draw one of them in bold (`--syn-<category>-weight`).
 - **Dense where content fills the screen.** Editors, diffs and merges get the space; path and config chrome stays
   compact.
 

@@ -9,34 +9,31 @@ import * as files$0 from "../../internal/files/models.js";
 import * as game$0 from "../../internal/game/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as schema$0 from "../../internal/schema/models.js";
+import * as lang$0 from "../../internal/lang/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as app$0 from "../app/models.js";
 
 /**
- * A Dependency is one mod a descriptor says its mod needs.
+ * Dependency is one mod a descriptor says its mod needs.
  */
 export interface Dependency {
     /**
-     * the mod's id or name, as the descriptor writes it
+     * ID is the mod's id or name, as the descriptor writes it.
      */
     "id": string;
-
-    /**
-     * the title metadata.json gives it; "" if none
-     */
     "title": string;
 }
 
 /**
- * A Descriptor is a mod's own description, read from its game's descriptor file.
+ * Descriptor is a mod's own description, read from its game's descriptor
+ * file.
  */
 export interface Descriptor {
     "path": string;
 
     /**
-     * the id metadata.json gives the mod; "" if none
+     * ID is the id metadata.json gives the mod, "" if none.
      */
     "id": string;
     "name": string;
@@ -45,195 +42,277 @@ export interface Descriptor {
     "tags": string[] | null;
 
     /**
-     * folders whose earlier files the game does not load
+     * ReplacePaths are the folders whose earlier files the game does not load.
      */
     "replacePaths": string[] | null;
-
-    /**
-     * the full path of the picture file the descriptor names
-     */
     "thumbnail": string;
     "workshopId": string;
-
-    /**
-     * the mods it needs; they are never written
-     */
     "dependencies": Dependency[] | null;
 }
 
 /**
- * A FileChange is a file of the open workspace that changed or was deleted on disk. The fs:changed event carries it.
+ * FileChange is a file of the open workspace that changed or was deleted on
+ * disk.
  */
 export interface FileChange {
     "path": string;
     "deleted": boolean;
 
     /**
-     * the file is a mod's descriptor
+     * Descriptor is true for a mod's descriptor file.
      */
     "descriptor": boolean;
 }
 
 /**
- * A FileText is a file's text with its place in the workspace.
+ * FileText is a file's text with its place in the workspace.
  */
 export interface FileText {
     "place": Place;
     "text": files$0.Text;
 
     /**
-     * the editor's unsaved text of the file; "" if there is none or it matches the disk
+     * Draft is the editor's unsaved text, "" if none or the same as the disk.
      */
     "draft": string;
-
-    /**
-     * the file is not text, so it has no text
-     */
     "binary": boolean;
 }
 
 /**
- * A Hunk is one run of lines an agent's edit changed in a file.
+ * A Hunk is one run of lines an edit changed in a file, an agent's or the
+ * game's.
  */
 export interface Hunk {
+    /**
+     * Before holds the run's lines before the edit and After its lines after
+     * it.
+     */
     "before": string[] | null;
     "after": string[] | null;
 }
 
 /**
- * A Mod is one mod of a workspace, with its descriptor.
+ * Mod is one mod of a workspace, with its descriptor.
  */
 export interface Mod {
     "id": string;
     "dir": string;
 
     /**
-     * a slot `o1`…`o16`, or a CSS color
+     * Color is a slot o1 to o16, or a CSS color.
      */
     "color": string;
     "calendar": app$0.Calendar;
 
     /**
-     * "" unpublished
+     * WorkshopID is "" for an unpublished mod.
      */
     "workshopId": string;
 
     /**
-     * the upload exclusions, one pattern per line
-     */
-    "ignore": string;
-
-    /**
-     * left out of the workspace's compatibility checks
+     * LeftOut keeps the mod out of the compatibility checks.
      */
     "leftOut": boolean;
 
     /**
-     * someone else's mod, which the workspace checks its own mods against
+     * External is someone else's mod, which the workspace checks its own mods
+     * against and never changes.
      */
     "external": boolean;
+
+    /**
+     * Base is the game version a patch's changes are counted from for a mod
+     * whose descriptor gives no supported version that can be read, "" for
+     * none.
+     */
+    "base": string;
     "descriptor": Descriptor;
 
     /**
-     * its folder is missing
+     * Broken is true if the mod's folder is missing.
      */
     "broken": boolean;
 
     /**
-     * the full path of the picture shown for it; "" if none
+     * Thumbnail is the full path of the picture shown for the mod, "" if none.
      */
     "thumbnail": string;
 
     /**
-     * its folder is Steam's copy of a Workshop mod
+     * Workshop is true for Steam's copy of a Workshop mod, which is always an
+     * external mod.
      */
     "workshop": boolean;
+
+    /**
+     * Start is the game version the patches' changes are counted from for the
+     * mod, "" for none. Judged is whether the mod's supported version decides
+     * it. Where it does not, Start is the mod's base version.
+     */
+    "start": string;
+    "judged": boolean;
 }
 
 /**
- * A ModFolder is the folder a new mod would be made in, or why it cannot be made.
+ * ModFolder is the folder a new mod would be made in, or why it cannot be
+ * made.
  */
 export interface ModFolder {
     /**
-     * "" when there is a problem
+     * Path and Problem are exclusive: one is "" when the other is set.
      */
     "path": string;
-
-    /**
-     * why no mod can be made with the name, such as its folder existing already; "" if one can
-     */
     "problem": string;
 }
 
 /**
- * A Place is where one file sits in the workspace, with the root it is under and what the workspace knows about it.
- * Every answer that names a file carries one.
+ * Place is where one file sits in the workspace, with the root it is under
+ * and what the workspace knows about it.
  */
 export interface Place {
     "path": string;
 
     /**
-     * the one key two paths are compared by: cleaned, lower-cased, forward slashes
+     * Key is the path as paths are compared: lower case, with slashes.
      */
     "key": string;
 
     /**
-     * from its root, forward slashes
+     * Rel is the path below the file's root, with slashes, and Origin is that
+     * root's.
      */
     "rel": string;
+    "origin": string;
 
     /**
-     * its root's
+     * Stage is the stage folder Rel opens with, or "" for none.
      */
-    "origin": string;
+    "stage": string;
     "format": files$0.Format;
     "name": string;
 
     /**
-     * "" for a file at its root
+     * Folder is "" for a file at its root.
      */
     "folder": string;
     "root": string;
     "database": string;
-
-    /**
-     * true for the game's files and a Workshop mod's
-     */
     "readOnly": boolean;
-
-    /**
-     * true for a folder
-     */
     "isDir": boolean;
 
     /**
-     * true for a file Visual draws
+     * Missing is true for a path that is not on disk. Only Service.Locate
+     * sets it.
+     */
+    "missing": boolean;
+
+    /**
+     * Drawable is true for a file the Visual view draws.
      */
     "drawable": boolean;
 
     /**
-     * the path of the game's readme/info for its database; "" if none
+     * Readme is the path of the readme of the file's database, "" if none.
      */
     "readme": string;
+
+    /**
+     * Language is the editor language, plain text for a format with none.
+     */
+    "language": string;
+
+    /**
+     * Hiding is why the game does not read the file, "" for a file it reads.
+     * Hider is the id of the mod that hides it, "" where no mod does.
+     */
+    "hiding": files$0.Hiding;
+    "hider": string;
 }
 
 /**
- * A Scanning is how far an install's scan has come. The install:scanning event carries it.
+ * A Review is a file under review as the page lists it.
+ */
+export interface Review {
+    "path": string;
+
+    /**
+     * Key is the path as paths are compared: lower case, with slashes.
+     */
+    "key": string;
+
+    /**
+     * Rel is the path below the file's root, with slashes, and Origin is that
+     * root's.
+     */
+    "rel": string;
+    "origin": string;
+
+    /**
+     * Stage is the stage folder Rel opens with, or "" for none.
+     */
+    "stage": string;
+    "format": files$0.Format;
+    "name": string;
+
+    /**
+     * Folder is "" for a file at its root.
+     */
+    "folder": string;
+    "root": string;
+    "database": string;
+    "readOnly": boolean;
+    "isDir": boolean;
+
+    /**
+     * Missing is true for a path that is not on disk. Only Service.Locate
+     * sets it.
+     */
+    "missing": boolean;
+
+    /**
+     * Drawable is true for a file the Visual view draws.
+     */
+    "drawable": boolean;
+
+    /**
+     * Readme is the path of the readme of the file's database, "" if none.
+     */
+    "readme": string;
+
+    /**
+     * Language is the editor language, plain text for a format with none.
+     */
+    "language": string;
+
+    /**
+     * Hiding is why the game does not read the file, "" for a file it reads.
+     * Hider is the id of the mod that hides it, "" where no mod does.
+     */
+    "hiding": files$0.Hiding;
+    "hider": string;
+
+    /**
+     * Added and Removed count the lines the file's text adds and removes
+     * against its baseline.
+     */
+    "added": number;
+    "removed": number;
+}
+
+/**
+ * Scanning is how far an install's scan has come.
  */
 export interface Scanning {
-    /**
-     * the stage in words
-     */
     "stage": string;
 
     /**
-     * how far the stage has come; -1 for a stage that reports none
+     * Percent is -1 for a stage that reports none.
      */
     "percent": number;
 }
 
 /**
- * A State is a summary of the open workspace. It is empty while no workspace is open.
+ * State is a summary of the open workspace, empty while none is open.
  */
 export interface State {
     "open": boolean;
@@ -242,51 +321,35 @@ export interface State {
     "install": app$0.Install;
 
     /**
-     * the install's folder exists
+     * InstallFound is false if the install's folder is missing.
      */
     "installFound": boolean;
 
     /**
-     * the recorded version, if opening found a different one
+     * UpdatedFrom is the recorded version, when opening found another.
      */
     "updatedFrom": string;
-    "dumps": schema$0.SourceState;
+    "dumps": lang$0.SourceState;
 
     /**
-     * how many effects the schema declares
+     * Effects, Triggers and Scopes count what the schema declares.
      */
     "effects": number;
-
-    /**
-     * how many triggers the schema declares
-     */
     "triggers": number;
-
-    /**
-     * how many scope types the schema declares
-     */
     "scopes": number;
 }
 
 /**
- * A Workspace is one recorded workspace as the pages list it: its record, its install, its game and its mods in load
- * order. Each mod's descriptor is read from disk when the list is made.
+ * Workspace is one recorded workspace as the pages list it.
  */
 export interface Workspace {
     "record": app$0.Workspace;
 
     /**
-     * empty if the install is not recorded or its game not supported
+     * Install, Game and Mods are empty if the install is not recorded or its
+     * game is not supported.
      */
     "install": app$0.Install;
-
-    /**
-     * nil if the install is not recorded or its game not supported
-     */
     "game": game$0.Game | null;
-
-    /**
-     * none if the install is not recorded or its game not supported
-     */
     "mods": Mod[] | null;
 }

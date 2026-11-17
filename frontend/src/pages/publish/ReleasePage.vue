@@ -454,8 +454,7 @@ function openCompare(differenceId: string): void {
                 <UIcon name="i-lucide-info" class="size-4 shrink-0 text-dimmed" />
                 <span class="grow">
                   A separate Workshop item for players on game {{ draft.supportedVersion }}. Its files come from
-                  <span class="font-mono text-12">{{ draft.source }}</span
-                  >, not the mod's folder.
+                  <span class="font-mono text-12">{{ draft.source }}</span>, not the mod's folder.
                 </span>
                 <FileSelector
                   :path="draft.source"

@@ -5,12 +5,10 @@ import { useQuery } from "@pinia/colada";
 
 import { list, plural } from "../../lib/format";
 import { dlcQuery, fileUrl, tagsQuery } from "../../queries";
-import { useWorkspaceStore } from "../../stores/workspace";
 import FileSelector, { IMAGES } from "../../ui/FileSelector.vue";
 import type { Listing } from "@services/steam/models";
 
 const listing = defineModel<Listing>("listing", { required: true });
-const workspace = useWorkspaceStore();
 
 const brokenThumbnail = shallowRef("");
 
@@ -19,12 +17,7 @@ const { data: dlc } = useQuery(dlcQuery);
 
 const categories = computed(() => [...new Set([...(tags.value?.categories ?? []), ...(listing.value.tags ?? [])])]);
 const requirement = computed(() => {
-  // A dependency the workspace knows by its Workshop id takes the name the workspace gives that mod.
-  const mods = (listing.value.dependencies ?? []).map(
-    (dependency) =>
-      workspace.listMods().find((mod) => dependency.workshopId && mod.descriptor.workshopId === dependency.workshopId)
-        ?.descriptor.name ?? dependency.name,
-  );
+  const mods = (listing.value.dependencies ?? []).map((dependency) => dependency.name);
   const count = listing.value.dlc?.length ?? 0;
   const needs = [...mods, ...(count ? [plural(count, "DLC", "DLC")] : [])];
   return `Requires ${needs.length ? list(needs) : "nothing"}`;

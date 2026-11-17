@@ -95,7 +95,8 @@ sends the files of its zip, read where they are, from the one folder in the zip 
 Its descriptor goes with the listing's name, versions and Workshop id, and the zip itself is never changed.
 
 Either way, `ListUpload` leaves out what the rules name: files that start with a dot, though the `.metadata` folder
-stays, the coding agents' instruction files, and what the mod's `.gitignore` and its own exclusions cover. The upload
+stays, the coding agents' instruction files, and what the mod's `.gitignore` and its own patterns cover. The mod's own
+patterns are its `.workshop-ignore` file, the one place they are kept (`ReadIgnore`, `WriteIgnore`). The upload
 sends copies of the set, made in a folder of their own, so Steam gets those files and no others.
 
 ## The compare
@@ -120,10 +121,9 @@ answer about each item, its `Details` or why they could not be read, with when i
 ## The cache
 
 The service keeps in PMT's cache a snapshot for each item, as `snapshot-<id>.json`, the tags of each app id, and the
-`copy-` and `pictures-` folders an upload sends from, which it deletes when it ends. At each start, `ServiceStartup`
-deletes in the background the snapshot of each item that no listing of a recorded mod names, by the mod's record, its
-descriptor or an older listing's `listing.json`, and every `copy-` and `pictures-` folder, which only an upload that
-was stopped with the app leaves.
+`copy-` and `pictures-` folders an upload sends from, which it deletes when it ends. `LinkItem` deletes the snapshot of
+the item a listing was linked to when it links another. At each start, `ServiceStartup` deletes in the background
+every `copy-` and `pictures-` folder, which only an upload that was stopped with the app leaves.
 
 ## Tags, change notes and BBCode
 

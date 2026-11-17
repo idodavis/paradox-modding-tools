@@ -54,14 +54,14 @@ export type Side = "left" | "right" | "up" | "down";
 /** A Layout is the groups laid out in rows of columns. */
 export type Layout = { rows: { columns: Group[] }[] };
 
-/** A SavedLayout is a workspace's saved layout. */
 type SavedLayout = { layout: Layout; active: string; paths: Record<string, string> };
 
 /**
- * A Source is what showed a place: the explorer, Source control's lists, the Search view, a jump, the history, or
- * Follow the agent.
+ * A Source is what showed a place: the explorer, a list of changed files
+ * (Source control's, or the files under review), the Search view, a jump,
+ * the history, or Follow the agent.
  */
-export type Source = "explorer" | "changes" | "search" | "navigate" | "history" | "agent" | "edit";
+export type Source = "explorer" | "changes" | "search" | "navigate" | "history" | "agent";
 
 /** A Visit is one place the user was in: a file and a caret position in it. */
 type Visit = { place: Place; position: IPosition };
@@ -81,7 +81,6 @@ const SOURCES: Record<Source, { preview?: true; record?: false; follow?: true }>
   navigate: {},
   history: { record: false },
   agent: { preview: true, follow: true },
-  edit: { follow: true },
 };
 
 export const useEditorStore = defineStore("editor", () => {
@@ -133,21 +132,28 @@ export const useEditorStore = defineStore("editor", () => {
     mutation: async (path: string) => {
       const place = await loadQuery(placeQuery(path));
       if (!place) return;
+      // A file gone since the workspace was left loses its tab.
+      if (place.missing) return dropFile(place);
       await openFile(place).catch((error: unknown) => {
-        const id = tabId({ key: place.key });
-        while (find(id)) close(id);
-        places.delete(place.key);
+        dropFile(place);
         throw error;
       });
     },
   });
+
+  /** dropFile closes every tab of a file and forgets its place. */
+  function dropFile(place: Place): void {
+    const id = tabId({ key: place.key });
+    while (find(id)) close(id);
+    places.delete(place.key);
+  }
 
   /** applyFixAsync applies a quick fix: creates its file, edits the models, and shows the place it reveals. */
   async function applyFixAsync(fix: Fix): Promise<void> {
     if (fix.creates) {
       const place = await loadQuery(placeQuery(fix.creates));
       if (place?.format === Format.FormatLocalization) await workspaceApi.CreateLocalization(fix.creates);
-      else await workspaceApi.Create(fix.creates, false);
+      else await workspaceApi.CreateFile(fix.creates);
     }
     for (const [path, edits] of Object.entries(fix.edits ?? {})) {
       const place = await loadQuery(placeQuery(path));
@@ -200,7 +206,6 @@ export const useEditorStore = defineStore("editor", () => {
     return [...places.values()].filter((place) => place.key === key || place.key.startsWith(`${key}/`));
   }
 
-  /** makeLayout makes a layout of one empty group. */
   function makeLayout(): Layout {
     return { rows: [{ columns: [{ id: crypto.randomUUID(), tabs: [], active: null }] }] };
   }
@@ -257,12 +262,10 @@ export const useEditorStore = defineStore("editor", () => {
     request.value = { key: place.key, range };
   }
 
-  /** listGroups lists all the groups, row by row. */
   function listGroups(): Group[] {
     return state.value.rows.flatMap((row) => row.columns);
   }
 
-  /** listTabs lists every open tab, group by group. */
   function listTabs(): Tab[] {
     return listGroups().flatMap((group) => group.tabs);
   }
@@ -276,7 +279,6 @@ export const useEditorStore = defineStore("editor", () => {
     return null;
   }
 
-  /** remove takes a tab out of its group and returns it. */
   function remove(group: Group, index: number): Tab | undefined {
     const [tab] = group.tabs.splice(index, 1);
     if (tab && group.active === tab.id) group.active = (group.tabs[index] ?? group.tabs[index - 1])?.id ?? null;
@@ -318,17 +320,14 @@ export const useEditorStore = defineStore("editor", () => {
     closeModel(key);
   }
 
-  /** activeGroup returns the active group, or null when there are none. */
   const activeGroup = (): Group | null =>
     listGroups().find((group) => group.id === activeId.value) ?? listGroups()[0] ?? null;
 
-  /** activeTab returns the active group's active tab, or null when there is none. */
   const activeTab = (): Tab | null => {
     const group = activeGroup();
     return group?.tabs.find((tab) => tab.id === group.active) ?? null;
   };
 
-  /** layout returns the layout of groups in rows of columns. */
   const layout = (): Layout => state.value;
 
   /** placeOf returns the place of the file with the given key, or null if no open tab shows it. */
@@ -357,7 +356,6 @@ export const useEditorStore = defineStore("editor", () => {
     return !!tab && !tab.side && placeOf(tab.key)?.format === Format.FormatMarkdown;
   }
 
-  /** viewOf returns whether the given tab shows its code or Visual. */
   const viewOf = (tab: Tab | null | undefined): Mode => {
     if (isMarkdown(tab)) return tab?.visual ? "visual" : "code";
     return isDrawable(tab) ? mode.value : "code";
@@ -448,12 +446,10 @@ export const useEditorStore = defineStore("editor", () => {
   const findRequest = (key: string): IRange | undefined =>
     request.value?.key === key ? request.value.range : undefined;
 
-  /** clearRequest forgets the range asked of an editor. */
   const clearRequest = (): void => {
     request.value = null;
   };
 
-  /** listSelection lists the files selected in the explorer. */
   const listSelection = (): Place[] => selectedFiles.value;
 
   /** listRecent lists the last files shown in the active workspace, the newest first. */
@@ -471,7 +467,6 @@ export const useEditorStore = defineStore("editor", () => {
     wiki.value = true;
   };
 
-  /** selectFiles keeps the files the explorer has selected. */
   const selectFiles = (files: Place[]): void => {
     selectedFiles.value = files;
   };
@@ -512,7 +507,6 @@ export const useEditorStore = defineStore("editor", () => {
     return !!visit && visit.place.key === other.place.key && visit.position.lineNumber === other.position.lineNumber;
   }
 
-  /** activate makes the given group the active one, as the user's pick. */
   const activate = (groupId: string): void => {
     const group = listGroups().find((candidate) => candidate.id === groupId);
     if (!group) return;
@@ -526,7 +520,6 @@ export const useEditorStore = defineStore("editor", () => {
     agentTab.value = "";
   }
 
-  /** pin keeps a preview tab open. */
   const pin = (id: string): void => {
     listGroups().forEach((group) => group.tabs.filter((tab) => tab.id === id).forEach((tab) => (tab.preview = false)));
   };
@@ -679,7 +672,6 @@ export const useEditorStore = defineStore("editor", () => {
   };
 });
 
-/** tabId returns the id of the tab that opens the given file, diff or start page. */
 export function tabId({ key, side, start, root = "", hash = "" }: Omit<Tab, "id" | "preview">): string {
   if (start) return "start";
   return side ? `diff:${side}@${hash}:${root}:${key}` : `file:${key}`;

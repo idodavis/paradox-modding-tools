@@ -19,7 +19,7 @@ import type { Instance, Widget } from "@services/draw/models";
 import type { Symbol } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 
-import { findCommand, findKbds } from "../../../app/commands";
+import { findCommand, findKbds, hideDisabled } from "../../../app/commands";
 import {
   coatQuery,
   drawablesQuery,
@@ -249,10 +249,10 @@ const menu = computed<ContextMenuItem[][]>(() => {
   const path = model.place.path;
   if (!widget || !place) return [];
   const parent = widget.id ? widgets[widget.parent] : undefined;
-  return [
+  return hideDisabled([
     [
       {
-        label: parent ? `Select the parent, ${parent.name || parent.type}` : "Select the parent",
+        label: `Select the parent, ${parent?.name || parent?.type}`,
         icon: "i-lucide-corner-left-up",
         kbds: ["arrowup"],
         disabled: !parent,
@@ -286,7 +286,7 @@ const menu = computed<ContextMenuItem[][]>(() => {
       },
       { label: "Copy its path", icon: "i-lucide-copy", onSelect: () => void Clipboard.SetText(place.path) },
     ],
-  ];
+  ]);
 });
 
 watchPostEffect(() => {

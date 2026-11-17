@@ -14,6 +14,5 @@ export type {
     Mod,
     Release,
     Setting,
-    Update,
     Workspace
 } from "./models.js";

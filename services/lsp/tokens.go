@@ -1,127 +1,238 @@
-// tokens.go gives the semantic tokens of a file: the color category of every key and value, encoded as Monaco wants.
+// tokens.go gives the colors of a text, encoded as Monaco wants.
 
 package lsp
 
 import (
+	"cmp"
 	"slices"
+	"strings"
 
-	"github.com/samber/lo"
-
-	"paradox-modding-tools/internal/index"
+	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/workspace"
 )
 
-// A Legend is the list of token types and modifiers that the semantic tokens are encoded against.
+// Legend is what tokens are encoded against.
 type Legend struct {
 	Types     []string `json:"tokenTypes"`
 	Modifiers []string `json:"tokenModifiers"`
 }
 
-// legend holds the color categories a token can have. A token's type is its category's place here.
-var legend = []schema.Category{
-	schema.CategoryKeyword, schema.CategoryCommand, schema.CategoryLink, schema.CategoryField, schema.CategoryDefinition,
-	schema.CategoryReference, schema.CategoryParameter, schema.CategoryConstant, schema.CategoryCall, schema.CategoryChoice,
+// The token types that the walk's categories do not cover.
+const (
+	tokenNumber lang.Category = "number"
+
+	tokenFormat lang.Category = "format"
+	tokenIcon   lang.Category = "icon"
+
+	// tokenComment, tokenString and tokenOperator are what Monaco colors itself
+	// in the editor, so only a text shown outside it gets them.
+	tokenComment  lang.Category = "comment"
+	tokenString   lang.Category = "string"
+	tokenOperator lang.Category = "operator"
+)
+
+// legend lists the token types, by place.
+var legend = []lang.Category{
+	lang.CategoryKeyword, lang.CategoryCommand, lang.CategoryLink, lang.CategoryField, lang.CategoryDefinition,
+	lang.CategoryReference, lang.CategoryParameter, lang.CategoryConstant, lang.CategoryCall, lang.CategoryChoice,
+	tokenNumber, tokenFormat, tokenIcon, tokenComment, tokenString, tokenOperator,
 }
 
-// Tokens returns the semantic tokens of the given range of a file: the color category of every key and value in it,
-// encoded as Monaco wants. It returns none for a file that is not script.
-func (lsp *Service) Tokens(path string, bounds Range) ([]uint32, error) {
-	ws, tree, err := lsp.loadTree(path)
+// markupTokens is the type of each markup. Plain text and a line break have
+// none.
+var markupTokens = map[loc.Markup]lang.Category{
+	loc.MarkupKey: lang.CategoryParameter, loc.MarkupCall: lang.CategoryCall,
+	loc.MarkupFormat: tokenFormat, loc.MarkupIcon: tokenIcon,
+}
+
+// Tokens returns the semantic tokens of a range of a file, encoded as Monaco
+// wants. It returns none for a file that is not script or localization.
+func (s *Service) Tokens(path string, bounds jomini.Range) ([]uint32, error) {
+	_, document, err := s.loadDocument(path)
 	if err != nil {
 		return nil, err
 	}
-	span := ToSpan(tree.Src, tree.Lines, bounds)
-	rangeTokens := lo.Filter(lsp.listTokens(ws, tree, path), func(current token, _ int) bool {
-		return current.span.End > span.Start && current.span.Start < span.End
-	})
-	return encodeTokens(tree.Src, tree.Lines, rangeTokens), nil
+
+	tree := document.Tree
+
+	return encodeTokens(tree.Src, tree.Lines, listTokens(document, jomini.ToSpan(tree.Src, tree.Lines, bounds), false)), nil
 }
 
-// listTokens returns the colored spans of a parsed file. The last file's are kept, so a request for more of the same
-// text, as each scroll makes, does not walk it again; a new text or a new mods' index walks it anew.
-func (lsp *Service) listTokens(ws *workspace.Session, tree *jomini.Tree, path string) []token {
-	mods := ws.Mods.Load()
-	if last := lsp.coloring.Load(); last != nil && last.tree == tree && last.mods == mods {
-		return last.tokens
+// ColorText returns the tokens of a text shown outside the editor, such as a
+// snippet on a page. Where its file holds the text at the given line, it takes
+// the file's colors; otherwise it is read alone, as that file or, with no
+// path, in the given format.
+func (s *Service) ColorText(path string, format files.Format, text string, line int) ([]uint32, error) {
+	ws, err := s.Workspace.Session()
+	if err != nil {
+		return nil, err
 	}
-	visitor, place := &tokensVisitor{schema: ws.Schema}, ws.Locate(mods, path)
-	if place.Format.IsScript() {
-		ws.Schema.Walk(tree, place.File, visitor)
+
+	if colors, ok := colorLines(ws, path, text, line); ok {
+		return colors, nil
 	}
-	lsp.coloring.Store(&fileColors{tree: tree, mods: mods, tokens: visitor.tokens})
-	return visitor.tokens
+
+	place := workspace.Place{File: files.File{Format: format}}
+	if path != "" {
+		place = ws.Locate(ws.Mods.Load(), path)
+	}
+
+	document := ws.WalkText(place, text)
+
+	return encodeTokens(text, document.Tree.Lines, listTokens(document, jomini.Span{End: len(text)}, true)), nil
+}
+
+// colorLines returns the tokens of a text that starts at a line of a file,
+// colored as the file has it, so it keeps what the file says above it, such as
+// an event's namespace. It returns false if the file does not hold the text.
+func colorLines(ws *workspace.Session, path, text string, line int) ([]uint32, bool) {
+	if path == "" || line < 1 {
+		return nil, false
+	}
+
+	document, err := ws.WalkDocument(path)
+	if err != nil {
+		return nil, false
+	}
+
+	tree, last := document.Tree, line-1+strings.Count(text, "\n")
+	if last >= tree.Lines.CountLines() {
+		return nil, false
+	}
+
+	bounds := jomini.Span{Start: tree.Lines.LineSpan(line - 1).Start, End: tree.Lines.LineSpan(last).End}
+	if strings.ReplaceAll(tree.Text(bounds), "\r\n", "\n") != text {
+		return nil, false
+	}
+
+	colors := encodeTokens(tree.Src, tree.Lines, listTokens(document, bounds, true))
+	if len(colors) > 0 {
+		colors[0] -= uint32(line - 1)
+	}
+
+	return colors, true
 }
 
 // ListLegend returns the legend the tokens are encoded against.
-func (lsp *Service) ListLegend() Legend {
-	types := lo.Map(legend, func(category schema.Category, _ int) string { return string(category) })
+func (s *Service) ListLegend() Legend {
+	types := make([]string, len(legend))
+	for position, category := range legend {
+		types[position] = string(category)
+	}
+
 	return Legend{Types: types, Modifiers: []string{}}
 }
 
-// A tokensVisitor collects the colored spans of a file.
-type tokensVisitor struct {
-	schema *schema.Schema
-	tokens []token
-}
-
-// A token is one colored span before encoding.
 type token struct {
 	span     jomini.Span
-	category schema.Category
+	category lang.Category
 }
 
-// A fileColors is the colored spans of one parsed file, under the mods' index that colors them.
-type fileColors struct {
-	tree   *jomini.Tree
-	mods   *index.Index
-	tokens []token
-}
+// listTokens returns the tokens of a document that overlap the span. Where the
+// walk gives no category, a number, a date or a yes or no is a number and any
+// other key a field. A text shown outside the editor also gets the comments,
+// operators and quoted texts that Monaco colors itself in the editor.
+func listTokens(document lang.Document, bounds jomini.Span, whole bool) []token {
+	tree := document.Tree
+	var tokens []token
+	add := func(span jomini.Span, category lang.Category) {
+		if whole && category == "" && tree.UnquotedSpan(span) != span {
+			category = tokenString
+		}
 
-// Enter records the statement's key and value categories.
-func (visitor *tokensVisitor) Enter(tree *jomini.Tree, statement int32, context *schema.Context) bool {
-	current := tree.Statements[statement]
-	visitor.tokens = append(visitor.tokens,
-		visitor.makeToken(tree, current.Key, context.Category), visitor.makeToken(tree, current.Value, context.ValueGroup))
-	return true
-}
-
-// makeToken returns the token of a span with the given category. A span the walk gave none is a link if its text is a
-// chain of links, as scope:actor or root.liege.
-func (visitor *tokensVisitor) makeToken(tree *jomini.Tree, span jomini.Span, category schema.Category) token {
-	if category == schema.CategoryNone && !span.IsEmpty() && visitor.schema.IsLink(tree.Unquoted(span)) {
-		category = schema.CategoryLink
+		if category != "" && span.End > bounds.Start && span.Start < bounds.End {
+			tokens = append(tokens, token{span: span, category: category})
+		}
 	}
-	return token{span: span, category: category}
+
+	for position := range document.Contexts {
+		current, context := tree.Statements[position], &document.Contexts[position]
+		add(current.Key, cmp.Or(classifyKey(context), classifyToken(tree, current.Key, current.KeyClass), lang.CategoryField))
+		add(current.Value, cmp.Or(context.ValueGroup, classifyToken(tree, current.Value, current.ValueClass)))
+		if whole {
+			add(current.Op, tokenOperator)
+		}
+	}
+
+	if document.Messages != nil {
+		var plain lang.Category
+		if whole {
+			plain = tokenString
+		}
+
+		for _, message := range document.Messages.Messages {
+			add(message.KeySpan, lang.CategoryDefinition)
+			for _, segment := range message.Segments {
+				add(segment.Span, cmp.Or(markupTokens[segment.Markup], plain))
+			}
+		}
+	}
+
+	if whole {
+		for _, comment := range tree.Comments {
+			add(comment, tokenComment)
+		}
+	}
+
+	return tokens
 }
 
-// Leave does nothing.
-func (visitor *tokensVisitor) Leave(tree *jomini.Tree, statement int32, context *schema.Context) {}
+// classifyKey returns a key's token type. A list iterator such as every_vassal
+// is a keyword, though the walk holds it as a command. A key in a GUI widget,
+// whether it sets a property or opens a child widget such as vbox, is a field:
+// the walk reads a child as a call of its type, but on screen both are what
+// the widget is made of.
+func classifyKey(context *lang.Context) lang.Category {
+	isWidget := context.Shape == lang.ShapeWidget || context.Parent != nil && context.Parent.Shape == lang.ShapeWidget
+	switch {
+	case context.Iterates:
+		return lang.CategoryKeyword
+	case context.Category == lang.CategoryCall && isWidget:
+		return lang.CategoryField
+	}
 
-// encodeTokens returns the given tokens as five integers each: the line and column deltas, the length, the type's place
-// in the legend and the modifiers. It leaves out a token Monaco cannot draw.
+	return context.Category
+}
+
+func classifyToken(tree *jomini.Tree, span jomini.Span, class jomini.Class) lang.Category {
+	if class == jomini.ClassNumber || class == jomini.ClassDate || slices.Contains(lang.Bools, tree.Text(span)) {
+		return tokenNumber
+	}
+
+	return ""
+}
+
+// encodeTokens returns the tokens as five integers each: line and column
+// deltas, length, legend place and modifiers. A token Monaco cannot draw is
+// left out.
 func encodeTokens(text string, lines jomini.Lines, tokens []token) []uint32 {
-	tokens = lo.Filter(tokens, func(current token, _ int) bool {
-		return !current.span.IsEmpty() && slices.Contains(legend, current.category)
+	tokens = slices.DeleteFunc(tokens, func(current token) bool {
+		return current.span.IsEmpty() || !slices.Contains(legend, current.category)
 	})
 	slices.SortFunc(tokens, func(first, second token) int { return first.span.Start - second.span.Start })
+
 	encoded := make([]uint32, 0, len(tokens)*5)
 	previousLine, previousColumn := 0, 0
 	for _, current := range tokens {
-		span := ToRange(text, lines, current.span)
+		span := jomini.ToRange(text, lines, current.span)
 		line, column := span.StartLine-1, span.StartColumn-1
-		// a span on more than one line is left out, which Monaco cannot draw, and so is one that overlaps the last
+		// Monaco draws no span over lines, or overlapping the last.
 		if span.StartLine != span.EndLine || line < previousLine || line == previousLine && column < previousColumn {
 			continue
 		}
+
 		deltaColumn := column
 		if line == previousLine {
 			deltaColumn = column - previousColumn
 		}
+
 		encoded = append(encoded, uint32(line-previousLine), uint32(deltaColumn), uint32(span.EndColumn-span.StartColumn),
 			uint32(slices.Index(legend, current.category)), 0)
 		previousLine, previousColumn = line, column
 	}
+
 	return encoded
 }

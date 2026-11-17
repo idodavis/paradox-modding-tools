@@ -12,9 +12,9 @@ import * as lsp from "@services/lsp/service";
 import * as workspace from "@services/workspace/service";
 import { confirm } from "../../../lib/feedback";
 import { list, plural } from "../../../lib/format";
-import { fileQuery, keys, loadQuery, placeQuery } from "../../../queries";
+import { type Colors, paintModel } from "../../../lib/syntax";
+import { fileQuery, keys, legendQuery, loadQuery, placeQuery } from "../../../queries";
 import { useSearchStore } from "../../../stores/search";
-import { EDITOR_LANGUAGES } from "../../../ui/ScriptSnippet.vue";
 
 /** A Model is one open file in this window, shared by every tab that shows it. */
 export type Model = {
@@ -30,6 +30,7 @@ export type Model = {
   disk: { version: number; text: string }; // the version and text last loaded from or saved to disk
   sync: () => Promise<Diagnostic[]>; // sends the text to Go once edits pause
   syncVersion: number; // the text version Go holds; -1 if it holds none of this window's
+  isDiskEdit: boolean; // true while the disk's text is applied to the model: that edit is not the user's
 };
 
 /** SEVERITIES holds the Monaco severity of each level. Monaco has one severity for both critical and error. */
@@ -54,9 +55,15 @@ export function setupModels(): void {
       void (model.unsaved ? syncText(model) : diagnose(model));
     });
   });
-  // a check turned on or off changes every open file's problems
+  // A check turned on or off changes every open file's problems. So does the
+  // version a mod is compared from, and so do new patches of the game.
   Events.On("config:changed", ({ data }) => {
-    if (!data || data === "settings") models.forEach((model) => void diagnose(model));
+    if (!data || data === "settings" || data === "workspaces") models.forEach((model) => void diagnose(model));
+  });
+  Events.On("patch:updated", () => models.forEach((model) => void diagnose(model)));
+  // A descriptor holds the game version its mod is made for.
+  Events.On("fs:changed", ({ data }) => {
+    if (data.descriptor) models.forEach((model) => void diagnose(model));
   });
 }
 
@@ -73,7 +80,6 @@ export function openModel(place: Place): Promise<Model> {
   return pending;
 }
 
-/** findModel returns a file's open model, or null if it has none. */
 export function findModel(key: string): Model | null {
   return models.get(key) ?? null;
 }
@@ -157,15 +163,21 @@ export async function saveUnsaved(action: string): Promise<boolean> {
   return choice !== false;
 }
 
-/** unsavedModels lists the models with unsaved text. */
 export function unsavedModels(): Model[] {
   return [...models.values()].filter((model) => model.unsaved);
 }
 
-/** load reads a file and makes its model. A draft Go still holds comes back as unsaved text. */
+/**
+ * load reads a file and makes its model, already in Go's colors, since an
+ * editor shows a model the moment it is made. A draft Go still holds comes
+ * back as unsaved text.
+ */
 async function load(place: Place): Promise<Model> {
   const cache = useQueryCache();
-  const { data: file } = await cache.fetch(cache.ensure(fileQuery(place.path)));
+  const [{ data: file }, colors] = await Promise.all([
+    cache.fetch(cache.ensure(fileQuery(place.path))),
+    fetchColors(place),
+  ]);
   if (!file) throw new Error(`${place.path} could not be read`);
   const model = buildModel(place, {
     text: file.draft || file.text.text,
@@ -173,16 +185,43 @@ async function load(place: Place): Promise<Model> {
     encoding: file.text.encoding,
     unsaved: !!file.draft,
   });
+  if (colors) paintModel(model.model, colors, false);
   if (doomed.delete(place.key)) closeModel(place.key);
   else void diagnose(model);
   return model;
 }
 
+/** repaintModels sets every open file's colors again, for a new theme. */
+export function repaintModels(): void {
+  models.forEach((model) => {
+    void fetchColors(model.place).then((colors) => colors && paintModel(model.model, colors, false));
+  });
+}
+
+/** WHOLE is a range past the end of any text, which Go reads as all of it. */
+const WHOLE = {
+  startLineNumber: 1,
+  startColumn: 1,
+  endLineNumber: Number.MAX_SAFE_INTEGER,
+  endColumn: Number.MAX_SAFE_INTEGER,
+};
+
+/**
+ * fetchColors asks Go for a whole file's colors, as Go holds the file. It
+ * returns null for a file of no Paradox language, which has none, and for
+ * one Go cannot color.
+ */
+async function fetchColors(place: Place): Promise<Colors | null> {
+  if (!place.language.startsWith("paradox-")) return null;
+  const [legend, data] = await Promise.all([loadQuery(legendQuery), lsp.Tokens(place.path, WHOLE).catch(() => null)]);
+  if (!legend || !data) return null;
+  return { legend: { tokenTypes: legend.tokenTypes ?? [], tokenModifiers: legend.tokenModifiers ?? [] }, data };
+}
+
 /** buildModel makes a file's Model, reusing the Monaco text model already at the file's URI if there is one. */
 function buildModel(place: Place, start: { text: string; disk: string; encoding: Encoding; unsaved: boolean }): Model {
   const uri = monaco.Uri.file(place.path);
-  const textModel =
-    monaco.editor.getModel(uri) ?? monaco.editor.createModel(start.text, EDITOR_LANGUAGES[place.format], uri);
+  const textModel = monaco.editor.getModel(uri) ?? monaco.editor.createModel(start.text, place.language, uri);
   const model: Model = shallowReactive<Model>({
     uri: uri.toString(),
     place,
@@ -196,6 +235,7 @@ function buildModel(place: Place, start: { text: string; disk: string; encoding:
     disk: { version: start.unsaved ? -1 : textModel.getAlternativeVersionId(), text: start.disk },
     sync: useDebounceFn((): Promise<Diagnostic[]> => sendText(model), 300),
     syncVersion: start.unsaved ? -1 : textModel.getVersionId(),
+    isDiskEdit: false,
   });
   textModel.onDidChangeContent(() => {
     // a file no change is written to is never unsaved
@@ -258,7 +298,9 @@ export async function applyChange(path: string): Promise<void> {
 
 /** setText replaces a model's text with text from disk, as one undoable edit. The model then counts as saved. */
 export function setText(model: Model, text: Text): void {
+  model.isDiskEdit = true;
   applyEdits(model, [{ range: model.model.getFullModelRange(), text: text.text }]);
+  model.isDiskEdit = false;
   model.encoding = text.encoding;
   model.disk = { version: model.model.getAlternativeVersionId(), text: text.text };
   model.unsaved = false;

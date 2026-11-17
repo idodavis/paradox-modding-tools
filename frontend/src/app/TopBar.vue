@@ -14,8 +14,9 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import * as health from "@services/health/service";
 import { countFindings, list, plural } from "../lib/format";
-import { gamesQuery, useRescan, workspacesQuery } from "../queries";
+import { gamesQuery, reportQuery, useLevels, useRescan, workspacesQuery } from "../queries";
 import { useAgentStore } from "../stores/agent";
+import { useSeenPatch } from "../stores/patchSeen";
 import { gameIcon, useSettingsStore } from "../stores/settings";
 import {
   COMMAND_BUS,
@@ -50,6 +51,27 @@ const commandBus = useEventBus(COMMAND_BUS);
 
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: games } = useQuery(gamesQuery);
+const { findLevel } = useLevels();
+const { data: report } = useQuery(() => ({
+  ...reportQuery(workspace.listModIds()),
+  enabled: workspace.isOpen(),
+}));
+
+const { isNew: patchIsNew } = useSeenPatch();
+
+/**
+ * The dot on the tab of a page that has something new for the user: its color
+ * and the words it carries.
+ */
+const tabDots = computed((): Partial<Record<WorkspacePage, { color: string; title: string }>> => {
+  const worst = findLevel(report.value?.worst);
+  return {
+    health: worst?.problem ? { color: `var(--ui-${worst.color})`, title: `Health found ${worst.label}` } : undefined,
+    "patch-center": patchIsNew.value
+      ? { color: "var(--purple)", title: "A version that touches your mods is new" }
+      : undefined,
+  };
+});
 
 const active = computed(() => workspaces.value?.find((row) => row.record.id === workspace.activeId()));
 const activeGame = computed(() => active.value?.game?.id ?? "");
@@ -344,6 +366,12 @@ function styleButton(region: string): string[] {
             >
               <UIcon :name="PAGES[name].icon" class="size-4" />
               <span v-if="!compact || route.name === name">{{ PAGES[name].title }}</span>
+              <span
+                v-if="tabDots[name]"
+                class="size-1.75 shrink-0 rounded-full"
+                :style="{ background: tabDots[name]?.color }"
+                :title="tabDots[name]?.title"
+              />
             </RouterLink>
             <UTooltip v-if="route.name === name && canPopOut(name)" text="Open in a new window">
               <UButton

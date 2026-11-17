@@ -50,9 +50,6 @@ const workspace = useWorkspaceStore();
 const [DefineLane, Lane] = createReusableTemplate<{ entry: Entry }>();
 const [DefineBare, Bare] = createReusableTemplate();
 
-const bare = computed(() =>
-  workspace.listWritableMods().filter((mod) => !git.repositories.some((repo) => repo.mods?.includes(mod.id))),
-);
 // The repository the Graph shows: the one picked, else the active file's, else the first.
 const dir = computed(
   () =>
@@ -103,8 +100,11 @@ watch(dir, () => {
 });
 
 const rows = computed(() => buildGraph(commits.value ?? []));
-const laneCount = computed(
-  () => Math.max(0, ...rows.value.flatMap((row) => [row.lane, ...row.through, ...row.joins, ...row.merges])) + 1,
+const graphWidth = computed(
+  () =>
+    LANE_WIDTH *
+      (Math.max(0, ...rows.value.flatMap((row) => [row.lane, ...row.through, ...row.joins, ...row.merges])) + 1) +
+    4,
 );
 const entries = computed<Entry[]>(() =>
   rows.value.flatMap((row) => [
@@ -166,20 +166,26 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <DefineBare>
-      <div v-for="mod in bare" :key="mod.id" class="flex items-center gap-2">
+      <div v-for="mod in git.bare" :key="mod.id" class="flex items-center gap-2">
         <OriginChip :origin="mod.id" dot />
         <span class="min-w-0 grow truncate">{{ workspace.originName(mod.id) }}</span>
         <UButton label="Initialize" icon="i-lucide-git-branch-plus" size="xs" @click="git.initialize(mod.dir)" />
       </div>
     </DefineBare>
     <DefineLane v-slot="{ entry }">
-      <svg :width="LANE_WIDTH * laneCount + 4" :height="ROW_HEIGHT" class="shrink-0" aria-hidden="true">
+      <svg
+        :viewBox="`0 0 ${graphWidth} ${ROW_HEIGHT}`"
+        :style="{ width: `${graphWidth / 16}rem` }"
+        class="h-7 shrink-0 overflow-visible"
+        aria-hidden="true"
+      >
         <path
           v-for="(line, index) in entry.paths"
           :key="index"
           :d="line.path"
           :stroke="laneColor(line.lane)"
           stroke-width="1.5"
+          stroke-linecap="square"
           fill="none"
         />
         <circle
@@ -230,7 +236,7 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
       <template #repositories>
         <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto py-1">
           <RepositorySection v-for="{ root, mods } in git.repositories" :key="root" :root="root" :mods="mods ?? []" />
-          <div v-if="bare.length" class="flex flex-col gap-1 px-3 py-2.5">
+          <div v-if="git.bare.length" class="flex flex-col gap-1 px-3 py-2.5">
             <p class="pb-1.5 text-dimmed">Not in a git repository</p>
             <Bare />
           </div>

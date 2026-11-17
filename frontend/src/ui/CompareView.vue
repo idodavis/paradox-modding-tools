@@ -1,18 +1,47 @@
 <!-- Two texts in a diff editor, with a toolbar above it and a chip above each side. -->
+<script lang="ts">
+import { editor } from "monaco-editor/editor/editor.api";
+
+/** DIFF_OPTIONS holds the options every diff editor in the app shares. */
+export const DIFF_OPTIONS: editor.IDiffEditorConstructionOptions = {
+  originalEditable: false,
+  renderIndicators: true,
+  // the lane of the + and − signs, wide enough to keep them off the numbers
+  // and the text
+  lineDecorationsWidth: "3ch",
+  ignoreTrimWhitespace: false,
+  useInlineViewWhenSpaceIsLimited: false,
+};
+</script>
+
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useLocalStorage } from "@vueuse/core";
-import { editor } from "monaco-editor/editor/editor.api";
 
+import { Format } from "@internal/files/models";
+import * as lsp from "@services/lsp/service";
 import { plural } from "../lib/format";
+import { paintModel } from "../lib/syntax";
+import { legendQuery, loadQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 
-const { left, right, language, leftLabel, rightLabel } = defineProps<{
+const {
+  left,
+  right,
+  language,
+  leftLabel,
+  rightLabel,
+  leftPath = "",
+  rightPath = "",
+} = defineProps<{
   left: string;
   right: string;
   language: string;
   leftLabel: string;
   rightLabel: string;
+  /** The file each text is a version of. Without one, Go colors nothing. */
+  leftPath?: string;
+  rightPath?: string;
 }>();
 
 const STYLES = [
@@ -27,23 +56,22 @@ const additions = shallowRef(0);
 const removals = shallowRef(0);
 const split = computed(() => style.value !== "unified");
 const host = useTemplateRef("host");
+const settings = useSettingsStore();
 const original = editor.createModel(left, language);
 const modified = editor.createModel(right, language);
 let view: editor.IStandaloneDiffEditor | undefined;
 
-onMounted(() => {
+onMounted(async () => {
+  // The editor is made once both sides have their colors, so it never shows
+  // them bare.
+  await showSides();
   if (!host.value) return;
   view = editor.createDiffEditor(host.value, {
-    ...useSettingsStore().codeFont(),
+    ...settings.codeFont(),
+    ...DIFF_OPTIONS,
     readOnly: true,
-    originalEditable: false,
     automaticLayout: true,
     renderSideBySide: split.value,
-    renderIndicators: true,
-    // the lane of the + and − signs, wide enough to keep them off the line numbers and the text
-    lineDecorationsWidth: "3ch",
-    ignoreTrimWhitespace: false,
-    useInlineViewWhenSpaceIsLimited: false,
     hideUnchangedRegions: { enabled: !all.value },
     renderOverviewRuler: false,
     minimap: { enabled: false },
@@ -69,18 +97,14 @@ onMounted(() => {
 // setValue loses the marks Monaco keeps of the folded regions, so a new text compares again.
 watch(
   () => left,
-  (text) => {
-    original.setValue(text);
-    compareAgain();
-  },
+  () => void showSide(original).then(compareAgain),
 );
 watch(
   () => right,
-  (text) => {
-    modified.setValue(text);
-    compareAgain();
-  },
+  () => void showSide(modified).then(compareAgain),
 );
+// A theme has its own colors.
+watch(() => settings.theme(), showSides);
 watch(
   () => language,
   (id) => {
@@ -99,6 +123,30 @@ onBeforeUnmount(() => {
   original.dispose();
   modified.dispose();
 });
+
+function showSides(): Promise<void[]> {
+  return Promise.all([showSide(original), showSide(modified)]);
+}
+
+/**
+ * showSide puts one side's text on its model together with Go's colors, so
+ * the text is never drawn bare. Go reads the text as the file it is a version
+ * of. A text of no file, or of no Paradox language, gets no colors. If a
+ * newer text came for the side meanwhile, this one is dropped.
+ */
+async function showSide(side: editor.ITextModel): Promise<void> {
+  const [text, path] = side === original ? [left, leftPath] : [right, rightPath];
+  const [legend, data] =
+    path && language.startsWith("paradox-")
+      ? await Promise.all([loadQuery(legendQuery), lsp.ColorText(path, Format.FormatScript, text, 0).catch(() => null)])
+      : [];
+  if (side.isDisposed() || text !== (side === original ? left : right)) return;
+
+  if (side.getValue() !== text) side.setValue(text);
+  if (!legend || !data) return;
+  const tokenTypes = legend.tokenTypes ?? [];
+  paintModel(side, { legend: { tokenTypes, tokenModifiers: legend.tokenModifiers ?? [] }, data }, true);
+}
 
 /** compareAgain compares the two texts anew, folding the unchanged regions again. */
 function compareAgain(): void {
@@ -176,15 +224,3 @@ function compareAgain(): void {
     <div ref="host" class="min-h-0 flex-1 bg-(--bg-0)" />
   </div>
 </template>
-
-<style scoped>
-/* Monaco has no theme color for a changed line's + or − sign or its number, so they take the diff's green and red */
-:deep(.insert-sign),
-:deep(div:has(> .gutter-insert) > .line-numbers) {
-  color: var(--ui-success);
-}
-:deep(.delete-sign),
-:deep(div:has(> .gutter-delete) > .line-numbers) {
-  color: var(--ui-error);
-}
-</style>

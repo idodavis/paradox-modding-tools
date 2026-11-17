@@ -1,8 +1,8 @@
-// git_linux.go is git's start on Linux, where a program opens no console window.
+// git_linux.go has no console window to hide.
 
 package git
 
 import "os/exec"
 
-// hideConsole does nothing: Linux opens no console window for a program.
+// hideConsole does nothing on Linux.
 func hideConsole(*exec.Cmd) {}

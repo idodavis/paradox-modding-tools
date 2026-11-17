@@ -1,241 +1,412 @@
-// lookup.go answers the index's questions about names: where a reference is defined and used, what a database holds
-// and which definition a site sits in.
+// lookup.go answers questions about names: where a reference is defined and
+// used, what a database holds, and which file a texture's path names.
 
 package index
 
 import (
 	"cmp"
-	"maps"
 	"slices"
 	"strings"
+	"sync"
 
-	"github.com/samber/lo"
-
-	"paradox-modding-tools/internal/game"
-	"paradox-modding-tools/internal/schema"
+	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/internal/texture"
 )
 
-// Resolve returns the definitions that a reference names, in load order. A local definition never counts. A reference
-// with no database names the definitions in every database that defines its name. The result is empty if the name is
-// undefined.
-func (index *Index) Resolve(reference schema.Reference) []Site {
-	return index.listResolved(reference, func(Site) bool { return false })
+// Resolve returns the definitions that a reference names, in load order. A
+// local definition never counts. A reference with no database names the
+// definitions in every database that defines its name. The result is empty if
+// the name is undefined.
+func (i *Index) Resolve(reference lang.Reference) []Site {
+	return i.ResolveLocal(reference, -1)
 }
 
-// ResolveLocal is Resolve for a reference written in the file at a position in Files: that file's local definitions
-// count too. A file the index does not list has the position -1, which counts none.
-func (index *Index) ResolveLocal(reference schema.Reference, file int32) []Site {
-	return index.listResolved(reference, func(site Site) bool { return site.File == file })
-}
+// ResolveLocal is Resolve for a reference written in a file, given by its
+// position in Files: that file's local definitions count too. A file the
+// index does not list has the position -1, which counts none.
+func (i *Index) ResolveLocal(reference lang.Reference, file int32) []Site {
+	var sites []Site
 
-// listResolved returns the definitions that a reference names, as Resolve orders them. A local definition counts only
-// if isVisible accepts its site.
-func (index *Index) listResolved(reference schema.Reference, isVisible func(Site) bool) []Site {
 	if reference.Database != "" {
-		return lo.FlatMap(ListCallees(reference), func(callee schema.Reference, _ int) []Site {
-			return index.listDefining(callee.Database, callee.Name, isVisible)
-		})
-	}
-	databases := index.ListDatabases(reference.Name)
-	slices.Sort(databases)
-	return lo.FlatMap(databases, func(database string, _ int) []Site {
-		return index.listDefining(database, reference.Name, isVisible)
-	})
-}
-
-// ListDatabases returns the databases with a definition of a name, local ones included, in the order of the index's
-// table. It is empty if nothing defines the name.
-func (index *Index) ListDatabases(name string) []string {
-	return lo.Filter(index.Databases.Texts, func(database string, _ int) bool {
-		return len(index.listPosting(toRole(database), database, name)) > 0
-	})
-}
-
-// ListUses returns every reference to a name in a database, in load order. For a database whose definitions script
-// calls, the calls that may be to any callable database count too.
-func (index *Index) ListUses(database, name string) []Site {
-	uses := index.listPosting(RoleRefers, database, name)
-	if len(game.Callables[database].Callers) == 0 {
-		return uses
-	}
-	return slices.SortedFunc(slices.Values(slices.Concat(uses, index.listPosting(RoleRefers, game.AnyCall, name))), compareSites)
-}
-
-// IsUsedByGame reports whether the game's own files refer to a name in a database. For a database whose definitions
-// script calls, the calls that may be to any callable database count too.
-func (index *Index) IsUsedByGame(database, name string) bool {
-	// the game's own files are the install's, whose postings answer without a list of every use being built
-	install := cmp.Or(index.install, index)
-	return len(install.listPosting(RoleRefers, database, name)) > 0 ||
-		len(game.Callables[database].Callers) > 0 && len(install.listPosting(RoleRefers, game.AnyCall, name)) > 0
-}
-
-// ListCallees returns the references that a reference stands for. A reference in game.AnyCall stands for the name in
-// each callable database, in database name order. Any other reference stands for itself.
-func ListCallees(reference schema.Reference) []schema.Reference {
-	if reference.Database != game.AnyCall {
-		return []schema.Reference{reference}
-	}
-	var callees []schema.Reference
-	for _, database := range slices.Sorted(maps.Keys(game.Callables)) {
-		if len(game.Callables[database].Callers) > 0 {
-			callees = append(callees, schema.Reference{Database: database, Name: reference.Name, Span: reference.Span})
+		for _, callee := range ListCallees(reference) {
+			sites = append(sites, i.listDefining(callee.Database, callee.Name, file)...)
 		}
+
+		return sites
 	}
+
+	databases := i.ListDatabases(reference.Name)
+	slices.Sort(databases)
+
+	for _, database := range databases {
+		sites = append(sites, i.listDefining(database, reference.Name, file)...)
+	}
+
+	return sites
+}
+
+// ListCallees returns the references that a reference stands for. A
+// reference in lang.AnyCall stands for the name in each callable database, in
+// database name order. Any other reference stands for itself.
+func ListCallees(reference lang.Reference) []lang.Reference {
+	if reference.Database != lang.AnyCall {
+		return []lang.Reference{reference}
+	}
+
+	callees := make([]lang.Reference, len(lang.Called))
+	for position, database := range lang.Called {
+		callees[position] = lang.Reference{Database: database, Name: reference.Name, Span: reference.Span}
+	}
+
 	return callees
 }
 
-// ListDefinitions returns every definition in a database, in load order. The definitions of localization keys are
-// their messages.
-func (index *Index) ListDefinitions(database string) []Site {
-	var sites []Site
-	if index.install != nil {
-		sites = index.install.ListDefinitions(database)
+// ListDatabases returns the databases with a definition of a name, local ones
+// included, in the order of the index's table. It is empty if nothing
+// defines the name.
+func (i *Index) ListDatabases(name string) []string {
+	var databases []string
+
+	for _, database := range i.Databases.Texts {
+		if len(i.listPosting(toRole(database), database, name)) > 0 {
+			databases = append(databases, database)
+		}
 	}
-	ordinal, ok := index.Databases.Lookup(database)
+
+	return databases
+}
+
+// ListUses returns every reference to a name in a database, in load order.
+// For a database whose definitions script calls, the calls that may be to
+// any callable database count too.
+func (i *Index) ListUses(database, name string) []Site {
+	uses := i.listPosting(RoleRefers, database, name)
+	if !slices.Contains(lang.Called, database) {
+		return uses
+	}
+
+	calls := i.listPosting(RoleRefers, lang.AnyCall, name)
+
+	return slices.SortedFunc(slices.Values(slices.Concat(uses, calls)), compareSites)
+}
+
+// CountUses returns how many references the index holds to a name in a
+// database.
+func (i *Index) CountUses(database, name string) int {
+	return len(i.listPosting(RoleRefers, database, name))
+}
+
+// isUsedByGame reports whether the game's own files, which are the install's,
+// refer to a name in a database.
+func (i *Index) isUsedByGame(database, name string) bool {
+	return len(cmp.Or(i.install, i).ListUses(database, name)) > 0
+}
+
+// ListDefinitions returns every definition in a database, in load order. The
+// definitions of localization keys are their messages.
+func (i *Index) ListDefinitions(database string) []Site {
+	var sites []Site
+	if i.install != nil {
+		sites = i.install.ListDefinitions(database)
+	}
+
+	ordinal, ok := i.Databases.Lookup(database)
 	if !ok {
 		return sites
 	}
+
 	var own []Site
-	for _, postings := range index.postings[Posting{Role: toRole(database), Database: uint16(ordinal)}] {
-		own = append(own, index.narrowSites(postings)...)
+
+	for _, postings := range i.postings[Posting{Role: toRole(database), Database: uint16(ordinal)}] {
+		own = append(own, i.narrowSites(postings)...)
 	}
+
 	slices.SortFunc(own, compareSites)
+
 	return append(sites, own...)
 }
 
-// ListMessages returns every message with the given key, one per language and file, in load order.
-func (index *Index) ListMessages(key string) []Site {
-	return index.listPosting(RoleLocalizes, game.Localization, key)
+// ListDefinedKeys returns the names the index's own files define, by database,
+// each list sorted. The keys of the localization are under lang.Localization,
+// defined by their messages. A mods' index lists its own files only, since
+// the install's are the install's index's.
+func (i *Index) ListDefinedKeys() map[string][]string {
+	keys := map[string][]string{}
+
+	for posting, names := range i.postings {
+		database := i.Databases.Texts[posting.Database]
+		if posting.Role != toRole(database) {
+			continue
+		}
+
+		for name, sites := range names {
+			if len(i.narrowSites(sites)) > 0 {
+				keys[database] = append(keys[database], i.Names.Texts[name])
+			}
+		}
+	}
+
+	for _, list := range keys {
+		slices.Sort(list)
+	}
+
+	return keys
 }
 
-// ListKeys returns up to the given limit of the localization keys that contain the given text, in any case, and have
-// a loaded message in the given language. The keys that start with the text come before the ones that only contain
-// it. Each key comes once, and within each of the two the keys come in the order the index first met them.
-func (index *Index) ListKeys(language, text string, limit int) []string {
-	ordinal, ok := index.Databases.Lookup(game.Localization)
+// ListMessages returns every message with the given key, one per language and
+// file, in load order.
+func (i *Index) ListMessages(key string) []Site {
+	return i.listPosting(RoleLocalizes, lang.Localization, key)
+}
+
+// ListKeys returns up to a limit of the localization keys that contain a
+// text, in any case, and have a message the game reads in one of the given
+// languages. The text itself comes first, then the keys that start with it,
+// then those that only contain it. It also reports whether the list is full,
+// so more keys may match.
+func (i *Index) ListKeys(languages []string, text string, limit int) ([]string, bool) {
+	databaseOrdinal, ok := i.Databases.Lookup(lang.Localization)
 	if !ok {
-		return nil
+		return nil, false
 	}
-	posting, lower := Posting{Role: RoleLocalizes, Database: uint16(ordinal)}, strings.ToLower(text)
+
+	posting, lower := Posting{Role: RoleLocalizes, Database: uint16(databaseOrdinal)}, strings.ToLower(text)
+	isWritten := func(nameOrdinal uint32) bool {
+		return slices.ContainsFunc(i.listKey(posting, nameOrdinal), func(site Site) bool {
+			return i.IsLoaded(site.File) && slices.Contains(languages, i.Language(site))
+		})
+	}
+
 	var starting, containing []string
-	for name, key := range index.Names.Texts {
+	if nameOrdinal, ok := i.Names.Lookup(text); ok && isWritten(nameOrdinal) {
+		starting = append(starting, text)
+	}
+
+	for nameOrdinal, key := range i.Names.Texts {
 		if len(starting) == limit {
 			break
 		}
+
 		folded := strings.ToLower(key)
 		starts := strings.HasPrefix(folded, lower)
-		// a key that only contains the text is kept only while the keys that start with it leave room
-		if !starts && (len(starting)+len(containing) >= limit || !strings.Contains(folded, lower)) {
+
+		// The key that is the text is listed already. A key that only
+		// contains the text is kept only while the keys that start with it
+		// leave room.
+		if key == text || !starts && (len(starting)+len(containing) >= limit || !strings.Contains(folded, lower)) {
 			continue
 		}
-		if !slices.ContainsFunc(index.listKey(posting, uint32(name)),
-			func(site Site) bool { return index.IsLoaded(site.File) && index.Language(site) == language }) {
+
+		if !isWritten(uint32(nameOrdinal)) {
 			continue
 		}
+
 		if starts {
 			starting = append(starting, key)
 		} else {
 			containing = append(containing, key)
 		}
 	}
+
 	keys := slices.Concat(starting, containing)
-	return keys[:min(len(keys), limit)]
+
+	return keys[:min(len(keys), limit)], len(keys) >= limit
 }
 
-// FindDefinition returns the definition that a site sits inside, or false if the site is at the top of its file.
-func (index *Index) FindDefinition(site Site) (Site, bool) {
-	occurrence := index.Occurrence(site)
-	return Site{File: site.File, Occurrence: occurrence.Parent}, occurrence.Nested
-}
+// ListNamed returns the sites of the occurrences with the given role whose
+// name the given function ranks 0 or higher, the lowest rank first. Within a
+// rank this index's own files come before the install's. It ranks each name
+// once, from the postings.
+func (i *Index) ListNamed(role Role, rank func(name string) int) []Site {
+	// order is 0 for a site in this index's own files and 1 for the install's.
+	type match struct {
+		site        Site
+		rank, order int
+	}
 
-// ToReference returns the database and the name that one occurrence is written with.
-func (index *Index) ToReference(site Site) schema.Reference {
-	occurrence := index.Occurrence(site)
-	return schema.Reference{Database: index.Databases.Texts[occurrence.Database], Name: index.Names.Texts[occurrence.Name]}
-}
+	var matches []match
+	ranks := map[uint32]int{}
+	for order, index := range []*Index{i, i.install} {
+		if index == nil {
+			continue
+		}
 
-// CountDefinitions counts a file's definitions by database. An alias is no definition of its own.
-func (index *Index) CountDefinitions(file int32) map[string]int {
-	counts := map[string]int{}
-	for _, occurrence := range index.Occurrences[file] {
-		if occurrence.Role == RoleDefines && !occurrence.Alias {
-			counts[index.Databases.Texts[occurrence.Database]]++
+		for posting, names := range index.postings {
+			if posting.Role != role {
+				continue
+			}
+
+			for name, sites := range names {
+				if _, ranked := ranks[name]; !ranked {
+					ranks[name] = rank(i.Names.Texts[name])
+				}
+
+				for _, site := range i.narrowSites(sites) {
+					if ranks[name] >= 0 {
+						matches = append(matches, match{site, ranks[name], order})
+					}
+				}
+			}
 		}
 	}
+
+	slices.SortFunc(matches, func(first, second match) int {
+		return cmp.Or(cmp.Compare(first.rank, second.rank), cmp.Compare(first.order, second.order),
+			compareSites(first.site, second.site))
+	})
+
+	sites := make([]Site, len(matches))
+	for position, found := range matches {
+		sites[position] = found.site
+	}
+
+	return sites
+}
+
+// FindDefinition returns the definition that a site sits inside. It returns
+// false if the site is at the top of its file.
+func (i *Index) FindDefinition(site Site) (Site, bool) {
+	parent := i.Occurrence(site).Parent
+
+	return Site{File: site.File, Occurrence: parent}, parent >= 0
+}
+
+// ToReference returns the database and the name that one occurrence is
+// written with.
+func (i *Index) ToReference(site Site) lang.Reference {
+	occurrence := i.Occurrence(site)
+
+	return lang.Reference{Database: i.Databases.Texts[occurrence.Database], Name: i.Names.Texts[occurrence.Name]}
+}
+
+// FindTextKey returns the localization key a definition writes for its title,
+// given lang.TitleKey, or for its description, given lang.DescriptionKey. It
+// returns false if the definition writes none.
+func (i *Index) FindTextKey(definition Site, key string) (string, bool) {
+	for _, site := range i.listReferences(definition) {
+		occurrence := i.Occurrence(site)
+		if key == lang.TitleKey && occurrence.Titles || key == lang.DescriptionKey && occurrence.Describes {
+			return i.Names.Texts[occurrence.Name], true
+		}
+	}
+
+	return "", false
+}
+
+// CountDefinitions counts a file's own definitions by database.
+func (i *Index) CountDefinitions(file int32) map[string]int {
+	counts := map[string]int{}
+
+	for _, occurrence := range i.Occurrences[file] {
+		if occurrence.Own {
+			counts[i.Databases.Texts[occurrence.Database]]++
+		}
+	}
+
 	return counts
 }
 
-// listDefining returns the sites that define a name in a database. A local definition counts only if isVisible accepts
-// its site. A key of the localization database is defined by its messages.
-func (index *Index) listDefining(database, name string, isVisible func(Site) bool) []Site {
-	return lo.Filter(index.listPosting(toRole(database), database, name), func(site Site, _ int) bool {
-		return !index.Occurrence(site).Local || isVisible(site)
+// ResolveTexture returns the file the game reads for a texture's path as
+// script writes it. It returns false if the game reads no such file.
+func (i *Index) ResolveTexture(rel string) (string, bool) {
+	return texture.Resolve(rel, func(candidate string) (string, bool) {
+		loaded, _, ok := i.FindLoaded(candidate)
+
+		return loaded.Path, ok
 	})
 }
 
-// toRole returns the role of the occurrences that define the names of a database. A localization key is defined by
-// its messages; every other name by its definitions.
+// listDefining returns the sites that define a name in a database, in load
+// order. A local definition counts only in the given file, and none counts
+// for the file -1. A localization key is defined by its messages.
+func (i *Index) listDefining(database, name string, file int32) []Site {
+	return without(i.listPosting(toRole(database), database, name), func(site Site) bool {
+		return i.Occurrence(site).Local && site.File != file
+	})
+}
+
+// toRole returns the role of the occurrences that define the names of a
+// database. A localization key is defined by its messages, and every other
+// name by its definitions.
 func toRole(database string) Role {
-	if database == game.Localization {
+	if database == lang.Localization {
 		return RoleLocalizes
 	}
+
 	return RoleDefines
 }
 
-// listPosting returns the sites of the occurrences with the given role, database and name, in load order. It is
-// empty where the index has none.
-func (index *Index) listPosting(role Role, database, name string) []Site {
-	databaseOrdinal, ok := index.Databases.Lookup(database)
-	nameOrdinal, known := index.Names.Lookup(index.ToCaseless(database, name))
-	if !ok || !known {
+// listPosting returns the sites of the occurrences with the given role,
+// database and name, in load order. It is empty where the index has none.
+func (i *Index) listPosting(role Role, database, name string) []Site {
+	databaseOrdinal, ok := i.Databases.Lookup(database)
+	if !ok {
 		return nil
 	}
-	return index.listKey(Posting{Role: role, Database: uint16(databaseOrdinal)}, nameOrdinal)
+
+	nameOrdinal, ok := i.Names.Lookup(i.ToCaseless(database, name))
+	if !ok {
+		return nil
+	}
+
+	return i.listKey(Posting{Role: role, Database: uint16(databaseOrdinal)}, nameOrdinal)
 }
 
-// listKey returns the sites of a name's ordinal in a posting, the install's first and then this index's own.
-func (index *Index) listKey(posting Posting, name uint32) []Site {
-	own := index.narrowSites(index.postings[posting][name])
-	if index.install == nil {
+// listKey returns the sites of a name's ordinal in a posting, the install's
+// first and then this index's own.
+func (i *Index) listKey(posting Posting, name uint32) []Site {
+	own := i.narrowSites(i.postings[posting][name])
+	if i.install == nil {
 		return own
 	}
-	installSites := index.install.listKey(posting, name)
+
+	installSites := i.install.listKey(posting, name)
 	switch {
 	case len(installSites) == 0:
 		return own
 	case len(own) == 0:
 		return installSites
 	}
+
 	return slices.Concat(installSites, own)
 }
 
-// narrowSites returns the given sites that are in files the index answers for. An index that is not narrowed returns
-// them all.
-func (index *Index) narrowSites(sites []Site) []Site {
-	if index.origins == nil {
-		return sites
-	}
-	return lo.Filter(sites, func(site Site, _ int) bool { return index.hasFile(site.File) })
+// narrowSites returns the given sites that are in files the index answers
+// for.
+func (i *Index) narrowSites(sites []Site) []Site {
+	return without(sites, func(site Site) bool { return !i.Covers(site.File) })
 }
 
-// compareSites orders two sites by their files' positions, then by their places in a file.
+// without returns the sites the test does not match. It returns the list
+// itself where none match, so a posting is copied only when it changes.
+func without(sites []Site, test func(Site) bool) []Site {
+	if !slices.ContainsFunc(sites, test) {
+		return sites
+	}
+
+	return slices.DeleteFunc(slices.Clone(sites), test)
+}
+
 func compareSites(first, second Site) int {
 	return cmp.Or(cmp.Compare(first.File, second.File), cmp.Compare(first.Occurrence, second.Occurrence))
 }
 
-// buildPostings fills the postings from the occurrences after a scan or a load.
-func (index *Index) buildPostings() {
-	// Only the index's own files are posted; a lookup reads the install's postings as well.
-	index.postings = map[Posting]map[uint32][]Site{}
-	for file := int(index.countInstallFiles()); file < len(index.Occurrences); file++ {
-		for position, occurrence := range index.Occurrences[file] {
-			key := Posting{Role: occurrence.Role, Database: occurrence.Database}
-			if index.postings[key] == nil {
-				index.postings[key] = map[uint32][]Site{}
+// buildPostings fills the postings from the occurrences after a scan or a
+// load, and drops the winners worked out before it. Only the index's own
+// files are posted, since a lookup reads the install's postings as well.
+func (i *Index) buildPostings() {
+	i.postings = map[Posting]map[uint32][]Site{}
+	i.winners = &sync.Map{}
+
+	for file := int(i.countInstallFiles()); file < len(i.Occurrences); file++ {
+		for position, occurrence := range i.Occurrences[file] {
+			posting := Posting{Role: occurrence.Role, Database: occurrence.Database}
+			if i.postings[posting] == nil {
+				i.postings[posting] = map[uint32][]Site{}
 			}
+
 			site := Site{File: int32(file), Occurrence: int32(position)}
-			index.postings[key][occurrence.Name] = append(index.postings[key][occurrence.Name], site)
+			i.postings[posting][occurrence.Name] = append(i.postings[posting][occurrence.Name], site)
 		}
 	}
 }

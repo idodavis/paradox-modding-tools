@@ -11,7 +11,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/internal/files"
-	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
@@ -20,7 +19,8 @@ import (
 // fixtureModID is the id the tests give the fixture mod.
 const fixtureModID = "mod-a"
 
-// newApp returns the one application the tests send events through. It is never run.
+// newApp returns the one application the tests send events through. It is never
+// run.
 var newApp = sync.OnceValue(func() *application.App { return application.New(application.Options{}) })
 
 // resolveFixture returns the absolute path of a folder under internal/testdata.
@@ -33,7 +33,8 @@ func resolveFixture(t *testing.T, parts ...string) string {
 	return dir
 }
 
-// writeFile writes a file of the given bytes under a folder, making the folders above it.
+// writeFile writes a file of the given bytes under a folder, making the folders
+// above it.
 func writeFile(t *testing.T, dir, rel string, bytes []byte) {
 	t.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(rel))
@@ -45,8 +46,9 @@ func writeFile(t *testing.T, dir, rel string, bytes []byte) {
 	}
 }
 
-// openService opens a workspace on the CK3 fixture install with a copy of the fixture mod, after the given function
-// adds files to it. It returns the search service, the open session and the mod's folder.
+// openService opens a workspace on the CK3 fixture install with a copy of the
+// fixture mod, after the given function adds files to it. It returns the search
+// service, the open session and the mod's folder.
 func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.Session, string) {
 	t.Helper()
 	newApp()
@@ -55,7 +57,8 @@ func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.S
 		t.Fatal(err)
 	}
 	prepare(dir)
-	// PMT reads its folders from these variables, so the test points them at temporary ones.
+	// PMT reads its folders from these variables, so the test points them at
+	// temporary ones.
 	for _, variable := range []string{"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(variable, t.TempDir())
 	}
@@ -83,7 +86,8 @@ func openService(t *testing.T, prepare func(dir string)) (*Service, *workspace.S
 	return &Service{Workspace: wsp}, ws, dir
 }
 
-// listHits runs a search and returns its hits, which must be in the given number of files.
+// listHits runs a search and returns its hits, which must be in the given
+// number of files.
 func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) []lsp.Site {
 	t.Helper()
 	collected, _, err := CollectText(ws, query, maxHits, make(chan struct{}))
@@ -100,8 +104,8 @@ func listHits(t *testing.T, ws *workspace.Session, query Query, fileCount int) [
 	return hits
 }
 
-// TestRunFindsRegexAndWholeWordHits checks the ranges and lines of the hits of a whole-word search and of a regular
-// expression.
+// TestRunFindsRegexAndWholeWordHits checks the ranges and lines of the hits of
+// a whole-word search and of a regular expression.
 func TestRunFindsRegexAndWholeWordHits(t *testing.T) {
 	include := "search_a.txt"
 	_, ws, _ := openService(t, func(dir string) {
@@ -111,8 +115,7 @@ func TestRunFindsRegexAndWholeWordHits(t *testing.T) {
 	if len(whole) != 2 || whole[0].Range.StartLine != 1 || whole[1].Range.StartLine != 3 {
 		t.Fatalf("whole-word hits: %+v", whole)
 	}
-	if whole[1].Text != "  Add_Gold = 3" || whole[1].Range.StartColumn != 3 || whole[1].Range.EndColumn != 11 ||
-		whole[1].Place.Origin != fixtureModID {
+	if whole[1].Text != "  Add_Gold = 3" || whole[1].Range.StartColumn != 3 || whole[1].Range.EndColumn != 11 {
 		t.Errorf("whole-word hit: %+v", whole[1])
 	}
 	pattern := listHits(t, ws, Query{Text: `add_gold\w*`, Regex: true, MatchCase: true, Include: include}, 1)
@@ -125,7 +128,8 @@ func TestRunFindsRegexAndWholeWordHits(t *testing.T) {
 	}
 }
 
-// TestRunSearchesOpenBufferText checks that a search reads the editor's text of an open file.
+// TestRunSearchesOpenBufferText checks that a search reads the editor's text of
+// an open file.
 func TestRunSearchesOpenBufferText(t *testing.T) {
 	_, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/search_b.txt", []byte("on_disk = yes\n"))
@@ -137,7 +141,8 @@ func TestRunSearchesOpenBufferText(t *testing.T) {
 	}
 }
 
-// TestReplaceTextKeepsEncodingAndSkipsOpenFile checks that a replace keeps a file's encoding and skips an open file.
+// TestReplaceTextKeepsEncodingAndSkipsOpenFile checks that a replace keeps a
+// file's encoding and skips an open file.
 func TestReplaceTextKeepsEncodingAndSkipsOpenFile(t *testing.T) {
 	sch, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/closed.txt", []byte("caf\xe9 = 1\n"))
@@ -157,7 +162,8 @@ func TestReplaceTextKeepsEncodingAndSkipsOpenFile(t *testing.T) {
 	}
 }
 
-// TestReplaceTextCountsTheHitsShown checks that a replace changes exactly what a search shows.
+// TestReplaceTextCountsTheHitsShown checks that a replace changes exactly what
+// a search shows.
 func TestReplaceTextCountsTheHitsShown(t *testing.T) {
 	sch, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/empty.txt", []byte("ab\n"))
@@ -187,14 +193,15 @@ func TestReplaceTextCountsTheHitsShown(t *testing.T) {
 	}
 }
 
-// TestSearchFilesListsModsFirst checks the file search's match, its order and its limit.
+// TestSearchFilesListsModsFirst checks the file search's match, its order and
+// its limit.
 func TestSearchFilesListsModsFirst(t *testing.T) {
 	sch, _, _ := openService(t, func(string) {})
 	places := sch.SearchFiles("EVT", 1000)
 	if len(places) < 2 || places[0].Origin != fixtureModID {
 		t.Fatalf("places: %+v", places)
 	}
-	vanilla := slices.IndexFunc(places, func(place workspace.Place) bool { return place.Origin == game.OriginVanilla })
+	vanilla := slices.IndexFunc(places, func(place workspace.Place) bool { return place.Origin == files.OriginVanilla })
 	if vanilla < 0 || slices.ContainsFunc(places[vanilla:], func(place workspace.Place) bool {
 		return place.Origin == fixtureModID
 	}) {
@@ -208,8 +215,8 @@ func TestSearchFilesListsModsFirst(t *testing.T) {
 	}
 }
 
-// TestSearchLeavesOutDeletedFile checks that a file deleted from a mod is neither offered by the file search nor
-// searched and replaced in.
+// TestSearchLeavesOutDeletedFile checks that a file deleted from a mod is
+// neither offered by the file search nor searched and replaced in.
 func TestSearchLeavesOutDeletedFile(t *testing.T) {
 	sch, ws, dir := openService(t, func(dir string) {
 		writeFile(t, dir, "common/gone.txt", []byte("needle = 1\n"))

@@ -31,6 +31,7 @@ declare module "@wailsio/runtime" {
             "game:exited": boolean;
             "git:changed": string;
             "git:output": string;
+            "git:running": string;
             "install:scanned": string;
             "install:scanning": workspace$0.Scanning;
             "mcp:show": mcp$0.Show;

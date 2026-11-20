@@ -37,7 +37,7 @@ const WORKSPACE_KEYS = [
 /** SECTIONS holds the queries each section of config.json feeds. */
 const SECTIONS: Record<string, readonly (readonly unknown[])[]> = {
   settings: [keys.settings, keys.folders],
-  workspaces: [keys.workspaces, keys.state, keys.health, keys.patch, keys.gits, keys.releases],
+  workspaces: [keys.workspaces, keys.state, keys.roots, keys.health, keys.patch, keys.gits, keys.releases],
   installs: [keys.installs, keys.state],
   agents: [keys.agents],
 };

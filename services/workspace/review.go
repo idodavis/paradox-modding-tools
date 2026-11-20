@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -45,6 +46,17 @@ type fileReview struct {
 
 	// isNew is true if the agent created the file.
 	isNew bool
+
+	// turns holds the file's text from before each turn of an agent that
+	// changed it since the review started, the earliest turn first.
+	turns []turnText
+}
+
+// A turnText is a file's text from before one turn of an agent changed it,
+// under the page's id for that turn.
+type turnText struct {
+	turn string
+	text string
 }
 
 // unsavedText is the error of a change to a file whose text the editor
@@ -55,48 +67,62 @@ const unsavedText = "it has unsaved text in the editor: save or revert it first"
 // file's line.
 const tabSpaces = "  "
 
-// TrackEdits starts the review of a file an agent edits, given each of the
-// agent's edits as hunks, earliest first. The baseline is the file's text on
-// disk with the edits undone, or "" for a file the agent created that is not
-// on disk yet. A file that has a review already is left as it is. It returns
-// an error, and starts no review, if no workspace is open, the file is
-// outside the workspace's mods or cannot be read, an edit has no hunk, or a
-// hunk's lines are not in the file once.
-func (s *Service) TrackEdits(path string, edits [][]Hunk, isNew bool) error {
-	ws, err := s.FindWritable(path)
+// TrackEdits starts the review of a file an agent edits, given the edits one
+// turn's tool call made to it as hunks, earliest first. The baseline is the
+// file's text on disk with the edits undone, or "" for a file the agent
+// created that is not on disk yet. A file that has a review already keeps its
+// baseline, and that same text is kept as the file's text from before the
+// turn, unless the turn has one. A file outside the workspace is reviewed
+// like any other, and its folder is watched from then on, so that its changes
+// on disk are seen. It returns an error, and starts no review, if no
+// workspace is open, the file is the game's or an external mod's or cannot be
+// read, an edit has no hunk, or a hunk's lines are not in the file once. A
+// file under review whose edits cannot be undone keeps no text for the turn.
+func (s *Service) TrackEdits(path string, edits [][]Hunk, isNew bool, turn string) error {
+	ws, err := s.Session()
 	if err != nil {
 		return err
 	}
 
-	if _, err := ws.findReview(path); err == nil {
+	place := ws.Locate(ws.Mods.Load(), path)
+	if err := ws.checkOwned(place); err != nil {
+		return err
+	}
+
+	review, err := ws.findReview(path)
+	isTracked := err == nil
+	if isTracked && review.findTurn(turn) >= 0 {
 		return nil
 	}
 
-	baseline := ""
-	if !isNew || files.IsFile(path) {
-		text, err := files.ReadText(path)
-		if err != nil {
-			return err
-		}
-
-		lines, err := revertEdits(text.Text, edits)
-		if err != nil {
-			return err
-		}
-
-		baseline = strings.Join(lines, jomini.LineEnding(text.Text))
+	before, err := revertFile(path, edits, isNew)
+	if err != nil && isTracked {
+		return nil
 	}
 
-	// a review another call started meanwhile is kept
+	if err != nil {
+		return err
+	}
+
+	// a review or a turn another call added meanwhile is kept
 	key := files.ToKey(path)
 	ws.reviewsMu.Lock()
-	_, isTracked := ws.reviews[key]
+	review, isTracked = ws.reviews[key]
 	if !isTracked {
-		ws.reviews[key] = fileReview{path: path, baseline: baseline, isNew: isNew}
+		review = fileReview{path: path, baseline: before, isNew: isNew}
+	}
+
+	if review.findTurn(turn) < 0 {
+		review.turns = append(review.turns, turnText{turn: turn, text: before})
+		ws.reviews[key] = review
 	}
 	ws.reviewsMu.Unlock()
 
 	if !isTracked {
+		if place.Root == "" {
+			_ = ws.watcher.notifier.Add(filepath.Dir(path))
+		}
+
 		application.Get().Event.Emit(EventReviewChanged, path)
 	}
 
@@ -188,11 +214,15 @@ func (s *Service) KeepFile(path string) error {
 	return nil
 }
 
-// UndoFile writes a file's baseline, or moves a file the agent created to
-// PMT's trash, and ends its review. It returns an error, and changes nothing,
-// if no workspace is open, the file has no review or cannot be read, or the
-// editor holds unsaved text of it.
-func (s *Service) UndoFile(path string) error {
+// UndoFile takes back an agent's changes to a file under review. With no
+// turn it writes the file's baseline, or moves a file the agent created to
+// PMT's trash, and ends the review. With a turn's id it writes the file's
+// text from before that turn, which takes back the later turns' changes too;
+// the review goes on unless that text is the baseline. The first turn of a
+// review is undone as the whole review is. It returns an error, and changes
+// nothing, if no workspace is open, the file has no review or cannot be
+// read, the turn did not change it, or the editor holds unsaved text of it.
+func (s *Service) UndoFile(path, turn string) error {
 	ws, err := s.FindWritable(path)
 	if err != nil {
 		return err
@@ -203,9 +233,28 @@ func (s *Service) UndoFile(path string) error {
 		return err
 	}
 
+	position := review.findTurn(turn)
+	if turn != "" && position < 0 {
+		return fmt.Errorf("%s was not changed in that turn", path)
+	}
+
 	text, err := ws.readSaved(path)
 	if err != nil {
 		return err
+	}
+
+	if position > 0 {
+		before := review.turns[position].text
+		if err := s.Write(path, files.Text{Text: before, Encoding: text.Encoding}); err != nil {
+			return err
+		}
+
+		review.turns = review.turns[:position]
+		ws.reviewsMu.Lock()
+		ws.reviews[files.ToKey(path)] = review
+		ws.reviewsMu.Unlock()
+
+		return nil
 	}
 
 	if review.isNew {
@@ -220,6 +269,12 @@ func (s *Service) UndoFile(path string) error {
 	ws.endReview(path)
 
 	return nil
+}
+
+// findTurn returns the index of a turn among the turns that changed the
+// file. It returns -1 if the turn did not change it, and for "".
+func (f fileReview) findTurn(turn string) int {
+	return slices.IndexFunc(f.turns, func(kept turnText) bool { return turn != "" && kept.turn == turn })
 }
 
 // readSaved returns a file's text on disk. It returns an error if the editor
@@ -239,13 +294,14 @@ func (s *Session) readSaved(path string) (files.Text, error) {
 }
 
 // isSettled reports whether the review is over: the file's lines on disk are
-// the baseline's, whatever their line endings, or the agent created the file
-// and it is gone. A file that cannot be read for another reason is not
-// settled.
+// the baseline's, whatever their line endings, or the file is gone and the
+// agent created it or its baseline is empty, as it is for a file an agent
+// reports as changed from nothing. A file that cannot be read for another
+// reason is not settled.
 func (f fileReview) isSettled() bool {
 	text, err := files.ReadText(f.path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return f.isNew
+		return f.isNew || f.baseline == ""
 	}
 
 	return err == nil && unifyEndings(text.Text) == unifyEndings(f.baseline)
@@ -303,6 +359,28 @@ func (s *Session) settleReviews(changes []FileChange) {
 
 		application.Get().Event.Emit(EventReviewChanged, change.Path)
 	}
+}
+
+// revertFile returns a file's text on disk with an agent's edits undone, in
+// the file's own line endings. It is "" for a file the agent created that is
+// not on disk yet. It returns an error if the file cannot be read or the
+// edits cannot be undone in it.
+func revertFile(path string, edits [][]Hunk, isNew bool) (string, error) {
+	if isNew && !files.IsFile(path) {
+		return "", nil
+	}
+
+	text, err := files.ReadText(path)
+	if err != nil {
+		return "", err
+	}
+
+	lines, err := revertEdits(text.Text, edits)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.Join(lines, jomini.LineEnding(text.Text)), nil
 }
 
 // revertEdits returns the lines of a text with an agent's edits undone, each

@@ -57,14 +57,45 @@ holds the active workspace's id and what every page reads of the open workspace.
 The agent pane and the editor's tab completion speak the Agent Client Protocol to an agent's program over a stream that
 Go carries. [The editor](#the-editor) holds the review of an agent's edits and the tab completion. The rest:
 
-- `stores/agent.ts`: the window's chats with agents.
+- `stores/agent.ts`: the window's chats with agents. It refuses, for every agent, a permission request to change a
+  file PMT keeps read-only (the game's, an external mod's), with a notice in the chat. A request to change a file
+  outside the workspace is always asked, names the whole path, and offers no "allow always". So is a shell command
+  that names a read-only folder, since no agent's path rule covers its shell. A prompt written while
+  a turn runs goes at once to an agent that steers, and joins the session's queue for any other: the queue's oldest
+  prompt is sent when a turn ends normally, and a stopped or failed turn leaves the queue as it is. A subagent's
+  updates, which come on its session's stream under the subagent's own id, build a thread of the subagent's. A plan
+  document is kept for the session and never shown in the transcript; a Markdown file in the agent's plans folder
+  is a plan too, and never a change to review. A request to start on a plan is always asked and its answer never
+  kept. A turn that ends leaves its record in the transcript: how long it took, the tokens and the cost the agent
+  reports, the files it changed and the problems it added to them. The page names each turn by an id, under which
+  Go keeps the files' texts from before it, so one turn's changes can be undone. Retry sends the last prompt again.
+  Each agent has two sets of kept choices, Chat and Quick: a new
+  session starts on Chat, and a quick session on Quick. `run` has the agent do one job in a session no list shows,
+  on its Quick choices: the editor's inline ask (Ctrl+I), whose session may change that one file, and the commit
+  message's draft, whose session may change none. Such a session is refused everything else it asks.
+- `stores/agentThread.ts`: a thread, which a session and a subagent each have: the transcript's entries, the
+  terminals and the checklists, and how an agent's updates build them. Terminal output comes in base64 and is
+  decoded here.
+- `stores/agentWork.ts`: what a session has running and has written beside its transcript: its subagents, its
+  background commands, its plan documents and the prompts the agent suggests next.
+- `stores/agentRequests.ts`: what an agent asks the user: a permission, a link to open, a form to fill in, and how
+  each answer is sent back.
 - `stores/edits.ts`: the edits an agent's tool calls make to files, which it hands to Go to review.
 - `stores/completion.ts`: the window's one connection to the agent that completes code in the editor. It starts with the
   window's first open file while an installed agent offers completion and the setting is on, and holds whether the
   agent is ready, needs the user to sign in, or failed, which Settings shows.
 - `lib/stream.ts`: opens the stream to an agent's program, which the chats and the completion connection both use.
 - `app/agent/AgentPane.vue`: the pane, with its sessions menu and the files under review.
-- `app/agent/AgentSession.vue`: one chat, with its prompt box.
+- `app/agent/AgentSession.vue`: one chat: its states, its prompt box, and the request to start on a plan, which the
+  prompt box holds.
+- `app/agent/AgentTranscript.vue`: a thread's transcript, a session's or a subagent's.
+- `app/agent/AgentWork.vue`: the row above the prompt box and its tray: the checklist, the subagents and the
+  background commands.
+- `app/agent/AgentPlan.vue`: the session's plan documents, pinned in one row, with a picker, Open and Show changes.
+- `app/agent/AgentSetting.vue`: one of an agent's settings as a panel: what it is, each choice with a line, the one
+  in force marked, and in red a choice with which the agent asks PMT nothing. The prompt box's model, effort and mode
+  pickers and its panel of other settings are made of it. Plan is a switch of the box's own, whichever setting the
+  agent keeps it in.
 - `app/agent/AgentUsage.vue`: the ring in the prompt box and its panel of the context window and the plan's usage.
 - `ui/AgentSignIn.vue`: the ways to sign in to an agent, a button each, which the pane and Settings show.
 - `ui/AgentLink.vue`: a link an agent asks to open, with its host marked, and the choice to open or decline it.

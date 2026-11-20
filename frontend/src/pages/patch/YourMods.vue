@@ -7,12 +7,14 @@
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { createReusableTemplate } from "@vueuse/core";
 import { groupBy, sortBy, sumBy, uniq } from "es-toolkit";
 
 import type { Finding } from "@services/health/models";
 import { compareWithGame } from "../../app/commands";
 import { describeCount, list, plural } from "../../lib/format";
 import { keys, notesQuery, reportQuery, stateQuery, tiesQuery, useLevels } from "../../queries";
+import { toFindingPrompt, useAgentStore } from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LevelMeter from "../../ui/LevelMeter.vue";
@@ -23,8 +25,10 @@ import ImpactBlock from "./ImpactBlock.vue";
 
 const PANES = [{ slot: "list", defaultSize: 34, minSize: 20, maxSize: 60 }, { slot: "detail" }];
 
+const agent = useAgentStore();
 const workspace = useWorkspaceStore();
 const editor = useEditorStore();
+const [DefineFix, ShowFix] = createReusableTemplate<{ finding: Finding }>();
 const cache = useQueryCache();
 const { data: state } = useQuery(stateQuery);
 const { findLevel } = useLevels();
@@ -216,6 +220,20 @@ function describeEmpty({ mod }: Card): string {
 
 <template>
   <div class="flex min-h-0 flex-col gap-3.5 px-6 py-4">
+    <!-- A change under the user's own mod can be handed to the agent. -->
+    <DefineFix v-slot="{ finding }">
+      <UTooltip v-if="agent.current && !current?.mod.external" :text="`Fix with ${agent.current.name}`">
+        <UButton
+          icon="i-lucide-sparkles"
+          variant="ghost"
+          size="xs"
+          square
+          class="shrink-0"
+          :aria-label="`Fix with ${agent.current.name}`"
+          @click="agent.compose(toFindingPrompt(finding))"
+        />
+      </UTooltip>
+    </DefineFix>
     <UEmpty v-if="!cards.length" icon="i-lucide-layers" title="This workspace has no mods" size="sm" class="m-auto" />
     <template v-else>
       <div class="grid shrink-0 grid-cols-[repeat(auto-fit,minmax(17rem,1fr))] gap-3">
@@ -385,6 +403,7 @@ function describeEmpty({ mod }: Card): string {
                         class="max-w-75"
                       />
                       <span class="font-mono text-11 text-dimmed">{{ finding.facts?.version }}</span>
+                      <ShowFix :finding="finding" />
                     </div>
                   </ImpactBlock>
 
@@ -419,6 +438,7 @@ function describeEmpty({ mod }: Card): string {
                       <span class="font-mono text-11 whitespace-nowrap text-warning">
                         {{ file.facts?.status }} {{ file.facts?.version }}
                       </span>
+                      <ShowFix :finding="file" />
                     </div>
                   </ImpactBlock>
                 </div>

@@ -62,6 +62,14 @@ export function CrashedLastRun(): $CancellablePromise<boolean> {
 }
 
 /**
+ * FlashWindow flashes a window's button in the taskbar, to say that the
+ * window wants the user. Linux has no such signal, so nothing happens there.
+ */
+export function FlashWindow(name: string): $CancellablePromise<void> {
+    return $Call.ByID(260226371, name);
+}
+
+/**
  * InstallRelease installs a release, newer or older than the running one, and
  * restarts into it. Going back skips the running version until a newer one is
  * out. It refuses a dev build and the running version.

@@ -9,10 +9,17 @@ import type { Agent } from "@services/agent/models";
 
 /**
  * A Start is Go's first message on an agent's stream: the folder the program
- * started in and the other mods' folders, or the error that kept it from
- * starting.
+ * started in, the other folders it may work in, the folder its plan files go
+ * in and the metadata each of its sessions is given, or the error that kept
+ * it from starting.
  */
-export type Start = { folder: string; directories: string[] | null; error: string };
+export type Start = {
+  folder: string;
+  directories: string[] | null;
+  plans: string;
+  meta: Record<string, unknown> | null;
+  error: string;
+};
 
 /** An AgentStream is an agent's stream as the SDK reads it. */
 export type AgentStream = {
@@ -25,8 +32,8 @@ export type AgentStream = {
 
 /**
  * openStream opens a stream to an agent's program and sends the opening: the
- * agent, and the file whose mod's folder the program starts in. onEnd is
- * called once if the stream ends after Go's Start.
+ * agent, and the file whose mod's folder a program that completes code starts
+ * in. onEnd is called once if the stream ends after Go's Start.
  */
 export function openStream(agent: Agent, path: string, onEnd: () => void): AgentStream {
   const socket = JSONStream("agent");

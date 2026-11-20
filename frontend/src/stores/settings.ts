@@ -78,11 +78,12 @@ export const useSettingsStore = defineStore("settings", () => {
   /** write writes a setting. The config:changed event then refreshes the query. */
   const write = (key: string, text: string): void => mutate({ key, value: text });
 
+  /** list returns the items of a comma-separated setting. */
+  const list = (key: string): string[] => value(key).split(",").filter(Boolean);
+
   /** writeItem adds an item to a comma-separated setting, or removes it. */
   const writeItem = (key: string, item: string, listed: boolean): void => {
-    const items = value(key)
-      .split(",")
-      .filter((other) => other && other !== item);
+    const items = list(key).filter((other) => other !== item);
     write(key, (listed ? [...items, item] : items).join(","));
   };
 
@@ -121,5 +122,5 @@ export const useSettingsStore = defineStore("settings", () => {
     root.style.setProperty("--ide-ui-font", `${value("ide.panelTextSize")}px`);
   });
 
-  return { value, isHidden, isOn, isGuided, write, writeItem, theme, codeFont, toPixels };
+  return { value, list, isHidden, isOn, isGuided, write, writeItem, theme, codeFont, toPixels };
 });

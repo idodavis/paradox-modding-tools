@@ -9,8 +9,32 @@
 // The rules it applies:
 //
 //   - An agent PMT offers is a row of the agents table: its registry id, the
-//     text that registers PMT's tools with it outside PMT, and the
-//     instruction files and folders it reads in a mod.
+//     text that registers PMT's tools with it outside PMT, the instruction
+//     files and folders it reads in a mod, and the skills, commands and
+//     subagents PMT makes for it, each a file at a path of the agent's own.
+//     Only Claude's paths are known.
+//   - A chat starts in the workspace's folder, with the folders of the user's
+//     own mods beside it. The install's folder and an external mod's are
+//     never among them, and an agent whose row guards is given the rules
+//     that refuse its file changes there: Claude as its sessions' settings,
+//     GitHub Copilot's CLI as program arguments, as it takes its other
+//     folders. A program that completes code starts in the folder of the
+//     active file's mod, since it changes no file.
+//   - Claude asks PMT nothing in its Bypass permissions mode, so its row
+//     names that mode, and the pane has the user confirm it. Its deny rules
+//     hold there too.
+//   - Claude takes a prompt sent while its turn runs into that turn, so its
+//     row steers. Copilot's CLI stops its turn for such a prompt and starts
+//     over, and Codex's adapter holds it until the turn ends, so the pane
+//     holds theirs itself.
+//   - Codex has no file tool and takes no deny rules: it writes through its
+//     shell. In two of its modes its own reviewer answers in the user's
+//     place, so PMT is asked nothing. Its row names the mode its sessions
+//     start in, in which Codex asks, and those two modes, which the pane has
+//     the user confirm.
+//   - GitHub Copilot's CLI asks PMT nothing in its Autopilot mode and with
+//     its Allow All setting on, so its row names both, and the pane has the
+//     user confirm each.
 //   - GitHub Copilot's CLI drops the instructions PMT's tool server gives it,
 //     so its row carries their summary, which the pane adds to a session's
 //     first prompt.
@@ -155,19 +179,29 @@ type release struct {
 // {token} to fill in. GitHub Copilot is two rows: its CLI chats, and its
 // language server answers tab completion, with the CLI kept out of it.
 var agents = []app.Agent{
-	{ID: "claude-acp", Name: "Claude",
+	{ID: "claude-acp", Name: "Claude", Guards: true, Steers: true, Unasked: []string{"bypassPermissions"},
 		Register: `claude mcp add --transport http pmt {url} --header "Authorization: Bearer {token}"`,
-		Files:    []string{"CLAUDE.md", "CLAUDE.local.md", ".claude"}},
-	{ID: "github-copilot-cli", Name: "GitHub Copilot",
+		Files:    app.AgentFiles["claude-acp"],
+		Makes: []app.Make{
+			{Kind: "skill", Path: ".claude/skills/%s/SKILL.md", Text: "---\nname: %s\ndescription: \n---\n\n"},
+			{Kind: "command", Path: ".claude/commands/%s.md", Text: "---\ndescription: \n---\n\n"},
+			{Kind: "subagent", Path: ".claude/agents/%s.md", Text: "---\nname: %s\ndescription: \n---\n\n"},
+		}},
+	{ID: "github-copilot-cli", Name: "GitHub Copilot", Guards: true,
+		DirArg: "--add-dir", DenyArg: "--deny-tool=write(%s/**)",
 		Register:     `copilot mcp add --transport http pmt {url} --header "Authorization: Bearer {token}"`,
-		Files:        []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github"},
+		Files:        app.AgentFiles["github-copilot-cli"],
+		Lacks:        []string{"subagents", "background commands", "copies of a session", "session titles"},
+		Unasked:      []string{"https://agentclientprotocol.com/protocol/session-modes#autopilot", "allow_all=on"},
+		PlanFolder:   ".copilot/session-state",
 		Instructions: mcp.Summary},
 	{ID: "copilot-language-server", Name: "GitHub Copilot", Chat: "github-copilot-cli", Completion: true,
 		Package: "@github/copilot-language-server", Script: "dist/language-server.js", Args: []string{"--acp"},
 		Env: []string{"GITHUB_COPILOT_ACP_USE_CLI=0"}},
-	{ID: "codex-acp", Name: "Codex",
+	{ID: "codex-acp", Name: "Codex", StartMode: "workspace-write", Unasked: []string{"agent", "agent-full-access"},
 		Register: "[mcp_servers.pmt]\nurl = \"{url}\"\nhttp_headers = { Authorization = \"Bearer {token}\" }",
-		Files:    []string{"AGENTS.md", "AGENTS.override.md", ".codex"}},
+		Files:    app.AgentFiles["codex-acp"],
+		Lacks:    []string{"subagents", "background commands"}},
 }
 
 const nodeURL = "https://nodejs.org/dist/"
@@ -178,22 +212,6 @@ const windowsOS = "windows"
 const minNode = "22"
 
 const fetchTimeout = 5 * time.Minute
-
-// ListFiles returns the instruction files and folders the offered agents read
-// in a mod, each once.
-func ListFiles() []string {
-	entries := []string{}
-
-	for _, agent := range agents {
-		for _, entry := range agent.Files {
-			if !slices.Contains(entries, entry) {
-				entries = append(entries, entry)
-			}
-		}
-	}
-
-	return entries
-}
 
 // ListAgents returns the agents PMT offers, then the user's own.
 func (s *Service) ListAgents() []Agent {
@@ -245,7 +263,8 @@ func (s *Service) AddAgent(agent app.Agent) (app.Agent, error) {
 		return app.Agent{}, errors.New("an agent needs a name and a program")
 	}
 
-	agent.ID, agent.Register, agent.Files = rand.Text(), "", nil
+	agent.ID, agent.Register, agent.Files, agent.Makes, agent.Lacks = rand.Text(), "", nil, nil, nil
+	agent.PlanFolder = ""
 
 	return agent, s.Workspace.Config.Update("agents", func(config *app.Config) error {
 		config.Agents = append(config.Agents, agent)

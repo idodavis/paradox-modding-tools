@@ -8,6 +8,7 @@ import type { Part, Site } from "@services/lsp/models";
 import { compareWithGame } from "../../app/commands";
 import { describeCount, matchQuery, plural } from "../../lib/format";
 import { codesQuery, comparedQuery, readersQuery, snippetsQuery, useLevels } from "../../queries";
+import { toFindingPrompt, useAgentStore } from "../../stores/agent";
 import { useWorkspaceStore } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
 import FactText from "../../ui/FactText.vue";
@@ -31,6 +32,7 @@ const MESSAGE_CODES = ["missing-message", "duplicate-message", "shared-message"]
 /** How many of the entries still used show before the rest fold behind a button. */
 const USES_SHOWN = 6;
 
+const agent = useAgentStore();
 const workspace = useWorkspaceStore();
 const { data: codes } = useQuery(codesQuery);
 const { findLevel } = useLevels();
@@ -150,6 +152,13 @@ function describeSite(site: Site): string {
         label="Open in the IDE"
         icon="i-lucide-code"
         @click="places[0] && openSite(places[0])"
+      />
+      <UButton
+        v-if="agent.current && sites.length"
+        :label="`Fix with ${agent.current.name}`"
+        icon="i-lucide-sparkles"
+        variant="subtle"
+        @click="agent.compose(toFindingPrompt(finding))"
       />
     </template>
     <HealthSection title="What's wrong">

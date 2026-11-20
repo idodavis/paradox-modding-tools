@@ -35,11 +35,12 @@ import {
   trashFile,
 } from "../../app/commands";
 import { fileSearchQuery, folderQuery, gitStatusQuery, loadQuery, placeQuery } from "../../queries";
+import { useAgentStore } from "../../stores/agent";
 import { tabId, useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { COMMAND_BUS, useWindowsStore } from "../../stores/windows";
-import { useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import { FILE_DRAG, useWorkspaceStore, VANILLA, WORKSPACE } from "../../stores/workspace";
 import { findIcon, listIcons } from "./editor/tabs";
 import SaveDdsModal from "./SaveDdsModal.vue";
 
@@ -87,6 +88,7 @@ const MENU_CONTENT = { onCloseAutoFocus: resume };
  */
 type Move = { oldPath: string; newPath: string; isTrash?: true };
 
+const agent = useAgentStore();
 const editor = useEditorStore();
 const git = useGitStore();
 const settings = useSettingsStore();
@@ -150,6 +152,8 @@ onBeforeUnmount(() => {
 watch(shape, mount);
 watch(buildStyles, (css) => rootSheet.replaceSync(css), { immediate: true });
 watch(() => git.repositories, markGit);
+// Setting the git marks draws the rows again, with their review marks.
+watch(() => agent.reviews, markGit);
 watch(() => editor.activeFile()?.key, follow);
 watch(() => editor.mode, dimUndrawable);
 watchDebounced(filter, (query) => void filterRows(query), { debounce: 200 });
@@ -175,7 +179,8 @@ function mount(): void {
     icons: { set: "none", spriteSheet: SPRITE },
     density: settings.value("ide.density") as FileTreeDensityKeyword,
     stickyFolders: settings.isOn("ide.stickyFolders"),
-    renderRowDecoration: ({ item }) => (isRoot(item.path) ? markRoot(roots[rootIndex(item.path)]) : null),
+    renderRowDecoration: ({ item }) =>
+      isRoot(item.path) ? markRoot(roots[rootIndex(item.path)]) : markReview(item.path),
     onSelectionChange: select,
     renaming: writable.value && {
       canRename: ({ path, isFolder }) => {
@@ -230,6 +235,20 @@ function markRoot(root: Place | undefined): FileTreeRowDecoration | null {
     : { icon: "file-tree-icon-lock", title: "Read only" };
 }
 
+/**
+ * markReview returns the mark at the end of the row of a file under review,
+ * which an agent changed: a dot in the accent color. Any other row has none.
+ */
+function markReview(row: string): FileTreeRowDecoration | null {
+  if (!agent.findReview(findPath(row))) return null;
+
+  return {
+    text: "●",
+    parts: [{ text: "●", color: "var(--accent)" }],
+    title: "An agent changed this file. It is under review.",
+  };
+}
+
 /** rootIndex returns the index of the root a row is under, or -1 for a row under none. */
 const rootIndex = (row: string) => labels.value.indexOf(row.slice(0, row.indexOf("/")));
 /** isRoot reports whether a row is a root's own row. */
@@ -245,6 +264,17 @@ function rowOf(path: string, isFolder: boolean): string {
 /** findPath finds a row's path on disk. It is "" for a row the tree lacks. */
 function findPath(row: string): string {
   return places.get(row)?.path ?? drafts.get(row)?.path ?? "";
+}
+
+/**
+ * tagDrag adds a dragged row's path on disk to the drag, so a drop outside
+ * the tree, such as on the agent's prompt box, knows the file. The tree
+ * itself puts only its own row in the drag, a folder's without its slash.
+ */
+function tagDrag(event: DragEvent): void {
+  const row = event.dataTransfer?.getData("text/plain") ?? "";
+  const path = findPath(row) || findPath(`${row}/`);
+  if (path) event.dataTransfer?.setData(FILE_DRAG, path);
 }
 
 /** listRows lists the rows the explorer knows: each root's, then each row a folder's listing gave. */
@@ -673,7 +703,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
         ]
       : [];
   const modItems: ContextMenuItem[] =
-    isRoot(row) && place && place.origin !== VANILLA
+    isRoot(row) && place && place.origin !== VANILLA && place.origin !== WORKSPACE
       ? [
           {
             label: "Mod settings",
@@ -795,6 +825,7 @@ function resume(event: Event): void {
           @contextmenu.capture="pick"
           @keydown="step"
           @dblclick="pin"
+          @dragstart="tagDrag"
         />
       </div>
     </UContextMenu>

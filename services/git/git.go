@@ -9,6 +9,9 @@
 //   - A method names a repository by its root folder.
 //   - Run sends git:changed after a command, also when git failed, since a
 //     failed command can leave the repository changed. A read sends nothing.
+//   - Run sends git:running with the words for a command that can take long
+//     (a commit, a merge, and each one that reaches a remote) while it runs,
+//     so the window can show that git is at work.
 //   - A merge that stops on a conflict is not an error: the markers stay in
 //     the files for the editor to resolve.
 //   - Deleting a branch with commits no other branch has is refused, with no
@@ -42,6 +45,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -52,6 +56,9 @@ import (
 // Service runs the git installed on this machine.
 type Service struct {
 	Workspace *workspace.Service
+
+	// running counts the commands under way that git:running told of.
+	running atomic.Int32
 }
 
 // Repository is one git repository among the workspace's mods.
@@ -74,11 +81,16 @@ const (
 
 	// EventChanged carries the folder of the repository a command changed.
 	EventChanged = "git:changed"
+
+	// EventRunning carries the words for a command that can take long, when
+	// it starts, and "" when the last such command ends.
+	EventRunning = "git:running"
 )
 
 func init() {
 	application.RegisterEvent[string](EventOutput)
 	application.RegisterEvent[string](EventChanged)
+	application.RegisterEvent[string](EventRunning)
 }
 
 var findGit = sync.OnceValues(func() (string, error) {
@@ -97,12 +109,46 @@ func (s *Service) IsInstalled() bool {
 	return err == nil
 }
 
-// Run runs git in a folder and sends git:changed, also when git failed.
+// Run runs git in a folder and sends git:changed, also when git failed. For a
+// command that can take long it sends git:running with the command's words
+// first, and with "" once no such command runs.
 func (s *Service) Run(dir string, args ...string) (string, error) {
+	if label := describeCommand(args); label != "" {
+		s.running.Add(1)
+		application.Get().Event.Emit(EventRunning, label)
+
+		defer func() {
+			if s.running.Add(-1) == 0 {
+				application.Get().Event.Emit(EventRunning, "")
+			}
+		}()
+	}
+
 	stdout, err := s.run(dir, args...)
 	application.Get().Event.Emit(EventChanged, dir)
 
 	return stdout, err
+}
+
+// commandLabels holds the words for each git command that can take long: a
+// commit, whose hooks may run, a merge, and the ones that reach a remote.
+var commandLabels = map[string]string{
+	"commit": "Committing", "merge": "Merging", "fetch": "Fetching", "pull": "Pulling", "push": "Pushing",
+}
+
+// describeCommand returns the words for a git command while it runs, or ""
+// for one too quick to tell of. A push that sets the branch's upstream
+// publishes the branch.
+func describeCommand(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+
+	if args[0] == "push" && slices.Contains(args, "-u") {
+		return "Publishing the branch"
+	}
+
+	return commandLabels[args[0]]
 }
 
 // run is Run without the event. Each line git writes to standard error is

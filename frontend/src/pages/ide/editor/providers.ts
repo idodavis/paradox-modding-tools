@@ -4,9 +4,10 @@ import type { languages } from "monaco-editor";
 import { watch } from "vue";
 
 import * as lsp from "@services/lsp/service";
-import type { Completion, Edit, Fix, Site, Symbol } from "@services/lsp/models";
+import type { Completion, Diagnostic, Edit, Fix, Site, Symbol } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
 import { fileUrl, loadQuery, placeQuery } from "../../../queries";
+import { toFixPrompt, useAgentStore } from "../../../stores/agent";
 import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
 import { useWorkspaceStore } from "../../../stores/workspace";
@@ -15,6 +16,8 @@ import { findModel, flushText, openModel } from "./models";
 
 /** FIX_COMMAND is the id of the command a quick fix runs. */
 const FIX_COMMAND = "pmt.applyFix";
+/** ASK_COMMAND is the id of the command that asks the agent to fix problems. */
+const ASK_COMMAND = "pmt.askFix";
 /** HINT_SETTINGS holds the setting that turns off each kind of inlay hint, by Go's kind. Other kinds always show. */
 const HINT_SETTINGS: Record<string, string> = { text: "ide.textHints" };
 /** PICTURE_WIDTH is the widest a completion's picture is drawn, in pixels. */
@@ -185,18 +188,30 @@ function registerWriting(selector: languages.LanguageFilter[]): void {
             marker.startColumn === problem.range.startColumn,
         ),
       );
-      if (!problems.length) return none;
+      if (!place || !problems.length) return none;
       const fixes = (await lsp.ListFixes(model.uri.fsPath, problems)) ?? [];
-      const actions = fixes.map((fix) => ({
+      const actions: languages.CodeAction[] = fixes.map((fix) => ({
         title: fix.title,
         kind: "quickfix",
         command: { id: FIX_COMMAND, title: fix.title, arguments: [fix] },
       }));
+      // After PMT's own fixes, the agent used last is offered the problems.
+      const agent = useAgentStore().current;
+      if (agent) {
+        const title = `Fix with ${agent.name}`;
+        // The model's own place has the path as the workspace spells it.
+        const asked = [fileModel?.place ?? place, problems];
+        actions.push({ title, kind: "quickfix", command: { id: ASK_COMMAND, title, arguments: asked } });
+      }
+
       return { actions, dispose: () => undefined };
     },
   });
   // The editor store runs a fix because a fix may create a file and place the caret.
   monaco.editor.registerCommand(FIX_COMMAND, (_accessor, fix: Fix) => useEditorStore().applyFix(fix));
+  monaco.editor.registerCommand(ASK_COMMAND, (_accessor, place: Place, problems: Diagnostic[]) =>
+    useAgentStore().compose(toFixPrompt(place, problems)),
+  );
 }
 
 /** registerDecoration registers folding, inlay hints, colors and semantic tokens. */

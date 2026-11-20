@@ -43,6 +43,10 @@ type Session struct {
 	Mods  atomic.Pointer[index.Index]
 	Order atomic.Pointer[[]Mod]
 
+	// Folder is the folder the workspace's agents start in. A change to the
+	// workspace's record replaces it.
+	Folder atomic.Pointer[string]
+
 	// Edits counts the changes to the editor's open files, so a reader can
 	// tell whether what it made from them is current.
 	Edits atomic.Int64
@@ -139,6 +143,7 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 	}
 
 	ws.storeOrder(order)
+	ws.storeFolder(record)
 
 	const stage = "Reading your mods"
 	progress(stage, 0)
@@ -160,7 +165,24 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 		return nil, err
 	}
 
+	ws.watchFolder()
+
 	return ws, nil
+}
+
+// storeFolder stores the folder that a workspace's record and the load order
+// give the workspace.
+func (s *Session) storeFolder(record app.Workspace) {
+	folder := findFolder(record, *s.Order.Load())
+	s.Folder.Store(&folder)
+}
+
+// watchFolder watches the workspace's folder, if it is on disk. Watching a
+// folder that a mod's watch already covers changes nothing.
+func (s *Session) watchFolder() {
+	if folder := *s.Folder.Load(); files.IsFolder(folder) {
+		_ = addFolders(s.watcher.notifier, folder)
+	}
 }
 
 // findRecords returns the record of a workspace, its install and the install's
@@ -716,7 +738,14 @@ func (s *Session) Rescan(changes []FileChange) error {
 	var failure error
 	for position, change := range changes {
 		place := s.Locate(mods, change.Path)
-		if descriptor := resolveDescriptor(s.Game, place.Root); place.Root != "" && files.ToKey(descriptor) == place.Key {
+
+		// The index holds no file from outside the roots, and none of the
+		// workspace's folder.
+		if place.Root == "" || place.Origin == OriginWorkspace {
+			continue
+		}
+
+		if descriptor := resolveDescriptor(s.Game, place.Root); files.ToKey(descriptor) == place.Key {
 			mod, _ := findMod(*s.Order.Load(), place.Origin)
 			s.refreshMod(mod.Mod)
 			changes[position].Descriptor = true
@@ -726,7 +755,7 @@ func (s *Session) Rescan(changes []FileChange) error {
 		isHidden := slices.ContainsFunc(strings.Split(place.Rel, "/"), func(folder string) bool {
 			return slices.Contains(watchedFolders, folder)
 		})
-		if place.Root == "" || place.Origin == files.OriginVanilla || isHidden {
+		if place.Origin == files.OriginVanilla || isHidden {
 			continue
 		}
 

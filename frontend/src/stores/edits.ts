@@ -6,7 +6,7 @@ import type { Place } from "@services/workspace/models";
 import * as workspaceApi from "@services/workspace/service";
 import { confirm } from "../lib/feedback";
 import { plural } from "../lib/format";
-import type { Entry } from "./agent";
+import type { Entry } from "./agentThread";
 
 /** A FileEdit is the change one tool call makes to one file. */
 export type FileEdit = {
@@ -35,11 +35,12 @@ export type DiffContent = {
 
 /**
  * trackEdits has Go start the review of a file, given the edits one tool call
- * made to it. It rejects with Go's error.
+ * made to it and the id of the turn the call ran in. It rejects with Go's
+ * error.
  */
-export function trackEdits(edits: FileEdit[]): Promise<void> {
+export function trackEdits(edits: FileEdit[], turn: string): Promise<void> {
   const hunks = edits.map((edit) => edit.hunks);
-  return workspaceApi.TrackEdits(edits[0]?.path ?? "", hunks, !!edits[0]?.isNew);
+  return workspaceApi.TrackEdits(edits[0]?.path ?? "", hunks, !!edits[0]?.isNew, turn);
 }
 
 /**
@@ -59,16 +60,20 @@ export function listChanges(entries: Entry[]): FileEdit[] {
 
 /**
  * confirmUndo asks whether to undo the agents' edits to the given files under
- * review, and reports whether the user said yes.
+ * review, all of them or those of one turn, and reports whether the user
+ * said yes.
  */
-export async function confirmUndo(places: Place[]): Promise<boolean> {
-  const subject = places.length === 1 ? (places[0]?.rel ?? "") : plural(places.length, "file");
+export async function confirmUndo(places: Place[], isTurn = false): Promise<boolean> {
+  const [only] = places;
+  const subject = only && places.length === 1 ? only.rel || only.path : plural(places.length, "file");
+  const taken = isTurn
+    ? `${subject} ${places.length === 1 ? "goes" : "go"} back to the text from before this turn. ` +
+      "What a later turn changed in the same file goes back too. "
+    : `The edits to ${subject} are taken back, except for the changes you kept. `;
   const answer = await confirm.open({
-    title: "Undo the agent's changes?",
-    body:
-      `The edits to ${subject} are taken back, except for the changes you kept. ` +
-      "A file an agent created goes to PMT's trash.",
-    confirm: "Undo all",
+    title: isTurn ? "Undo this turn's changes?" : "Undo the agent's changes?",
+    body: `${taken}A file an agent created goes to PMT's trash.`,
+    confirm: isTurn ? "Undo this turn" : "Undo all",
     destructive: true,
   });
 

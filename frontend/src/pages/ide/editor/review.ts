@@ -191,7 +191,7 @@ export async function keepFile(model: Model): Promise<void> {
  * nothing if the user says no.
  */
 export async function undoFile(model: Model): Promise<void> {
-  if (await confirmUndo([model.place])) await settle(model, true, () => workspace.UndoFile(model.place.path));
+  if (await confirmUndo([model.place])) await settle(model, true, () => workspace.UndoFile(model.place.path, ""));
 }
 
 /**

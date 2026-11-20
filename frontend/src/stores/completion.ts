@@ -12,18 +12,8 @@ import type { Agent } from "@services/agent/models";
 import { describeError } from "../lib/format";
 import { openStream } from "../lib/stream";
 import { agentsQuery } from "../queries";
-import {
-  answerLink,
-  CLIENT,
-  isAuthRequired,
-  runSignIn,
-  toLink,
-  toSignIn,
-  toUri,
-  V1_INITIALIZE,
-  type LinkRequest,
-  type SignIn,
-} from "./agent";
+import { CLIENT, isAuthRequired, runSignIn, toSignIn, toUri, V1_INITIALIZE, type SignIn } from "./agent";
+import { answerLink, toLink, type LinkRequest } from "./agentRequests";
 import { useSettingsStore } from "./settings";
 
 /**

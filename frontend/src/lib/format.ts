@@ -114,6 +114,18 @@ export function describeAge(time: Date | string, wording: "short" | "long"): str
   return parsed ? formatTimeAgo(parsed, wording === "short" ? { messages: AGO } : {}) : "";
 }
 
+/**
+ * describeDuration returns a length of time in milliseconds as "48s",
+ * "1m 12s" or "1h 5m".
+ */
+export function describeDuration(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = Math.floor(seconds / 60);
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+
+  return minutes ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
+}
+
 /** bytes returns a size as the user reads it, such as "1.2 MB". */
 export function bytes(count: number): string {
   const megabytes = count >= 1048576;

@@ -419,16 +419,38 @@ func (s *Service) DiagnoseText(path, text string) ([]Diagnostic, error) {
 	return s.listEnabled(ws.ID, diagnoseDocument(ws, mods, place, ws.WalkText(place, text))), nil
 }
 
+// ListNewProblems returns the problems a file under review has that its
+// baseline, its text from before an agent changed it, does not have. A
+// problem is one the baseline has too where its code and its message are the
+// same, since a change moves the lines of the problems under it. It returns
+// an error if no workspace is open, the file has no review or it cannot be
+// read.
+func (s *Service) ListNewProblems(path string) ([]Diagnostic, error) {
+	baseline, err := s.Workspace.Baseline(path)
+	if err != nil {
+		return nil, err
+	}
+
+	problems, err := s.Diagnose(path)
+	if err != nil {
+		return nil, err
+	}
+
+	earlier, err := s.DiagnoseText(path, baseline)
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(problems, func(problem Diagnostic) bool {
+		return slices.ContainsFunc(earlier, func(other Diagnostic) bool {
+			return other.Code == problem.Code && other.Message == problem.Message
+		})
+	}), nil
+}
+
 // listEnabled drops the diagnostics of the checks the user turned off.
 func (s *Service) listEnabled(workspaceID string, diagnostics []Diagnostic) []Diagnostic {
-	setting, _ := s.Workspace.Config.LookupSetting(workspaceID, "ide.checks")
-
-	var disabled []string
-	for _, id := range strings.Split(setting, ",") {
-		if id = strings.TrimSpace(id); id != "" {
-			disabled = append(disabled, id)
-		}
-	}
+	disabled := s.Workspace.Config.ListSetting(workspaceID, "ide.checks")
 
 	return slices.DeleteFunc(diagnostics, func(diagnostic Diagnostic) bool {
 		return slices.Contains(disabled, diagnostic.Code)

@@ -136,7 +136,9 @@ export function ReadStatus(root: string): $CancellablePromise<$models.Status> {
 }
 
 /**
- * Run runs git in a folder and sends git:changed, also when git failed.
+ * Run runs git in a folder and sends git:changed, also when git failed. For a
+ * command that can take long it sends git:running with the command's words
+ * first, and with "" once no such command runs.
  */
 export function Run(dir: string, ...args: string[]): $CancellablePromise<string> {
     return $Call.ByID(2670563755, dir, args);

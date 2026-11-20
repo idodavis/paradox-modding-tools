@@ -367,6 +367,19 @@ func (s *Service) ShowWindow(name string) error {
 	return nil
 }
 
+// FlashWindow flashes a window's button in the taskbar, to say that the
+// window wants the user. Linux has no such signal, so nothing happens there.
+func (s *Service) FlashWindow(name string) error {
+	window, err := lookupWindow(name)
+	if err != nil {
+		return err
+	}
+
+	window.Flash(true)
+
+	return nil
+}
+
 // CloseWindow closes a window. The main window closes at once and quits the
 // app.
 func (s *Service) CloseWindow(name string) error {

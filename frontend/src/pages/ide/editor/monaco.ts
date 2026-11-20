@@ -4,7 +4,10 @@ import Color from "colorjs.io";
 import * as monaco from "monaco-editor/editor/editor.api";
 import "monaco-editor/features/register.all";
 import "monaco-editor/editor/contrib/semanticTokens/browser/viewportSemanticTokens";
+import "monaco-editor/languages/definitions/javascript/register";
 import "monaco-editor/languages/definitions/markdown/register";
+import "monaco-editor/languages/definitions/python/register";
+import "monaco-editor/languages/definitions/typescript/register";
 import { jsonDefaults } from "monaco-editor/languages/features/json/register";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import { watch } from "vue";
@@ -12,6 +15,7 @@ import { watch } from "vue";
 import type { editor, languages } from "monaco-editor";
 import { SYNTAX } from "../../../lib/syntax";
 import { legendQuery, loadQuery, placeQuery } from "../../../queries";
+import { useAgentStore } from "../../../stores/agent";
 import { useEditorStore } from "../../../stores/editor";
 import { useSettingsStore } from "../../../stores/settings";
 import { COMMAND_BUS } from "../../../stores/windows";
@@ -90,7 +94,10 @@ export function setupMonaco(): void {
   monaco.editor.registerCommand("pmt.files", () => commandBus.emit("editor.goToFile"));
   monaco.editor.registerCommand("pmt.back", () => useEditorStore().go(-1));
   monaco.editor.registerCommand("pmt.forward", () => useEditorStore().go(1));
+  monaco.editor.registerCommand("pmt.ask", () => useAgentStore().compose());
   monaco.editor.addKeybindingRules([
+    // Ctrl+L asks the agent, in place of Monaco's own "select the line".
+    { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, command: "pmt.ask" },
     { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, command: "pmt.palette" },
     { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, command: "pmt.palette" },
     { keybinding: monaco.KeyCode.F1, command: "pmt.palette" },

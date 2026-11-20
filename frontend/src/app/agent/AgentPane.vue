@@ -1,19 +1,16 @@
 <!-- The agent pane, docked beside the workspace pages or in a window of its own. -->
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
-import { useMutation, useQuery } from "@pinia/colada";
+import { useQuery } from "@pinia/colada";
 import { until, useEventBus } from "@vueuse/core";
 import { sumBy } from "es-toolkit";
 import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
 
 import type { Task } from "@services/mcp/models";
-import type { Place } from "@services/workspace/models";
-import * as workspaceApi from "@services/workspace/service";
-import { abbreviate, describeAge, plural } from "../../lib/format";
+import { abbreviate, describeAge, matchQuery, plural } from "../../lib/format";
 import { agentsQuery } from "../../queries";
-import { describeTitle, useAgentStore, type SessionRecord } from "../../stores/agent";
+import { describeTitle, useAgentStore, type SessionRecord, type SessionState } from "../../stores/agent";
 import { useCompletionStore } from "../../stores/completion";
-import { confirmUndo } from "../../stores/edits";
 import { useToolViewStore } from "../../stores/toolView";
 import { COMMAND_BUS, THIS_WINDOW } from "../../stores/windows";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -21,6 +18,14 @@ import LineCounts from "../../ui/LineCounts.vue";
 import AgentSession from "./AgentSession.vue";
 
 const IS_WINDOW = THIS_WINDOW === "agent";
+
+// The dot and the words of each state the session menu shows a session in.
+const STATES: Record<SessionState, { dot: string; label: string }> = {
+  needs: { dot: "bg-warning", label: "Needs you" },
+  working: { dot: "bg-primary", label: "Working" },
+  failed: { dot: "bg-error", label: "Failed" },
+  done: { dot: "bg-success", label: "Done" },
+};
 
 const agent = useAgentStore();
 const completion = useCompletionStore();
@@ -31,6 +36,8 @@ const { data: agents } = useQuery(agentsQuery);
 const field = useTemplateRef("field");
 const isFullscreen = shallowRef(false);
 const draft = shallowRef<string | null>(null);
+// What the session menu's search box holds, which its sessions' titles match.
+const sought = shallowRef("");
 
 const session = computed(() => agent.active);
 const lacksCompletion = computed(() => !!agents.value && !agents.value.some((row) => row.completion && row.installed));
@@ -40,16 +47,6 @@ watch(
   () => void agent.resumeLatest(),
   { immediate: true },
 );
-// Keep leaves files as the agents wrote them; Undo asks first, then takes the
-// edits back.
-const { mutate: keep } = useMutation({
-  mutation: (places: Place[]) => Promise.all(places.map((place) => workspaceApi.KeepFile(place.path))),
-});
-const { mutate: undo } = useMutation({
-  mutation: async (places: Place[]) => {
-    if (await confirmUndo(places)) await Promise.all(places.map((place) => workspaceApi.UndoFile(place.path)));
-  },
-});
 const recent = computed(() =>
   agent
     .listRecords()
@@ -62,12 +59,12 @@ const recent = computed(() =>
 );
 
 /**
- * The session menu: the workspace's sessions with each agent, the shown
- * session's agent first.
+ * The session menu: the workspace's sessions with each agent whose titles
+ * match the search box, the shown session's agent first.
  */
 const menu = computed(() => {
   const shown = session.value;
-  const records = agent.listRecords();
+  const records = agent.listRecords().filter((record) => matchQuery(sought.value, record.title));
   const archived = records.filter((record) => record.isArchived);
   const agents = [...agent.ready].sort(
     (first, second) => Number(second.id === shown?.agent.id) - Number(first.id === shown?.agent.id),
@@ -79,14 +76,13 @@ const menu = computed(() => {
       label: isUntitled ? `Untitled session · ${describeAge(new Date(record.updatedAt), "short")}` : title,
       slot: "session" as const,
       record,
+      state: agent.classify(record),
       onSelect: () => agent.open(record),
     };
   };
   const groups = agents.flatMap((row) => {
-    const listed = records.filter((record) => record.agent === row.id && !record.isArchived);
-    return listed.length
-      ? [[{ type: "label" as const, label: `Sessions with ${row.name}` }, ...listed.map(toItem)]]
-      : [];
+    const items = records.filter((record) => record.agent === row.id && !record.isArchived).map(toItem);
+    return items.length ? [[{ type: "label" as const, label: `Sessions with ${row.name}` }, ...items]] : [];
   });
   return [
     ...groups,
@@ -95,6 +91,27 @@ const menu = computed(() => {
         ? [{ label: `Archived (${archived.length})`, icon: "i-lucide-archive", children: archived.map(toItem) }]
         : []),
       ...(shown ? [{ label: "New session", icon: "i-lucide-plus", onSelect: () => agent.start(shown.agent.id) }] : []),
+      // A quick session starts on the agent's Quick model and effort.
+      ...(shown
+        ? [
+            {
+              label: "New quick session",
+              icon: "i-lucide-zap",
+              onSelect: () => agent.start(shown.agent.id, undefined, true),
+            },
+          ]
+        : []),
+      // An agent that cannot copy a session keeps the item, off, with why.
+      ...(shown
+        ? [
+            {
+              label: shown.forkable ? "Duplicate" : `Duplicate (${shown.agent.name} cannot copy a session)`,
+              icon: "i-lucide-copy",
+              disabled: !shown.forkable || !shown.id,
+              onSelect: () => void agent.fork(shown),
+            },
+          ]
+        : []),
       {
         label: "Another agent",
         icon: "i-lucide-bot",
@@ -158,7 +175,12 @@ async function runTask(task: Task): Promise<void> {
             @blur="endRename(true)"
           />
         </form>
-        <UDropdownMenu v-else :items="menu" :content="{ align: 'start' }">
+        <UDropdownMenu
+          v-else
+          :items="menu"
+          :content="{ align: 'start' }"
+          @update:open="(isOpen) => isOpen || (sought = '')"
+        >
           <span class="flex min-w-0" :title="session.title" @dblclick="session.id && startRename()">
             <UButton
               :label="describeTitle(session)"
@@ -169,6 +191,30 @@ async function runTask(task: Task): Promise<void> {
               :ui="{ label: 'truncate', trailingIcon: 'text-dimmed' }"
             />
           </span>
+          <!-- The box keeps its keys, so the menu jumps to no item. -->
+          <template #content-top>
+            <div class="border-b border-default" @keydown.stop>
+              <UInput
+                v-model="sought"
+                icon="i-lucide-search"
+                placeholder="Find a session"
+                variant="none"
+                size="sm"
+                autofocus
+                aria-label="Find a session"
+                class="w-full"
+              />
+            </div>
+          </template>
+          <template #session-leading="{ item }">
+            <span
+              class="size-2 shrink-0 rounded-full"
+              :class="STATES[item.state].dot"
+              role="img"
+              :aria-label="STATES[item.state].label"
+              :title="STATES[item.state].label"
+            />
+          </template>
           <template #session-label="{ item }">
             <span class="truncate" :title="item.record.title">{{ item.label }}</span>
           </template>
@@ -267,7 +313,7 @@ async function runTask(task: Task): Promise<void> {
             icon="i-lucide-check-check"
             variant="ghost"
             size="xs"
-            @click.stop="keep(reviewed)"
+            @click.stop="agent.keep(reviewed)"
           />
           <UButton
             label="Undo all"
@@ -275,7 +321,7 @@ async function runTask(task: Task): Promise<void> {
             color="error"
             variant="ghost"
             size="xs"
-            @click.stop="undo(reviewed)"
+            @click.stop="agent.undo(reviewed)"
           />
         </div>
       </template>
@@ -285,13 +331,20 @@ async function runTask(task: Task): Promise<void> {
             <button
               type="button"
               class="min-w-0 grow truncate text-start font-mono text-11 hover:underline"
-              :title="place.rel"
+              :title="place.rel || place.path"
               @click="agent.showFile(place.path)"
             >
               {{ place.name }}
             </button>
             <LineCounts :added="place.added" :removed="place.removed" />
-            <UButton icon="i-lucide-check" variant="ghost" size="xs" square aria-label="Keep" @click="keep([place])" />
+            <UButton
+              icon="i-lucide-check"
+              variant="ghost"
+              size="xs"
+              square
+              aria-label="Keep"
+              @click="agent.keep([place])"
+            />
             <UButton
               icon="i-lucide-undo-2"
               color="error"
@@ -299,7 +352,7 @@ async function runTask(task: Task): Promise<void> {
               size="xs"
               square
               aria-label="Undo"
-              @click="undo([place])"
+              @click="agent.undo([place])"
             />
           </span>
         </div>

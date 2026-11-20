@@ -90,9 +90,10 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 	drawService := &draw.Service{Workspace: wsp}
 	steamService := &steam.Service{Workspace: wsp, Git: gitService}
 	patchService := &patch.Service{Workspace: wsp, Wiki: wikiService}
+	searchService := &search.Service{Workspace: wsp}
 	mcpService := &mcp.Service{
 		Workspace: wsp, LSP: lspService, Health: healthService, Graph: graphService, Wiki: wikiService,
-		Patch: patchService, Draw: drawService, Build: version,
+		Patch: patchService, Draw: drawService, Search: searchService, Steam: steamService, Build: version,
 	}
 
 	return []application.Service{
@@ -104,7 +105,7 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 		application.NewService(drawService),
 		application.NewService(healthService),
 		application.NewService(graphService),
-		application.NewService(&search.Service{Workspace: wsp}),
+		application.NewService(searchService),
 		application.NewService(wikiService),
 		application.NewService(patchService),
 		application.NewService(mcpService),

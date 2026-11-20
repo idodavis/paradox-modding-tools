@@ -44,6 +44,11 @@ export const GitChanged = "git:changed";
 export const GitOutput = "git:output";
 
 /**
+ * Name of the custom event "git:running".
+ */
+export const GitRunning = "git:running";
+
+/**
  * Name of the custom event "install:scanned".
  */
 export const InstallScanned = "install:scanned";

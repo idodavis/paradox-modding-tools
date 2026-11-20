@@ -62,8 +62,17 @@ works with the page's chip attached and, outside PMT, through `describe_view`. A
 is marked `Edits`, and the page offers it only with a file the user can change open.
 
 Each tool has a short title, and a tool that changes no file is marked read only. `ListTools` lists them for the
-assistant pane, which answers an agent's request to use a read-only tool itself, in every mode. `rename`, `apply_edit`
-and `write_scaffold` are the tools not marked, and they ask.
+assistant pane, which answers an agent's request to use a read-only tool itself, in every mode. `rename`, `apply_edit`,
+`write_scaffold`, `override`, `fix`, `format`, `write_listing` and `launch_game` are the tools not marked, and they ask.
+
+`read_file` adds a note to a file the game does not read: why, and the mod
+whose copy or `replace_path` hides it (`hidingNotes`, a row for each reason).
+
+The tools past the editor are in `game.go`: the game's error log (cut to the lines that hold a query, since a log runs
+to hundreds of thousands of characters), starting the game, a picture as a PNG whose longest side is at most 1568
+pixels, a GUI window and a coat of arms as the Visual view resolves them, a file's copies, a folder's listing and a
+search of file names, the install's DLC, and a mod's Steam page with the drafts of its next change note. No tool
+publishes.
 
 ## What the tools check
 
@@ -72,7 +81,8 @@ with an empty answer that reads as "none". The checks are in `checks.go`, each t
 
 ## Changes preview first
 
-`rename`, `apply_edit` and `write_scaffold` change files, and only in the workspace's mods. Called without a token, each
+`rename`, `apply_edit`, `write_scaffold`, `override`, `fix`, `format` and `write_listing` change files, and only in the
+workspace's mods. Called without a token, each
 answers with the change it would make and a token. Called again with that token, it makes the change once. A file with
 text the user has not saved is left alone.
 
@@ -95,6 +105,7 @@ and the page catalog the main window sends once (`SetPages`).
 |---|---|
 | `mcp.go` | The service: the starter tasks, the instructions, the token, the tool list and the HTTP handler. |
 | `tools.go` | The tools' inputs and answers, the guide's texts, and the write tools' previews and tokens. |
+| `game.go` | The tools past the editor: the game, its pictures and drawn files, copies, PMT's fixes and a mod's Steam page. |
 | `app.go` | The view and pages the windows sent, and `show`. |
 | `checks.go` | The queries `show` takes, and the checks of what the tools and `show` are given. |
 

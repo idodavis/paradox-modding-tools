@@ -14,12 +14,23 @@ import { computed } from "vue";
 import type { Agent } from "@services/agent/models";
 import * as agentApi from "@services/agent/service";
 import * as mcp from "@services/mcp/service";
+import { MakeAgentFile } from "@services/workspace/service";
 import { confirm, copyText } from "../../lib/feedback";
-import { abbreviate, parseTime, splitError } from "../../lib/format";
+import { abbreviate, list, parseTime, splitError } from "../../lib/format";
 import { accessQuery, agentsQuery, keys, nodeQuery, toolsQuery } from "../../queries";
-import { ALLOWED, FILE_KINDS, toPmtTool, useAgentStore } from "../../stores/agent";
+import {
+  ALLOWED,
+  FILE_KINDS,
+  listChoices,
+  SHELL_ALLOWED,
+  SHELL_REFUSED,
+  toPmtTool,
+  useAgentStore,
+} from "../../stores/agent";
 import { useCompletionStore } from "../../stores/completion";
+import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
+import { useWorkspaceStore } from "../../stores/workspace";
 import AgentLink from "../../ui/AgentLink.vue";
 import AgentSignIn from "../../ui/AgentSignIn.vue";
 import FileSelector from "../../ui/FileSelector.vue";
@@ -30,8 +41,15 @@ const DOTS = "••••••••";
 /** NOTES holds the line shown above an agent's register text, by agent id. */
 const NOTES: Record<string, string> = { "codex-acp": "# add to ~/.codex/config.toml" };
 
+const emit = defineEmits<{
+  /** A file was opened in the editor, which the dialog covers. */
+  opened: [];
+}>();
+
 const cache = useQueryCache();
 const agent = useAgentStore();
+const editor = useEditorStore();
+const workspace = useWorkspaceStore();
 const completion = useCompletionStore();
 const settings = useSettingsStore();
 const { data: access } = useQuery(accessQuery);
@@ -82,6 +100,27 @@ const permits = computed(() =>
     }),
 );
 
+// The shell rules: the starts the user refuses, then those allowed.
+const shellStart = shallowRef("");
+const shellRules = computed(() =>
+  [SHELL_REFUSED, SHELL_ALLOWED].flatMap((key) => settings.list(key).map((start) => ({ key, start }))),
+);
+// A start is one line with no comma, since a comma parts the setting's items.
+const isShellStart = computed(() => !!shellStart.value.trim() && !/[,\n]/.test(shellStart.value));
+
+/**
+ * addShellRule adds the typed start to the shell commands allowed or refused,
+ * by the setting's key, and takes it out of the other list.
+ */
+function addShellRule(key: string): void {
+  const start = shellStart.value.trim();
+  if (!isShellStart.value) return;
+
+  settings.writeItem(key === SHELL_ALLOWED ? SHELL_REFUSED : SHELL_ALLOWED, start, false);
+  settings.writeItem(key, start, true);
+  shellStart.value = "";
+}
+
 const refresh = () => cache.invalidateQueries({ key: keys.agents });
 const {
   mutate: install,
@@ -131,6 +170,70 @@ const { mutate: uninstall } = useMutation({
   },
   onSettled: refresh,
 });
+
+// The two sets of choices kept for an agent: what a new session starts on,
+// and what a quick session, the inline ask and a drafted commit message use.
+const KINDS = [
+  { label: "Chat", isQuick: false },
+  { label: "Quick", isQuick: true },
+];
+
+// What Settings says of an agent from its row: the words where the row has
+// the thing, and the words where it lacks it. Blank words say nothing.
+const FACTS: { has: (row: Agent) => boolean; yes: string; no: string }[] = [
+  {
+    has: (row) => !!row.steers,
+    yes: "Takes a message into the turn it is working on",
+    no: "A message sent while it works waits until the turn ends",
+  },
+  {
+    has: (row) => !!row.guards,
+    yes: "Refuses changes to the game's files and external mods by its own rules",
+    no: "Has no rules of its own for read-only folders: PMT refuses what it asks to change there",
+  },
+  { has: (row) => !row.unasked?.length, yes: "", no: "Has modes that ask PMT nothing, each behind a confirm" },
+  {
+    has: (row) => !!row.makes?.length,
+    yes: "New skills, commands and subagents from the prompt box",
+    no: "PMT cannot make its skills and commands yet",
+  },
+];
+
+/**
+ * findChat returns the row of a card that chats, whose models and facts the
+ * card shows. It returns undefined for a card that only completes code.
+ */
+function findChat(parts: ReturnType<typeof makePart>[]): Agent | undefined {
+  return parts.map((part) => part.row).find((row) => !row.completion);
+}
+
+/**
+ * listFacts returns what an agent supports and what it lacks, as lines: one
+ * for each fact of its row, then what it never sends.
+ */
+function listFacts(row: Agent): { text: string; isLack: boolean }[] {
+  const facts = FACTS.map((fact) => ({ text: fact.has(row) ? fact.yes : fact.no, isLack: !fact.has(row) }));
+  const unsent = row.lacks?.length ? [{ text: `Sends no ${list(row.lacks)}`, isLack: true }] : [];
+
+  return [...facts, ...unsent].filter((fact) => fact.text);
+}
+
+// Opens one of an agent's instruction files in the editor, making it empty in
+// the workspace's folder if it is missing.
+const { mutate: openInstructions } = useMutation({
+  mutation: async (file: string) => {
+    editor.show(await MakeAgentFile(file, ""));
+    emit("opened");
+  },
+});
+
+/**
+ * listInstructions returns the instruction files the agent of a card reads
+ * in the workspace's folder, without the folders it reads there.
+ */
+function listInstructions(parts: ReturnType<typeof makePart>[]): string[] {
+  return parts.flatMap((part) => part.row.files ?? []).filter((file) => file.endsWith(".md"));
+}
 
 /**
  * makePart returns one part of an agent's card: its line and the button that
@@ -280,6 +383,53 @@ function quote(path: string): string {
           @answer="completion.answer"
         />
       </template>
+      <div
+        v-if="workspace.isOpen() && listInstructions(parts).length"
+        class="flex flex-wrap items-center gap-1.5 ps-9 text-12 text-dimmed"
+      >
+        <span class="me-1">Its instructions in this workspace's folder</span>
+        <UButton
+          v-for="file in listInstructions(parts)"
+          :key="file"
+          :label="file"
+          icon="i-lucide-file-text"
+          color="neutral"
+          variant="outline"
+          size="xs"
+          :ui="{ label: 'font-mono' }"
+          @click="openInstructions(file)"
+        />
+      </div>
+      <template v-for="chat in [findChat(parts)]" :key="chat?.id ?? ''">
+        <template v-if="chat">
+          <!-- The models an agent offers are known once a session ran. -->
+          <div v-for="kind in KINDS" :key="kind.label" class="flex items-center gap-2 ps-9 text-12">
+            <span class="w-10 shrink-0 text-dimmed">{{ kind.label }}</span>
+            <USelect
+              v-for="option in agent.offered[chat.id] ?? []"
+              :key="option.configId"
+              :model-value="String(agent.listKept(chat.id, kind.isQuick)[option.configId] ?? option.currentValue)"
+              :items="listChoices(option).map((choice) => ({ label: choice.name, value: choice.value }))"
+              :aria-label="`${kind.label}: ${option.name}`"
+              size="xs"
+              class="w-44"
+              @update:model-value="(value) => agent.choose(chat.id, kind.isQuick, option.configId, String(value))"
+            />
+            <span v-if="!agent.offered[chat.id]" class="text-dimmed">
+              Start a session with {{ chat.name }} once, and its models are listed here.
+            </span>
+          </div>
+          <ul class="flex flex-col gap-0.5 ps-9 text-12">
+            <li v-for="fact in listFacts(chat)" :key="fact.text" class="flex items-center gap-1.5 text-toned">
+              <UIcon
+                :name="fact.isLack ? 'i-lucide-minus' : 'i-lucide-check'"
+                class="size-3.5 shrink-0"
+                :class="fact.isLack ? 'text-dimmed' : 'text-success'"
+              />{{ fact.text }}
+            </li>
+          </ul>
+        </template>
+      </template>
       <UAlert
         v-if="installFailure && parts.some((part) => installed === part.row.id)"
         color="error"
@@ -325,6 +475,52 @@ function quote(path: string): string {
         variant="ghost"
         size="sm"
         @click="settings.writeItem(ALLOWED, row.permit, false)"
+      />
+    </div>
+  </section>
+  <section id="setting-agents.shellAllowed" class="flex flex-col gap-2.5 border-b border-accented pb-5">
+    <h2 class="text-13 font-semibold">Shell commands</h2>
+    <p class="text-12 text-dimmed">
+      A command Claude's shell runs is allowed or refused by how it starts, such as git status. Claude takes these as
+      its own rules, and a session takes them when it starts. Codex and GitHub Copilot take no such rules: each of their
+      commands is asked as before. A command that names the game's folder or an external mod's is always asked.
+    </p>
+    <form class="flex items-center gap-2" @submit.prevent="addShellRule(SHELL_ALLOWED)">
+      <UInput
+        v-model="shellStart"
+        placeholder="How the command starts, such as git status"
+        aria-label="How the command starts"
+        class="w-80 font-mono"
+      />
+      <UButton type="submit" label="Allow" icon="i-lucide-check" :disabled="!isShellStart" />
+      <UButton
+        label="Refuse"
+        icon="i-lucide-ban"
+        color="error"
+        variant="soft"
+        :disabled="!isShellStart"
+        @click="addShellRule(SHELL_REFUSED)"
+      />
+    </form>
+    <div
+      v-for="rule in shellRules"
+      :key="rule.key + rule.start"
+      class="flex items-center gap-3 border-b border-accented py-2"
+    >
+      <UBadge
+        :label="rule.key === SHELL_ALLOWED ? 'Allowed' : 'Refused'"
+        :color="rule.key === SHELL_ALLOWED ? 'success' : 'error'"
+        variant="subtle"
+        class="w-16 justify-center"
+      />
+      <span class="min-w-0 grow truncate font-mono text-12">{{ rule.start }}</span>
+      <UButton
+        label="Remove"
+        icon="i-lucide-trash-2"
+        color="error"
+        variant="ghost"
+        size="sm"
+        @click="settings.writeItem(rule.key, rule.start, false)"
       />
     </div>
   </section>

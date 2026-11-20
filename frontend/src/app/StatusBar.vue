@@ -31,6 +31,8 @@ import {
 } from "../queries";
 import { describeLimit, useAgentStore } from "../stores/agent";
 import { useCompletionStore } from "../stores/completion";
+import { useEditorStore } from "../stores/editor";
+import { useGitStore } from "../stores/git";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../stores/windows";
 import DocumentView from "../ui/DocumentView.vue";
 import HowModWorks from "../ui/HowModWorks.vue";
@@ -48,6 +50,8 @@ const toast = useToast();
 const windows = useWindowsStore();
 const agent = useAgentStore();
 const completion = useCompletionStore();
+const git = useGitStore();
+const editor = useEditorStore();
 
 const page = computed<Page | undefined>(() => (route.name ? PAGES[route.name] : undefined));
 // A workspace page's help is followed by the agent pane's.
@@ -244,6 +248,12 @@ const LAUNCH = findCommand("game.launch");
     <div id="status-start" class="contents" />
     <span class="grow" />
     <div id="status-end" class="contents" />
+    <UTooltip v-if="git.running" text="Show what git prints">
+      <button type="button" :class="STATUS_ITEM" @click="editor.showPanel('output')">
+        <UIcon name="i-lucide-loader-circle" class="size-3 shrink-0 animate-spin" />
+        {{ git.running }}…
+      </button>
+    </UTooltip>
     <button v-if="agent.status && agent.active" type="button" :class="STATUS_ITEM" @click="agent.showPane()">
       <span class="size-1.5 shrink-0 rounded-full" :class="agentDot" />
       {{ agent.status }}

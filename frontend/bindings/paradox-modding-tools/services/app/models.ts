@@ -26,11 +26,56 @@ export interface Agent {
     "files"?: string[] | null;
 
     /**
+     * Makes are the kinds of file PMT makes for the agent there, none for an
+     * agent whose folders PMT does not know.
+     */
+    "makes"?: Make[] | null;
+
+    /**
      * Instructions is what the pane adds to a session's first prompt, for an
      * agent that drops the instructions PMT's tool server gives it. It is ""
      * for an agent that reads them.
      */
     "instructions"?: string;
+
+    /**
+     * Guards reports whether the agent takes the folders it must not change
+     * as deny rules of its own, which hold in every mode it runs in. It
+     * takes them as program arguments where the row has a DenyArg, else as
+     * the settings of each of its sessions.
+     */
+    "guards"?: boolean;
+
+    /**
+     * Steers reports whether the agent takes a prompt sent while its turn
+     * runs into that turn. For any other agent the pane holds such a prompt
+     * until the turn ends.
+     */
+    "steers"?: boolean;
+
+    /**
+     * StartMode is the mode each session of the agent starts in, by the
+     * agent's own id for it; "" leaves the agent's choice. Unasked lists
+     * what makes the agent change files and run commands without asking PMT,
+     * so that PMT cannot keep it off read-only files: a mode by its id, and a
+     * value of any other setting as "setting=value", such as "allow_all=on".
+     */
+    "startMode"?: string;
+    "unasked"?: string[] | null;
+
+    /**
+     * PlanFolder is the folder where the agent keeps each session's plan
+     * files when that is outside the workspace, as a part of its path under
+     * the user's home; "" for an agent that keeps none there. A file in it
+     * is a plan, never a change to review.
+     */
+    "planFolder"?: string;
+
+    /**
+     * Lacks names what the pane shows for other agents and this one never
+     * sends, as Settings words it: "subagents", "plans".
+     */
+    "lacks"?: string[] | null;
 
     /**
      * Chat is the id of the row that chats for this one, so Settings draws
@@ -75,6 +120,24 @@ export interface Install {
     "path": string;
     "version": string;
     "scannedAt": string;
+}
+
+/**
+ * A Make is one kind of file PMT makes for an agent in the workspace's
+ * folder: a skill, a command or a subagent.
+ */
+export interface Make {
+    /**
+     * Kind is what the file is, as its button names it.
+     */
+    "kind": string;
+
+    /**
+     * Path is the file's path under the workspace's folder, and Text is what
+     * the new file holds. Each has %s where the name the user gives goes.
+     */
+    "path": string;
+    "text": string;
 }
 
 /**
@@ -188,6 +251,13 @@ export interface Workspace {
     "mods": Mod[] | null;
     "language": string;
     "homePage": string;
+
+    /**
+     * Folder is the folder the workspace's agents start in and keep their
+     * files in. It is "" until the user picks one or an agent first starts
+     * in a folder made for the workspace.
+     */
+    "folder": string;
 
     /**
      * GameColor is a slot or a CSS color, or "" for the game's own.

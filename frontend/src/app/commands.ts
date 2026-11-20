@@ -69,6 +69,11 @@ const hasTab = () => !!activeTab();
 const hasFile = () => !!activeFile();
 const isOpen = () => useWorkspaceStore().isOpen();
 const isIde = () => router.currentRoute.value.name === "workspace-ide";
+/**
+ * isAgentHome reports whether this window can show the agent: the main one
+ * or the agent's own.
+ */
+const isAgentHome = () => THIS_WINDOW === "main" || THIS_WINDOW === "agent";
 
 /** COMMANDS holds every command of the app. */
 export const COMMANDS: readonly Command[] = [
@@ -146,6 +151,22 @@ export const COMMANDS: readonly Command[] = [
     onSelect: () => runAction("editor.action.formatDocument"),
   },
   {
+    id: "editor.foldAll",
+    label: "Fold all in the file",
+    prefix: "IDE:",
+    icon: "i-lucide-fold-vertical",
+    when: hasModel,
+    onSelect: () => runAction("editor.foldAll"),
+  },
+  {
+    id: "editor.unfoldAll",
+    label: "Unfold all in the file",
+    prefix: "IDE:",
+    icon: "i-lucide-unfold-vertical",
+    when: hasModel,
+    onSelect: () => runAction("editor.unfoldAll"),
+  },
+  {
     id: "editor.find",
     label: "Find in the file",
     icon: "i-lucide-search",
@@ -214,6 +235,15 @@ export const COMMANDS: readonly Command[] = [
     kbds: ["meta", "J"],
     when: isIde,
     onSelect: () => commandBus.emit("editor.togglePanel"),
+  },
+  {
+    id: "editor.toggleProblems",
+    label: "Show or hide Problems",
+    prefix: "IDE:",
+    icon: "i-lucide-circle-alert",
+    kbds: ["meta", "shift", "M"],
+    when: isIde,
+    onSelect: () => commandBus.emit("editor.toggleProblems"),
   },
   {
     id: "editor.undo",
@@ -519,6 +549,49 @@ export const COMMANDS: readonly Command[] = [
     kbds: ["meta", "alt", "I"],
     when: () => THIS_WINDOW === "main" && useWorkspaceStore().isOpen(),
     onSelect: () => useAgentStore().togglePane(),
+  },
+  {
+    id: "agent.focus",
+    label: "Ask the agent",
+    icon: "i-lucide-message-circle",
+    kbds: ["meta", "L"],
+    when: () => isOpen() && !!useAgentStore().current,
+    onSelect: () => useAgentStore().compose(),
+  },
+  {
+    id: "agent.newSession",
+    label: "Start a new agent session",
+    icon: "i-lucide-plus",
+    when: () => isAgentHome() && isOpen() && !!useAgentStore().current,
+    onSelect: () => {
+      const agent = useAgentStore();
+      if (agent.current) agent.start(agent.current.id);
+      agent.compose();
+    },
+  },
+  {
+    id: "agent.stop",
+    label: "Stop the agent",
+    icon: "i-lucide-square",
+    when: () => useAgentStore().active?.state === "running",
+    onSelect: () => {
+      const agent = useAgentStore();
+      if (agent.active) agent.cancel(agent.active);
+    },
+  },
+  {
+    id: "agent.keepAll",
+    label: "Keep all the agent's changes",
+    icon: "i-lucide-check-check",
+    when: () => isAgentHome() && !!useAgentStore().reviews?.length,
+    onSelect: () => useAgentStore().keep(useAgentStore().reviews ?? []),
+  },
+  {
+    id: "agent.undoAll",
+    label: "Undo all the agent's changes",
+    icon: "i-lucide-undo-2",
+    when: () => isAgentHome() && !!useAgentStore().reviews?.length,
+    onSelect: () => run(() => useAgentStore().undo(useAgentStore().reviews ?? [])),
   },
 ];
 

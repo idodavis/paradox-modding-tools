@@ -212,9 +212,10 @@ commandBus.on((command, target) => {
 useEventListener(document, "pointerdown", () => (highlighted.value = ""), { capture: true });
 
 const id = computed(() => store.activeId());
-const record = computed(() =>
-  store.isOpen() ? workspaces.value?.find((row) => row.record.id === id.value)?.record : undefined,
+const active = computed(() =>
+  store.isOpen() ? workspaces.value?.find((row) => row.record.id === id.value) : undefined,
 );
+const record = computed(() => active.value?.record);
 const { data: languages } = useQuery(() => ({
   ...languagesQuery(record.value?.install ?? ""),
   enabled: !!record.value?.install,
@@ -519,6 +520,19 @@ async function remove(): Promise<void> {
                   :items="TOOL_CHOICES"
                   class="w-60"
                   @update:model-value="update({ ...record, homePage: $event })"
+                />
+              </UFormField>
+              <UFormField
+                label="Agent folder"
+                description="Where this workspace's agents start and keep their instructions, plans and scripts. The explorer shows it as Workspace files, unless it is a mod's folder."
+                orientation="horizontal"
+              >
+                <FileSelector
+                  :path="active?.folder ?? ''"
+                  folder
+                  :filter="[]"
+                  class="w-160"
+                  @update:path="update({ ...record, folder: $event })"
                 />
               </UFormField>
               <UFormField
@@ -866,7 +880,7 @@ async function remove(): Promise<void> {
             title="Agents and tools"
             note="The agents the agent pane runs, PMT's tools for coding agents, and the agents you run yourself."
           >
-            <AgentsSection />
+            <AgentsSection @opened="open = false" />
           </Page>
         </template>
       </UTabs>

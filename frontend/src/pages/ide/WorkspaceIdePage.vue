@@ -27,12 +27,13 @@ import {
   rootsQuery,
 } from "../../queries";
 import { useChip } from "../../stores/toolView";
+import { toFixPrompt, useAgentStore } from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { useTerminalStore } from "../../stores/terminal";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../../stores/windows";
-import { deleteLayouts, LAYOUT_KEY, useWorkspaceStore, VANILLA } from "../../stores/workspace";
+import { deleteLayouts, LAYOUT_KEY, useWorkspaceStore, VANILLA, WORKSPACE } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
 import AddModMenu from "../../ui/AddModMenu.vue";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -86,6 +87,7 @@ const ENCODINGS: Partial<Record<Encoding, string>> = {
 const MOUSE_BACK = 3;
 const MOUSE_FORWARD = 4;
 
+const agent = useAgentStore();
 const editor = useEditorStore();
 const git = useGitStore();
 const settings = useSettingsStore();
@@ -136,6 +138,7 @@ commandBus.on((command) => {
   if (command === "git.commit") showSidebar("git");
   if (command === "editor.toggleWiki") toggleWiki();
   if (command === "editor.togglePanel") togglePanel();
+  if (command === "editor.toggleProblems") toggleProblems();
   if (command === "draw.newCoat") void coatDialog.open();
   if (command === "image.saveDds") {
     const active = editor.activeFile();
@@ -187,6 +190,8 @@ const { data: folderPlace } = useQuery(() => ({
 const mods = computed(() =>
   (roots.value ?? []).filter((root) => root.origin !== VANILLA && !workspace.isExternal(root.origin)),
 );
+// The workspace's own folder is listed with the mods and is none of them.
+const modCount = computed(() => mods.value.filter((root) => root.origin !== WORKSPACE).length);
 const externals = computed(() => (roots.value ?? []).filter((root) => workspace.isExternal(root.origin)));
 const game = computed(() => (roots.value ?? []).filter((root) => root.origin === VANILLA));
 // Only the setting decides, because a pane that appears as the roots load, while the explorer is hidden, gets no room.
@@ -560,7 +565,7 @@ function collapseAll(): void {
                   <div
                     class="flex h-7 shrink-0 items-center gap-1 ps-2.5 pe-1 text-11 font-semibold whitespace-nowrap text-toned"
                   >
-                    Workspace<span class="ms-1 font-normal text-dimmed">{{ plural(mods.length, "mod") }}</span>
+                    Workspace<span class="ms-1 font-normal text-dimmed">{{ plural(modCount, "mod") }}</span>
                     <span class="grow" />
                     <FilterButton tree="mods" />
                     <AddModMenu>
@@ -569,7 +574,7 @@ function collapseAll(): void {
                       </UTooltip>
                     </AddModMenu>
                   </div>
-                  <p v-if="!mods.length" class="px-2.5 py-1 text-12 text-dimmed">No mods yet. Add one with +.</p>
+                  <p v-if="!modCount" class="px-2.5 py-1 text-12 text-dimmed">No mods yet. Add one with +.</p>
                   <ExplorerTree ref="modTree" v-model:filtering="filtering.mods" :roots="mods" @open="show" />
                 </div>
               </template>
@@ -805,6 +810,17 @@ function collapseAll(): void {
                             size="sm"
                             class="shrink-0"
                           />
+                          <UTooltip v-if="agent.current" :text="`Fix with ${agent.current.name}`">
+                            <UButton
+                              icon="i-lucide-sparkles"
+                              variant="ghost"
+                              size="xs"
+                              square
+                              class="shrink-0"
+                              :aria-label="`Fix with ${agent.current.name}`"
+                              @click.stop="agent.compose(toFixPrompt(item.place, [item.problem]))"
+                            />
+                          </UTooltip>
                         </template>
                       </ProblemRow>
                       <template #content>

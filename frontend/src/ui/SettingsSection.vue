@@ -21,7 +21,13 @@ import type { Setting } from "@services/app/models";
 const CONTROLS = ["switch", "choice", "number", "port", "text"] as const;
 // Their pages draw these apart: the theme as a gallery, the simple interface's switch above it, and the tools an
 // agent may use without asking as a list.
-const DRAWN_APART = ["appearance.theme", "appearance.simple", "agents.allowed"];
+const DRAWN_APART = [
+  "appearance.theme",
+  "appearance.simple",
+  "agents.allowed",
+  "agents.shellAllowed",
+  "agents.shellRefused",
+];
 
 const {
   section,

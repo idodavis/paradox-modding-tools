@@ -26,7 +26,9 @@ no prompt for a password.
 `Run` is the one the frontend calls for every command it names (staging, a commit, a branch, a push, a checkout). It
 calls `run` and then sends `git:changed` with the folder, also when git failed, since a failed command can leave the
 repository changed. The package's own reads call `run`, so a read never sends the event. The commands the package holds
-itself send it too.
+itself send it too. Around a command that can take long (`commandLabels`: a commit, a merge, a fetch, a pull, a push,
+and "Publishing the branch" for a push that sets the upstream) `Run` also sends `git:running`, which the status bar
+and the Source control view show.
 
 ## Reading
 
@@ -72,6 +74,7 @@ Besides `Run`, three commands hold a rule of their own:
 |---|---|---|
 | `git:output` | a line git printed | git writes a line to its standard error |
 | `git:changed` | the repository's folder, or the folder `Run` was given | a command PMT ran changed a repository |
+| `git:running` | the command's words, or "" | a commit, a merge, a fetch, a pull or a push starts, and the last of them ends |
 
 ## Terms
 

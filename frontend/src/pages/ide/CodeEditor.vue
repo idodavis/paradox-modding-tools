@@ -153,6 +153,54 @@ const { mutate: undo } = useMutation({
   mutation: (change: LineChange) => undoChange(model, change),
   onSettled: () => view.value?.focus(),
 });
+// The inline ask: a one-line box at the caret. `asking` is where the box
+// stands in the window, null while it is closed, and `wish` is its text.
+const asking = shallowRef<DOMRect | null>(null);
+const wish = shallowRef("");
+const askAnchor = { getBoundingClientRect: () => asking.value ?? new DOMRect() };
+// Why the inline ask cannot be sent for this file, "" if it can: an agent
+// reads and changes the file on disk.
+const askRefusal = computed(() => {
+  if (!agent.current) return "No agent is installed";
+  if (model.place.readOnly) return "This file is read-only";
+
+  return model.unsaved ? "Save the file first: the agent changes it on disk" : "";
+});
+// Sends the box's text with the selected lines, or the caret's line, to a
+// session of its own on the agent's Quick model. The agent's edits come back
+// as the file's review.
+const { mutate: sendAsk, isLoading: isAsking } = useMutation({
+  mutation: async () => {
+    const lines = model.lines ?? { start: model.caret.line, end: model.caret.line };
+    const where = lines.start === lines.end ? `line ${lines.start}` : `lines ${lines.start} to ${lines.end}`;
+    await agent.run(
+      `In the file ${model.place.path}, at ${where}: ${wish.value}\n` +
+        "Change only that file, with your file tools, and answer in one short sentence.",
+      [model.place.path],
+    );
+  },
+  onSettled: closeAsk,
+});
+
+/** openAsk shows the inline ask's box under the caret. */
+function openAsk(): void {
+  const caret = view.value?.getPosition();
+  const spot = caret && view.value?.getScrolledVisiblePosition(caret);
+  const frame = view.value?.getDomNode()?.getBoundingClientRect();
+  if (spot && frame) asking.value = new DOMRect(frame.left + spot.left, frame.top + spot.top, 0, spot.height);
+}
+
+/**
+ * closeAsk closes the inline ask's box, stops what it asked for if that
+ * still runs, and gives the editor the focus back.
+ */
+function closeAsk(): void {
+  if (isAsking.value) agent.stopUnseen();
+  asking.value = null;
+  wish.value = "";
+  view.value?.focus();
+}
+
 // Whether the first change is still to be shown: the file was opened under
 // review, at its start, with no range asked.
 let isRevealing = false;
@@ -216,6 +264,12 @@ function build(): void {
     run: () => findAll(),
   });
   codeEditor.addAction(SHOW_DETAILS);
+  codeEditor.addAction({
+    id: "pmt.inlineAsk",
+    label: "Ask the agent to change this",
+    keybindings: [KeyMod.CtrlCmd | KeyCode.KeyI],
+    run: openAsk,
+  });
   hovering.value = attachHover(codeEditor, model);
   view.value = codeEditor;
   decorate(model);
@@ -364,7 +418,14 @@ const groups = computed<ContextMenuItem[][]>(() => [
     {
       label: `Ask ${agent.current?.name ?? "an agent"} about this`,
       icon: "i-lucide-sparkles",
-      onSelect: () => agent.focusPrompt(),
+      onSelect: () => agent.compose(),
+    },
+    {
+      label: "Ask the agent to change this",
+      icon: "i-lucide-sparkles",
+      kbds: ["Ctrl I"],
+      disabled: model.place.readOnly || !agent.current,
+      onSelect: openAsk,
     },
   ],
   [
@@ -466,6 +527,38 @@ const menu = computed(() => hideDisabled(groups.value));
               </template>
             </HoverCard>
           </div>
+        </template>
+      </UPopover>
+      <UPopover
+        :open="!!asking"
+        :reference="askAnchor"
+        :content="{ side: 'bottom', align: 'start', sideOffset: 4 }"
+        @update:open="(open) => open || closeAsk()"
+      >
+        <template #content>
+          <form class="flex w-112 items-center gap-1.5 p-1.5" @submit.prevent="askRefusal || !wish.trim() || sendAsk()">
+            <UInput
+              v-model="wish"
+              :placeholder="askRefusal || `Tell ${agent.current?.name} what to change here`"
+              :disabled="!!askRefusal || isAsking"
+              :loading="isAsking"
+              icon="i-lucide-sparkles"
+              size="sm"
+              autofocus
+              aria-label="What the agent should change here"
+              class="grow"
+            />
+            <UButton
+              v-if="isAsking"
+              label="Stop"
+              icon="i-lucide-square"
+              color="error"
+              variant="soft"
+              size="sm"
+              @click="closeAsk()"
+            />
+            <UButton v-else type="submit" label="Send" size="sm" :disabled="!!askRefusal || !wish.trim()" />
+          </form>
         </template>
       </UPopover>
     </div>

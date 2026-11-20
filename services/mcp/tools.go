@@ -128,15 +128,8 @@ func (s *Service) addEditorTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "search_text", Title: "Search the files' text", Annotations: readsOnly,
 		Description: "Searches the text of the workspace's files, the user's unsaved text included."}, s.searchText)
 	sdk.AddTool(server, &sdk.Tool{Name: "read_file", Title: "Read a file", Annotations: readsOnly,
-		Description: "Reads a file of the workspace or the game, with where it sits and the user's unsaved text of " +
-			"it as its draft."},
-		answer(func(request document) (workspace.FileText, error) {
-			if _, err := s.locateFile(request.Path); err != nil {
-				return workspace.FileText{}, err
-			}
-
-			return s.Workspace.Read(request.Path)
-		}))
+		Description: "Reads a file of the workspace or the game, with where it sits, the user's unsaved text of " +
+			"it as its draft, and a note if the game does not read this copy."}, answer(s.readFile))
 	sdk.AddTool(server, &sdk.Tool{Name: "diagnose", Title: "Check a file for problems", Annotations: readsOnly,
 		Description: "Lists a file's problems as PMT's editor shows them, or the problems of text you would write " +
 			"there."}, answer(func(request draft) ([]lsp.Diagnostic, error) {
@@ -291,6 +284,40 @@ func resolveLimit(limit, fallback int) int {
 	}
 
 	return limit
+}
+
+// A fileAnswer is a file as read_file answers: the file, and a note where
+// the game does not read this copy of it.
+type fileAnswer struct {
+	workspace.FileText
+	Note string `json:"note,omitempty"`
+}
+
+// hidingNotes holds what read_file says of a file the game does not read, by
+// the reason. {mod} is the mod that hides the file.
+var hidingNotes = map[files.Hiding]string{
+	files.HidingShadowed: "The game does not read this copy: {mod} has a file at the same path later in the load " +
+		"order, and the game keeps that one. list_copies lists every copy.",
+	files.HidingDropped: "The game does not read this file: {mod} names its folder in replace_path, which drops " +
+		"the folder's files of the game and of every mod before it.",
+	files.HidingUnmounted: "The game does not read this file: it is in no folder the game loads.",
+}
+
+// readFile answers read_file. A file the game does not read carries a note
+// that says why and names the mod whose copy or replace_path hides it. It
+// returns an error if the path is no file of the workspace or the game.
+func (s *Service) readFile(request document) (fileAnswer, error) {
+	if _, err := s.locateFile(request.Path); err != nil {
+		return fileAnswer{}, err
+	}
+
+	text, err := s.Workspace.Read(request.Path)
+	file := fileAnswer{FileText: text}
+	if ws, wsErr := s.Workspace.Session(); wsErr == nil {
+		file.Note = strings.ReplaceAll(hidingNotes[text.Place.Hiding], "{mod}", ws.DescribeMod(text.Place.Hider))
+	}
+
+	return file, err
 }
 
 // searchText answers search_text, and stops when the agent cancels the call.

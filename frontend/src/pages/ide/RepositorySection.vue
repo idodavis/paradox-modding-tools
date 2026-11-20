@@ -11,6 +11,7 @@ import type { Place } from "@services/workspace/models";
 import { confirm } from "../../lib/feedback";
 import { describeAge, plural } from "../../lib/format";
 import { commitsQuery, gitStatusQuery, keys, refsQuery } from "../../queries";
+import { useAgentStore } from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { STAGE, UNSTAGE, useGitStore } from "../../stores/git";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -45,9 +46,17 @@ const SYNC = [
   { label: "Pull", icon: "i-lucide-arrow-down-to-line", args: ["pull"] },
   { label: "Push", icon: "i-lucide-arrow-up-from-line", args: ["push"] },
 ] as const;
+// What an agent is asked for a commit's message, ahead of the staged diff,
+// and how many characters of the diff it is sent.
+const DRAFT =
+  "Write the git commit message for the staged diff below. Give a subject line of at most 72 characters, then, " +
+  "only if the change needs explaining, a blank line and a short body. Answer with the message alone: no quotes, " +
+  "no code block, no other words. Use no tool.";
+const DRAFT_DIFF = 60_000;
 const HEADING_CLASS =
   "flex h-7 shrink-0 items-center gap-1.5 ps-3 pe-1.5 text-11 font-semibold whitespace-nowrap text-toned";
 
+const agent = useAgentStore();
 const git = useGitStore();
 const editor = useEditorStore();
 const workspace = useWorkspaceStore();
@@ -135,6 +144,14 @@ const { mutate: commit } = useMutation({
     if (push) await gitApi.Run(root, "push");
   },
   onSuccess: () => (message.value = ""),
+});
+// Drafts the commit's message from the staged changes, with the agent used
+// last on its Quick model, in a session no list shows.
+const { mutate: draft, isLoading: drafting } = useMutation({
+  mutation: async () => {
+    const diff = await gitApi.Run(root, "diff", "--cached");
+    message.value = (await agent.run(`${DRAFT}\n\n${diff.slice(0, DRAFT_DIFF)}`)).trim();
+  },
 });
 
 // The main button commits. With nothing staged or written, it publishes a branch that has no upstream, or syncs one
@@ -509,6 +526,24 @@ async function deleteBranch(branch: string): Promise<void> {
               <UDropdownMenu :items="commitOptions">
                 <UButton icon="i-lucide-chevron-down" size="sm" square aria-label="Commit options" />
               </UDropdownMenu>
+              <UTooltip
+                v-if="agent.current"
+                :text="
+                  stagedCount
+                    ? `Draft the message with ${agent.current.name}`
+                    : 'Stage a change, and the agent can draft the message'
+                "
+              >
+                <UButton
+                  icon="i-lucide-sparkles"
+                  size="sm"
+                  square
+                  :loading="drafting"
+                  :disabled="!stagedCount"
+                  :aria-label="`Draft the message with ${agent.current.name}`"
+                  @click="draft()"
+                />
+              </UTooltip>
             </div>
           </div>
           <template v-for="section in sections" :key="section.title">

@@ -22,7 +22,6 @@ import (
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
-	"paradox-modding-tools/services/agent"
 	"paradox-modding-tools/services/app"
 	"paradox-modding-tools/services/workspace"
 )
@@ -50,7 +49,7 @@ var releaseNumber = regexp.MustCompile(`^\d+\.\d+`)
 // ListRules returns the rules for the files every upload leaves out.
 func (s *Service) ListRules() []Rule {
 	instructions := []string{}
-	for _, file := range agent.ListFiles() {
+	for _, file := range app.ListAgentFiles() {
 		if !strings.HasPrefix(file, ".") {
 			instructions = append(instructions, file)
 		}

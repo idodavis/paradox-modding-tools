@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -87,6 +88,11 @@ type Workspace struct {
 	Language string `json:"language"`
 	HomePage string `json:"homePage"`
 
+	// Folder is the folder the workspace's agents start in and keep their
+	// files in. It is "" until the user picks one or an agent first starts
+	// in a folder made for the workspace.
+	Folder string `json:"folder"`
+
 	// GameColor is a slot or a CSS color, or "" for the game's own.
 	GameColor string `json:"gameColor"`
 
@@ -97,6 +103,18 @@ type Workspace struct {
 
 	// IgnoredPairs are sorted pairs of mods whose conflicts are ignored.
 	IgnoredPairs [][2]string `json:"ignoredPairs"`
+}
+
+// A Make is one kind of file PMT makes for an agent in the workspace's
+// folder: a skill, a command or a subagent.
+type Make struct {
+	// Kind is what the file is, as its button names it.
+	Kind string `json:"kind"`
+
+	// Path is the file's path under the workspace's folder, and Text is what
+	// the new file holds. Each has %s where the name the user gives goes.
+	Path string `json:"path"`
+	Text string `json:"text"`
 }
 
 // Agent is one coding agent PMT can start for a chat.
@@ -115,10 +133,50 @@ type Agent struct {
 	// Files are the instruction files and folders the agent reads in a mod.
 	Files []string `json:"files,omitempty"`
 
+	// Makes are the kinds of file PMT makes for the agent there, none for an
+	// agent whose folders PMT does not know.
+	Makes []Make `json:"makes,omitempty"`
+
 	// Instructions is what the pane adds to a session's first prompt, for an
 	// agent that drops the instructions PMT's tool server gives it. It is ""
 	// for an agent that reads them.
 	Instructions string `json:"instructions,omitempty"`
+
+	// Guards reports whether the agent takes the folders it must not change
+	// as deny rules of its own, which hold in every mode it runs in. It
+	// takes them as program arguments where the row has a DenyArg, else as
+	// the settings of each of its sessions.
+	Guards bool `json:"guards,omitempty"`
+
+	// DirArg is the program argument that comes before each folder the agent
+	// may work in beside the one it starts in, for an agent that takes none
+	// over the protocol. DenyArg is the program argument that refuses the
+	// agent's own file changes in a folder, with %s for the folder.
+	DirArg  string `json:"-"`
+	DenyArg string `json:"-"`
+
+	// Steers reports whether the agent takes a prompt sent while its turn
+	// runs into that turn. For any other agent the pane holds such a prompt
+	// until the turn ends.
+	Steers bool `json:"steers,omitempty"`
+
+	// StartMode is the mode each session of the agent starts in, by the
+	// agent's own id for it; "" leaves the agent's choice. Unasked lists
+	// what makes the agent change files and run commands without asking PMT,
+	// so that PMT cannot keep it off read-only files: a mode by its id, and a
+	// value of any other setting as "setting=value", such as "allow_all=on".
+	StartMode string   `json:"startMode,omitempty"`
+	Unasked   []string `json:"unasked,omitempty"`
+
+	// PlanFolder is the folder where the agent keeps each session's plan
+	// files when that is outside the workspace, as a part of its path under
+	// the user's home; "" for an agent that keeps none there. A file in it
+	// is a plan, never a change to review.
+	PlanFolder string `json:"planFolder,omitempty"`
+
+	// Lacks names what the pane shows for other agents and this one never
+	// sends, as Settings words it: "subagents", "plans".
+	Lacks []string `json:"lacks,omitempty"`
 
 	// Chat is the id of the row that chats for this one, so Settings draws
 	// the two as one agent; "" if there is none. Each row starts on its own.
@@ -137,6 +195,27 @@ type Agent struct {
 	// Env holds the environment variables an offered agent starts with beyond
 	// PMT's own and Node on the PATH.
 	Env []string `json:"-"`
+}
+
+// AgentFiles holds the instruction files and folders each agent PMT offers
+// reads in a mod, by the agent's id in the registry.
+var AgentFiles = map[string][]string{
+	"claude-acp":         {"CLAUDE.md", "CLAUDE.local.md", ".claude"},
+	"github-copilot-cli": {"AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github"},
+	"codex-acp":          {"AGENTS.md", "AGENTS.override.md", ".codex"},
+}
+
+// ListAgentFiles returns the instruction files and folders the offered agents
+// read in a mod, each once, sorted.
+func ListAgentFiles() []string {
+	var entries []string
+	for _, files := range AgentFiles {
+		entries = append(entries, files...)
+	}
+
+	slices.Sort(entries)
+
+	return slices.Compact(entries)
 }
 
 // Window is how the main window was left.
@@ -256,6 +335,14 @@ var Catalog = []Setting{
 		Help: "The tools an agent may use without asking, after you chose Always allow for them. Each is the agent and " +
 			"the tool, as the agent names it.",
 		Words: "permissions always allow tools agents approve prompt"},
+	{Key: "agents.shellAllowed", Label: "Shell commands allowed without asking",
+		Section: "agents", Type: "text", Default: "",
+		Help:  "A shell command of Claude's that starts with one of these runs without asking you.",
+		Words: "permissions shell bash terminal command allow rules agents"},
+	{Key: "agents.shellRefused", Label: "Shell commands refused",
+		Section: "agents", Type: "text", Default: "",
+		Help:  "A shell command of Claude's that starts with one of these is refused without asking you.",
+		Words: "permissions shell bash terminal command deny refuse block rules agents"},
 	{Key: "shortcuts.bindings", Label: "Keyboard shortcuts",
 		Section: "shortcuts", Type: "text", Default: "",
 		Help:  "The shortcuts changed from PMT's own, by command.",
@@ -524,6 +611,22 @@ func (c *ConfigFile) LookupSetting(workspaceID, key string) (string, bool) {
 	}
 
 	return c.Config().readSetting(workspaceID, Catalog[row]), true
+}
+
+// ListSetting returns the items of a setting that holds a list, which is
+// written with a comma between them. Blank items are left out, and a setting
+// the catalog lacks has none.
+func (c *ConfigFile) ListSetting(workspaceID, key string) []string {
+	value, _ := c.LookupSetting(workspaceID, key)
+
+	var items []string
+	for item := range strings.SplitSeq(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+
+	return items
 }
 
 // readSetting returns a setting's value in a workspace, or the catalog's

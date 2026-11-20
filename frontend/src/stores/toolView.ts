@@ -69,7 +69,9 @@ export const useToolViewStore = defineStore("toolView", () => {
   /** followFile shows a file an agent's tool call names, at the given line, without changing the chip or the focus. */
   async function followFile(path: string, line: number): Promise<void> {
     const place = await loadQuery(placeQuery(path)).catch(() => undefined);
-    if (!place?.root) return;
+    // A file the agent has yet to write has nothing to show: its tab would
+    // stay empty.
+    if (!place?.root || place.missing) return;
     editor.show(place, { lineNumber: line, column: 1 }, "agent");
   }
 

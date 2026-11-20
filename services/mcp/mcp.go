@@ -55,6 +55,8 @@ import (
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/patch"
+	"paradox-modding-tools/services/search"
+	"paradox-modding-tools/services/steam"
 	"paradox-modding-tools/services/wiki"
 	"paradox-modding-tools/services/workspace"
 )
@@ -68,6 +70,8 @@ type Service struct {
 	Wiki      *wiki.Service
 	Patch     *patch.Service
 	Draw      *draw.Service
+	Search    *search.Service
+	Steam     *steam.Service
 
 	// Build is the app's version.
 	Build string
@@ -137,6 +141,11 @@ var Tasks = []Task{
 			"or renamed, and the game files it replaces that a patch changed. list_patches and read_patch say what " +
 			"each version changed and what replaced a name. Fix each one in the mod, diagnose the files you " +
 			"changed, and tell me what you could not settle."},
+	{Name: "review-changes", Title: "Review my changes", Chip: "mod", Pages: []string{"workspace-ide", "health"},
+		Text: "Review the changes I have not committed yet: in the mod of the attached file, else in every mod of " +
+			"mine in the workspace. Read them with git diff and git status in the mod's folder. Check each changed " +
+			"file with diagnose, and read build_report's findings about those files. Tell me what is wrong and " +
+			"what could break in the game, the most serious first, and change no file."},
 	{Name: "trace-event", Title: "Why does this event fire?", Chip: "event",
 		Text: "Why does this event fire? Take the attached event, or the one describe_view names. Draw its Event " +
 			"Graph with build_graph, follow what fires it back to where it starts, and tell me in plain words. " +
@@ -269,9 +278,12 @@ Working rules:
 - Updating a mod after a patch: build_report with the mod's id lists the names it uses that a patch removed or ` +
 	`renamed and the game files it replaces that a patch changed. read_patch says what replaced each. Fix them, ` +
 	`then diagnose.
-- Writing: only the workspace's mods change; the game's files are read only. rename, apply_edit and write_scaffold ` +
-	`answer with a preview and a token, and change the files when called again with that token. A file with ` +
-	`changes the user has not saved is left alone.
+- Writing: only the user's own mods change; the game's files and an external mod's are read only, and PMT refuses ` +
+	`a change there. rename, apply_edit, write_scaffold, override, fix, format and write_listing answer with a ` +
+	`preview and a token, and change the files when called again with that token. A file with changes the user ` +
+	`has not saved is left alone.
+- Your own files: keep the scripts, plans and notes you write in the folder you started in, the workspace's ` +
+	`folder, never in a mod, where the game would load them.
 - The user's own: saving the editor's text, uploading to Steam and Settings. Never do these for them.
 - Showing: show brings a file, a page or a Wiki look-up to the front in PMT; describe_view says what the user has in ` +
 	`front of them.
@@ -289,6 +301,8 @@ func (s *Service) newServer() *sdk.Server {
 	s.addEditorTools(server)
 	s.addPageTools(server)
 	s.addAppTools(server)
+	s.addGameTools(server)
+	s.addChangeTools(server)
 
 	for _, task := range Tasks {
 		server.AddPrompt(&sdk.Prompt{Name: task.Name, Title: task.Title},

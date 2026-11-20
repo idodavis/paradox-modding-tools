@@ -15,6 +15,16 @@ import { stateQuery, workspacesQuery } from "../queries";
 
 /** VANILLA is Go's name for the game's own files as an origin. */
 export const VANILLA = "vanilla";
+/**
+ * WORKSPACE is Go's name, as an origin, for the files of the workspace's
+ * folder that are in no mod.
+ */
+export const WORKSPACE = "workspace";
+/**
+ * FILE_DRAG is the kind of drag data that holds a dragged file's path on
+ * disk, which the explorer adds beside the tree's own.
+ */
+export const FILE_DRAG = "application/x-pmt-file";
 /** SLOTS lists the theme's color slots a mod picks from. */
 export const SLOTS = Array.from({ length: 16 }, (_, index) => `o${index + 1}`);
 
@@ -62,8 +72,12 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   /** findMod returns a mod of the active workspace, or undefined for an unknown mod. */
   const findMod = (modId: string) => active()?.mods?.find((mod) => mod.id === modId);
 
-  /** originName returns the name of the active workspace's game or one of its mods, or the origin if unknown. */
+  /**
+   * originName returns the name of the active workspace's game, of one of its
+   * mods or of its own folder, or the origin if unknown.
+   */
   const originName = (origin: string): string => {
+    if (origin === WORKSPACE) return "Workspace files";
     if (origin !== VANILLA) return findMod(origin)?.descriptor.name || origin;
     return active()?.game?.name ?? origin;
   };
@@ -73,6 +87,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   /** originColor returns an origin's color as CSS. The given color is the mod's own, for another workspace. */
   const originColor = (origin: string, recorded?: string): string => {
+    // The workspace's folder is no mod's and not the game's: it has no color.
+    if (origin === WORKSPACE) return "var(--fg-2)";
     const color = recorded ?? (origin === VANILLA ? active()?.record.gameColor : findMod(origin)?.color);
     if (!color) return "var(--game)";
     return SLOTS.includes(color) ? `var(--${color})` : color;

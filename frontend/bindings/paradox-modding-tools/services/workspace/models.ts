@@ -352,4 +352,10 @@ export interface Workspace {
     "install": app$0.Install;
     "game": game$0.Game | null;
     "mods": Mod[] | null;
+
+    /**
+     * Folder is the folder the workspace's agents start in: the record's, or
+     * the one a workspace has until its record names one.
+     */
+    "folder": string;
 }

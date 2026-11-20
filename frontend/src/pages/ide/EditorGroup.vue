@@ -91,7 +91,11 @@ const reviewStatus = computed(() => {
 const { mutate: locateCaret, data: within } = useMutation({
   mutation: (fileModel: Model) => lsp.ListAncestors(fileModel.place.path, fileModel.caret.line, fileModel.caret.column),
 });
-const crumbs = computed(() => [...(place.value?.rel.split("/") ?? []), ...(within.value ?? [])]);
+// A file outside the workspace is under no root: its path is its one crumb.
+const crumbs = computed(() => [
+  ...((place.value?.rel || place.value?.path)?.split("/") ?? []),
+  ...(within.value ?? []),
+]);
 const folderCount = computed(() => (place.value?.rel.split("/").length ?? 1) - 1);
 // The menu of the breadcrumb pressed, filled as it opens.
 const crumbMenu = shallowRef<DropdownMenuItem[]>([]);

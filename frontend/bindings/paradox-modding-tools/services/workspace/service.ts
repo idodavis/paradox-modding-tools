@@ -137,6 +137,16 @@ export function DetectInstalls(gameID: string): $CancellablePromise<game$0.Detec
 }
 
 /**
+ * FindReadOnly returns the read-only folder that a text names, such as a
+ * shell command an agent asks to run, or "" if it names none. A folder is
+ * found written with either slash, with a doubled one, and in any letter
+ * case. What the text does in the folder is not known.
+ */
+export function FindReadOnly(text: string): $CancellablePromise<string> {
+    return $Call.ByID(1869703952, text);
+}
+
+/**
  * KeepFile ends a file's review and leaves the file as it is on disk. A file
  * with no review is left alone. It returns an error if no workspace is open.
  */
@@ -208,8 +218,9 @@ export function ListReviews(): $CancellablePromise<$models.Review[] | null> {
 }
 
 /**
- * ListRoots returns the places of the workspace's roots: the mods' in load
- * order, then the game's own folder.
+ * ListRoots returns the places of the workspace's roots: its folder if that
+ * is on disk and in no mod, the mods' in load order, then the game's own
+ * folder.
  */
 export function ListRoots(): $CancellablePromise<$models.Place[] | null> {
     return $Call.ByID(1315421210);
@@ -237,6 +248,18 @@ export function ListWorkspaces(): $CancellablePromise<$models.Workspace[] | null
  */
 export function Locate(path: string): $CancellablePromise<$models.Place> {
     return $Call.ByID(1496256747, path);
+}
+
+/**
+ * MakeAgentFile returns the place of a file a coding agent reads in the
+ * workspace's folder, given the file's path under that folder, such as
+ * CLAUDE.md or .claude/skills/review/SKILL.md. A file that is missing is made
+ * with the given text, and so is the workspace's folder. It returns an error
+ * if no workspace is open, the path leads out of the folder, or the file
+ * cannot be made.
+ */
+export function MakeAgentFile(rel: string, text: string): $CancellablePromise<$models.Place> {
+    return $Call.ByID(3075280318, rel, text);
 }
 
 /**
@@ -349,26 +372,34 @@ export function State(): $CancellablePromise<$models.State> {
 }
 
 /**
- * TrackEdits starts the review of a file an agent edits, given each of the
- * agent's edits as hunks, earliest first. The baseline is the file's text on
- * disk with the edits undone, or "" for a file the agent created that is not
- * on disk yet. A file that has a review already is left as it is. It returns
- * an error, and starts no review, if no workspace is open, the file is
- * outside the workspace's mods or cannot be read, an edit has no hunk, or a
- * hunk's lines are not in the file once.
+ * TrackEdits starts the review of a file an agent edits, given the edits one
+ * turn's tool call made to it as hunks, earliest first. The baseline is the
+ * file's text on disk with the edits undone, or "" for a file the agent
+ * created that is not on disk yet. A file that has a review already keeps its
+ * baseline, and that same text is kept as the file's text from before the
+ * turn, unless the turn has one. A file outside the workspace is reviewed
+ * like any other, and its folder is watched from then on, so that its changes
+ * on disk are seen. It returns an error, and starts no review, if no
+ * workspace is open, the file is the game's or an external mod's or cannot be
+ * read, an edit has no hunk, or a hunk's lines are not in the file once. A
+ * file under review whose edits cannot be undone keeps no text for the turn.
  */
-export function TrackEdits(path: string, edits: ($models.Hunk[] | null)[] | null, isNew: boolean): $CancellablePromise<void> {
-    return $Call.ByID(757513741, path, edits, isNew);
+export function TrackEdits(path: string, edits: ($models.Hunk[] | null)[] | null, isNew: boolean, turn: string): $CancellablePromise<void> {
+    return $Call.ByID(757513741, path, edits, isNew, turn);
 }
 
 /**
- * UndoFile writes a file's baseline, or moves a file the agent created to
- * PMT's trash, and ends its review. It returns an error, and changes nothing,
- * if no workspace is open, the file has no review or cannot be read, or the
- * editor holds unsaved text of it.
+ * UndoFile takes back an agent's changes to a file under review. With no
+ * turn it writes the file's baseline, or moves a file the agent created to
+ * PMT's trash, and ends the review. With a turn's id it writes the file's
+ * text from before that turn, which takes back the later turns' changes too;
+ * the review goes on unless that text is the baseline. The first turn of a
+ * review is undone as the whole review is. It returns an error, and changes
+ * nothing, if no workspace is open, the file has no review or cannot be
+ * read, the turn did not change it, or the editor holds unsaved text of it.
  */
-export function UndoFile(path: string): $CancellablePromise<void> {
-    return $Call.ByID(1632559861, path);
+export function UndoFile(path: string, turn: string): $CancellablePromise<void> {
+    return $Call.ByID(1632559861, path, turn);
 }
 
 /**

@@ -1,6 +1,5 @@
-// tree.go answers for a technology: the technologies of its tree, what each
-// requires, gives and unlocks, the game's trees, and for an EU5 age whom its
-// advances are for.
+// tree.go answers for a technology: its tree, the game's trees, and for an
+// EU5 age whom its advances are for.
 
 package graph
 
@@ -8,6 +7,8 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
 	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/lang"
@@ -25,23 +26,25 @@ type TreeGraph struct {
 	Trees []Tree `json:"trees"`
 	Eras  []Node `json:"eras"`
 
-	// Technologies are the tree's technologies, or every tree's in a game of
-	// joinedTrees, and Requires the links from each to what it requires.
+	// Technologies are the tree's technologies, or every tree's where the
+	// game draws its trees together. Requires links each to what it requires.
 	Technologies []Technology `json:"technologies"`
 	Requires     []Edge       `json:"requires"`
 
-	// Unlocks are the databases of what the technologies unlock, in the order
-	// found: each a node whose Title is the game's word for its definitions
-	// and whose Count is how many of the technologies unlock one.
+	// Unlocks are the databases of what the technologies unlock: each a node
+	// titled with the game's word for its definitions, its Count how many
+	// technologies unlock one.
 	Unlocks []Node `json:"unlocks"`
 
 	// Needs are the ids of what the subject requires, at any distance, and
-	// Leads the ids of what requires it.
-	Needs []string `json:"needs"`
-	Leads []string `json:"leads"`
+	// Leads the ids of what requires it. SharedLeads is how many of those
+	// every country can have.
+	Needs       []string `json:"needs"`
+	Leads       []string `json:"leads"`
+	SharedLeads int      `json:"sharedLeads"`
 
-	// Audiences are the rows of whom the tree's advances are for, none for a
-	// game whose technologies are for everyone.
+	// Audiences are the rows of whom the tree's advances are for, beside
+	// every country, none for a game whose technologies are for everyone.
 	Audiences []Audience `json:"audiences"`
 }
 
@@ -52,13 +55,11 @@ type Tree struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 
-	// Painting is the path of the painting behind its head, "" if it has
-	// none.
+	// Painting is the path of the painting behind its head, "" for none.
 	Painting string `json:"painting,omitempty"`
 
 	// Count is how many technologies it holds. First is the id of the one
-	// that opens it: the first the game's files define that every country
-	// can have, else the first.
+	// that opens it: the first every country can have, else the first.
 	Count int    `json:"count"`
 	First string `json:"first"`
 }
@@ -67,16 +68,20 @@ type Tree struct {
 type Technology struct {
 	Node Node `json:"node"`
 
-	// Gives is what its modifiers give, and Unlocks what it unlocks.
+	// Gives is what it gives, and Unlocks what it unlocks.
 	Gives   []Fact `json:"gives"`
 	Unlocks []Node `json:"unlocks"`
 
-	// Root is the id of the technology its own tree inside an age starts
-	// from. It is "" for a technology that stands alone, and for a game that
-	// draws a tree whole.
+	// Summary is the one line its card shows: what it gives, then what it
+	// unlocks counted by what each is, as "Control Growth +10% · Unlocks 1
+	// law, 3 buildings". It is "" for one that gives and unlocks nothing.
+	Summary string `json:"summary"`
+
+	// Root is the id of the technology its tree inside an age starts from,
+	// "" for one that stands alone and for a game that draws a tree whole.
 	Root string `json:"root,omitempty"`
 
-	// Audience is the row of Audiences it is drawn for, "" for one every
+	// Audience is the id of the audience it is drawn for, "" for one every
 	// country can have.
 	Audience string `json:"audience,omitempty"`
 }
@@ -91,10 +96,10 @@ var rootedTrees = []string{game.EU5}
 // common/culture/innovations writes a prerequisite.
 var joinedTrees = []string{game.CK3}
 
-// BuildTree returns the tree a technology is in. For an EU5 age it draws the
-// advances of every country, those of the filter's Potential, and those of
-// the subject's own row. It returns an error if no workspace is open, the
-// game keeps no definition of the id, or it is no technology.
+// BuildTree returns the tree a technology is in. An EU5 age draws the
+// advances of every country, of the filter's potential and of the subject's
+// own audience. It returns an error if no workspace is open, the game keeps
+// no definition of the id, or it is no technology.
 func (s *Service) BuildTree(id string, filter Filter) (TreeGraph, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -119,20 +124,21 @@ func (s *Service) BuildTree(id string, filter Filter) (TreeGraph, error) {
 	technologies := members[graph.Tree]
 	if slices.Contains(joinedTrees, ws.Game.ID) {
 		technologies = nil
-		for _, listed := range trees {
-			technologies = append(technologies, members[listed.ID]...)
+		for _, tree := range trees {
+			technologies = append(technologies, members[tree.ID]...)
 		}
 	}
 
-	var drawn map[string]string
+	var audiences map[string]string
 
-	graph.Audiences, drawn = draft.listDrawn(subject, technologies, filter.Potential)
-	graph.Technologies, graph.Requires = draft.makeTechnologies(technologies, drawn)
+	graph.Audiences, audiences = draft.listDrawn(subject, technologies, filter.Potential)
+	graph.Technologies, graph.Requires = draft.makeTechnologies(technologies, audiences)
 	graph.Unlocks = listUnlocked(graph.Technologies)
 	graph.Needs = draft.listChain(subject, func(id string) []Edge { return draft.model.listFrom(id, saysRequires) })
 	graph.Leads = draft.listChain(subject, func(id string) []Edge { return draft.model.listTo(id, saysRequires) })
+	graph.SharedLeads = draft.countShared(graph.Leads)
 	for _, era := range draft.listEras() {
-		isDrawn := slices.ContainsFunc(graph.Technologies, func(drawn Technology) bool { return drawn.Node.Era == era })
+		isDrawn := slices.ContainsFunc(graph.Technologies, func(technology Technology) bool { return technology.Node.Era == era })
 		if node, isDefined := draft.build(era); isDrawn && isDefined {
 			graph.Eras = append(graph.Eras, node)
 		}
@@ -142,8 +148,7 @@ func (s *Service) BuildTree(id string, filter Filter) (TreeGraph, error) {
 }
 
 // listUnlocked returns the databases of what the given technologies unlock,
-// in the order found, each counted once for a technology however many of its
-// definitions that technology unlocks.
+// each counted once for a technology.
 func listUnlocked(technologies []Technology) []Node {
 	unlocked := []Node{}
 	for _, technology := range technologies {
@@ -166,9 +171,8 @@ func listUnlocked(technologies []Technology) []Node {
 	return unlocked
 }
 
-// listTrees returns the game's technology trees in the order its files reach
-// them, ages in the order of the eras, and the ids of each tree's
-// technologies.
+// listTrees returns the game's trees in the order its files reach them, ages
+// in the order of the eras, and the ids of each tree's technologies.
 func (d *draft) listTrees() ([]Tree, map[string][]string) {
 	var ids []string
 
@@ -210,8 +214,7 @@ func (d *draft) findFirst(tree []string) string {
 	return tree[max(position, 0)]
 }
 
-// findOwnPainting returns the path of the painting of the definition with an
-// id, "" if it has none or the game keeps no such definition.
+// findOwnPainting returns the path of a definition's painting, "" for none.
 func (d *draft) findOwnPainting(id string) string {
 	site, err := resolveNode(d.ws, d.mods, id)
 	if err != nil {
@@ -221,47 +224,46 @@ func (d *draft) findOwnPainting(id string) string {
 	return findPainting(d.ws, d.mods, site)
 }
 
-// listDrawn returns the rows of whom a tree's advances are for, and the
-// technologies drawn, each with the row it is drawn for: "" for one every
-// country can have and for what a drawn one requires. A game with no rows
-// draws the whole tree.
+// listDrawn returns a tree's audiences and the technologies drawn, each with
+// the audience it is drawn for: "" for one every country can have and for
+// what a drawn one requires. A game with no audiences draws the whole tree.
 func (d *draft) listDrawn(subject string, tree []string, potential string) ([]Audience, map[string]string) {
-	drawn := map[string]string{}
+	audiences := map[string]string{}
 	rows, members := d.listAudiences(tree)
 	if len(rows) == 0 {
 		for _, id := range tree {
-			drawn[id] = ""
+			audiences[id] = ""
 		}
 
-		return rows, drawn
+		return rows, audiences
 	}
 
-	own, named := d.findAudience(subject)
-	if len(named) > 0 {
-		own = named[0]
+	own, names := d.findAudience(subject)
+	if len(names) > 0 {
+		own = names[0]
 	}
 
 	for _, row := range []string{sharedAdvances, potential, own} {
 		for _, id := range members[row] {
-			if _, isDrawn := drawn[id]; !isDrawn && row != "" {
-				drawn[id] = row
+			if _, isDrawn := audiences[id]; !isDrawn && row != "" {
+				audiences[id] = row
 			}
 		}
 	}
 
-	for id, row := range drawn {
+	for id, row := range audiences {
 		if row == sharedAdvances {
-			drawn[id] = ""
+			audiences[id] = ""
 		}
 
 		for _, required := range d.listChain(id, func(id string) []Edge { return d.model.listFrom(id, saysRequires) }) {
-			if _, isDrawn := drawn[required]; !isDrawn {
-				drawn[required] = ""
+			if _, isDrawn := audiences[required]; !isDrawn {
+				audiences[required] = ""
 			}
 		}
 	}
 
-	return rows, drawn
+	return rows, audiences
 }
 
 // listChain returns the ids the given links lead to from a definition, at any
@@ -286,14 +288,13 @@ func (d *draft) listChain(id string, list func(string) []Edge) []string {
 	return chain
 }
 
-// makeTechnologies returns the drawn technologies of a tree in the order the
-// game's files define them, and the links from each to what it requires
-// among them.
-func (d *draft) makeTechnologies(tree []string, drawn map[string]string) ([]Technology, []Edge) {
+// makeTechnologies returns the drawn technologies in the order the game's
+// files define them, and the links from each to what it requires among them.
+func (d *draft) makeTechnologies(tree []string, audiences map[string]string) ([]Technology, []Edge) {
 	technologies, requires := []Technology{}, []Edge{}
 	isRooted := slices.Contains(rootedTrees, d.ws.Game.ID)
 	for _, id := range tree {
-		row, isDrawn := drawn[id]
+		row, isDrawn := audiences[id]
 		if !isDrawn {
 			continue
 		}
@@ -306,7 +307,7 @@ func (d *draft) makeTechnologies(tree []string, drawn map[string]string) ([]Tech
 
 		technologies = append(technologies, technology)
 		for _, edge := range d.model.listFrom(id, saysRequires) {
-			if _, isDrawn := drawn[edge.To]; isDrawn {
+			if _, isDrawn := audiences[edge.To]; isDrawn {
 				requires = append(requires, edge)
 			}
 		}
@@ -315,15 +316,45 @@ func (d *draft) makeTechnologies(tree []string, drawn map[string]string) ([]Tech
 	return technologies, requires
 }
 
-// makeTechnology returns a technology with its era, what its modifiers give
-// and what it unlocks.
+// makeTechnology returns a technology with its era, what it gives and what
+// it unlocks, and the line its card shows.
 func (d *draft) makeTechnology(id string) Technology {
 	technology := Technology{Node: d.lookupNode(id), Gives: d.listGives(id), Unlocks: []Node{}}
 	for _, edge := range d.model.listFrom(id, saysUnlock) {
 		technology.Unlocks = append(technology.Unlocks, d.lookupNode(edge.To))
 	}
 
+	technology.Summary = summarize(technology)
+
 	return technology
+}
+
+// summarize returns the line a technology's card shows: each thing it gives,
+// then how many of each database it unlocks, in the game's word for them.
+func summarize(technology Technology) string {
+	parts := make([]string, 0, len(technology.Gives)+1)
+	for _, fact := range technology.Gives {
+		parts = append(parts, strings.TrimSpace(fact.Label+" "+fact.Text))
+	}
+
+	var databases []string
+
+	counts := map[string]int{}
+	for _, unlocked := range dropRepeats(technology.Unlocks, func(node Node) string { return node.ID }) {
+		databases = appendNew(databases, unlocked.Database)
+		counts[unlocked.Database]++
+	}
+
+	unlocks := make([]string, len(databases))
+	for position, database := range databases {
+		unlocks[position] = strconv.Itoa(counts[database]) + " " + lang.DescribeDefinition(database, counts[database] != 1)
+	}
+
+	if len(unlocks) > 0 {
+		parts = append(parts, "Unlocks "+strings.Join(unlocks, ", "))
+	}
+
+	return strings.Join(parts, " · ")
 }
 
 // findRoot returns the id of the technology a technology's own tree starts

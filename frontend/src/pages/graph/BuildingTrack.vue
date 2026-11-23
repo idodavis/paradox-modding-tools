@@ -49,8 +49,11 @@ const sameBlocks = computed(() => [...Map.groupBy(line.same ?? [], (row) => cond
         @ask="emit('ask', $event)"
       />
 
-      <section v-if="sameBlocks.length" class="flex w-80 shrink-0 flex-col gap-2">
-        <h2 class="text-13 font-semibold text-highlighted">The same on every level</h2>
+      <section
+        v-if="sameBlocks.length"
+        class="grid min-w-80 flex-1 grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] items-start gap-2"
+      >
+        <h2 class="col-span-full text-13 font-semibold text-highlighted">The same on every level</h2>
         <div
           v-for="[condition, held] in sameBlocks"
           :key="condition"

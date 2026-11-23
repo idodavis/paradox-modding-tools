@@ -57,14 +57,17 @@ const { data: graph, error } = useQuery(() => ({
 
 const unit = computed(() => Number(settings.value("appearance.scale")) / 100 || 1);
 const flow = computedAsync(
-  () =>
-    graph.value && buildLayout(graph.value, { selected: selected || subject, unit: unit.value, loops: loops.value }),
+  () => graph.value && buildLayout(graph.value, { selected, unit: unit.value, loops: loops.value }),
 );
 const view = computed(() => `${subject}:${JSON.stringify(omit(edits.value, ["expand"]))}`);
 
-const shownDatabases = computed(() =>
-  (filter.value.databases ?? []).map((database) => filter.value.labels?.[database] ?? database).join(", "),
-);
+const shownDatabases = computed(() => {
+  const [shown, every] = [filter.value.databases ?? [], defaults.databases ?? []];
+  if (shown.length === every.length) return "everything";
+  if (shown.length === 1) return filter.value.labels?.[shown[0]] ?? shown[0];
+
+  return `${shown.length} of ${every.length}`;
+});
 const databaseCounts = computed(() =>
   (defaults.databases ?? []).map((database) => ({
     database,
@@ -93,8 +96,13 @@ function select(nodeId: string): void {
   }
   const target = graph.value?.nodes?.find((node) => node.id === nodeId);
   const isFold = nodeId.startsWith(FOLD) || !!target?.count;
-  if (isFold || target?.deep) update({ expand: union(filter.value.expand ?? [], [nodeId]) });
-  else emit("select", nodeId);
+  if (!isFold && !target?.deep) {
+    emit("select", nodeId);
+    return;
+  }
+
+  canvas.value?.setAnchor(isFold ? (target?.parent ?? "") : nodeId);
+  update({ expand: union(filter.value.expand ?? [], [nodeId]) });
 }
 
 function ask(nodeId: string): void {

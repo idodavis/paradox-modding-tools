@@ -1,6 +1,4 @@
-// model.go reads how a game's goods, buildings and technologies link: which
-// production method takes or makes which good, which technology unlocks which
-// building, which level leads to the next.
+// model.go reads the links between a game's goods, buildings and technologies.
 
 package graph
 
@@ -17,46 +15,71 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// model holds every link between the definitions of one game's index: goods,
-// buildings, production methods, technologies and the places a good is found. A
-// question walks it from a definition to the links that start or end at it.
+// model is every link between the definitions of one index, with the plain
+// statements of their modifier blocks and costs.
 type model struct {
 	edges []Edge
 
-	// outgoing and incoming hold, for the id of a definition, the positions
-	// in edges of the links that start and end at it.
+	// outgoing and incoming hold the positions in edges of the links that
+	// start and end at each id.
 	outgoing, incoming map[string][]int
+
+	// clauses holds each definition's clauses by its id, in the order
+	// written.
+	clauses map[string][]clause
 }
 
-// The ways a link says its two ends relate. A link runs from the end that
-// does it, as the technology does the unlocking.
+// clause is one plain statement a definition writes in a modifier block,
+// among its keys where its database writes modifiers there, as a cost, or as
+// a line in the game's own words: a modifier, a condition of its block, what
+// it costs, or that line.
+type clause struct {
+	Key string
+
+	// Amount is the number the value stands for, else the value as written,
+	// as yes or mountains.
+	Amount string
+
+	// Where is what its modifier block applies to, "" where the block says
+	// nothing of it and at the top of the definition.
+	Where string
+
+	// Need is the id of the good or category of the need it is inside, ""
+	// for none.
+	Need string
+
+	// Blocks are the blocks around it, innermost first, up to its modifier
+	// block. They are none at the top of the definition.
+	Blocks []int32
+}
+
+// What a link says of its two ends. It runs from the end that does it: a
+// technology unlocks, a building takes.
 const (
-	// saysLevel is a level that leads to the next, from the one built first.
+	// saysLevel is a level that leads to the next.
 	saysLevel = "level"
 
-	// saysGroup is a definition that is a part of another: a building in its
-	// group, a production method in its production method group, a group in
-	// its building.
+	// saysGroup is a part of another: a building in its group, a production
+	// method in its group, a group in its building.
 	saysGroup = "group"
 
-	// saysInput is a definition that uses up a good, and saysOutput one that
-	// produces it.
+	// saysInput uses up a good, and saysOutput produces it.
 	saysInput  = "input"
 	saysOutput = "output"
 
-	// saysBoost is a building that raises what is produced of a good by a
-	// share, as CK3's trade_good_wood_production_mult does.
+	// saysBoost raises what is produced of a good by a share, as CK3's
+	// trade_good_wood_production_mult.
 	saysBoost = "boost"
 
-	// saysGives is what a building produces or boosts when a need is met, as
-	// CK3's trade_good_need writes it.
+	// saysGives is what a building produces or boosts once a need is met, as
+	// in CK3's trade_good_need.
 	saysGives = "gives"
 
 	// saysEmployment is a production method that hires a pop type.
 	saysEmployment = "employment"
 
-	// saysUnlock is a technology that opens a definition, and saysRequires a
-	// technology that must be researched first.
+	// saysUnlock is a technology that opens a definition, and saysRequires
+	// one that must be researched first.
 	saysUnlock   = "unlock"
 	saysRequires = "requires"
 
@@ -66,74 +89,67 @@ const (
 	// saysResource is a good in the places it is found.
 	saysResource = "resource"
 
-	// saysTrigger is a definition that tests whether a technology is
-	// researched. No row reads it: a technology's detail lists it.
+	// saysTrigger is a definition that tests a technology. No row reads it.
 	saysTrigger = "trigger"
 )
 
-// writing is how a link is written in a definition.
+// writing is how a definition writes a link.
 type writing uint8
 
-// The ways a link is written. The zero value is the usual one.
 const (
-	// writtenReference is a reference the index holds inside the definition.
+	// writtenReference is a reference the index holds. It is the zero value.
 	writtenReference writing = iota
 
-	// writtenKey is a key the definition writes that the index holds no
-	// reference for, as CK3's trade_good_wood_production_add.
+	// writtenKey is a key the index holds no reference for, as CK3's
+	// trade_good_wood_production_add.
 	writtenKey
 
-	// writtenNesting is a definition inside the target's, as an EU5 unique
+	// writtenNesting is a definition inside its target's, as an EU5 unique
 	// production method inside its building.
 	writtenNesting
 
-	// writtenSelf is a definition whose own name names the target, as CK3's
-	// county potentials are named after their good.
+	// writtenSelf is a definition named after its target, as a CK3 county
+	// potential is after its good.
 	writtenSelf
 )
 
-// linkRow is one way a game writes a link between two definitions: in which
-// definitions, how, and what the link says.
+// linkRow is one way a game writes a link between two definitions.
 type linkRow struct {
 	Games []string
 
 	Says string
 
-	// Database holds the definitions the link is written in. Target holds
-	// the database it names; "" takes the database the reference names.
+	// Database holds the definitions that write the link, and Target the
+	// database it names: "" for the one the reference names.
 	Database string
 	Target   string
 
 	Written writing
 
-	// KeyPath is the way from the definition to the link's statement, keys
-	// joined by slashes, as jomini.MatchKeyPath reads them. It is "" for
-	// anywhere in the definition. For a link written as a key, it is the way
-	// to the block that holds the key.
+	// KeyPath is the keys from the definition down to the link's statement,
+	// joined by slashes, with * for any text and ** for any depth. It is ""
+	// for anywhere. A link written as a key gives the block that holds it.
 	KeyPath string
 
-	// Pattern is the name the link is written as, %s standing for the
-	// target's name, as Vic3's goods_input_%s_add. It is "" where the name
-	// is the target's own.
+	// Pattern is the key a link is written as, with %s for the target's
+	// name, as Vic3's goods_input_%s_add.
 	Pattern string
 
-	// Backward is whether the link runs from the target to the definition it
-	// is written in, as EU5's obsolete names the building a new one replaces.
+	// Backward makes the link run from the target, as EU5's obsolete names
+	// the building a new one replaces.
 	Backward bool
 
-	// Amount is the key beside the link whose value is its amount, as amount
-	// in CK3's trade_good_need. It is "" where the link's own value is its
-	// amount, or it has none.
+	// Amount is the key beside the link that holds its amount, as amount in
+	// CK3's trade_good_need. It is "" where the link's own value does.
 	Amount string
 
-	// Share is whether the amount is a share of what is produced, as 0.25 for
-	// a quarter more, and not a number of the good.
+	// Share marks an amount that is a share of what is produced: 0.25 is a
+	// quarter more.
 	Share bool
 
-	// Counted is whether the links between two definitions are counted into one,
-	// as the locations that hold a raw material. The definitions' end of the
-	// link is then their database, written with no name, and its amount is
-	// how many it stands for.
+	// Counted makes one link of all those between two ends, as the locations
+	// that hold a raw material. Its end is then the database with no name,
+	// and its amount how many it stands for.
 	Counted bool
 }
 
@@ -143,10 +159,9 @@ var (
 	eu5  = []string{game.EU5}
 )
 
-// linkRows are the links each game writes. The first row that holds for a
-// link reads it, so a row with a narrower key path comes before a wider one
-// of the same database. A row cites the file and line of the game that
-// writes what it reads, in the install's game folder.
+// linkRows are the links each game writes. The first row that fits a link
+// reads it, so a narrower key path comes first. Each cites the file and line
+// in the game's folder that writes it.
 var linkRows = []linkRow{
 	// common/buildings/01_industry.txt:174 and 186;
 	// common/production_method_groups/01_industry.txt:96
@@ -161,10 +176,8 @@ var linkRows = []linkRow{
 	{Games: vic3, Says: saysEra, Database: "technology/technologies", KeyPath: "era"},
 	{Games: vic3, Says: saysRequires, Database: "technology/technologies", KeyPath: "unlocking_technologies"},
 
-	// What a technology unlocks is whatever writes it in unlocking_technologies:
-	// common/buildings/01_industry.txt:179, then each folder that holds one
-	// (production_methods, laws, decrees, parties, diplomatic_actions,
-	// mobilization_options, combat_unit_types, ship_types, ship_modifications)
+	// A technology unlocks whatever names it in unlocking_technologies:
+	// common/buildings/01_industry.txt:179
 	unlockedBy("buildings"),
 	unlockedBy("production_methods"),
 	unlockedBy("laws"),
@@ -213,12 +226,11 @@ var linkRows = []linkRow{
 	{Games: ck3, Says: saysInput, Database: "buildings", KeyPath: "trade_good_need/trade_good", Amount: "amount"},
 	{Games: ck3, Says: saysInput, Database: "buildings", KeyPath: "trade_good_need/trade_good_category", Amount: "amount"},
 
-	// A building's production is a modifier named after the good, as
-	// common/buildings/resource_district_buildings/wood_district_buildings.txt:19
-	// writes it: _add and _flat a number of the good, _mult a share of what is
-	// produced. What a met need gives is the same modifier inside the need
-	// (entrepot_district_buildings/00_entrepot_district_buildings.txt:256),
-	// so its rows come first.
+	// A building's production is a modifier named after the good: _add and
+	// _flat a number, _mult a share
+	// (resource_district_buildings/wood_district_buildings.txt:19). Inside a
+	// need it is what meeting the need gives
+	// (entrepot_district_buildings/00_entrepot_district_buildings.txt:256).
 	{Games: ck3, Says: saysGives, Database: "buildings", Written: writtenKey, Target: "trade/trade_good_types", KeyPath: "trade_good_need/modifiers/**", Pattern: "%s_production_add"},
 	{Games: ck3, Says: saysGives, Database: "buildings", Written: writtenKey, Target: "trade/trade_good_types", KeyPath: "trade_good_need/modifiers/**", Pattern: "%s_production_mult", Share: true},
 	{Games: ck3, Says: saysGives, Database: "buildings", Written: writtenKey, Target: "trade/trade_good_types", KeyPath: "trade_good_need/modifiers/**", Pattern: "%s_production_flat"},
@@ -272,8 +284,8 @@ var linkRows = []linkRow{
 	{Games: eu5, Says: saysResource, Database: "map_data/location_templates", Target: "goods", KeyPath: "raw_material", Backward: true, Counted: true},
 }
 
-// unlockedBy returns the row of a Vic3 database whose definitions write the
-// technologies that unlock them in unlocking_technologies.
+// unlockedBy returns the row of a Vic3 database whose definitions name the
+// technologies that unlock them.
 func unlockedBy(database string) linkRow {
 	return linkRow{
 		Games: vic3, Says: saysUnlock, Database: database, Target: "technology/technologies",
@@ -281,20 +293,19 @@ func unlockedBy(database string) linkRow {
 	}
 }
 
-// holdsReference reports whether the row reads a reference to a name in the
-// given database, written at the given way down from the definition.
+// holdsReference reports whether the row reads a reference to a database,
+// written under the given keys.
 func (l linkRow) holdsReference(database string, keys []string) bool {
 	return l.Written == writtenReference && (l.Target == "" || l.Target == database) && l.fits(keys)
 }
 
-// fits reports whether the given way down from the definition to a statement
-// fits the row's KeyPath.
+// fits reports whether the keys down to a statement match the row's path.
 func (l linkRow) fits(keys []string) bool {
 	return l.KeyPath == "" || jomini.MatchKeyPath(l.KeyPath, keys)
 }
 
-// cutTarget returns the name a key spells in the row's Pattern. It returns
-// false if the key is not written that way.
+// cutTarget returns the name a key spells in the row's pattern, and false
+// for a key not written that way.
 func (l linkRow) cutTarget(key string) (string, bool) {
 	prefix, suffix, _ := strings.Cut(l.Pattern, "%s")
 	name, isPrefixed := strings.CutPrefix(key, prefix)
@@ -303,20 +314,17 @@ func (l linkRow) cutTarget(key string) (string, bool) {
 	return name, isPrefixed && isSuffixed && name != ""
 }
 
-// listFrom returns the links of the given relations that start at a
-// definition, or every link that does if none is given.
+// listFrom returns the links that start at a definition: those of the given
+// relations, or all of them.
 func (m *model) listFrom(id string, says ...string) []Edge {
 	return m.pick(m.outgoing[id], says)
 }
 
-// listTo returns the links of the given relations that end at a definition,
-// or every link that does if none is given.
+// listTo returns the links that end at a definition, as listFrom does.
 func (m *model) listTo(id string, says ...string) []Edge {
 	return m.pick(m.incoming[id], says)
 }
 
-// pick returns the links at the given positions of the given relations, in
-// order.
 func (m *model) pick(positions []int, says []string) []Edge {
 	var edges []Edge
 	for _, position := range positions {
@@ -328,35 +336,34 @@ func (m *model) pick(positions []int, says []string) []Edge {
 	return edges
 }
 
-// listLine returns the levels of the line a building is in, first to last. A
-// building no level leads to or from is a line of its own. A level that leads
-// to more than one is followed to the first.
+// listLine returns the levels of a building's line, first to last. A building
+// with no other level is a line of its own, and a level that leads to several
+// is followed to the first.
 func (m *model) listLine(id string) []string {
 	line := []string{id}
 	for {
-		before := m.listTo(line[0], saysLevel)
-		if len(before) == 0 || slices.Contains(line, before[0].From) {
+		previous := m.listTo(line[0], saysLevel)
+		if len(previous) == 0 || slices.Contains(line, previous[0].From) {
 			break
 		}
 
-		line = slices.Insert(line, 0, before[0].From)
+		line = slices.Insert(line, 0, previous[0].From)
 	}
 
 	for {
-		after := m.listFrom(line[len(line)-1], saysLevel)
-		if len(after) == 0 || slices.Contains(line, after[0].To) {
+		next := m.listFrom(line[len(line)-1], saysLevel)
+		if len(next) == 0 || slices.Contains(line, next[0].To) {
 			break
 		}
 
-		line = append(line, after[0].To)
+		line = append(line, next[0].To)
 	}
 
 	return line
 }
 
-// listMembers returns the given definitions and everything that is a part of
-// them, as a building's production method groups and their production
-// methods, in the order found.
+// listMembers returns the given definitions and every part of them, as a
+// building's production method groups and their methods.
 func (m *model) listMembers(ids []string) []string {
 	members := slices.Clone(ids)
 	for position := 0; position < len(members); position++ {
@@ -368,8 +375,8 @@ func (m *model) listMembers(ids []string) []string {
 	return members
 }
 
-// listTargets returns a good and the categories it is in: the ends a link to
-// the good may name, as a need for a category is a need for each good in it.
+// listTargets returns a good and its categories: a need for a category is a
+// need for each good in it.
 func (m *model) listTargets(good string) []string {
 	targets := []string{good}
 	for _, edge := range m.listFrom(good, saysGroup) {
@@ -379,75 +386,90 @@ func (m *model) listTargets(good string) []string {
 	return targets
 }
 
-// models holds the model of the latest index of the mods.
+// models holds the model of the latest index.
 var models latest[struct{}, *model]
 
-// loadModel returns the model of an index, reading it the first time it is
-// asked for.
+// loadModel returns the model of an index, built the first time.
 func loadModel(ws *workspace.Session, mods *index.Index) *model {
 	return models.load(mods, struct{}{}, func() *model { return buildModel(ws, mods) })
 }
 
-// relator reads the links of the definitions one after another while a model
-// is built: the definition it is at and the links it has collected so far.
+// relator collects the links and clauses of one definition after another
+// while a model is built.
 type relator struct {
-	ws    *workspace.Session
-	mods  *index.Index
-	edges []Edge
+	ws      *workspace.Session
+	mods    *index.Index
+	edges   []Edge
+	clauses map[string][]clause
 
-	// definition is the one being read: its site, name, tree and statement,
-	// and where its file is.
+	// definition is the one being read, with its name, its tree, its
+	// statement and where its file is.
 	definition index.Site
 	reference  lang.Reference
 	tree       *jomini.Tree
 	statement  int32
 	file       workspace.Place
 
+	// block and need are the block of the statement being read, 0 at the top
+	// of the definition, and the id of the good or category of the need it
+	// is inside, "" for none.
+	block int32
+	need  string
+
 	// counted holds the position in edges of each counted link by its ends,
 	// and counts how many links each stands for.
 	counted map[[2]string]int
 	counts  map[int]int
 
-	// places and values hold what was worked out for a file and for a script
-	// value, so each is worked out once.
+	// places and values keep each file's place and each script value's
+	// number once worked out.
 	places map[int32]workspace.Place
 	values map[string]string
 }
 
-// buildModel collects the links of every kept definition of the databases
-// the game's link rows write them in. A definition whose file has changed
+// buildModel collects the links and clauses of every definition the game
+// keeps in the databases its rows name. A definition whose file changed
 // since the scan is passed over.
 func buildModel(ws *workspace.Session, mods *index.Index) *model {
 	links := &relator{
-		ws: ws, mods: mods, counted: map[[2]string]int{}, counts: map[int]int{},
+		ws: ws, mods: mods, clauses: map[string][]clause{}, counted: map[[2]string]int{}, counts: map[int]int{},
 		places: map[int32]workspace.Place{}, values: map[string]string{},
 	}
 
 	dialect := lang.LookupDialect(ws.Game.ID)
 	rows := slices.DeleteFunc(slices.Clone(linkRows), func(row linkRow) bool { return !dialect.Matches(row.Games) })
-	for _, database := range listDatabases(rows) {
-		held := slices.DeleteFunc(slices.Clone(rows), func(row linkRow) bool { return row.Database != database })
+	for _, database := range listDatabases(ws.Game.ID, rows) {
+		own := slices.DeleteFunc(slices.Clone(rows), func(row linkRow) bool { return row.Database != database })
+		detail := findDetailRow(ws.Game.ID, database)
 		for _, winner := range mods.ListKept(ws.Schema, database) {
-			links.scanDefinition(winner.Site, held)
+			links.scanDefinition(winner.Site, own, detail)
 		}
 	}
 
 	return links.finish()
 }
 
-// listDatabases returns the databases the rows are written in, in the order
-// of their first row.
-func listDatabases(rows []linkRow) []string {
+// listDatabases returns the databases the rows name, in the rows' order, and
+// then those whose definitions write modifiers or costs in the given game.
+func listDatabases(game string, rows []linkRow) []string {
 	var databases []string
 	for _, row := range rows {
 		databases = appendNew(databases, row.Database)
 	}
 
+	for _, row := range detailRows {
+		if row.Game == game {
+			databases = appendNew(databases, row.Database)
+		}
+	}
+
 	return databases
 }
 
-// scanDefinition adds the links the rows find in one definition.
-func (r *relator) scanDefinition(definition index.Site, rows []linkRow) {
+// scanDefinition reads one definition statement by statement: each is a
+// link where the first row that fits reads it, else a clause where its place
+// holds modifiers or costs.
+func (r *relator) scanDefinition(definition index.Site, rows []linkRow, detail detailRow) {
 	tree, statement, err := r.ws.FindStatement(r.mods, definition)
 	if err != nil {
 		return
@@ -456,6 +478,7 @@ func (r *relator) scanDefinition(definition index.Site, rows []linkRow) {
 	r.definition, r.tree, r.statement = definition, tree, statement
 	r.reference = r.mods.ToReference(definition)
 	r.file = r.locateFile()
+	r.block, r.need = 0, ""
 
 	for _, row := range rows {
 		switch row.Written {
@@ -467,12 +490,28 @@ func (r *relator) scanDefinition(definition index.Site, rows []linkRow) {
 		}
 	}
 
-	r.scanReferences(rows)
-	r.scanKeys(rows)
+	references := map[int32][]index.Site{}
+	for _, site := range r.mods.ListReferences(definition) {
+		child := r.mods.Occurrence(site).Statement
+		references[child] = append(references[child], site)
+	}
+
+	for child := statement + 1; child < tree.Statements[statement].Last; child++ {
+		r.block = tree.Statements[child].Parent
+		if r.block == statement {
+			r.block, r.need = 0, ""
+		}
+
+		if r.isNeed(child) {
+			r.need = r.readNeed(rows, references, child)
+		}
+
+		if !r.scanReferences(rows, references[child]) && !r.scanKey(rows, child) {
+			r.keep(detail, child)
+		}
+	}
 }
 
-// locateFile returns where the definition's file is, working it out once for
-// each file.
 func (r *relator) locateFile() workspace.Place {
 	if _, isLocated := r.places[r.definition.File]; !isLocated {
 		r.places[r.definition.File] = r.ws.Locate(r.mods, r.mods.File(r.definition).Path)
@@ -481,8 +520,8 @@ func (r *relator) locateFile() workspace.Place {
 	return r.places[r.definition.File]
 }
 
-// scanNesting adds the link to the definition the current one is written
-// inside, where that is of the row's target database.
+// scanNesting adds the link to the definition this one is written inside,
+// where that is of the row's target.
 func (r *relator) scanNesting(row linkRow) {
 	holder, isNested := r.mods.FindDefinition(r.definition)
 	if !isNested || r.mods.ToReference(holder).Database != row.Target {
@@ -492,8 +531,7 @@ func (r *relator) scanNesting(row linkRow) {
 	r.add(row, r.mods.ToReference(holder).ToID(), r.mods.Occurrence(r.definition).Span, "")
 }
 
-// scanSelf adds the link to the definition of the target database that has
-// the current one's name.
+// scanSelf adds the link to the target's definition of this one's name.
 func (r *relator) scanSelf(row linkRow) {
 	target, isDefined := r.resolve(lang.Reference{Database: row.Target, Name: r.reference.Name})
 	if isDefined {
@@ -501,61 +539,136 @@ func (r *relator) scanSelf(row linkRow) {
 	}
 }
 
-// scanReferences adds the link of each reference in the definition that a
-// row reads.
-func (r *relator) scanReferences(rows []linkRow) {
-	for _, site := range r.mods.ListReferences(r.definition) {
-		reference, occurrence := r.mods.ToReference(site), r.mods.Occurrence(site)
-		keys := r.listKeys(occurrence.Statement)
-		position := slices.IndexFunc(rows, func(row linkRow) bool { return row.holdsReference(reference.Database, keys) })
-		if position < 0 {
+// scanReferences adds the link of each of a statement's references that a
+// row reads. It reports whether it added any.
+func (r *relator) scanReferences(rows []linkRow, references []index.Site) bool {
+	isLink := false
+	for _, site := range references {
+		row, target, isRead := r.readReference(rows, site)
+		if !isRead {
 			continue
 		}
 
-		if target, isDefined := r.resolve(reference); isDefined {
-			isKey := occurrence.Span.Start == r.tree.Statements[occurrence.Statement].Key.Start
-			r.add(rows[position], target, occurrence.Span, r.findAmount(rows[position], occurrence.Statement, isKey))
-		}
+		occurrence := r.mods.Occurrence(site)
+		isKey := occurrence.Span.Start == r.tree.Statements[occurrence.Statement].Key.Start
+		r.add(row, target, occurrence.Span, r.findAmount(row, occurrence.Statement, isKey))
+		isLink = true
 	}
+
+	return isLink
 }
 
-// scanKeys adds the link of each key in the definition that a row names in
-// its Pattern, for the target it spells.
-func (r *relator) scanKeys(rows []linkRow) {
-	rows = slices.DeleteFunc(slices.Clone(rows), func(row linkRow) bool { return row.Written != writtenKey })
-	if len(rows) == 0 {
-		return
+// readReference returns the first row that reads a reference as a link, and
+// the id of its target. It returns false where no row reads it or the game
+// keeps no definition of its name.
+func (r *relator) readReference(rows []linkRow, site index.Site) (linkRow, string, bool) {
+	reference := r.mods.ToReference(site)
+	keys := r.listKeys(r.mods.Occurrence(site).Statement)
+	position := slices.IndexFunc(rows, func(row linkRow) bool { return row.holdsReference(reference.Database, keys) })
+	if position < 0 {
+		return linkRow{}, "", false
 	}
 
-	for statement := r.statement + 1; statement < r.tree.Statements[r.statement].Last; statement++ {
-		if !r.tree.Statements[statement].Key.IsEmpty() {
-			r.scanKey(rows, statement)
-		}
-	}
+	target, isDefined := r.resolve(reference)
+
+	return rows[position], target, isDefined
 }
 
-// scanKey adds the link a statement's key makes, by the first row that
-// reads it.
-func (r *relator) scanKey(rows []linkRow, statement int32) {
+// isNeed reports whether a statement is a need block at the top of the
+// definition.
+func (r *relator) isNeed(statement int32) bool {
+	current := r.tree.Statements[statement]
+
+	return current.Parent == r.statement && current.IsBlock() && r.tree.Text(current.Key) == needKeys[r.ws.Game.ID]
+}
+
+// readNeed returns the id of the good or category a need block asks for:
+// the target of the input link one of its own statements writes. It is ""
+// where none names one the game keeps.
+func (r *relator) readNeed(rows []linkRow, references map[int32][]index.Site, block int32) string {
+	for child := range r.tree.Children(block) {
+		for _, site := range references[child] {
+			if row, target, isRead := r.readReference(rows, site); isRead && row.Says == saysInput {
+				return target
+			}
+		}
+	}
+
+	return ""
+}
+
+// scanKey adds the link of a statement's key, by the first row whose pattern
+// spells a target in it. It reports whether it added one.
+func (r *relator) scanKey(rows []linkRow, statement int32) bool {
 	current := r.tree.Statements[statement]
 	key := r.tree.Text(current.Key)
-	keys := r.listKeys(current.Parent)
 	for _, row := range rows {
-		name, isSpelled := row.cutTarget(key)
-		if !isSpelled || !row.fits(keys) {
+		if row.Written != writtenKey || key == "" {
 			continue
 		}
 
-		if target, isDefined := r.resolve(lang.Reference{Database: row.Target, Name: name}); isDefined {
+		name, isSpelled := row.cutTarget(key)
+		if !isSpelled || !row.fits(r.listKeys(current.Parent)) {
+			continue
+		}
+
+		target, isDefined := r.resolve(lang.Reference{Database: row.Target, Name: name})
+		if isDefined {
 			r.add(row, target, current.Key, r.findAmount(row, statement, true))
 		}
 
-		return
+		return isDefined
 	}
+
+	return false
 }
 
-// listKeys returns the keys from the definition's own block down to a
-// statement, its own key last. A value alone has none.
+// keep records a plain statement as a clause where the definition's
+// database writes modifiers or costs: in a modifier block at the top or
+// inside a need, and at the top where its modifiers stand loose or the key
+// is a cost or a custom line. A block inside a modifier block is part of it.
+func (r *relator) keep(detail detailRow, statement int32) {
+	current := r.tree.Statements[statement]
+	key := r.tree.Text(current.Key)
+	if current.IsBlock() || key == "" || (len(detail.Bonuses) == 0 && current.Parent != r.statement) {
+		return
+	}
+
+	parents := r.listParents(statement)
+	entry, where := -1, ""
+	for position, parent := range parents {
+		parentKey := r.tree.Text(r.tree.Statements[parent].Key)
+		if bonus := slices.IndexFunc(detail.Bonuses, func(row modifierBlock) bool { return row.Key == parentKey }); bonus >= 0 {
+			entry, where = position, detail.Bonuses[bonus].Where
+		}
+	}
+
+	isTop := len(parents) == 0 && (detail.Loose || slices.Contains(detail.Cost, key) || slices.Contains(detail.Custom, key))
+	isEntered := entry >= 0 && (entry == len(parents)-1 || r.isNeed(parents[len(parents)-1]))
+	if !isTop && !isEntered {
+		return
+	}
+
+	id := r.reference.ToID()
+	r.clauses[id] = append(r.clauses[id], clause{
+		Key: strings.Clone(key), Amount: strings.Clone(r.describeNumber(current.Value)),
+		Where: where, Need: r.need, Blocks: parents[:entry+1],
+	})
+}
+
+// listParents returns the blocks around a statement inside the definition,
+// innermost first.
+func (r *relator) listParents(statement int32) []int32 {
+	var parents []int32
+	for parent := r.tree.Statements[statement].Parent; parent != r.statement; parent = r.tree.Statements[parent].Parent {
+		parents = append(parents, parent)
+	}
+
+	return parents
+}
+
+// listKeys returns the keys from the definition's block down to a statement,
+// its own key last.
 func (r *relator) listKeys(statement int32) []string {
 	var keys []string
 	for ; statement != r.statement && statement > 0; statement = r.tree.Statements[statement].Parent {
@@ -569,8 +682,8 @@ func (r *relator) listKeys(statement int32) []string {
 	return keys
 }
 
-// resolve returns the id of the definition the game keeps of a name. It
-// returns false if the game keeps none, so a link to it is dropped.
+// resolve returns the id of the definition the game keeps of a name, and
+// false if it keeps none.
 func (r *relator) resolve(reference lang.Reference) (string, bool) {
 	winner, isKept := r.mods.FindKept(r.ws.Schema, reference)
 	if !isKept {
@@ -580,9 +693,9 @@ func (r *relator) resolve(reference lang.Reference) (string, bool) {
 	return toID(r.mods, winner.Site), true
 }
 
-// findAmount returns the amount of the link a statement writes: the value
-// of the row's Amount key beside it, else its own value where the link is
-// its key. It returns "" if it has none.
+// findAmount returns the amount of the link a statement writes: the value of
+// the row's amount key beside it, else its own where the link is its key. It
+// is "" if there is none.
 func (r *relator) findAmount(row linkRow, statement int32, isKey bool) string {
 	switch {
 	case row.Amount != "":
@@ -597,41 +710,29 @@ func (r *relator) findAmount(row linkRow, statement int32, isKey bool) string {
 	return ""
 }
 
-// describeNumber returns the number a value span of the definition being read
-// stands for, working a script value out once.
-func (r *relator) describeNumber(span jomini.Span) string {
-	return describeNumber(r.ws, r.mods, r.values, r.tree, span)
-}
-
-// describeNumber returns the number a value span of a file stands for. A
-// script value written there gives its number where its definition is one
-// number, kept in the given map once it is worked out. Any other text is
+// describeNumber returns the number a value stands for. A script value gives
+// the one number it is defined as, worked out once. Any other text is
 // returned as written, and an empty span is "".
-func describeNumber(
-	ws *workspace.Session, mods *index.Index, values map[string]string, tree *jomini.Tree, span jomini.Span,
-) string {
-	if span.IsEmpty() {
-		return ""
+func (r *relator) describeNumber(span jomini.Span) string {
+	name := r.tree.Unquoted(span)
+	if number, isKnown := r.values[name]; isKnown || span.IsEmpty() {
+		return number
 	}
 
-	if number, isNumber := tree.ResolveNumber(span); isNumber {
+	if number, isNumber := r.tree.ResolveNumber(span); isNumber {
 		return formatNumber(number)
 	}
 
-	name := tree.Unquoted(span)
-	number, isKnown := values[name]
-	if !isKnown {
-		number = findScriptValue(ws, mods, name)
-		values[name] = number
-	}
+	number := findScriptValue(r.ws, r.mods, name)
+	r.values[name] = number
 
 	return number
 }
 
-// findScriptValue returns the number of the script value of a name, through
-// any values that name another, as wood_tier_1_main_resource =
-// tier_1_main_resource. It returns the name itself where the game keeps no
-// such value, a definition is more than one number, or values name each other.
+// findScriptValue returns the number of a script value, through values that
+// name another, as wood_tier_1_main_resource = tier_1_main_resource. It
+// returns the name where the game keeps no such value, the value is more
+// than one number, or values name each other.
 func findScriptValue(ws *workspace.Session, mods *index.Index, name string) string {
 	visited := map[string]bool{}
 	for current := name; !visited[current]; {
@@ -658,15 +759,13 @@ func findScriptValue(ws *workspace.Session, mods *index.Index, name string) stri
 	return name
 }
 
-// formatNumber returns a number as the game writes it: no exponent, and no
-// decimals it does not need, as 0.25 and 3.
+// formatNumber returns a number as the game writes it, as 0.25 and 3.
 func formatNumber(number float64) string {
 	return strconv.FormatFloat(number, 'f', -1, 64)
 }
 
-// add puts a link from the definition being read to a target, or from the
-// target to it where the row runs backward. A counted link is put once, and
-// each later one adds to its count.
+// add puts a link between the definition being read and a target. A counted
+// link is put once, and each later one adds to its count.
 func (r *relator) add(row linkRow, target string, span jomini.Span, amount string) {
 	holder := r.reference.ToID()
 	if row.Counted {
@@ -693,17 +792,18 @@ func (r *relator) add(row linkRow, target string, span jomini.Span, amount strin
 	site := lsp.LocateSpan(r.file, r.tree.Src, r.tree.Lines, span)
 	r.edges = append(r.edges, Edge{
 		From: ends[0], To: ends[1], Relation: row.Says, Amount: amount, Share: row.Share, Site: site,
+		block: r.block, need: r.need,
 	})
 }
 
-// finish returns the model of the links found, with each counted link's
-// count as its amount.
+// finish returns the model of the links and clauses read, each counted
+// link's amount its count.
 func (r *relator) finish() *model {
 	for position, count := range r.counts {
 		r.edges[position].Amount = strconv.Itoa(count)
 	}
 
-	linked := &model{edges: r.edges, outgoing: map[string][]int{}, incoming: map[string][]int{}}
+	linked := &model{edges: r.edges, outgoing: map[string][]int{}, incoming: map[string][]int{}, clauses: r.clauses}
 	for position, edge := range r.edges {
 		linked.outgoing[edge.From] = append(linked.outgoing[edge.From], position)
 		linked.incoming[edge.To] = append(linked.incoming[edge.To], position)

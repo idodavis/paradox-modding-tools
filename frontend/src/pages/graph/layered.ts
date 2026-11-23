@@ -27,12 +27,15 @@ const BEND = 5;
 const ARROW = 9;
 /**
  * LAYERED is what ELK is always asked for: a layered drawing with wires at
- * right angles, and bands in the order of their numbers.
+ * right angles, bands in the order of their numbers, a card in the middle of
+ * what it links to, and the wires that leave one card as one trunk.
  */
 const LAYERED = {
   "elk.algorithm": "layered",
   "elk.edgeRouting": "ORTHOGONAL",
   "elk.partitioning.activate": "true",
+  "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+  "elk.layered.mergeEdges": "true",
 };
 
 const elk = new ELK();
@@ -89,6 +92,24 @@ export function roundPath(points: Point[]): string {
   }
 
   return `${parts.join("")}L${points[points.length - 1].join(",")}`;
+}
+
+/**
+ * findMiddle returns the middle of a wire's longest straight run, the last
+ * of several as long, where a label stands clear of the cards at its ends.
+ */
+export function findMiddle(points: Point[]): Point {
+  let middle = points[0];
+  let longest = 0;
+  for (let position = 1; position < points.length; position++) {
+    const [start, end] = [points[position - 1], points[position]];
+    if (measure(start, end) < longest) continue;
+
+    longest = measure(start, end);
+    middle = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+  }
+
+  return middle;
 }
 
 /** drawHead returns the arrowhead at the end of a wire through points. */

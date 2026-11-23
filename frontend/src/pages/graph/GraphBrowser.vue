@@ -3,7 +3,7 @@
   catalog's definitions under the game's own groups, which open and close.
 -->
 <script setup lang="ts">
-import { computed, reactive, shallowRef, watch } from "vue";
+import { computed, reactive, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { refDebounced } from "@vueuse/core";
 import { useRouter } from "vue-router";
@@ -86,11 +86,29 @@ watch(
   { immediate: true },
 );
 
+const list = useTemplateRef("list");
+/** shown is the id of the subject whose row the list has scrolled to. */
+let shown = "";
+watch(
+  [() => subject?.id, lines],
+  ([id]) => {
+    const position = lines.value.findIndex((line) => "row" in line && line.row.id === id);
+    if (position < 0 || shown === id) return;
+
+    shown = id ?? "";
+    list.value?.virtualizer?.scrollToIndex(position, { align: "center" });
+  },
+  { flush: "post" },
+);
+
 /**
  * listLines lists a section's heading and, where it is open, its rows and the
- * sections inside it. A search leaves out a section it finds nothing in.
+ * sections inside it. A search leaves out a section it finds nothing in, and
+ * a group that holds one row is that row alone.
  */
 function listLines(section: Section, depth: number): Line[] {
+  if (section.group.count === 1 && section.rows.length === 1) return [{ row: section.rows[0], depth }];
+
   const inside = isOpen(section.group)
     ? [
         ...section.rows.map((row) => ({ row, depth: depth + 1 })),
@@ -105,6 +123,12 @@ function listLines(section: Section, depth: number): Line[] {
 /** isOpen reports whether a group shows its rows. All do during a search. */
 function isOpen(group: Node): boolean {
   return !!search.value || opened.has(group.id);
+}
+
+/** pickCatalog shows a catalog whole: a search belongs to one catalog. */
+function pickCatalog(label: string): void {
+  picked.value = label;
+  term.value = "";
 }
 
 function toggle(group: Node): void {
@@ -145,7 +169,7 @@ function indent(depth: number): { paddingInlineStart: string } {
         class="min-w-0 grow"
       />
     </div>
-    <div class="grid grid-cols-2 gap-1 px-3 pb-3">
+    <div class="flex flex-wrap gap-1 px-3 pb-3">
       <UButton
         v-for="catalog in catalogs"
         :key="catalog.label"
@@ -153,16 +177,19 @@ function indent(depth: number): { paddingInlineStart: string } {
         :variant="catalog.label === current?.label ? 'soft' : 'ghost'"
         color="neutral"
         size="sm"
-        class="justify-start"
+        class="grow justify-start whitespace-nowrap"
         :aria-pressed="catalog.label === current?.label"
-        @click="picked = catalog.label"
+        @click="pickCatalog(catalog.label)"
       >
         {{ toSentence(catalog.label) }}
-        <span class="ms-auto text-11 font-normal text-dimmed tabular-nums">{{ describeCount(catalog.count) }}</span>
+        <span class="ms-auto ps-2 text-11 font-normal text-dimmed tabular-nums">{{
+          describeCount(catalog.count)
+        }}</span>
       </UButton>
     </div>
     <UScrollArea
       v-if="lines.length"
+      ref="list"
       v-slot="{ item }"
       :items="lines"
       :virtualize="VIRTUAL"
@@ -181,7 +208,7 @@ function indent(depth: number): { paddingInlineStart: string } {
             class="size-3.5 shrink-0 text-dimmed"
           />
           <span class="truncate">{{ labelOf(item.group) }}</span>
-          <span v-if="!search" class="ms-auto text-11 font-normal text-dimmed tabular-nums">
+          <span v-if="!search" class="ms-auto rounded-sm bg-muted/80 px-1 text-11 font-normal text-muted tabular-nums">
             {{ describeCount(item.group.count) }}
           </span>
         </button>
@@ -197,6 +224,12 @@ function indent(depth: number): { paddingInlineStart: string } {
       >
         <NodeIcon :node="item.row" class="size-4.5" />
         <span class="truncate" :class="!item.row.title && 'font-mono'">{{ labelOf(item.row) }}</span>
+        <code
+          v-if="isEvents && item.row.title"
+          class="ms-auto max-w-2/5 shrink-0 truncate font-mono text-11 text-dimmed"
+        >
+          {{ item.row.name }}
+        </code>
       </button>
     </UScrollArea>
     <p v-else-if="search && !isPending" class="border-t border-default px-3 py-3 text-12 text-dimmed">

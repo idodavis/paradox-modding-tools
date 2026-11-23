@@ -1,17 +1,17 @@
-// roots.go lists the definitions the Graph can be asked about: a search by
-// name, the catalogs the page browses, the ones the workspace's mods define,
-// those of one type, and an example for each question.
+// roots.go lists the definitions the Graph can be asked about.
 
 package graph
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"strings"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/services/workspace"
 )
 
@@ -27,10 +27,8 @@ type Catalog struct {
 	Count int `json:"count"`
 
 	// Groups are the groups its definitions are listed under, in the order
-	// the game's files reach them: a district, a building group, a category
-	// of goods, and the wider group each of those is in. A group's Count is
-	// how many definitions it and the groups in it list. They are none where
-	// the game groups nothing.
+	// the game's files reach them, with the wider group each is in. A group's
+	// Count is how many definitions it and the groups in it list.
 	Groups []Node `json:"groups"`
 }
 
@@ -65,8 +63,8 @@ func (s *Service) FindRoots(query string, limit int) []Node {
 	mods := ws.Mods.Load()
 	databases := slices.Concat(ws.Schema.FireDatabases, listGraphDatabases(ws))
 
-	return matchDefinitions(ws, mods, databases, query, limit, func(site index.Site) bool {
-		return isKept(ws, mods, site)
+	return matchDefinitions(ws, mods, databases, query, limit, func(site index.Site) (index.Site, bool) {
+		return site, isKept(ws, mods, site)
 	})
 }
 
@@ -92,6 +90,8 @@ func (s *Service) ListCatalogs() []Catalog {
 }
 
 // makeCatalog returns the catalog of the kept definitions of the given types.
+// A line counts once, a category only where a need can ask for it, and eras
+// stand in the game's order.
 func (d *draft) makeCatalog(types []lang.Type) Catalog {
 	catalog := Catalog{Types: types, Groups: []Node{}}
 	counts := map[string]int{}
@@ -104,17 +104,21 @@ func (d *draft) makeCatalog(types []lang.Type) Catalog {
 
 		for _, winner := range d.mods.ListKept(d.ws.Schema, database) {
 			id := toID(d.mods, winner.Site)
-			if !isLineHead(d.model, id) {
+			if d.model.listLine(id)[0] != id || !d.isMarked(id) {
 				continue
 			}
 
 			catalog.Count++
-			for _, group := range d.listGroupChain(id) {
+			for _, group := range d.listCatalogChain(id) {
 				groups = appendNew(groups, group)
 				counts[group]++
 			}
 		}
 	}
+
+	slices.SortStableFunc(groups, func(first, second string) int {
+		return cmp.Compare(d.rankGroup(first), d.rankGroup(second))
+	})
 
 	for _, group := range groups {
 		if node, isGroup := d.makeGroup(group, counts[group]); isGroup {
@@ -126,9 +130,9 @@ func (d *draft) makeCatalog(types []lang.Type) Catalog {
 }
 
 // ListCatalog returns the definitions of a catalog's types whose name holds
-// the query, the best match first, up to a limit, each with the group it is
-// listed under. A building's line is listed once, by its first level. It
-// returns nil if no workspace is open.
+// the query, best match first, up to a limit, each with its group. A
+// building's line is listed once, by its first level, whichever of its levels
+// the query names. It returns nil if no workspace is open.
 func (s *Service) ListCatalog(types []lang.Type, query string, limit int) []Node {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -137,13 +141,20 @@ func (s *Service) ListCatalog(types []lang.Type, query string, limit int) []Node
 
 	mods := ws.Mods.Load()
 	draft := newDraft(ws, mods)
-	rows := matchDefinitions(ws, mods, listCatalogDatabases(ws, types), query, limit, func(site index.Site) bool {
+	list := func(site index.Site) (index.Site, bool) {
 		winner, isDefined := mods.FindKept(ws.Schema, mods.ToReference(site))
+		if !isDefined || winner.Site != site {
+			return site, false
+		}
 
-		return isDefined && winner.Site == site && isLineHead(draft.model, toID(mods, site))
-	})
+		head, err := resolveNode(ws, mods, draft.model.listLine(toID(mods, site))[0])
+
+		return head, err == nil && draft.isMarked(toID(mods, head))
+	}
+
+	rows := matchDefinitions(ws, mods, listCatalogDatabases(ws, types), query, limit, list)
 	for position := range rows {
-		rows[position].Group = draft.findGroupID(rows[position].ID)
+		rows[position].Group = draft.listCatalogChain(rows[position].ID)[0]
 	}
 
 	return rows
@@ -153,39 +164,69 @@ func listCatalogDatabases(ws *workspace.Session, types []lang.Type) []string {
 	return listTypedDatabases(ws, func(drawn lang.Type) bool { return slices.Contains(types, drawn) })
 }
 
-// isLineHead reports whether a definition is the first level of its building's
-// line. Any other definition is a line of its own.
-func isLineHead(model *model, id string) bool { return model.listLine(id)[0] == id }
+// audiencePrefix starts the id of the heading an age lists the advances of
+// one audience under, before the audience and the age.
+const audiencePrefix = "audience:"
 
-// matchDefinitions returns the definitions of the databases that the test
-// lists and whose name holds the query, with their pictures, the best match
-// first, up to a limit.
+// listCatalogChain returns the groups a catalog lists a definition under,
+// nearest first, "" alone for none. An advance that is not for every country
+// stands under a heading for its audience inside its age.
+func (d *draft) listCatalogChain(id string) []string {
+	chain := d.listGroupChain(id)
+	if len(chain) == 0 {
+		return []string{""}
+	}
+
+	audience, _ := d.findAudience(id)
+	if audienceGroups[d.ws.Game.ID] == nil || d.typeOf(id) != lang.TypeTechnology || audience == sharedAdvances {
+		return chain
+	}
+
+	return slices.Insert(chain, 0, audiencePrefix+audience+writtenGroupSeparator+chain[0])
+}
+
+// matchDefinitions returns the definitions whose name, or else the plain
+// words of whose title, hold the query, each once with its picture, the best
+// match first, up to a limit. The given function says which definition a
+// match lists: itself, the first level of its line, or none.
 func matchDefinitions(
-	ws *workspace.Session, mods *index.Index, databases []string, query string, limit int, isListed func(index.Site) bool,
+	ws *workspace.Session, mods *index.Index, databases []string, query string, limit int,
+	list func(index.Site) (index.Site, bool),
 ) []Node {
 	query = strings.ToLower(query)
 	type match struct {
-		site  index.Site
-		label string
-		rank  int
+		site      index.Site
+		id, label string
+		rank      int
 	}
 
-	var matches []match
+	matches := map[string]match{}
 	for _, database := range databases {
 		for _, site := range mods.ListDefinitions(database) {
 			label := strings.ToLower(mods.ToReference(site).Name)
-			if strings.Contains(label, query) && isListed(site) {
-				matches = append(matches, match{site, label, files.ClassifyMatch(label, query)})
+			if !strings.Contains(label, query) {
+				title := ws.LookupDefinitionText(mods, site, lang.TitleKey)
+				label = strings.ToLower(loc.ToPlain(ws.ExpandText(mods, title)))
+			}
+
+			listed, isListed := list(site)
+			if !strings.Contains(label, query) || !isListed {
+				continue
+			}
+
+			id, rank := toID(mods, listed), files.ClassifyMatch(label, query)
+			if best, isMatched := matches[id]; !isMatched || rank < best.rank {
+				matches[id] = match{listed, id, label, rank}
 			}
 		}
 	}
 
-	slices.SortFunc(matches, func(first, second match) int {
-		return cmp.Or(cmp.Compare(first.rank, second.rank), strings.Compare(first.label, second.label))
+	ranked := slices.SortedFunc(maps.Values(matches), func(first, second match) int {
+		return cmp.Or(cmp.Compare(first.rank, second.rank), strings.Compare(first.label, second.label), strings.Compare(first.id, second.id))
 	})
 
 	roots := []Node{}
-	for _, best := range matches[:min(limit, len(matches))] {
+	for _, best := range ranked[:min(limit, len(ranked))] {
 		node := makeNode(ws, mods, best.site, 0)
 		node.Picture, node.Silhouette = findPicture(ws, mods, best.site)
 		roots = append(roots, node)

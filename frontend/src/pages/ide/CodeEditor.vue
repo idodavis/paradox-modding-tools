@@ -379,8 +379,8 @@ const groups = computed<ContextMenuItem[][]>(() => [
     {
       label: "Copy this file into a mod…",
       icon: "i-lucide-copy-plus",
-      disabled: !model.place.readOnly || !canCopyToMod(model.place),
-      onSelect: () => copyToMod(model.place),
+      disabled: !model.place.readOnly || !canCopyToMod([model.place]),
+      onSelect: () => copyToMod([model.place]),
     },
     ...(caretFacts.value?.fixes ?? []).map((fix) => ({
       label: fix.title,

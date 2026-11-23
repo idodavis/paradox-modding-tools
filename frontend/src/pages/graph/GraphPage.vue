@@ -160,7 +160,7 @@ function change({ potential, ...parts }: TechChange): void {
   <div class="flex h-full min-h-0 bg-default">
     <USplitter :items="panes" auto-save-id="pmt.graph" class="min-h-0 min-w-0 flex-1">
       <template #browser>
-        <GraphBrowser :subject="subjectNode" @select="select" />
+        <GraphBrowser :subject="(isLine && line?.head) || subjectNode" @select="select" />
       </template>
       <template #detail>
         <DetailPane :id="node || subject" @ask="select" @close="isDetailOpen = false" />

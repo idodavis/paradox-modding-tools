@@ -1,6 +1,4 @@
-// audiences.go reads whom an advance of an EU5 age is for: every country, a
-// religion, a culture or a country its potential names, or whoever meets its
-// other conditions.
+// audiences.go reads whom an advance of an EU5 age is for.
 
 package graph
 
@@ -45,10 +43,7 @@ const (
 	otherAdvances  = "other"
 )
 
-var (
-	sharedGroup = audienceGroup{ID: sharedAdvances, Title: "Every country"}
-	otherGroup  = audienceGroup{ID: otherAdvances, Title: "Other conditions"}
-)
+var otherGroup = audienceGroup{ID: otherAdvances, Title: "Other conditions"}
 
 // audienceGroups holds the groups of each game whose advances have a potential,
 // widest first. An advance is in the narrowest group its potential names: one
@@ -59,6 +54,12 @@ var audienceGroups = map[string][]audienceGroup{
 		{ID: "cultures", Title: "Cultures", Databases: []string{"cultures", "culture_groups", "languages"}},
 		{ID: "countries", Title: "Countries", Databases: []string{lang.SetupCountries}},
 	},
+}
+
+// listAudienceGroups returns a game's groups, widest first, then the one for
+// the advances whose potential names nobody.
+func listAudienceGroups(game string) []audienceGroup {
+	return append(slices.Clone(audienceGroups[game]), otherGroup)
 }
 
 // potentialKey is the block of an advance that says whom it is for. It names
@@ -84,16 +85,17 @@ var potentialParents = map[string]map[string]string{
 // listAudiences returns the rows of a tree's advances and the advances each row
 // draws: a group what is in it, and a country, religion or culture what is
 // written for it and for what it belongs to. A group with no advances has no
-// row. It returns none for a game whose technologies have no potential.
+// row, and the advances every country can have, which are always drawn, have
+// none. It returns none for a game whose technologies have no potential.
 func (d *draft) listAudiences(tree []string) ([]Audience, map[string][]string) {
 	rows, members := []Audience{}, map[string][]string{}
 	if audienceGroups[d.ws.Game.ID] == nil {
 		return rows, members
 	}
 
-	advances, named := d.listWritten(tree)
-	groups := slices.Concat([]audienceGroup{sharedGroup}, audienceGroups[d.ws.Game.ID], []audienceGroup{otherGroup})
-	for _, group := range groups {
+	advances, groupNames := d.listWritten(tree)
+	members[sharedAdvances] = advances[sharedAdvances]
+	for _, group := range listAudienceGroups(d.ws.Game.ID) {
 		ids := advances[group.ID]
 		if len(ids) == 0 {
 			continue
@@ -101,11 +103,11 @@ func (d *draft) listAudiences(tree []string) ([]Audience, map[string][]string) {
 
 		members[group.ID] = ids
 		rows = append(rows, Audience{ID: group.ID, Group: group.ID, Title: group.Title, Count: len(ids)})
-		for _, name := range named[group.ID] {
+		for _, name := range groupNames[group.ID] {
 			members[name] = d.listWrittenFor(name, advances)
 		}
 
-		rows = append(rows, d.makeNameRows(group.ID, named[group.ID], members)...)
+		rows = append(rows, d.makeNameRows(group.ID, groupNames[group.ID], members)...)
 	}
 
 	return rows, members
@@ -114,17 +116,17 @@ func (d *draft) listAudiences(tree []string) ([]Audience, map[string][]string) {
 // listWritten returns the advances of a tree written for each group and each
 // name, and the names of each group.
 func (d *draft) listWritten(tree []string) (map[string][]string, map[string][]string) {
-	advances, named := map[string][]string{}, map[string][]string{}
+	advances, groupNames := map[string][]string{}, map[string][]string{}
 	for _, id := range tree {
 		group, names := d.findAudience(id)
 		advances[group] = append(advances[group], id)
 		for _, name := range names {
 			advances[name] = append(advances[name], id)
-			named[group] = appendNew(named[group], name)
+			groupNames[group] = appendNew(groupNames[group], name)
 		}
 	}
 
-	return advances, named
+	return advances, groupNames
 }
 
 // listWrittenFor returns the advances written for a definition and for what it
@@ -182,11 +184,11 @@ func (d *draft) findAudience(id string) (string, []string) {
 	}
 
 	for _, group := range slices.Backward(audienceGroups[d.ws.Game.ID]) {
-		named := slices.DeleteFunc(slices.Clone(ids), func(name string) bool {
+		names := slices.DeleteFunc(slices.Clone(ids), func(name string) bool {
 			return !slices.Contains(group.Databases, toDatabase(name))
 		})
-		if len(named) > 0 {
-			return group.ID, named
+		if len(names) > 0 {
+			return group.ID, names
 		}
 	}
 
@@ -230,6 +232,20 @@ func (d *draft) listPotential(id string) ([]string, bool) {
 	}
 
 	return ids, true
+}
+
+// countShared returns how many of the given technologies every country can
+// have: those that write no potential. No Vic3 technology writes one, and no
+// CK3 innovation requires another.
+func (d *draft) countShared(ids []string) int {
+	count := 0
+	for _, id := range ids {
+		if group, _ := d.findAudience(id); group == sharedAdvances {
+			count++
+		}
+	}
+
+	return count
 }
 
 func (d *draft) isAudience(database string) bool {

@@ -34,9 +34,8 @@ type End = "from" | "to";
 /** Group is the links of one role, with the end the other node is at. */
 type Group = { label: string; end: End; edges: Edge[]; isAbove: boolean };
 /**
- * Drawn is one row of the pane: a node or a fact with a quiet line and an
- * amount. Its view is the id the Graph opens on a click, where the Graph has
- * a view of it, and its site the place the IDE opens.
+ * Drawn is one row of the pane. Its view is the id the Graph opens on a
+ * click, where it has a view of it, and its site the place the IDE opens.
  */
 type Drawn = { node?: Node; label: string; note: string; amount: string; tone: string; view?: string; site?: Site };
 
@@ -62,13 +61,13 @@ const ROLES: Record<string, Record<End, string>> = {
 };
 /**
  * ABOVE are the roles whose links the Overview lists too, each a relation
- * and the end the node is at: what a technology needs, leads to and unlocks,
- * what unlocks and checks a node, and what a group holds.
+ * and the end the node is at.
  */
 const ABOVE = ["requires:from", "requires:to", "unlock:from", "unlock:to", "trigger:to", "group:to"];
 /** CAP is how many links of a role the Overview lists before the rest. */
 const CAP = 4;
-const TABS = ["overview", "links", "script"] as const;
+const OVERVIEW = "overview";
+const LINKS = "links";
 const SECTION = "flex flex-col border-b border-default py-2.5 last:border-b-0";
 const HEADING = "flex min-h-5.5 items-baseline justify-between gap-3 text-12 font-semibold text-muted";
 const QUIET = "text-11.5 font-normal text-dimmed tabular-nums";
@@ -81,13 +80,15 @@ const [DefineRow, Row] = createReusableTemplate<Drawn>();
 const [DefineLinks, Links] = createReusableTemplate<{ group: Group; cap?: number }>();
 const [DefineSays, Says] = createReusableTemplate<{ texts: Version[]; strong?: boolean }>();
 
-const tab = shallowRef<string | number>(TABS[0]);
+const tab = shallowRef<string | number>(OVERVIEW);
 const isEveryText = shallowRef(false);
 
 const { data: defaults } = useQuery(() => ({ ...graphDefaultsQuery, enabled: workspace.isOpen() }));
 const { data: detail, error } = useQuery(() => ({ ...detailQuery(id), enabled: workspace.isOpen() && !!id }));
 const node = computed(() => detail.value?.node);
 const isBuilding = computed(() => node.value?.type === Type.TypeBuilding);
+/** An event shows a window or is hidden; a message or decision does neither. */
+const isEvent = computed(() => ["window", "hidden"].includes(node.value?.display ?? ""));
 const { data: line } = useQuery(() => ({
   ...graphLineQuery({ id, picked: [] }),
   enabled: workspace.isOpen() && isBuilding.value,
@@ -114,7 +115,23 @@ const subtitle = computed(() => {
 const painting = computed(
   () => node.value?.painting || listed.value?.painting || (node.value?.type ? "" : node.value?.picture),
 );
-const lineRows = computed(() => (isBuilding.value ? [...(line.value?.rows ?? []), ...(line.value?.same ?? [])] : []));
+/**
+ * The rows of the building's line. A level past the first keeps only what it
+ * says itself, each row with that level's one cell.
+ */
+const lineRows = computed(() => {
+  if (!isBuilding.value) return [];
+
+  const rows = [...(line.value?.rows ?? []), ...(line.value?.same ?? [])];
+  const position = (line.value?.levels ?? []).findIndex((each) => each.level.id === id);
+  if (position <= 0) return rows;
+
+  return rows.flatMap((row) => {
+    const cell = row.cells?.length === 1 ? row.cells[0] : row.cells?.[position];
+
+    return cell?.text ? [{ ...row, cells: [cell] }] : [];
+  });
+});
 const parts = computed(() =>
   Object.entries(SAYS)
     .map(([says, { title }]) => ({ title, rows: lineRows.value.filter((row) => row.says === says) }))
@@ -124,9 +141,6 @@ const says = computed(() =>
   (detail.value?.sections ?? []).filter(
     (section) => section.texts?.length && section.texts[0].text !== node.value?.title,
   ),
-);
-const properties = computed(() =>
-  (detail.value?.sections ?? []).filter((section) => section.value && !section.texts?.length),
 );
 const groups = computed((): Group[] => {
   const firings: Group[] = [
@@ -152,15 +166,15 @@ const groups = computed((): Group[] => {
 });
 const linkCount = computed(() => groups.value.reduce((sum, group) => sum + group.edges.length, 0));
 const tabs = computed(() => [
-  { label: "Overview", value: TABS[0] },
-  { label: "Links", value: TABS[1], badge: linkCount.value ? describeCount(linkCount.value) : undefined },
-  { label: "Script", value: TABS[2], badge: plural(lines.value, "line") },
+  { label: "Overview", value: OVERVIEW },
+  { label: "Links", value: LINKS, badge: linkCount.value ? describeCount(linkCount.value) : undefined },
+  { label: "Script", value: "script", badge: plural(lines.value, "line") },
 ]);
 
 watch(
   () => id,
   () => {
-    tab.value = TABS[0];
+    tab.value = OVERVIEW;
     isEveryText.value = false;
   },
 );
@@ -216,11 +230,26 @@ function drawRow(row: LineRow): Drawn {
   return {
     node: row.subject ?? undefined,
     label: row.label,
-    note: [span, conditionOf(lineRows.value, row)].filter(Boolean).join(" · "),
+    note: [span, findMethod(row), conditionOf(lineRows.value, row)].filter(Boolean).join(" · "),
     amount: isSame ? (first?.text ?? "") : "",
     tone: SAYS[row.says]?.tone || TONES[row.tone ?? ""],
     view: row.subject && hasView(row.subject, firing.value) ? row.subject.id : undefined,
   };
+}
+
+/** LEDGERS is where a method lists the good of a row, by what the row says. */
+const LEDGERS = { output: "makes", input: "takes" } as const;
+
+/**
+ * findMethod names the one production method of several that makes or takes
+ * a row's good. It is "" where more than one does, or the building has none.
+ */
+function findMethod(row: LineRow): string {
+  const ledger = LEDGERS[row.says as keyof typeof LEDGERS];
+  const methods = (line.value?.groups ?? []).flatMap((group) => group.methods ?? []);
+  const users = methods.filter((method) => method[ledger]?.some((amount) => amount.good.id === row.subject?.id));
+
+  return ledger && methods.length > 1 && users.length === 1 ? labelOf(users[0].method) : "";
 }
 
 function drawFact(fact: Fact): Drawn {
@@ -234,9 +263,8 @@ function open(site: Site): void {
 }
 
 /**
- * openText opens the line of a text in its localization file. For a text the
- * language lacks with no line in the base language, it opens the line of the
- * definition that names the key.
+ * openText opens a text's line in its localization file, or the line of the
+ * definition that names the key where no language has the text.
  */
 function openText(version: Version): void {
   if (version.message.place.path) open(version.message);
@@ -306,7 +334,7 @@ function openText(version: Version): void {
             color="neutral"
             size="xs"
             :class="MORE"
-            @click="tab = 'links'"
+            @click="tab = LINKS"
           />
         </section>
       </DefineLinks>
@@ -324,7 +352,7 @@ function openText(version: Version): void {
                 segment.text
               }}</code>
               <template v-else-if="segment.markup === Markup.MarkupText">{{ segment.text }}</template>
-              <span v-else class="text-dimmed">{{ segment.text }}</span>
+              <span v-else-if="segment.markup === Markup.MarkupCall" class="text-dimmed">{{ segment.text }}</span>
             </template>
           </p>
           <UButton
@@ -393,9 +421,6 @@ function openText(version: Version): void {
           <SourceLink :place="node.site.place" :line="node.site.line" short plain />
           <OriginChip :origin="node.site.place.origin" />
         </span>
-        <p v-if="node.comment" class="font-mono text-11 leading-4.25 whitespace-pre-line text-(--syn-comment) italic">
-          {{ node.comment }}
-        </p>
         <div class="flex items-end gap-2 border-b border-default">
           <UTabs v-model="tab" :items="tabs" :content="false" variant="link" size="sm" :ui="{ list: 'border-0' }" />
           <span class="grow" />
@@ -412,7 +437,7 @@ function openText(version: Version): void {
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto px-4">
-        <template v-if="tab === 'overview'">
+        <template v-if="tab === OVERVIEW">
           <section v-if="detail.about?.length" :class="SECTION">
             <h3 :class="HEADING">About</h3>
             <dl class="grid grid-cols-[6rem_minmax(0,1fr)] items-baseline gap-x-3 text-12.5 leading-5.5">
@@ -450,7 +475,7 @@ function openText(version: Version): void {
             <h3 :class="HEADING">Only when</h3>
             <ConditionList v-if="node.trigger?.length" :conditions="node.trigger" class="text-12.5 leading-5" />
             <p v-else class="text-12.5 text-dimmed">It has no trigger of its own.</p>
-            <p v-if="!detail.firedBy?.length && !node.hardcoded" class="pt-1 text-12 leading-4.5 text-dimmed">
+            <p v-if="isEvent && !detail.firedBy?.length" class="pt-1 text-12 leading-4.5 text-dimmed">
               Nothing fires this yet. An event runs when an on_action, a decision, a character interaction or another
               event fires it.
             </p>
@@ -504,23 +529,12 @@ function openText(version: Version): void {
               />
             </div>
           </section>
-          <section v-if="!node.type && properties.length" :class="SECTION">
-            <h3 :class="HEADING">Properties</h3>
-            <dl class="grid grid-cols-[6rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-12.5">
-              <template v-for="statement in properties" :key="statement.line">
-                <dt class="text-12 text-dimmed">{{ statement.key }}</dt>
-                <dd class="min-w-0 wrap-anywhere">
-                  <ScriptSnippet :text="statement.value" :path="node.site.place.path" inline />
-                </dd>
-              </template>
-            </dl>
-          </section>
         </template>
-        <template v-else-if="tab === 'links'">
+        <template v-else-if="tab === LINKS">
           <Links v-for="group in groups" :key="`${group.label}|${group.end}`" :group="group" />
           <p v-if="!linkCount" class="py-3 text-12.5 text-dimmed">It links to nothing, and nothing links to it.</p>
         </template>
-        <div v-else class="my-3 overflow-hidden rounded-lg border border-default">
+        <div v-else class="my-3 overflow-x-auto rounded-lg border border-default">
           <div class="flex h-8 items-center gap-2 border-b border-default bg-elevated px-2.5 text-12 whitespace-nowrap">
             <SourceLink :place="node.site.place" :line="node.site.line" />
             <span class="grow" />

@@ -77,12 +77,6 @@ function isLit(technology: Technology): boolean {
   return !!technology.unlocks?.some((unlocked) => unlocked.database === lit.value);
 }
 
-function markOf(technology: Technology) {
-  if (technology.node.id === tree.subject) return "subject";
-
-  return isLit(technology) ? "chain" : "";
-}
-
 /** toggle opens a group, or closes the one that is open. */
 function toggle(group: Tree): void {
   picked.value = open.value === group.id ? "" : group.id;
@@ -169,7 +163,7 @@ function toggle(group: Tree): void {
               :class="lit && !isLit(technology) && technology.node.id !== tree.subject && 'opacity-55'"
               :technology="technology"
               shape="art"
-              :mark="markOf(technology)"
+              :mark="technology.node.id === tree.subject ? 'subject' : ''"
               @ask="emit('ask', $event)"
             />
           </div>

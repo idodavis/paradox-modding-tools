@@ -73,6 +73,12 @@ An amount is the number written. Where a script value is written there, its numb
 number, and its name otherwise. A link between two definitions that is written in many places, such as the locations
 that hold a raw material, is counted into one, and its amount is how many.
 
+The same walk keeps each definition's clauses: the plain statements of its modifier blocks (`detailRows` names them),
+of the modifier blocks inside its needs, of its top where its database writes modifiers loose, and its costs. A
+statement that writes a link is no clause. A clause holds its key, the number it stands for, what its block applies
+to, the need it is inside and the blocks around it; a link holds its block and its need. Their words are written at
+each request, since the language can change under one index.
+
 A `draft` is one request: the workspace, the model, and what was worked out once (each node, each group, each script
 value's number). `lookupNode` is the one maker of a node from the model: its picture, its painting, the group it is
 listed under and a technology's era.
@@ -93,9 +99,11 @@ ages are its trees.
 (`Maker`, with a `Recipe` for each level or method that writes it: what it takes and makes, the era that unlocks it,
 the need that gives it), the goods the makers take (`Input`), and the lines that take it, piled under their widest
 group with the largest first (`Pile`, `User`). An `Amount` says whether every production method of a level takes a
-good, only some, or one way of several (`Among`). `describeAmounts` is the one place an amount is worded: the number
-as the game writes it, two decimals in EU5, a share as a signed percentage, a range from least to most. The filter's
-`Origins`, `Changed` and `Era` decide which lines are listed.
+good, only some, or one way of several (`Among`). `describeAmount` is the one writer of a number, by its
+`numberFormat`: a modifier's from the game's format row, a link's from its share (a signed percentage, two decimals in
+EU5), a time in days. `describeAmounts` words the amounts of several links as one, a range from least to most that
+says its unit once, and its sign once where both ends are above zero ("+10–30%"); a range of two ends below zero is
+written whole ("-25% to -5%"). The filter's `Origins`, `Changed` and `Era` decide which lines are listed.
 
 ## A building's line
 
@@ -109,19 +117,25 @@ makes, employs and gives) and `Totals`: what the picked methods come to together
 method. `picked` names a method of a group, and a group none names runs its first.
 
 `facts.go` puts a modifier into the game's words. `modifierTexts` holds the localization keys each game names a
-modifier by; a modifier the dumps list and no text names shows its key. A data call in a name reads as the concept it
-links to, or as the definition it names. A statement of a modifier block whose value is a plain word is a condition
-of the block, worded by the game's text for it or by the tradition that grants the parameter it names.
+modifier by; a modifier the dumps list and no text names shows its key. A CK3 innovation's `custom` lines are what it
+gives in the game's own words (`detailRows`' `Custom`). A statement of a modifier block whose value is a plain word is
+a condition of the block, worded by the game's text for it, or by every definition that grants the parameter it names,
+joined by "or" (`parameterHolders`: CK3's traditions, and its doctrines, which list theirs as bare names). A key that
+starts with `not_` reads "Not: " and then those words ("Not: Fish Allowed, All Meat Forbidden or Nothing of the
+Slain"), or the key without its prefix where nothing names it.
 
 ## A technology's tree
 
-`BuildTree` gives the technologies of the subject's tree (`Technology`: its node with its era, what its modifiers
-give, what it unlocks), what each requires, the eras in file order, the game's trees (`Tree`, each with its painting,
-its count and the technology it opens on), and the ids the subject needs and leads to at any distance.
+`BuildTree` gives the technologies of the subject's tree (`Technology`: its node with its era, what it gives, what it
+unlocks, and its card's one line, what it gives and then its unlocks counted by database, "Control Growth +10% ·
+Unlocks 1 building, 1 law"), what each requires, the eras in file order, the game's trees (`Tree`, each with its
+painting, its count and the technology it opens on), the ids the subject needs and leads to at any distance, and how
+many of the latter every country can have.
 
 An EU5 age holds advances for different countries. An advance with no `potential` is for every country and is always
-drawn. One whose `potential` names a country, religion or culture, itself or through a scripted trigger, is in the
-narrowest of those groups; the answer lists the groups' rows in `Audiences`, and draws the rows the filter's
+drawn, so it has no row. One whose `potential` names a country, religion or culture, itself or through a scripted
+trigger, is in the narrowest of those groups; the answer lists the groups' rows in `Audiences`, and draws the rows the
+filter's
 `Potential` names, with what is written for what they belong to (a country's culture and religion, a culture's
 language and groups, a religion's group). Any other `potential` is under other conditions. A name inside `NOT` says
 who cannot have the advance. A technology's `Root` is the technology its own tree inside the age starts from.
@@ -154,7 +168,9 @@ conditions are negated, `groupConditions` sets them under "must be true" and "mu
 ## The detail
 
 `BuildDetail` reads the definition the game keeps of a node. A `Detail` holds the node with its trigger, its source
-and a `Section` for each key at its top, the options apart; a block's value is left to the source.
+and a `Section` for each key at its top that shows a text, the options apart. A plain key shows one where the index
+reads its value as a localization key, so a plain value that happens to be one, as a decision's
+`decision_group_type = realm`, is no text; a block shows the texts it chooses among.
 
 - `About` are the facts listed under the node's name: each group it is listed under, its era, how many levels its
   line has, where it is found and what it costs (`detailRows` names the keys, `costLabels` what the page calls them).
@@ -163,12 +179,17 @@ and a `Section` for each key at its top, the options apart; a block's value is l
   language, with the trigger that decides it in words and its pieces (`loc.Segments`), each data call made its words.
   A good, a building and a technology keep only their title and description.
 - A call that names a customizable localization reads as the texts it can show, joined by slashes ("daughter/son").
+- `describeLabel` is the one writer of a line of text: every title, label, condition and game rule's setting. It
+  fills in a text's nested keys and writes a concept as its name ("Individual De Jure County"), an icon as nothing
+  ("Zealot Vassal Opinion"), a customizable localization as its texts ("My daughter/son"), a call that shows a
+  definition's name as its title, and any other data call in brackets. A format, with any call in its name, is left
+  out.
 - A version whose key has no message in the detail's language is `Missing`, and shows the base language's text. Its
   `Message` is the line the text came from: the detail's language's, else the base language's, and the zero site
   where neither has one.
-- `Links` is every model link from and to the node. A technology also has a `trigger` link from each definition that
-  tests it, and an event a link to each good, building and technology its script names. `Linked` holds the node at
-  the far end of each.
+- `Links` is every model link from and to the node, each amount in words. A technology also has a `trigger` link from
+  each definition that tests it, and an event a link to each good, building and technology its script names. `Linked`
+  holds the node at the far end of each.
 
 The detail also holds what fires the node, the node at the other end of each firing, and the game rules it reads with
 their settings' texts. Where the definition hides a copy of its name, the detail holds that copy's node.
@@ -217,7 +238,7 @@ What is not known, and what the code does:
 | `events.go` | The reach from an event link by link, its folds, loops and splice. |
 | `steps.go` | An edge: where a firing is written, the blocks around it, its delay, its effect and its title. |
 | `conditions.go` | A block of triggers put into words. |
-| `model.go` | The relations each game writes, and the reader that builds the model of an index from them. |
+| `model.go` | The relations each game writes, and the reader that builds the model of an index from them: its links and clauses. |
 | `draft.go` | One request: the workspace, the model and what was worked out once. |
 | `nodes.go` | A definition as a node: its picture, painting, group and era, and the lists of one type. |
 | `groups.go` | The group a definition is listed under, by a link or by a value it writes. |
@@ -251,13 +272,16 @@ What is not known, and what the code does:
   definition tests whether a technology is researched; no row reads it, and a technology's detail lists it.
 - **Group**: what a definition is listed under: a district, a building group, a category, a tree.
 - **Model**: every link between a game's goods, buildings and technologies, built once from the index.
+- **Clause**: one plain statement a definition writes in a modifier block, at its top where its modifiers stand loose,
+  as a cost, or as a line in the game's own words: a modifier, a condition of its block, what it costs, or that line.
 - **Draft**: one request about them, with what it worked out once.
 - **Chain**: a good with who makes it, from what, and who takes it.
 - **Maker**, **Recipe**, **Input**, **Pile**, **User**: a line that makes the good; one level or method of it; a good
   the makers take; the lines that take the good under one group; one of those lines.
 - **Amount**: a good with how much, as shown. **Among**: which of a level's production methods take it.
 - **Source**: where a good is found: counties, state regions or locations, counted.
-- **Fact**: one thing a modifier gives, or one labeled fact about a node, with its condition.
+- **Fact**: one thing a modifier gives, a line of what a definition gives in the game's own words, or one labeled fact
+  about a node, with its condition.
 - **Tree**: the technologies the game lists together: a CK3 group, a Vic3 category, an EU5 age.
 - **Audience**: a religion, culture or country that advances of an EU5 age are written for.
 - **Picture**: the icon of a definition, or an event's scene. **Painting**: the picture behind a head.
@@ -275,6 +299,6 @@ What is not known, and what the code does:
 - **Display**: how the player sees an event or a message: a window, hidden, or a message.
 - **Copy**: the latest-loaded copy of a name that the definition the game keeps hides.
 - **Detail**: what the page shows about one node.
-- **Section**: one key at the top of a definition, as the page shows it.
+- **Section**: one key at the top of a definition that shows a text, or one of its options.
 - **Version**: one text a key can show, with the trigger that decides it.
 - **Rule**: one game rule a definition reads, with its settings.

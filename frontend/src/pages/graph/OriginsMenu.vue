@@ -19,6 +19,12 @@ const { origins } = defineProps<{ origins: string[] }>();
 const drawn = defineModel<string[]>({ required: true });
 
 const workspace = useWorkspaceStore();
+const label = computed(() => {
+  if (drawn.value.length === origins.length) return "From: every origin";
+  if (drawn.value.length === 1) return `From: ${workspace.originName(drawn.value[0])}`;
+
+  return `From: ${drawn.value.length} of ${origins.length} origins`;
+});
 const choices = computed(() =>
   origins.map((origin) => ({
     value: origin,
@@ -29,13 +35,7 @@ const choices = computed(() =>
 
 <template>
   <UPopover :content="{ align: 'start' }">
-    <UButton
-      :label="`From: ${drawn.map(workspace.originName).join(', ')}`"
-      variant="outline"
-      size="xs"
-      color="neutral"
-      :ui="{ label: 'max-w-64 truncate' }"
-    />
+    <UButton :label="label" variant="outline" size="xs" color="neutral" :ui="{ label: 'max-w-64 truncate' }" />
     <template #content>
       <div class="flex w-80 flex-col gap-2 p-3.5">
         <p class="text-12 text-dimmed">Unchecked origins hide what only they define.</p>

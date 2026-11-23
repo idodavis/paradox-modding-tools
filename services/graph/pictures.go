@@ -1,5 +1,4 @@
-// pictures.go finds the picture a definition shows: an event's window
-// background, or the icon or painting a good, building or technology has.
+// pictures.go finds the picture and the painting a definition shows.
 
 package graph
 
@@ -12,53 +11,49 @@ import (
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/internal/texture"
 	"paradox-modding-tools/services/workspace"
 )
 
-// pictureRow is how one game's definitions of a database show a picture: the
-// file they name, or the file named after them.
+// pictureRow is how one game's database shows a picture: the file a
+// definition names, or the file named after it.
 type pictureRow struct {
 	Game     string
 	Database string
 
-	// Painting is whether the file is the painting behind the definition's
-	// head, and not its own icon. Of a database's rows for either, the first
-	// that leads to a file is the one shown.
+	// Painting marks the painting behind a definition's head, not its icon.
+	// Of a database's rows for either, the first that leads to a file shows.
 	Painting bool
 
-	// Key is the way from the definition to the key that writes the file,
-	// keys joined by slashes, as listValues reads them. The file may be
-	// written through a constant, as @icon. A value that does not start with
-	// gfx/ is a path under Folder. Key is "" for a file named after the
-	// definition.
+	// Key is the keys from the definition to the one that writes the file,
+	// joined by slashes. A constant, as @icon, stands for its text, and a
+	// value that does not start with gfx/ is a path under Folder. It is ""
+	// for a file named after the definition.
 	Key    string
 	Folder string
 
-	// Pattern is the path of a file named after the definition, %s standing
-	// for its name, or for the value of Field where that is set.
+	// Pattern is the path of a file named after the definition, with %s for
+	// its name, or for the value of Field where that is set.
 	Pattern string
 	Field   string
 
-	// Silhouette is whether the game tints the picture in the color of the
-	// text, so only its shape counts.
+	// Silhouette is set where the game tints the picture in the text's color.
 	Silhouette bool
 }
 
-// patternName stands in a row's Pattern for a name.
+// patternName stands for a name in a row's pattern.
 const patternName = "%s"
 
-// pictureRows are the pictures of each game's goods, buildings, technologies,
-// pop types and what holds them. A row cites the file and line of the game
-// that writes what it reads, or the folder that holds the files.
+// pictureRows are the pictures of each game's goods, buildings, technologies
+// and pop types. Each cites the game's file and line, or the files' folder.
 var pictureRows = []pictureRow{
 	// gfx/interface/icons/trade/trade_goods/trade_good_alum.dds and
 	// trade_good_categories/trade_category_agricultural_goods.dds
 	{Game: game.CK3, Database: "trade/trade_good_types", Pattern: "gfx/interface/icons/trade/trade_goods/%s"},
 	{Game: game.CK3, Database: "trade/trade_good_categories", Pattern: "gfx/interface/icons/trade/trade_good_categories/%s"},
 
-	// common/buildings/regular_district_buildings/
-	// 00_guild_district_buildings.txt:852 writes type_icon, which is a shape
-	// the game tints
+	// regular_district_buildings/00_guild_district_buildings.txt:852 writes
+	// type_icon, a shape the game tints
 	{Game: game.CK3, Database: "buildings", Key: "type_icon", Folder: "gfx/interface/icons/building_types", Silhouette: true},
 
 	// common/culture/innovations/00_cultural_maa_innovations.txt:2 writes
@@ -66,17 +61,15 @@ var pictureRows = []pictureRow{
 	{Game: game.CK3, Database: "culture/innovations", Key: "icon"},
 
 	// common/districts/duchy_capital_districts.txt:8 and 16 write a
-	// background for some cases and a last one for the rest; the first with
-	// no trigger is the district's. An era's is the file
+	// background for some cases and one for the rest. An era's is
 	// gfx/interface/window_culture/culture_era_illustrations/
 	// culture_era_tribal.dds
 	{Game: game.CK3, Database: "districts", Painting: true, Key: "background/reference"},
 	{Game: game.CK3, Database: "culture/eras", Painting: true, Pattern: "gfx/interface/window_culture/culture_era_illustrations/%s"},
 
-	// common/goods/00_goods.txt:10; common/buildings/01_industry.txt:175 and
-	// 211 write a building's icon and the background that stands behind it;
-	// common/technology/technologies/10_production.txt:6-7 writes a
-	// technology's icon and its category, which names its tree's illustration at
+	// common/goods/00_goods.txt:10; buildings/01_industry.txt:175 and 211, an
+	// icon and the background behind it;
+	// technology/technologies/10_production.txt:6-7, whose category names
 	// gfx/interface/illustrations/tech_tree/illustration_tech_production.dds
 	{Game: game.Vic3, Database: "goods", Key: "texture"},
 	{Game: game.Vic3, Database: "buildings", Key: "icon"},
@@ -99,10 +92,11 @@ var pictureRows = []pictureRow{
 
 	// main_menu/gfx/interface/icons/trade_goods/icon_goods_alum.dds,
 	// icons/buildings/ablaq_palace.dds, icons/building_categories/
-	// consumer_goods_category.dds, advance/age_1_traditions.dds is an
-	// advance's icon, and illustrations/advances/age_1_traditions.dds an
-	// age's painting
+	// consumer_goods_category.dds, icons/pops/clergy.dds,
+	// advance/age_1_traditions.dds is an advance's icon, and
+	// illustrations/advances/age_1_traditions.dds an age's painting
 	{Game: game.EU5, Database: "goods", Pattern: "gfx/interface/icons/trade_goods/icon_goods_%s"},
+	{Game: game.EU5, Database: "pop_types", Pattern: "gfx/interface/icons/pops/%s"},
 	{Game: game.EU5, Database: "building_types", Pattern: "gfx/interface/icons/buildings/%s"},
 	{Game: game.EU5, Database: "building_categories", Pattern: "gfx/interface/icons/building_categories/%s"},
 
@@ -116,9 +110,8 @@ var pictureRows = []pictureRow{
 }
 
 // findPicture returns the path of the picture a definition shows, and
-// whether the game tints it. An event shows the file it names itself, else
-// the file the first of the game's chains leads to; any other definition
-// shows what its row in pictureRows says. It returns "" if there is none.
+// whether the game tints it. An event shows the file it names, else the one
+// its chains lead to; anything else what its rows say. It is "" for none.
 func findPicture(ws *workspace.Session, mods *index.Index, site index.Site) (string, bool) {
 	if mods.ToReference(site).Database != ws.Schema.Events {
 		return findRowPicture(ws, mods, site, false)
@@ -132,26 +125,35 @@ func findPicture(ws *workspace.Session, mods *index.Index, site index.Site) (str
 	return findEventPicture(ws, mods, tree, statement, lang.LookupDialect(ws.Game.ID).Events.Picture), false
 }
 
-// findPainting returns the path of the painting behind a definition's head.
-// It returns "" if there is none.
+// findPainting returns the path of the painting behind a definition's head,
+// "" for none.
 func findPainting(ws *workspace.Session, mods *index.Index, site index.Site) string {
 	file, _ := findRowPicture(ws, mods, site, true)
 
 	return file
 }
 
-// findRowPicture returns the file the first of the definition's rows leads to,
-// of the painting rows where painting is set, and whether that row is a
-// silhouette. It returns "" if no row leads to a file.
+// findRowPicture returns the file the first of a definition's rows leads to,
+// and whether that row is a silhouette. It reads the painting rows where a
+// painting is asked for. A later level with no file shows its line's first:
+// CK3's wood_district_buildings.txt:173 writes type_icon on
+// forestry_resource_building_1 alone. It returns "" if nothing leads to a
+// file.
 func findRowPicture(ws *workspace.Session, mods *index.Index, site index.Site, painting bool) (string, bool) {
-	database := mods.ToReference(site).Database
+	reference := mods.ToReference(site)
 	for _, row := range pictureRows {
-		if row.Game != ws.Game.ID || row.Database != database || row.Painting != painting {
+		if row.Game != ws.Game.ID || row.Database != reference.Database || row.Painting != painting {
 			continue
 		}
 
 		if file, isFound := mods.ResolveTexture(findRowPath(ws, mods, site, row)); isFound {
 			return file, row.Silhouette
+		}
+	}
+
+	if head := loadModel(ws, mods).listLine(reference.ToID())[0]; head != reference.ToID() {
+		if first, err := resolveNode(ws, mods, head); err == nil {
+			return findRowPicture(ws, mods, first, painting)
 		}
 	}
 
@@ -190,8 +192,8 @@ const (
 )
 
 // findRowValue returns the script path of the file a key's first value
-// names: the constant it stands for, under the folder where it is no path of
-// the game's. It returns "" if the key wrote no value.
+// names, through a constant and under the row's folder. It is "" if the key
+// writes no value.
 func findRowValue(ws *workspace.Session, mods *index.Index, site index.Site, values []string, folder string) string {
 	if len(values) == 0 {
 		return ""
@@ -209,9 +211,8 @@ func findRowValue(ws *workspace.Session, mods *index.Index, site index.Site, val
 	return path.Join(folder, value)
 }
 
-// findConstant returns the text of the constant a definition's file writes
-// for itself, as @icon = "gfx/interface/icons/x.dds". It returns "" if the
-// file writes none of that name.
+// findConstant returns the text of a constant the definition's file writes,
+// as @icon = "gfx/interface/icons/x.dds", "" if it writes none of that name.
 func findConstant(ws *workspace.Session, mods *index.Index, site index.Site, name string) string {
 	constants := mods.ResolveLocal(lang.Reference{Database: lang.Constant, Name: name}, site.File)
 	if len(constants) == 0 {
@@ -226,9 +227,9 @@ func findConstant(ws *workspace.Session, mods *index.Index, site index.Site, nam
 	return tree.Unquoted(tree.Statements[statement].Value)
 }
 
-// findEventPicture returns the path of the picture an event's statement
-// shows: the file it names itself, else the file the first of the game's
-// chains leads to. It returns "" if there is none.
+// findEventPicture returns the path of the picture an event shows: the file
+// it names, else the one the first of the game's chains leads to, "" for
+// none.
 func findEventPicture(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32, rows lang.Picture) string {
 	if file, isFound := resolveFile(mods, tree, statement, rows.FileKey); isFound {
 		return file
@@ -244,20 +245,25 @@ func findEventPicture(ws *workspace.Session, mods *index.Index, tree *jomini.Tre
 }
 
 // resolveFile returns the image file a definition names under a key. It
-// returns false if it names none, or no file has that path.
+// returns false if it names none, no file has that path, or the file is no
+// image, as the .bk2 video of a Vic3 event.
 func resolveFile(mods *index.Index, tree *jomini.Tree, statement int32, key string) (string, bool) {
 	values := listValues(tree, statement, key)
 	if len(values) == 0 {
 		return "", false
 	}
 
-	return mods.ResolveTexture(values[0])
+	file, isFound := mods.ResolveTexture(values[0])
+	if !isFound || !texture.IsImage(file) {
+		return "", false
+	}
+
+	return file, true
 }
 
-// resolveChain returns the picture a chain of definitions ends in, starting
-// from a statement. Where the last definition names no file, the chain's
-// fallback key is one more step, to another definition of the same
-// database. It returns "" if the chain leads to no file.
+// resolveChain returns the picture a chain of definitions ends in. Where the
+// last names no file, the chain's fallback key leads one step further in the
+// same database. It is "" if the chain leads to no file.
 func resolveChain(ws *workspace.Session, mods *index.Index, chain lang.PictureChain, tree *jomini.Tree, statement int32) string {
 	for _, step := range chain.Steps {
 		site, ok := findHop(ws, mods, step, listValues(tree, statement, step.Key))
@@ -312,8 +318,8 @@ type candidate struct {
 	values []string
 }
 
-// candidates holds the candidates of each comparing step for the latest index
-// of the mods.
+// candidates holds the candidates of each comparing step for the latest
+// index.
 var candidates latest[lang.PictureStep, []candidate]
 
 // listCandidates returns the candidates of a comparing step, in load order.
@@ -331,9 +337,9 @@ func listCandidates(ws *workspace.Session, mods *index.Index, step lang.PictureS
 	})
 }
 
-// listValues returns the values under a way of keys joined by slashes, each
-// key picked by pickChild. A block gives the values of its statements.
-// It returns nil if the way is empty or one of its keys is not written.
+// listValues returns the values under keys joined by slashes. A block gives
+// the values of its statements. It returns nil if there are no keys or one
+// of them is not written.
 func listValues(tree *jomini.Tree, statement int32, keyPath string) []string {
 	if keyPath == "" {
 		return nil
@@ -362,11 +368,9 @@ func listValues(tree *jomini.Tree, statement int32, keyPath string) []string {
 	return values
 }
 
-// pickChild returns the child of a statement with a key. A key written
-// key[field=value] picks the child whose field has that value. Of several
-// plain ones, as a background written for some cases and then for the rest,
-// it picks the first with no trigger, else the first. It returns false if
-// there is none.
+// pickChild returns the child of a statement with a key. key[field=value]
+// picks the child whose field has that value. Of several plain ones it picks
+// the first with no trigger, else the first. It returns false for none.
 func pickChild(tree *jomini.Tree, statement int32, key string) (int32, bool) {
 	key, selector, isSelected := strings.Cut(strings.TrimSuffix(key, "]"), "[")
 	field, value, _ := strings.Cut(selector, "=")

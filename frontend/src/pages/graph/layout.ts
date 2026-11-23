@@ -8,20 +8,14 @@ import { placeLayered, type Placed } from "./layered";
 /** Look is how a database's nodes are drawn. */
 export type Look = { shape: "frame" | "toast" | "pill"; filled: boolean; color: string; icon: string };
 
-/**
- * Options are what a layout is built for: the selection, text size, and the
- * nodes whose loop firers are shown.
- */
+/** Options are what a layout is built for. */
 export type Options = { selected: string; unit: number; loops: string[] };
 
 /** Flow is what the canvas draws: its nodes and the edges between them. */
 export type Flow = { nodes: FlowNode[]; edges: FlowEdge[] };
 
-/**
- * Lit is what a selection lights: the selected node, its route back to the
- * root, and the nodes it touches.
- */
-type Lit = { selected: string; route: Set<string>; near: Set<string> };
+/** Lit is the wires a selection lights: its own, and its route to the root. */
+type Lit = { selected: string; route: Set<string> };
 
 /**
  * Loop is what a loop marker stands for: the firers that come round a loop, or
@@ -36,11 +30,11 @@ export type Loop = { marker: "firers"; count: number } | { marker: "back" };
 export type Drawn = { id: string; node: Node; look: Look; loop?: Loop };
 
 /**
- * NODE_STATE is the classes that fade a node off the lit route and ring the
- * root in the second color and the selection in the primary.
+ * NODE_STATE is the classes that ring the root in the second color and the
+ * selection in the primary.
  */
 export const NODE_STATE =
-  "in-[.dim]:opacity-60 in-[.root]:border-secondary in-[.root]:ring-3 in-[.root]:ring-(--link-soft) in-[.selected]:border-primary in-[.selected]:ring-3 in-[.selected]:ring-(--accent-soft)";
+  "in-[.root]:border-secondary in-[.root]:ring-3 in-[.root]:ring-(--link-soft) in-[.selected]:border-primary in-[.selected]:ring-3 in-[.selected]:ring-(--accent-soft)";
 
 /** SIZES holds node sizes in pixels at text size 1. */
 const SIZES = {
@@ -69,7 +63,6 @@ const LOOKS: Record<string, Look> = {
 };
 /** QUIET is the look of a database LOOKS lacks. */
 const QUIET: Look = { shape: "pill", filled: false, color: "var(--fg-3)", icon: "i-lucide-box" };
-/** ROOT_DISTANCE is the distance of the root. */
 export const ROOT_DISTANCE = 0;
 /** FOLD starts the id of a fold's node, as Go names it. */
 export const FOLD = "more";
@@ -90,10 +83,7 @@ export function isPastDepth(node: Node): boolean {
   return node.deep && node.distance !== ROOT_DISTANCE;
 }
 
-/**
- * listRoute lists the node ids from the selected node up through each parent
- * to the root.
- */
+/** listRoute lists the ids from the selected node up to the root. */
 function listRoute(graph: Graph, selected: string): string[] {
   const parents = new Map((graph.nodes ?? []).map((node) => [node.id, node.parent]));
   const route: string[] = [];
@@ -137,20 +127,16 @@ export async function buildLayout(whole: Graph, { selected, unit, loops }: Optio
     type: "graph",
     position: placed.boxes[mark.id],
     data: mark,
-    class: [
-      mark.id === graph.root ? "root" : mark.id === selected && "selected",
-      lit && !lit.near.has(mark.id) && "dim",
-    ],
+    class: { root: mark.id === graph.root, selected: mark.id === selected && mark.id !== graph.root },
   }));
   return { nodes, edges: buildEdges(graph, placed, lit) };
 }
 
 /**
  * foldLoops lists what the canvas draws. A firer that fires the root only
- * round a loop of the root's own chain folds into a pill joined to the node it
- * enters by, unless that node's loop firers are shown. A firing back into its
- * own chain ends in a marker naming the node it fires, in place of an edge
- * back across the graph.
+ * round a loop folds into a pill on the node it enters by, unless that node's
+ * loop firers are shown. A firing back into its own chain ends in a marker,
+ * in place of an edge back across the graph.
  */
 function foldLoops(whole: Graph, loops: string[]): { graph: Graph; drawn: Drawn[] } {
   const kept = new Map<string, Node>();
@@ -207,10 +193,9 @@ function describeLabel(edge: Edge): string {
 }
 
 /**
- * buildEdges builds the canvas's edges. Each keeps the points the layout
- * routes it through, none for a wire from a node to itself. A firing that
- * waits or goes through a macro is marked as delayed or via, so it draws
- * dashed or dotted. Its conditions in words are its hover text.
+ * buildEdges builds the canvas's edges with the points the layout routes them
+ * through. A firing that waits or goes through a macro draws dashed or
+ * dotted, and its conditions in words are its hover text.
  */
 function buildEdges(graph: Graph, placed: Placed, lit: Lit | null): FlowEdge[] {
   return listSpans(graph).map(({ edge, span, id }) => {
@@ -243,11 +228,6 @@ function isLit(lit: Lit, source: string, target: string): boolean {
 /** findLit finds what a selection lights, or null if nothing is selected. */
 function findLit(graph: Graph, selected: string): Lit | null {
   if (!selected) return null;
-  const route = new Set(listRoute(graph, selected));
-  const near = new Set(route);
-  for (const edge of graph.edges ?? []) {
-    if (edge.from === selected) near.add(edge.to);
-    if (edge.to === selected) near.add(edge.from);
-  }
-  return { selected, route, near };
+
+  return { selected, route: new Set(listRoute(graph, selected)) };
 }

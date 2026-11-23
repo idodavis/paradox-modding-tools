@@ -167,9 +167,9 @@ func findTitle(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, stat
 		return ""
 	}
 
-	text, _, _ := ws.LookupText(mods, tree.Unquoted(tree.Statements[position].Value))
+	title, _ := describeKey(ws, mods, tree.Unquoted(tree.Statements[position].Value))
 
-	return toTitle(ws, mods, text)
+	return title
 }
 
 // listSteps returns the blocks around a firing, from the top of its
@@ -196,10 +196,9 @@ func listSteps(ws *workspace.Session, mods *index.Index, document lang.Document,
 // are in.
 var weightModifiers = []string{"modifier", "opinion_modifier", "compare_modifier", "compatibility_modifier"}
 
-// makeStep returns the step of one block around a firing. Its block is what
-// the walk decided the block's key is, and a plain block has no words. A
-// weighted branch's step names its list, as "10± in random_list", where the ±
-// marks a weight that blocks inside the branch change.
+// makeStep returns the step of one block around a firing. A plain block has
+// no words. A weighted branch's step names its list, as "10± in
+// random_list", the ± marking a weight that blocks inside the branch change.
 func makeStep(ws *workspace.Session, mods *index.Index, document lang.Document, statement, definition int32) Step {
 	tree, context := document.Tree, &document.Contexts[statement]
 	current := tree.Statements[statement]
@@ -259,10 +258,9 @@ var stepPhrases = map[string]string{blockWeight: "weight", blockList: "for", blo
 // written, and any other branch "if".
 const elseKey = "else"
 
-// describeStep returns a step in words as the page lists it: a heading with
-// the given detail as its value, then the conditions under "when", or
-// "where" for a list. A branch is "if" or "else" with its conditions under
-// it.
+// describeStep returns a step in words: a heading with the given detail,
+// then its conditions under "when", or "where" for a list. A branch is "if"
+// or "else" with its conditions under it.
 func describeStep(step Step, detail string, when []Condition) []Condition {
 	if step.Block == blockBranch {
 		text := "if"

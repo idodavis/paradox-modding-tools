@@ -23,8 +23,7 @@ const emit = defineEmits<{ select: [id: string]; ask: [id: string] }>();
 /**
  * Block is the bonuses one condition holds for, and Section the blocks that
  * apply to one thing, as "In the province". A section's matrix is its blocks
- * that hold the same bonuses under different conditions, drawn as one table
- * with a column for each condition.
+ * with the same bonuses under different conditions, drawn as one table.
  */
 type Block = { when: string; rows: LineRow[] };
 type Section = { where: string; blocks: Block[]; matrix: Block[] };
@@ -46,8 +45,6 @@ const methods = computed(() =>
     (method) => method.makes?.length || method.takes?.length || method.gives?.length,
   ),
 );
-/** isNamesake reports whether what unlocks the building is called the same. */
-const isNamesake = computed(() => !!level.value?.unlock && labelOf(level.value.unlock) === labelOf(line.head));
 const makes = computed(() => (methods.value.length ? [] : rows.value.filter((row) => row.says in MADE && !row.need)));
 const needs = computed(() => rows.value.filter((row) => row.says === "need"));
 const employed = computed(() => rows.value.filter((row) => row.says === "employment"));
@@ -88,15 +85,7 @@ function isOn(method: Method): boolean {
 <template>
   <div class="flex h-full min-h-0 w-full min-w-0 flex-col gap-4 overflow-y-auto bg-(--bg-0) px-5 py-4">
     <SubjectHead :node="line.head" :group="line.group" :facts="costs">
-      <button
-        v-if="isNamesake && level?.unlock && level.era"
-        type="button"
-        class="cursor-pointer hover:text-highlighted"
-        @click="emit('ask', level.unlock.id)"
-      >
-        Unlocked in {{ labelOf(level.era) }}
-      </button>
-      <UnlockLine v-else :unlock="level?.unlock" :era="level?.era" @ask="emit('ask', $event)" />
+      <UnlockLine :unlock="level?.unlock" :era="level?.era" :label="labelOf(line.head)" @ask="emit('ask', $event)" />
     </SubjectHead>
 
     <div class="grid shrink-0 grid-cols-[repeat(auto-fit,minmax(19rem,1fr))] items-start gap-4">

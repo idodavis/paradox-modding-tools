@@ -23,7 +23,7 @@ import { clamp } from "es-toolkit";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
 import GraphNode from "./GraphNode.vue";
-import { roundPath, type Point } from "./layered";
+import { findMiddle, roundPath, type Point } from "./layered";
 import type { Drawn } from "./layout";
 
 const {
@@ -57,13 +57,14 @@ const FADED_BELOW = 70;
 const MINIMAP = { width: 150, height: 96 };
 /** LEGEND is a row for each mark of the canvas, with a sample in classes. */
 const LEGEND = [
-  { label: "Event", sample: "h-3 w-5.5 rounded-xs border border-(--line-2) bg-(--bg-3)" },
+  { label: "Event", sample: "h-3 w-5.5 rounded-xs border border-inverted/40 bg-(--bg-3)" },
   {
     label: "Hidden event",
-    sample: "h-3 w-5.5 rounded-xs bg-[repeating-linear-gradient(135deg,var(--bg-2)_0_3px,var(--bg-1)_3px_6px)]",
+    sample:
+      "h-3 w-5.5 rounded-xs border border-inverted/40 bg-[repeating-linear-gradient(135deg,var(--bg-3)_0_3px,var(--bg-0)_3px_6px)]",
   },
-  { label: "Message", sample: "h-3 w-5.5 rounded-[3px] bg-(--bg-2)" },
-  { label: "On action", sample: "h-2.5 w-5 rounded-full border border-(--line-2) bg-(--bg-2)" },
+  { label: "Message", sample: "h-3 w-5.5 rounded-[3px] border border-inverted/40 bg-(--bg-2)" },
+  { label: "On action", sample: "h-2.5 w-5 rounded-full border border-inverted/40 bg-(--bg-2)" },
   { label: "Root", sample: "h-2.5 w-5 rounded-full border border-secondary" },
   { label: "Selected", sample: "h-2.5 w-5 rounded-full border border-primary" },
   { label: "Selected path", sample: "h-0.5 w-3.5 bg-(--link)" },
@@ -72,25 +73,45 @@ const LEGEND = [
 ];
 
 const [DefineWire, Wire] = createReusableTemplate<{ edge: EdgeProps; line: ReturnType<typeof buildPath> }>();
-const { dimensions, findNode, fitView, getNodes, setViewport, viewport, zoomIn, zoomOut } = useVueFlow("graph");
+const { dimensions, findNode, fitView, getNodes, setCenter, setViewport, viewport, zoomIn, zoomOut } =
+  useVueFlow("graph");
 const canvas = useTemplateRef("canvas");
 const zoom = computed(() => Math.round(viewport.value.zoom * 100));
 
 let lastView = "";
 let following = true;
+let anchor = "";
 useResizeObserver(canvas, () => following && void frame());
 
+/**
+ * frameOnce frames a new view. A drawing that changed under the same view,
+ * as after a fold opens, is centered on the anchor once.
+ */
 function frameOnce(): void {
-  if (lastView === view) return;
-  lastView = view;
-  following = true;
-  void frame();
+  if (lastView !== view) {
+    lastView = view;
+    following = true;
+    void frame();
+    return;
+  }
+
+  const node = findNode(anchor);
+  anchor = "";
+  if (!node) return;
+
+  const { x, y } = node.computedPosition;
+  following = false;
+  void setCenter(x + node.dimensions.width / 2, y + node.dimensions.height / 2, { zoom: viewport.value.zoom });
+}
+
+/** setAnchor names the node to center once the drawing next changes. */
+function setAnchor(id: string): void {
+  anchor = id;
 }
 
 /**
  * frame shows the whole drawing where its text stays readable. A larger one
- * opens at full size with the root as near the middle as its edges allow, and
- * along a side it fits, at the top.
+ * opens at full size on its root.
  */
 function frame(): Promise<boolean> {
   const { width, height } = dimensions.value;
@@ -130,15 +151,13 @@ function fit(): Promise<boolean> {
 }
 
 /**
- * buildPath builds an edge's path and label place: the wire the layout
- * routed, at right angles with round corners, the label at its middle. An
- * edge from a node to itself, which the layout does not route, loops over the
- * node.
+ * buildPath builds an edge's path and label place from the wire the layout
+ * routed. An edge from a node to itself loops over the node.
  */
 function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
   const points: Point[] = edge.data.points;
   if (points.length) {
-    const [x, y] = points[Math.floor(points.length / 2)];
+    const [x, y] = findMiddle(points);
 
     return { path: roundPath(points), x, y };
   }
@@ -151,7 +170,6 @@ function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
   return { path, x: sourceX + labelX, y: top - labelY };
 }
 
-/** resolveColor returns the minimap color of a node. */
 function resolveColor(node: FlowNode): string {
   return node.id === root ? "var(--link)" : "var(--line-2)";
 }
@@ -173,7 +191,7 @@ function ask(node: FlowNode): void {
   emit("ask", node.data.node.id);
 }
 
-defineExpose({ fit });
+defineExpose({ fit, setAnchor });
 </script>
 
 <template>
@@ -225,7 +243,7 @@ defineExpose({ fit });
       class="absolute start-4 bottom-3.5 flex items-center gap-2 rounded-lg border border-default bg-muted px-2.5 py-1.5 text-11 text-dimmed"
     >
       <UIcon name="i-lucide-info" class="size-3.5" />
-      Zoomed out to {{ zoom }}%. Nodes off the selected path are faded.
+      Zoomed out to {{ zoom }}%. Wires off the selected path are faded.
     </div>
     <div
       v-else

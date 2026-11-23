@@ -642,7 +642,11 @@ const ACTIONS: Record<
   },
   "file.copyPath": { writes: false, run: (row) => void Clipboard.SetText(findPath(row)) },
   "file.reveal": { writes: false, run: (row) => void app.ShowFolder(findPath(row)) },
-  "file.copyToMod": { writes: false, shows: (row) => canCopyToMod(places.get(row)), run: onPlace(copyToMod) },
+  "file.copyToMod": {
+    writes: false,
+    shows: (row) => canCopyToMod(listMenuFiles(row)),
+    run: (row) => copyToMod(listMenuFiles(row)),
+  },
   "image.saveDds": {
     writes: true,
     shows: (row) => !isRoot(row) && (row.endsWith("/") ? holdsPictures(row) : canSaveAsDds(places.get(row))),
@@ -657,6 +661,20 @@ const ACTIONS: Record<
  */
 function holdsPictures(row: string): boolean {
   return [...(members.get(row) ?? [])].some((child) => canSaveAsDds(places.get(child)));
+}
+
+/**
+ * listMenuFiles lists the places a row's menu acts on: every selected file
+ * when the row is one of them, else the row's own. A row the tree lacks has
+ * none.
+ */
+function listMenuFiles(row: string): Place[] {
+  const place = places.get(row);
+  if (!place) return [];
+
+  const selection = editor.listSelection();
+
+  return selection.some((file) => file.key === place.key) ? selection : [place];
 }
 
 /** onPlace returns a menu action that runs the given function on the clicked row's place. */

@@ -22,14 +22,12 @@ type draft struct {
 	// under, "" for one in none.
 	groups map[string]string
 
-	// known holds the node of each definition already asked for, and values
-	// the number of each script value a fact has named.
-	known  map[string]Node
-	values map[string]string
+	// known holds the node of each definition already asked for.
+	known map[string]Node
 
-	// parameters holds the title of the definition that grants each parameter
-	// a condition may name, read the first time one is asked for.
-	parameters map[string]string
+	// parameters holds the titles of the definitions that grant each
+	// parameter a condition may name, read the first time one is asked for.
+	parameters map[string][]string
 
 	// eras are the ids of the game's eras in the order its files define
 	// them, read the first time they are needed.
@@ -39,7 +37,7 @@ type draft struct {
 func newDraft(ws *workspace.Session, mods *index.Index) *draft {
 	return &draft{
 		ws: ws, mods: mods, model: loadModel(ws, mods),
-		groups: map[string]string{}, known: map[string]Node{}, values: map[string]string{},
+		groups: map[string]string{}, known: map[string]Node{},
 	}
 }
 

@@ -316,9 +316,9 @@ func (r *reach) splice() {
 
 		for _, first := range incoming {
 			for _, second := range outgoing {
-				joined := first
-				joined.To, joined.Via = second.To, slices.Concat(first.Via, []string{node.Name}, second.Via)
-				rest = append(rest, joined)
+				edge := first
+				edge.To, edge.Via = second.To, slices.Concat(first.Via, []string{node.Name}, second.Via)
+				rest = append(rest, edge)
 			}
 		}
 
@@ -345,8 +345,8 @@ func (r *reach) passDeep(hidden []Node, parents map[string]string) {
 			continue
 		}
 
-		drawn := findDrawn(parents, node.Parent)
-		if position := slices.IndexFunc(r.nodes, func(other Node) bool { return other.ID == drawn }); position >= 0 {
+		ancestor := findDrawn(parents, node.Parent)
+		if position := slices.IndexFunc(r.nodes, func(other Node) bool { return other.ID == ancestor }); position >= 0 {
 			r.nodes[position].Deep = true
 		}
 	}

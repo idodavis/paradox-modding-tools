@@ -12,7 +12,7 @@ import { describeCount, plural, toRoman } from "../../lib/format";
 import { detailQuery, graphChainQuery, graphErasQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LineTable from "./LineTable.vue";
-import { conditionOf, keyOf, labelOf, NO_REACH, SAYS, whatOf } from "./nodes";
+import { conditionOf, keyOf, labelOf, NO_REACH, SAYS } from "./nodes";
 import NodeIcon from "./NodeIcon.vue";
 import OriginsMenu from "./OriginsMenu.vue";
 import SelectedTab from "./SelectedTab.vue";
@@ -87,9 +87,8 @@ const members = computed(() =>
   }),
 );
 /**
- * The building lines that make the good, each once with the rows of every
- * way it makes it: first those whose levels take goods, drawn as tables,
- * then the rest, drawn as rows.
+ * The lines that make the good, each once: first those of several levels
+ * that take goods, drawn as tables, then the rest, drawn as rows.
  */
 const makers = computed(() => {
   const byLine = Map.groupBy(chain.value?.makers ?? [], (maker) => maker.line.head.id);
@@ -99,8 +98,13 @@ const makers = computed(() => {
     return { ...ways[0].line, rows: uniqBy(rows, keyOf), same: [] };
   });
 
-  return partition(lines, (line) => !!line.rows?.some((row) => row.says === "input"));
+  return partition(lines, (line) => (line.levels?.length ?? 0) > 1 && listTaken(line).length > 0);
 });
+
+/** listTaken returns the rows of the goods a line's levels take. */
+function listTaken(line: Line): LineRow[] {
+  return (line.rows ?? []).filter((row) => row.says === "input");
+}
 
 /**
  * listMade returns how a line makes the good: each amount as it runs from
@@ -112,11 +116,13 @@ function listMade(rows: LineRow[]) {
     const [first, last] = [texts[0], texts[texts.length - 1]];
     if (!(row.says in WAYS) || !first) return [];
 
+    const condition = conditionOf(rows, row);
+
     return {
       key: keyOf(row),
-      text: first === last ? first : `${first}–${last}`,
+      text: first === last ? first : `${first} to ${last}`,
       tone: SAYS[row.says].tone,
-      note: [WAYS[row.says], conditionOf(rows, row)].filter(Boolean).join(" "),
+      note: [WAYS[row.says], condition].filter(Boolean).join(condition.startsWith("when") ? " " : " · "),
     };
   });
 }
@@ -197,7 +203,6 @@ function toggle(id: string): void {
     <UAlert v-if="error" color="error" variant="subtle" :description="error.message" class="m-2" />
     <div v-if="chain" class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
       <SubjectHead :node="chain.good" :group="detail?.linked?.[chain.good.group ?? '']" :facts="detail?.about ?? []">
-        <UBadge :label="whatOf(chain.good)" color="info" variant="subtle" size="sm" />
         <UButton
           v-for="member in members"
           :key="member.id"
@@ -263,16 +268,23 @@ function toggle(id: string): void {
               @dblclick="emit('ask', line.head.id)"
               @keydown.enter="select(line.head.id)"
             >
-              <SelectedTab v-if="isPicked(line)" />
+              <SelectedTab v-if="isPicked(line)" inside />
               <NodeIcon :node="line.head" class="size-8" />
-              <span class="flex min-w-0 grow flex-col">
+              <span class="flex min-w-0 grow flex-col gap-0.5">
                 <b class="truncate text-13.5 font-medium text-highlighted">{{ labelOf(line.head) }}</b>
                 <small class="truncate text-12 text-dimmed">{{ describeLine(line) }}</small>
+                <span v-if="listTaken(line).length" class="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-12">
+                  <span class="text-dimmed">Takes</span>
+                  <span v-for="row in listTaken(line)" :key="keyOf(row)" class="flex items-center gap-1 text-muted">
+                    <NodeIcon v-if="row.subject" :node="row.subject" class="size-4" />{{ row.label }}
+                    <b class="font-medium text-(--blue) tabular-nums">{{ row.cells?.[0]?.text }}</b>
+                  </span>
+                </span>
               </span>
               <span
                 v-for="amount in listMade(line.rows ?? [])"
                 :key="amount.key"
-                class="flex max-w-44 shrink-0 flex-col items-end text-end"
+                class="flex max-w-56 shrink-0 flex-col items-end text-end"
               >
                 <b class="text-15 font-semibold whitespace-nowrap tabular-nums" :class="amount.tone">
                   {{ amount.text }}

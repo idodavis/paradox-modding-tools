@@ -180,7 +180,7 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	prefix, label := condition.Value[link.Prefix.Start:link.Prefix.End], condition.Value[link.Name.Start:link.Name.End]
 	if database, _ := ws.Schema.LookupPrefix(prefix); len(links) == 1 && !link.Prefix.IsEmpty() && database != "" {
 		if winner, ok := mods.FindKept(ws.Schema, lang.Reference{Database: database, Name: label}); ok {
-			condition.Title = toTitle(ws, mods, ws.LookupDefinitionText(mods, winner.Site, lang.TitleKey))
+			condition.Title = describeLabel(ws, mods, ws.LookupDefinitionText(mods, winner.Site, lang.TitleKey))
 		}
 	}
 
@@ -228,12 +228,12 @@ func describeCover(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 		key = label
 	}
 
-	text, _, ok := ws.LookupText(mods, key)
+	text, ok := describeKey(ws, mods, key)
 	if !ok {
 		return toWords(tree.Text(tree.Statements[statement].Key)), key
 	}
 
-	return toTitle(ws, mods, text), ""
+	return text, ""
 }
 
 func toWords(key string) string {

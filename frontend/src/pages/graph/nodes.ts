@@ -1,6 +1,4 @@
-// What the Graph's views share: what they say of a definition, its words and
-// its icon, the ground of a canvas, and the filter of a view that reaches no
-// further than one step.
+// What the Graph's views share: a node's words and icon, and a canvas's ground.
 import { Type } from "@internal/lang/models";
 import type { Filter, LineRow, Node } from "@services/graph/models";
 
@@ -8,9 +6,8 @@ import type { Filter, LineRow, Node } from "@services/graph/models";
 export const GROUND = "radial-gradient(var(--line-1) 1px, transparent 1px) 0 0 / 20px 20px, var(--bg-0)";
 
 /**
- * NO_REACH is a filter that reaches nowhere: a good's chain and a tree are
- * one step each way, so only the filter's origins, changes, era and audience
- * count.
+ * NO_REACH is the filter of a view one step each way, as a good's sheet and
+ * a tree: only its origins, changes, era and audience count.
  */
 export const NO_REACH: Filter = {
   databases: null,
@@ -28,10 +25,7 @@ export type Recent = Pick<
   "id" | "database" | "name" | "what" | "title" | "display" | "picture" | "silhouette" | "type"
 >;
 
-/**
- * TYPE_ICONS is the icon of each type a catalog lists, for a node with no
- * picture.
- */
+/** TYPE_ICONS is the icon of each type, for a node with no picture. */
 export const TYPE_ICONS: Record<string, string> = {
   [Type.TypeGood]: "i-lucide-package",
   [Type.TypeGoodCategory]: "i-lucide-boxes",
@@ -49,8 +43,7 @@ export const LINE_TYPES: (Type | undefined)[] = [Type.TypeBuilding, Type.TypePro
 
 /**
  * hasView reports whether the Graph has a view of a node: a good, a building,
- * a production method, a technology, or a definition of one of the databases
- * that fire, which the event graph draws.
+ * a production method, a technology, or a definition that fires.
  */
 export function hasView(node: Pick<Node, "type" | "database">, firing: readonly string[]): boolean {
   return [...GOOD_TYPES, ...LINE_TYPES, Type.TypeTechnology].includes(node.type) || firing.includes(node.database);

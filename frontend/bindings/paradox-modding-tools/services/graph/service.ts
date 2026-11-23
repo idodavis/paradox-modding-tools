@@ -19,10 +19,9 @@ import * as lang$0 from "../../internal/lang/models.js";
 import * as $models from "./models.js";
 
 /**
- * BuildChain returns a good with the lines that make it and the lines that
- * use it, under the filter's origins and era. It returns an error if no
- * workspace is open, the game keeps no definition of the good, or the
- * definition is no good and no category of goods.
+ * BuildChain returns a good with the lines that make it and use it, under
+ * the filter's origins and era. It returns an error if no workspace is open,
+ * the game keeps no definition of the good, or it is no good and no category.
  */
 export function BuildChain(id: string, filter: $models.Filter): $CancellablePromise<$models.Chain> {
     return $Call.ByID(482232103, id, filter);
@@ -47,21 +46,21 @@ export function BuildGraph(subject: string, filter: $models.Filter): $Cancellabl
 }
 
 /**
- * BuildLine returns the line of a building. A production method as the id is
- * its building. Each of the given production methods is the one its group
- * runs, and a group none of them names runs its first. It returns an error
- * if no workspace is open, the game keeps no definition of the id, or it is
- * no building and part of none.
+ * BuildLine returns the line of a building, or of a production method's
+ * building. A group runs the given method that is in it, else its first; with
+ * none given, a production method asked for is the one its group runs. It
+ * returns an error if no workspace is open, the game keeps no definition of
+ * the id, or it is no building and part of none.
  */
 export function BuildLine(id: string, picked: string[] | null): $CancellablePromise<$models.Line> {
     return $Call.ByID(676616456, id, picked);
 }
 
 /**
- * BuildTree returns the tree a technology is in. For an EU5 age it draws the
- * advances of every country, those of the filter's Potential, and those of
- * the subject's own row. It returns an error if no workspace is open, the
- * game keeps no definition of the id, or it is no technology.
+ * BuildTree returns the tree a technology is in. An EU5 age draws the
+ * advances of every country, of the filter's potential and of the subject's
+ * own audience. It returns an error if no workspace is open, the game keeps
+ * no definition of the id, or it is no technology.
  */
 export function BuildTree(id: string, filter: $models.Filter): $CancellablePromise<$models.TreeGraph> {
     return $Call.ByID(1714151878, id, filter);
@@ -69,9 +68,8 @@ export function BuildTree(id: string, filter: $models.Filter): $CancellablePromi
 
 /**
  * Defaults returns the filter of a new event graph: every origin and every
- * database that fires drawn, three steps from the root, every fold closed.
- * Its Labels give the plural word of each of those databases. It returns an
- * empty filter if no workspace is open.
+ * database that fires, three steps deep, every fold closed. It is empty if
+ * no workspace is open.
  */
 export function Defaults(): $CancellablePromise<$models.Filter> {
     return $Call.ByID(3340937252);
@@ -88,9 +86,9 @@ export function FindRoots(query: string, limit: number): $CancellablePromise<$mo
 
 /**
  * ListCatalog returns the definitions of a catalog's types whose name holds
- * the query, the best match first, up to a limit, each with the group it is
- * listed under. A building's line is listed once, by its first level. It
- * returns nil if no workspace is open.
+ * the query, best match first, up to a limit, each with its group. A
+ * building's line is listed once, by its first level, whichever of its levels
+ * the query names. It returns nil if no workspace is open.
  */
 export function ListCatalog(types: lang$0.Type[] | null, query: string, limit: number): $CancellablePromise<$models.Node[] | null> {
     return $Call.ByID(3274075109, types, query, limit);

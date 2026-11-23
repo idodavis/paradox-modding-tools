@@ -318,8 +318,8 @@ export const COMMANDS: readonly Command[] = [
     id: "file.copyToMod",
     label: "Copy into a mod…",
     icon: "i-lucide-copy-plus",
-    when: () => canCopyToMod(useEditorStore().activeFile()),
-    onSelect: actOn(activeFile, copyToMod),
+    when: () => canCopyToMod([activeFile()].flatMap((place) => place ?? [])),
+    onSelect: actOn(activeFile, (place) => copyToMod([place])),
   },
   {
     id: "image.saveDds",
@@ -700,19 +700,27 @@ export function compareWithFile(place: Place): void {
   });
 }
 
-/** canCopyToMod reports whether a file, not a folder, has a mod to be copied into. */
-export function canCopyToMod(place: Place | null | undefined): boolean {
-  return !!place && !place.isDir && listCopyTargets(place).length > 0;
+/**
+ * canCopyToMod reports whether the given files, none of them a folder, have
+ * a mod they can all be copied into. No files have none.
+ */
+export function canCopyToMod(places: Place[]): boolean {
+  return places.length > 0 && places.every((place) => !place.isDir) && listCopyTargets(places).length > 0;
 }
 
-/** copyToMod copies a file of the game or of another mod into a mod and opens the copy. */
-export function copyToMod(place: Place): void {
-  chooseMod("file.copyToMod", "Choose the mod to copy into", listCopyTargets(place), (modId) =>
-    run(async () => {
-      const target = await loadQuery(placeQuery(await workspaceApi.CreateCopy(place.path, modId)));
-      if (target) useEditorStore().show(target);
-    }),
-  );
+/**
+ * copyToMod copies files of the game or of other mods into a mod and opens
+ * the copies. A file the mod has already is reported, and the others are
+ * still copied.
+ */
+export function copyToMod(places: Place[]): void {
+  chooseMod("file.copyToMod", "Choose the mod to copy into", listCopyTargets(places), (modId) => {
+    for (const place of places)
+      run(async () => {
+        const target = await loadQuery(placeQuery(await workspaceApi.CreateCopy(place.path, modId)));
+        if (target) useEditorStore().show(target);
+      });
+  });
 }
 
 /** chooseMod runs an action on the only mod of the given ids, or has the palette ask which when there are more. */
@@ -726,11 +734,14 @@ function chooseMod(id: string, label: string, mods: string[], act: (modId: strin
   choicesBus.emit({ id, label, items });
 }
 
-/** listCopyTargets lists the mods a file can be copied into: the user's own. */
-function listCopyTargets(place: Place): string[] {
+/**
+ * listCopyTargets lists the mods the given files can be copied into: the
+ * user's own that none of the files is in.
+ */
+function listCopyTargets(places: Place[]): string[] {
   return useWorkspaceStore()
     .listOwnMods()
-    .filter((mod) => mod.id !== place.origin)
+    .filter((mod) => places.every((place) => place.origin !== mod.id))
     .map((mod) => mod.id);
 }
 
@@ -752,7 +763,7 @@ export function overrideEntry(place: Place, line: number, column: number, text: 
     chooseMod(
       "editor.override",
       "Choose the mod to override in",
-      modId ? [modId] : listCopyTargets(place),
+      modId ? [modId] : listCopyTargets([place]),
       (target) => {
         if (overriding) {
           settle();

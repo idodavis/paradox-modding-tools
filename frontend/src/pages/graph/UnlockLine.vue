@@ -7,7 +7,16 @@ import type { Node } from "@services/graph/models";
 import { labelOf } from "./nodes";
 import NodeIcon from "./NodeIcon.vue";
 
-const { unlock = null, era = null } = defineProps<{ unlock?: Node | null; era?: Node | null }>();
+const {
+  unlock = null,
+  era = null,
+  label = "",
+} = defineProps<{
+  unlock?: Node | null;
+  era?: Node | null;
+  /** The name of what it unlocks: an unlock called the same shows its era. */
+  label?: string;
+}>();
 const emit = defineEmits<{ ask: [id: string] }>();
 </script>
 
@@ -19,7 +28,7 @@ const emit = defineEmits<{ ask: [id: string] }>();
     @dblclick.stop="emit('ask', unlock.id)"
   >
     <NodeIcon :node="unlock" class="size-4.5" />
-    <span class="font-medium text-highlighted">{{ labelOf(unlock) }}</span>
+    <span v-if="labelOf(unlock) !== label" class="font-medium text-highlighted">{{ labelOf(unlock) }}</span>
     <UBadge v-if="era" :label="labelOf(era)" color="neutral" variant="subtle" size="sm" />
   </span>
   <span v-else class="text-12 text-dimmed">Available from the start</span>

@@ -11,10 +11,9 @@ import (
 	"paradox-modding-tools/internal/lang"
 )
 
-// lookupNode returns the node of the definition with an id, with its picture,
-// its painting, the group it is listed under and, for a technology, its era.
-// It is made once. A name the game keeps no definition of is a node with only
-// its name.
+// lookupNode returns the node of a definition with its picture, painting,
+// group and era, made once. A name with no kept definition is a node with
+// only its name.
 func (d *draft) lookupNode(id string) Node {
 	if node, isKnown := d.known[id]; isKnown {
 		return node
@@ -60,8 +59,8 @@ var eraYears = map[string]string{game.CK3: "year"}
 // its number: Vic3's interfaces_l_english.yml:4240 writes Era [Era.GetNumber].
 var eraTitles = map[string]string{game.Vic3: "Era %d"}
 
-// describeEra returns the title of a node: its own, or for an era of a game
-// in eraTitles, the game's words for its number.
+// describeEra returns the title of a node: its own, or the game's words for
+// an era's number where its eras have no text.
 func (d *draft) describeEra(node Node) string {
 	title, isNumbered := eraTitles[d.ws.Game.ID]
 	if !isNumbered || node.Type != lang.TypeEra {
@@ -100,7 +99,7 @@ func (d *draft) listEras() []string {
 // listDefinitions returns the ids of every definition the game keeps of a
 // type of node, database by database.
 func (d *draft) listDefinitions(definitionType lang.Type) []string {
-	databases := listTypedDatabases(d.ws, func(drawn lang.Type) bool { return drawn == definitionType })
+	databases := listTypedDatabases(d.ws, func(candidate lang.Type) bool { return candidate == definitionType })
 	ids := []string{}
 	for _, database := range databases {
 		for _, winner := range d.mods.ListKept(d.ws.Schema, database) {

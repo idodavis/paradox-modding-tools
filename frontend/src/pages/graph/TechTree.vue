@@ -56,9 +56,8 @@ const DIRECTIONS = [
   { value: "down", label: "Read top to bottom", icon: "i-lucide-arrow-down" },
 ];
 /**
- * LOOKS is how a wire is drawn by what it joins: the one asked about is the
- * primary color, the rest of its chain the second, and any other is faint. A
- * wire of a higher rank is drawn over one of a lower.
+ * LOOKS is how a wire is drawn: the subject's in the primary color, the rest
+ * of its chain in the second, any other faint. A higher rank draws on top.
  */
 const LOOKS = {
   other: { color: "text-(--fg-3) opacity-45", width: 1.25, rank: 0 },
@@ -130,10 +129,7 @@ function pickTree(id: string | number): void {
   if (chosen) emit("ask", chosen.first);
 }
 
-/**
- * describeWire returns how a wire is drawn: by whether it touches the
- * technology asked about, joins two of its chain, or joins neither.
- */
+/** describeWire returns a wire's look by what it joins. */
 function describeWire({ requirement, dependent }: Wire): keyof typeof LOOKS {
   if (requirement === tree.subject || dependent === tree.subject) return "subject";
 
@@ -141,9 +137,8 @@ function describeWire({ requirement, dependent }: Wire): keyof typeof LOOKS {
 }
 
 /**
- * focus shows as much of the tree as the pane holds at full size, with the
- * card of the technology asked about as near the middle as the tree's edges
- * allow.
+ * focus shows as much of the tree as the pane holds at full size, the
+ * subject's card as near the middle as the tree's edges allow.
  */
 function focus(): void {
   const box = subjectBox.value;
@@ -174,7 +169,7 @@ function focus(): void {
       <span v-if="subject" class="flex items-center gap-2 text-12 text-muted">
         <NodeIcon :node="subject" class="size-6" />
         <b class="text-13 font-medium text-highlighted">{{ labelOf(subject) }}</b>
-        needs {{ describeCount(tree.needs?.length ?? 0) }}, leads to {{ describeCount(tree.leads?.length ?? 0) }}
+        needs {{ describeCount(tree.needs?.length ?? 0) }}, leads to {{ describeCount(tree.sharedLeads) }}
       </span>
       <span class="grow" />
       <label v-if="audienceItems.length" class="flex items-center gap-2 text-12 text-dimmed">

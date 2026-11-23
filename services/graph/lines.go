@@ -1,6 +1,5 @@
-// lines.go reads a building line from the game's links: the lines that link
-// to a good, the buildings a production method belongs to, what a level
-// writes through its production methods, and where a good is found.
+// lines.go reads a building line from the game's links, and where a good is
+// found.
 
 package graph
 
@@ -24,10 +23,9 @@ type Source struct {
 	Places string `json:"places"`
 }
 
-// listLines returns the first levels of the building lines that have a link
-// of the given relation to a good or to a category it is in, each once, in
-// the order the links are found. What is part of no building, as a pop need,
-// is a line of its own.
+// listLines returns the first levels of the lines that link to a good or its
+// category by a relation, each once. What is part of no building, as a pop
+// need, is a line of its own.
 func (d *draft) listLines(good, says string) []string {
 	var lines []string
 	for _, id := range d.model.listTargets(good) {
@@ -88,16 +86,14 @@ func (d *draft) listLevelEdges(level, says string) []Edge {
 }
 
 // gatherings holds, for each game that writes how a raw good is gathered, the
-// key of the good that says it and the value the game takes where it is left
-// out. EU5's goods write method = mining, and the readme of its goods says a
-// good with no method farms.
+// key that says it and the value taken where it is left out. EU5's goods
+// write method = mining, and their readme says a good with no method farms.
 var gatherings = map[string]struct{ Key, Default string }{game.EU5: {Key: "method", Default: "farming"}}
 
 // foundPlaces holds what each game calls the places a good is found in, and
-// the key of the list where a definition lists them as values: CK3's common/
-// trade/county_potential_trade_goods/county_potential_trade_goods.txt:68
-// writes trade_good_wood = { counties = { c_onega_BJA … } }. A game with no
-// such list counts the places that name the good.
+// the key under which a definition lists them: CK3's
+// county_potential_trade_goods.txt:68 writes trade_good_wood = { counties =
+// { c_onega_BJA … } }. A game with no such list counts the places.
 var foundPlaces = map[string]struct{ Places, List string }{
 	game.CK3:  {Places: "counties", List: "counties"},
 	game.Vic3: {Places: "state regions"},
@@ -123,9 +119,8 @@ func (d *draft) makeSources(good string) []Source {
 	return sources
 }
 
-// findGathering returns how a raw good is gathered, as the game names it,
-// such as Mining. It returns "" for a game that says nothing of it, and for a
-// good that cannot be read.
+// findGathering returns how a raw good is gathered, as the game names it, ""
+// where the game says nothing of it or the good cannot be read.
 func (d *draft) findGathering(good string) string {
 	row, isWritten := gatherings[d.ws.Game.ID]
 	tree, statement, isRead := d.findStatement(good)
@@ -138,14 +133,13 @@ func (d *draft) findGathering(good string) string {
 		value = row.Default
 	}
 
-	text, _, _ := d.ws.LookupText(d.mods, value)
+	text, _ := describeKey(d.ws, d.mods, value)
 
 	return cmp.Or(text, value)
 }
 
 // countValues returns how many values the block under a key of a definition
-// holds. It returns 0 for a definition that cannot be read or has no such
-// block.
+// holds, 0 if it cannot be read or has no such block.
 func (d *draft) countValues(id, key string) int {
 	tree, statement, isRead := d.findStatement(id)
 	if !isRead {

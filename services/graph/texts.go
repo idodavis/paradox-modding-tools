@@ -1,14 +1,15 @@
-// texts.go reads the texts a definition shows: the keys at the top of it, the
-// localization each one names, the trigger that decides which shows, and the
-// data calls in a text put into words.
+// texts.go reads the texts a definition shows, and writes a text of the game
+// as the one line a player reads.
 
 package graph
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/internal/game"
 	"paradox-modding-tools/internal/index"
 	"paradox-modding-tools/internal/jomini"
 	"paradox-modding-tools/internal/lang"
@@ -17,12 +18,10 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Section is one key at the top of a definition.
+// Section is one key at the top of a definition that shows a text, or one of
+// its options.
 type Section struct {
 	Key string `json:"key"`
-
-	// Value is a plain value as written, "" for a block.
-	Value string `json:"value"`
 
 	// Line counts from one.
 	Line int `json:"line"`
@@ -51,27 +50,55 @@ type Version struct {
 	// Line counts from one.
 	Line int `json:"line"`
 
-	// Message is where the key's text is written in the localization file:
-	// the detail's language's line, else the base language's, which is the
-	// text to translate from. It is the zero Site where neither has one.
+	// Message is where the key's text is written: the detail's language's
+	// line, else the base language's. It is the zero Site for neither.
 	Message lsp.Site `json:"message"`
 }
 
 // callSample is the Sample of a text's piece that holds a data call in words.
 const callSample = "text"
 
-// textKeys are the top keys whose value is always a localization key, so
-// they show a text even where its message is missing.
+// textKeys are the top keys that are a good's, building's or technology's own
+// texts. Any other text it writes is a link.
 var textKeys = []string{lang.TitleKey, lang.DescriptionKey}
+
+// listSections returns the keys at the top of a definition that show a text,
+// and its options. A plain key shows a text where the index reads its value
+// as a localization key, so a plain value that happens to be one is no text.
+func listSections(
+	ws *workspace.Session, mods *index.Index, site index.Site, tree *jomini.Tree, statement int32,
+) ([]Section, []Section) {
+	localized := map[int32]bool{}
+	for _, use := range mods.ListReferences(site) {
+		if mods.ToReference(use).Database == lang.Localization {
+			localized[mods.Occurrence(use).Statement] = true
+		}
+	}
+
+	sections, options := []Section{}, []Section{}
+	for child := range tree.Children(statement) {
+		current := tree.Statements[child]
+		switch {
+		case tree.Text(current.Key) == optionKey:
+			options = append(options, makeSection(ws, mods, tree, child))
+
+		case localized[child] || current.IsBlock():
+			if section := makeSection(ws, mods, tree, child); len(section.Texts) > 0 {
+				sections = append(sections, section)
+			}
+		}
+	}
+
+	return sections, options
+}
 
 // makeSection returns the section of one statement at the top of a
 // definition, with its texts.
 func makeSection(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, statement int32) Section {
 	current := tree.Statements[statement]
-	section := Section{Key: tree.Text(current.Key), Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Key)}
+	section := Section{Key: tree.Text(current.Key), Line: toSourceLine(tree, current.Key)}
 	if !current.IsBlock() {
-		version, ok := makeVersion(ws, mods, tree, statement)
-		if ok && (version.Text != "" || slices.Contains(textKeys, section.Key)) {
+		if version, ok := makeVersion(ws, mods, tree, statement); ok {
 			section.Texts = []Version{version}
 		}
 
@@ -154,23 +181,29 @@ func findLabel(tree *jomini.Tree, block int32) (int32, bool) {
 	return 0, false
 }
 
-// describeCalls returns the pieces of a text with each data call in words,
-// without the ending of a function's name that only turns off its tooltip.
+// describeCalls returns the pieces of a text with each data call in words.
 func describeCalls(ws *workspace.Session, mods *index.Index, text string) []loc.Segment {
 	segments := ws.ExpandText(mods, text)
 	for position, segment := range segments {
-		call := segment.Call
-		if call == nil {
+		if segment.Call == nil {
 			continue
 		}
 
-		step := call.Steps[len(call.Steps)-1]
-		step.Text = strings.TrimSuffix(step.Text, lang.GUINoTooltip)
+		step := finalStep(segment.Call)
 		segments[position].Text = cmp.Or(describeCustom(ws, mods, step), lang.DescribeStep(step, true))
 		segments[position].Sample = callSample
 	}
 
 	return segments
+}
+
+// finalStep returns the last step of a data call, without the ending of its
+// name that only turns off its tooltip.
+func finalStep(call *jomini.Call) jomini.Step {
+	step := call.Steps[len(call.Steps)-1]
+	step.Text = strings.TrimSuffix(step.Text, lang.GUINoTooltip)
+
+	return step
 }
 
 // A customizable localization holds a block for each text it can show,
@@ -216,36 +249,110 @@ func describeCustom(ws *workspace.Session, mods *index.Index, step jomini.Step) 
 	return strings.Join(texts, "/")
 }
 
-// toTitle returns a text as the one line a player sees, each data call in
-// its words between brackets.
-func toTitle(ws *workspace.Session, mods *index.Index, text string) string {
-	var title strings.Builder
-	for _, segment := range describeCalls(ws, mods, text) {
+// describeKey returns the text a localization key holds as one line. It
+// returns false if no message holds the key.
+func describeKey(ws *workspace.Session, mods *index.Index, key string) (string, bool) {
+	text, _, ok := ws.LookupText(mods, key)
+
+	return describeLabel(ws, mods, text), ok
+}
+
+// describeLabel returns a text of the game as the one line a player reads:
+// its nested keys filled in, each break a space and each data call in words.
+// Its formats and icons are left out, with the calls in a format's name, as
+// #tooltip:[GetPlayer.GetTooltipTag].
+func describeLabel(ws *workspace.Session, mods *index.Index, text string) string {
+	var label strings.Builder
+	var format jomini.Span
+	for _, segment := range ws.ExpandText(mods, text) {
+		if segment.Span.Start >= format.Start && segment.Span.End <= format.End {
+			continue
+		}
+
+		format = jomini.Span{}
 		switch segment.Markup {
+		case loc.MarkupFormat:
+			format = segment.TextSpan
 		case loc.MarkupText:
-			title.WriteString(segment.Text)
+			label.WriteString(segment.Text)
+		case loc.MarkupBreak:
+			label.WriteString(" ")
 		case loc.MarkupCall:
-			title.WriteString("[")
-			title.WriteString(segment.Text)
-			title.WriteString("]")
+			label.WriteString(describeCall(ws, mods, segment))
 		}
 	}
 
-	return strings.Join(strings.Fields(title.String()), " ")
+	return strings.Join(strings.Fields(label.String()), " ")
+}
+
+// conceptTexts holds the localization key each game names a concept by, with
+// %s for the concept. CK3's [woodland_taxes|E] is game_concept_woodland_taxes,
+// "Hinterland Taxes", and EU5's [building|e] is game_concept_building,
+// "Building" (main_menu/localization/english/game_concepts_l_english.yml:896).
+// Vic3 links by the whole key, as [concept_bureaucracy].
+var conceptTexts = map[string]string{game.CK3: "game_concept_%s", game.Vic3: "%s", game.EU5: "game_concept_%s"}
+
+// titleStep ends a data call that shows the name of what it reached.
+const titleStep = "GetName"
+
+// conceptCall is the data function that links to a concept with the words
+// it shows as its second argument: Vic3's achievements_l_english.yml:468
+// writes [Concept('concept_state', '$concept_states|q$')].
+const conceptCall = "Concept"
+
+// iconEnding ends the name of a data function that shows an icon, as
+// GetTextIcon, and nameEndings those of one that shows a name beside its
+// icon or without it, as CK3's GetNameWithIcon and Vic3's GetNameNoIcon.
+const iconEnding = "Icon"
+
+var nameEndings = []string{"WithIcon", "NoIcon"}
+
+// describeCall returns a data call as a line of text says it: the name of the
+// concept it links to, as CK3's [de_jure|E], or the words it shows for one;
+// nothing for an icon; the title of the definition it names, as
+// [GetTradeGoodType('trade_good_wood').GetName]; the texts of the
+// customizable localization it names, joined by slashes, as daughter/son;
+// and any other call in its words between brackets. A concept that is only
+// an icon has no words.
+func describeCall(ws *workspace.Session, mods *index.Index, segment loc.Segment) string {
+	if segment.Call == nil {
+		return "[" + segment.Text + "]"
+	}
+
+	first, last := segment.Call.Steps[0], finalStep(segment.Call)
+	if pattern, hasConcepts := conceptTexts[ws.Game.ID]; hasConcepts {
+		if concept, _, isConcept := ws.LookupText(mods, fmt.Sprintf(pattern, last.Text)); isConcept {
+			return loc.ToPlain(ws.ExpandText(mods, concept))
+		}
+	}
+
+	isName := slices.ContainsFunc(nameEndings, func(ending string) bool { return strings.HasSuffix(last.Text, ending) })
+	switch {
+	case last.Text == conceptCall && len(last.Arguments) == 2 && last.Arguments[1].Quoted:
+		return loc.ToPlain(ws.ExpandText(mods, last.Arguments[1].Text))
+
+	case strings.HasSuffix(last.Text, iconEnding) && !isName:
+		return ""
+
+	case last.Text == titleStep && len(first.Arguments) == 1 && first.Arguments[0].Quoted:
+		if title, _, isNamed := ws.LookupText(mods, first.Arguments[0].Text); isNamed {
+			return loc.ToPlain(ws.ExpandText(mods, title))
+		}
+	}
+
+	if texts := describeCustom(ws, mods, last); texts != "" {
+		return texts
+	}
+
+	return "[" + lang.DescribeStep(last, true) + "]"
 }
 
 // keepOwnTexts leaves a good, building or technology only its title and
-// description. Any other value that names a localization key, as a building's
-// building_group, is a link. A description the definition does not write is
-// the one the game builds from the first of the given ids that has one: the
-// definition's own, then its line's first level.
+// description; any other value that names a localization key is a link. A
+// description the definition does not write is the one the game builds from
+// the first of the given ids that has one.
 func keepOwnTexts(ws *workspace.Session, mods *index.Index, ids []string, sections []Section) []Section {
-	for position, section := range sections {
-		if !slices.Contains(textKeys, section.Key) {
-			sections[position].Texts = nil
-		}
-	}
-
+	sections = slices.DeleteFunc(sections, func(section Section) bool { return !slices.Contains(textKeys, section.Key) })
 	if slices.ContainsFunc(sections, func(section Section) bool { return section.Key == lang.DescriptionKey }) {
 		return sections
 	}

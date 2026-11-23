@@ -32,16 +32,13 @@ const every = computed(() => [...(line.rows ?? []), ...(line.same ?? [])]);
 const chosen = computed(() => levels.value.findIndex((level) => level.level.id === selected));
 const hasArt = computed(() => new Set(levels.value.map((level) => level.level.picture)).size === levels.value.length);
 const hasUnlocks = computed(() => levels.value.some((level) => level.unlock));
-/**
- * stretches are the runs of levels one technology unlocks. A technology
- * called the same as the level it unlocks is a namesake: its era says enough.
- */
+/** stretches are the runs of levels one technology unlocks. */
 const stretches = computed(() => {
-  const runs: { unlock?: Node | null; era?: Node | null; count: number; isNamesake: boolean }[] = [];
+  const runs: { unlock?: Node | null; era?: Node | null; count: number; label: string }[] = [];
   for (const { level, unlock, era } of levels.value) {
     const last = runs.at(-1);
     if (last && last.unlock?.id === unlock?.id) last.count++;
-    else runs.push({ unlock, era, count: 1, isNamesake: !!unlock && labelOf(unlock) === labelOf(level) });
+    else runs.push({ unlock, era, count: 1, label: labelOf(level) });
   }
 
   return runs;
@@ -104,14 +101,7 @@ function ask(position: number): void {
           class="mx-1 mt-2 flex min-h-6 items-center justify-center rounded-md border bg-elevated px-2 py-0.5"
           :class="stretch.unlock ? 'border-default' : 'border-dashed border-default'"
         >
-          <UBadge
-            v-if="stretch.isNamesake && stretch.era"
-            :label="labelOf(stretch.era)"
-            color="neutral"
-            variant="subtle"
-            size="sm"
-          />
-          <UnlockLine v-else :unlock="stretch.unlock" :era="stretch.era" @ask="emit('ask', $event)" />
+          <UnlockLine :unlock="stretch.unlock" :era="stretch.era" :label="stretch.label" @ask="emit('ask', $event)" />
         </span>
       </template>
       <span class="self-center px-3.5 text-12 text-dimmed">Level</span>
@@ -137,9 +127,12 @@ function ask(position: number): void {
           {{ section.title }}
         </h2>
         <template v-for="[condition, held] in section.blocks" :key="condition">
-          <small v-if="condition" class="col-span-full border-t border-default px-3.5 pt-1.5 text-11.5 text-dimmed">
-            {{ toSentence(condition) }}
-          </small>
+          <template v-if="condition">
+            <small class="border-t border-default px-3.5 pt-1.5 text-11.5 text-dimmed">{{
+              toSentence(condition)
+            }}</small>
+            <span class="col-[2/-1] border-s border-t border-default" />
+          </template>
           <template v-for="row in held" :key="keyOf(row)">
             <span
               :class="[CELL, condition && 'border-t-0']"

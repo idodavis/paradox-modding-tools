@@ -1,12 +1,11 @@
 <!--
-  A technology as a card: its picture and name, then what it unlocks or gives,
-  in the primary color for the one asked about, the second for its chain and
-  with a purple edge for an audience. Its parent gives it its place and size.
+  A technology as a card: its picture and name, then the line of what it gives
+  and unlocks, in the primary color for the one asked about, the second for its
+  chain and with a purple edge for an audience. Its parent gives it its place
+  and size.
 -->
 <script setup lang="ts">
-import { computed } from "vue";
 import type { Technology } from "@services/graph/models";
-import { describeCount, list } from "../../lib/format";
 import { labelOf } from "./nodes";
 import NodeIcon from "./NodeIcon.vue";
 import SelectedTab from "./SelectedTab.vue";
@@ -20,9 +19,8 @@ const {
 } = defineProps<{
   technology: Technology;
   /**
-   * What the card shows: the icons of what it unlocks in a tree packed by
-   * era, a line of words in a tree of an age, and its picture large beside
-   * the words for "art".
+   * How the card shows its picture: small beside its name, above its line,
+   * or large beside both for "art".
    */
   shape: Shape | "art";
   mark?: Mark;
@@ -31,25 +29,8 @@ const {
 }>();
 const emit = defineEmits<{ ask: [id: string] }>();
 
-/** UNLOCK_ICONS is how many of the unlocked definitions a card shows. */
+/** UNLOCK_ICONS is how many of what it unlocks a card shows the icon of. */
 const UNLOCK_ICONS = 4;
-/** NAMED is how many unlocks or facts the card's line of words names. */
-const NAMED = 2;
-
-const unlocks = computed(() => technology.unlocks ?? []);
-
-/**
- * summary is the card's line of words: what the technology unlocks, else what
- * it gives, the first few named and the rest counted.
- */
-const summary = computed(() => {
-  const facts = (technology.gives ?? []).map((fact) => `${fact.label} ${fact.text}`);
-  const named = unlocks.value.length ? unlocks.value.map(labelOf) : facts;
-  const more = named.length - NAMED;
-  const kept = more > 0 ? [...named.slice(0, NAMED), `${describeCount(more)} more`] : named;
-
-  return `${unlocks.value.length ? "Unlocks " : ""}${list(kept)}`;
-});
 </script>
 
 <template>
@@ -67,7 +48,7 @@ const summary = computed(() => {
       <NodeIcon :node="technology.node" class="h-full w-30 rounded-[5px] object-cover!" />
       <span class="flex min-w-0 flex-col gap-0.5">
         <b class="truncate text-13 leading-4 font-medium text-highlighted">{{ labelOf(technology.node) }}</b>
-        <small class="line-clamp-3 text-11 leading-3.5 text-muted">{{ summary }}</small>
+        <small class="line-clamp-3 text-11 leading-3.5 text-muted">{{ technology.summary }}</small>
       </span>
     </template>
     <template v-else>
@@ -75,19 +56,18 @@ const summary = computed(() => {
         <NodeIcon :node="technology.node" class="size-10" />
         <b class="line-clamp-2 text-14 leading-4.5 font-medium text-highlighted">{{ labelOf(technology.node) }}</b>
       </span>
-      <span v-if="shape === 'trees'" class="truncate text-12 text-muted">{{ summary }}</span>
-      <span v-else-if="unlocks.length" class="flex items-center gap-1.5">
+      <span v-if="shape === 'eras' && technology.unlocks?.length" class="flex items-center gap-1.5">
         <NodeIcon
-          v-for="unlocked in unlocks.slice(0, UNLOCK_ICONS)"
+          v-for="unlocked in technology.unlocks.slice(0, UNLOCK_ICONS)"
           :key="unlocked.id"
           :node="unlocked"
           class="size-6"
         />
-        <em v-if="unlocks.length > UNLOCK_ICONS" class="ms-0.5 text-12 text-muted not-italic tabular-nums">
-          +{{ describeCount(unlocks.length - UNLOCK_ICONS) }}
+        <em v-if="technology.unlocks.length > UNLOCK_ICONS" class="ms-0.5 text-12 text-muted not-italic tabular-nums">
+          +{{ technology.unlocks.length - UNLOCK_ICONS }}
         </em>
       </span>
-      <span v-else class="text-12 text-dimmed">Unlocks nothing</span>
+      <span v-else class="truncate text-12 text-muted">{{ technology.summary }}</span>
     </template>
   </button>
 </template>

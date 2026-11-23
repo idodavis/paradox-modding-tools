@@ -77,11 +77,14 @@ function isRemoved(text: string): boolean {
   return text.startsWith("-");
 }
 
-/** describeChange says how a total stands against the first methods. */
+/**
+ * describeChange says how a total stands against the first methods, and
+ * nothing where it is the same.
+ */
 function describeChange(total: Total): string {
   if (!total.before) return "new";
 
-  return total.before === total.text ? "no change" : `${total.before} with the first methods`;
+  return total.before === total.text ? "" : `${total.before} with the first methods`;
 }
 
 /** pick makes a method the one its group runs. */
@@ -139,7 +142,12 @@ function pick(group: MethodGroup, method: Method): void {
                 <NodeIcon :node="method.method" class="size-12" />
                 <span class="flex min-w-0 flex-col items-start gap-1 pe-6">
                   <b class="text-13 text-highlighted">{{ labelOf(method.method) }}</b>
-                  <UnlockLine :unlock="method.unlock" :era="method.era" @ask="emit('ask', $event)" />
+                  <UnlockLine
+                    :unlock="method.unlock"
+                    :era="method.era"
+                    :label="labelOf(method.method)"
+                    @ask="emit('ask', $event)"
+                  />
                 </span>
                 <span
                   class="absolute end-2.5 top-2.5 flex size-4.5 items-center justify-center rounded-full border"

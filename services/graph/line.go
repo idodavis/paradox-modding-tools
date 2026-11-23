@@ -1,6 +1,5 @@
-// line.go answers for a building: its line as a table, a column for each
-// level and a row for each fact, and its production method groups where the
-// game has them, with what the picked methods come to together.
+// line.go answers for a building: its levels as a table, and its production
+// method groups with what the picked methods come to.
 
 package graph
 
@@ -58,15 +57,13 @@ type LineRow struct {
 	Label   string `json:"label"`
 
 	// When is the condition the fact's block writes, "" for none. Where is
-	// what a bonus applies to and Tone whether it is a gain or a loss, as a
-	// Fact has them.
+	// what a bonus applies to, and Tone whether it is a gain or a loss.
 	When  string `json:"when,omitempty"`
 	Where string `json:"where,omitempty"`
 	Tone  Tone   `json:"tone,omitempty"`
 
-	// Need is the id of the good or category whose need gives the fact when
-	// it is met: the subject of one of the line's need rows. It is "" for a
-	// fact no need gives.
+	// Need is the id of the good or category whose need gives the fact, ""
+	// for a fact no need gives.
 	Need string `json:"need,omitempty"`
 
 	// Among says which of a level's production methods take an input.
@@ -78,8 +75,7 @@ type LineRow struct {
 
 // Cell is what one level says of a fact.
 type Cell struct {
-	// Text is the fact as the page shows it, "" where the level does not say
-	// it.
+	// Text is the fact as the page shows it, "" where the level does not say it.
 	Text string `json:"text"`
 
 	// Part is the cell's number as a share of the row's largest, for a bar.
@@ -89,8 +85,8 @@ type Cell struct {
 
 // MethodGroup is a production method group of a building.
 type MethodGroup struct {
-	// Group is the group, the zero node for the methods a building names
-	// itself in no group, as EU5's buildings do.
+	// Group is the group, the zero node for the methods a building names in
+	// no group, as EU5's buildings do.
 	Group   Node     `json:"group"`
 	Methods []Method `json:"methods"`
 
@@ -138,18 +134,18 @@ type Total struct {
 }
 
 // The facts of a line that no link says: what a level costs, what its
-// modifiers give, and a good it asks for as a need in a game of needKeys.
+// modifiers give, and a good it asks for as a need.
 const (
 	saysCost  = "cost"
 	saysBonus = "bonus"
 	saysNeed  = "need"
 )
 
-// BuildLine returns the line of a building. A production method as the id is
-// its building. Each of the given production methods is the one its group
-// runs, and a group none of them names runs its first. It returns an error
-// if no workspace is open, the game keeps no definition of the id, or it is
-// no building and part of none.
+// BuildLine returns the line of a building, or of a production method's
+// building. A group runs the given method that is in it, else its first; with
+// none given, a production method asked for is the one its group runs. It
+// returns an error if no workspace is open, the game keeps no definition of
+// the id, or it is no building and part of none.
 func (s *Service) BuildLine(id string, picked []string) (Line, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -166,6 +162,10 @@ func (s *Service) BuildLine(id string, picked []string) (Line, error) {
 	buildings := draft.listBuildings(toID(mods, site))
 	if len(buildings) == 0 {
 		return Line{}, fmt.Errorf("%s is no building", id)
+	}
+
+	if subject := toID(mods, site); len(picked) == 0 && subject != buildings[0] {
+		picked = []string{subject}
 	}
 
 	levels := draft.model.listLine(buildings[0])
@@ -285,7 +285,7 @@ func (d *draft) makeTable(levels []string) *table {
 			d.setMade(rows, position, level, says, nil)
 		}
 
-		d.setTaken(rows, position, level)
+		d.setTaken(rows, position, d.model.listMembers([]string{level}), nil)
 		for _, employed := range d.listAmounts(d.listLevelEdges(level, saysEmployment)) {
 			row := LineRow{Says: saysEmployment, Subject: &employed.Good, Label: labelNode(employed.Good)}
 			rows.set(position, row, employed.Text)
@@ -306,37 +306,44 @@ func (d *draft) makeTable(levels []string) *table {
 	return rows
 }
 
-// setTaken writes what a level takes into a table: a good it uses up to
-// produce, or in a game of needKeys a good it asks for as a need.
-func (d *draft) setTaken(rows *table, position int, level string) {
+// setTaken writes what the given parts of a level take into a table: a good
+// used up to produce, or one asked for as a need where the game writes needs.
+// Where needs are given, only those are written.
+func (d *draft) setTaken(rows *table, position int, members, needs []string) {
 	taking := saysInput
 	if _, hasNeeds := needKeys[d.ws.Game.ID]; hasNeeds {
 		taking = saysNeed
 	}
 
-	for _, amount := range d.listTakes(level) {
+	for _, amount := range d.listTakes(members) {
+		if len(needs) > 0 && !slices.Contains(needs, amount.Good.ID) {
+			continue
+		}
+
 		row := LineRow{Says: taking, Subject: &amount.Good, Label: labelNode(amount.Good), Among: amount.Among}
 		rows.set(position, row, amount.Text)
 	}
 }
 
 // setMade writes what a level makes by a relation into a table, a row for
-// each good under each condition its block writes. Where goods are given,
-// only those are written. What meeting a need gives says which need.
+// each good under each condition the level's own block writes and each need
+// that gives it. Where goods are given, only those are written. Links of
+// different production methods are a range, since one runs at a time. Links
+// one definition writes all hold at once, so each is said: 60 and 30.
 func (d *draft) setMade(rows *table, position int, level, says string, goods []string) {
 	type output struct{ good, when, need string }
 
 	var order []output
 
-	own, links := d.model.listFrom(level), map[output][]Edge{}
+	links := map[output][]Edge{}
 	for _, edge := range d.listLevelEdges(level, says) {
 		if len(goods) > 0 && !slices.Contains(goods, edge.To) {
 			continue
 		}
 
-		key := output{good: edge.To, when: d.findLinkCondition(level, edge, own)}
-		if says == saysGives {
-			key.need = d.findNeed(level, edge)
+		key := output{good: edge.To, need: edge.need}
+		if edge.From == level {
+			key.when = d.describeWhen(level, edge.block)
 		}
 
 		if _, isListed := links[key]; !isListed {
@@ -347,9 +354,19 @@ func (d *draft) setMade(rows *table, position int, level, says string, goods []s
 	}
 
 	for _, key := range order {
+		edges := links[key]
+		amounts := []string{d.describeAmounts(edges)}
+		if !slices.ContainsFunc(edges, func(edge Edge) bool { return edge.From != edges[0].From }) {
+			amounts = nil
+			for _, edge := range edges {
+				amounts = appendNew(amounts, d.describeAmounts([]Edge{edge}))
+			}
+		}
+
 		good := d.lookupNode(key.good)
 		row := LineRow{Says: says, Subject: &good, Label: labelNode(good), When: key.when, Need: key.need}
-		rows.set(position, row, d.describeMade(links[key]))
+		amounts = slices.DeleteFunc(amounts, func(amount string) bool { return amount == "" })
+		rows.set(position, row, lang.JoinList(amounts, "and"))
 	}
 }
 
@@ -375,10 +392,9 @@ func (d *draft) listAmounts(edges []Edge) []Amount {
 // labelNode returns a node's title, or its name where it has none.
 func labelNode(node Node) string { return cmp.Or(node.Title, node.Name) }
 
-// listMethodGroups returns the production method groups of a building, each
-// with its production methods and the one it runs: the one of the given
-// methods that is in it, else its first. The methods a building names itself
-// come first, as a group with no node.
+// listMethodGroups returns the production method groups of a building. A
+// group runs the given method that is in it, else its first. The methods a
+// building names itself come first, as a group with no node.
 func (d *draft) listMethodGroups(building string, picked []string) []MethodGroup {
 	groups := []MethodGroup{}
 	holders := []string{building}
@@ -442,8 +458,9 @@ func (d *draft) makeTotals(groups []MethodGroup) *Totals {
 		Employs: d.sumLinks(picked, first, saysEmployment),
 	}
 	_, jobs := d.sumAmounts(picked, saysEmployment)
-	_, before := d.sumAmounts(first, saysEmployment)
-	totals.Jobs, totals.JobsBefore = d.describeAmount(sumValues(jobs), false), d.describeAmount(sumValues(before), false)
+	_, firstJobs := d.sumAmounts(first, saysEmployment)
+	format := d.formatAmount(false)
+	totals.Jobs, totals.JobsBefore = describeAmount(sumValues(jobs), format), describeAmount(sumValues(firstJobs), format)
 
 	return totals
 }
@@ -452,12 +469,12 @@ func (d *draft) makeTotals(groups []MethodGroup) *Totals {
 // relation, how much they come to together and how much the first methods do.
 func (d *draft) sumLinks(picked, first []string, says string) []Total {
 	targets, sums := d.sumAmounts(picked, says)
-	_, before := d.sumAmounts(first, says)
-	totals := make([]Total, len(targets))
+	_, firstSums := d.sumAmounts(first, says)
+	totals, format := make([]Total, len(targets)), d.formatAmount(false)
 	for position, target := range targets {
-		totals[position] = Total{Good: d.lookupNode(target), Text: d.describeAmount(sums[target], false)}
-		if amount, isLinked := before[target]; isLinked {
-			totals[position].Before = d.describeAmount(amount, false)
+		totals[position] = Total{Good: d.lookupNode(target), Text: describeAmount(sums[target], format)}
+		if amount, isLinked := firstSums[target]; isLinked {
+			totals[position].Before = describeAmount(amount, format)
 		}
 	}
 

@@ -1,60 +1,48 @@
 // Package graph is the service of the Graph page. It builds the view of one
-// definition of the game, and the detail of one node.
+// definition and the detail of one node: what an event, an on_action, a
+// decision, a message or a scripted effect fires, the chain of a good, the
+// line of a building and the tree of a technology. The page lays a view out;
+// every amount is worded here.
 //
-// An event, an on_action, a decision, a message or a scripted effect has a
-// graph of what it fires and what fires it. A good, or a category of goods,
-// has a chain: who makes it, from what, and who takes it. A building has its
-// line: its levels as a table, and its production methods where the game has
-// them. A technology has its tree. A view has no coordinates: the page lays it
-// out, and it formats no number, since every amount is worded here.
+// The rules of the games it applies:
 //
-// The package applies these rules of the games:
-//
-//   - The game keeps one copy of a name. A node stands for the name, drawn at
-//     the kept copy, or at the first loaded copy a file keeps for itself where
-//     no copy is kept for every file. A name the game keeps no definition of
-//     is no node.
-//   - A node fires what every copy of its name that the game runs fires, and
-//     its firings may pass through the scripted effects it calls. A node the
-//     filter hides is spliced out, its edges joined through it.
-//   - The links between goods, buildings, production methods, technologies and
-//     the places a good is found are rows, each citing the file and line of
-//     the game that writes it. The first row that holds for a link reads it.
-//   - A building is a line of levels: CK3 chains them by next_building and
-//     previous_building, EU5 by obsolete, and a Vic3 building has one. A line
-//     takes and makes what its levels and their production methods take and
-//     make. An amount over a line is the range over every level and method
-//     that writes it.
-//   - A need for a category of goods is a need for each good in it. A CK3
-//     building asks for a good as a need, and gives something when it is met.
-//   - A definition is listed under the group the game gives it: a building's
-//     district, building group or category, a good's category, a technology's
-//     tree. CK3 has one tree for each group of innovations, Vic3 one for each
-//     category, EU5 one for each age. The eras are drawn in the order the
-//     game's files define them.
-//   - An EU5 advance is for every country if it writes no potential, for the
-//     countries, religions and cultures its potential names, itself or through
-//     a scripted trigger, and otherwise for whoever meets its conditions. A
-//     name inside a negating block, as NOT, says who cannot have it.
-//   - A modifier is named as the game names it. One the game's dumps list and
-//     no text names shows its key. A statement of a modifier block whose
-//     value is a plain word is a condition of the block.
-//   - The places a good is found are counted, as the locations that hold a
-//     raw material.
+//   - The game keeps one copy of a name, and a node is drawn at that copy.
+//     Where no copy is kept for every file, it is the first loaded copy a
+//     file keeps for itself. A name with no kept definition is no node.
+//   - A node fires what every copy of its name that the game runs fires,
+//     through the scripted effects it calls. A node the filter hides is
+//     spliced out and its edges joined.
+//   - The links between goods, buildings, production methods and
+//     technologies are rows that cite the game's file and line. The first
+//     row that fits a link reads it.
+//   - A building is a line of levels: CK3's next_building and
+//     previous_building, EU5's obsolete, one level on Vic3. An amount over a
+//     line is the range over every level and method that writes it.
+//   - A need for a category of goods is a need for each good in it.
+//   - A definition is listed under the group the game gives it. CK3 has a
+//     tree for each group of innovations, Vic3 for each category, EU5 for
+//     each age, with the eras in the order the files define them.
+//   - An EU5 advance with no potential is for every country. Otherwise it is
+//     for the countries, religions and cultures its potential names, or for
+//     whoever meets its conditions. A name under NOT says who cannot have it.
+//   - A modifier is named as the game names it, or by its key where no text
+//     does. A plain word in a modifier block is a condition of the block,
+//     and a key that starts with not_ holds when its value does not. A
+//     parameter is met by any definition that grants it.
+//   - A CK3 innovation's custom = <key> is a line of what it gives, in the
+//     game's own words.
+//   - The places a good is found are counted.
 //
 // # Robustness
 //
 // A view is refused if no workspace is open, the game keeps no definition of
 // the subject, or the subject is not of the view's type. A detail is refused
-// if the file of the definition cannot be read.
+// if the definition's file cannot be read.
 //
-// A definition whose file has changed since the scan is left out of the
-// links. A link to a name no definition has is dropped, and so is a level of a
-// line that has none. A firing in a file that cannot be walked keeps its two
-// ends and its place, with no blocks. A picture no file has, and a text no
-// language has, are "". An amount that is no number, as a script value with
-// conditions, is left out of a range. An event graph past the filter's limit
-// is cut, and says so.
+// Left out: a definition whose file changed since the scan, a link to a name
+// with no definition, and an amount that is no number. A firing in a file
+// that cannot be walked keeps its ends and has no blocks. A missing picture
+// or text is "". An event graph past the filter's limit is cut and says so.
 package graph
 
 import (
@@ -90,8 +78,7 @@ type Node struct {
 	// node of the event graph.
 	Type lang.Type `json:"type,omitempty"`
 
-	// What is what its database calls a definition, such as "scripted
-	// effect".
+	// What is what its database calls a definition, as "scripted effect".
 	What string `json:"what"`
 
 	// Title is its localized title, "" if it has none.
@@ -100,32 +87,26 @@ type Node struct {
 	// Display is window, hidden or message for an event or a message, else "".
 	Display string `json:"display,omitempty"`
 
-	// Picture is the path of its picture: an event's scene or the icon of a
-	// good, building or technology. It is "" if none is found. Silhouette is set
-	// where the game tints the picture in the color of the text, so only its
-	// shape counts.
+	// Picture is the path of its picture, "" if none is found. Silhouette is
+	// set where the game tints it in the text's color, so only its shape
+	// counts.
 	Picture    string `json:"picture,omitempty"`
 	Silhouette bool   `json:"silhouette,omitempty"`
 
-	// Painting is the path of the painting behind its head: a Vic3 building's
-	// background, a technology tree's illustration, a district's or an era's.
-	// It is "" if none is found.
+	// Painting is the path of the painting behind its head, "" if none is
+	// found.
 	Painting string `json:"painting,omitempty"`
 
-	// Group is the id of the group it is listed under: a building's district,
-	// building group or category, a production method's production method
-	// group, a good's category. It is "" if it has none.
+	// Group is the id of the group it is listed under, "" for none.
 	Group string `json:"group,omitempty"`
 
-	// Era is the id of the era or age a technology is in, "" if it has none.
+	// Era is the id of a technology's era or age, "" for none.
 	Era string `json:"era,omitempty"`
 
-	// Year is the year an era starts in, as the game writes it, "" for a
-	// node that is no era and for a game whose eras write none.
+	// Year is the year an era starts in, "" where the game writes none.
 	Year string `json:"year,omitempty"`
 
-	// Trigger is its own trigger in words. It is set only in a graph and a
-	// detail.
+	// Trigger is its own trigger in words, set only in a graph and a detail.
 	Trigger []Condition `json:"trigger,omitempty"`
 
 	// Comment is the comment lines just above its definition.
@@ -139,8 +120,8 @@ type Node struct {
 
 	Site lsp.Site `json:"site"`
 
-	// Distance is how many links it is from the subject, negative for one that
-	// leads to it.
+	// Distance is how many links it is from the subject, negative for one
+	// that leads to it.
 	Distance int `json:"distance"`
 
 	// Parent is the drawn node one link nearer the root, "" for the root.
@@ -153,51 +134,53 @@ type Node struct {
 	// Deep is set where the depth stopped at a node that leads further.
 	Deep bool `json:"deep"`
 
-	// Looped is set for a firer of the root that the backward walk found
-	// through a node the root itself fires.
+	// Looped is set for a firer of the root found through a node the root
+	// itself fires.
 	Looped bool `json:"looped,omitempty"`
 
-	// Fires is every firing it makes, in the order written. It is set only
-	// in a detail.
+	// Fires is every firing it makes, in the order written, set only in a
+	// detail.
 	Fires []Edge `json:"fires,omitempty"`
 }
 
-// Edge is one firing, from the node that fires to the node it fires, or one
-// link between two goods, buildings or technologies of the game.
+// Edge is one firing, from the node that fires, or one link between two
+// goods, buildings or technologies.
 type Edge struct {
 	From string `json:"from"`
 	To   string `json:"to"`
 
-	// Delay is the delay in words, such as "10–30 days", "" for none.
+	// Delay is the delay in words, as "10–30 days", "" for none.
 	Delay string `json:"delay,omitempty"`
 
-	// Steps are the blocks the firing is written inside, from the top of
-	// its definition.
+	// Steps are the blocks the firing is written inside, outermost first.
 	Steps []Step `json:"steps,omitempty"`
 
-	// Effect is the key of the statement that writes the firing, such as
-	// trigger_event, and Title the title that statement gives it.
+	// Effect is the key that writes the firing, as trigger_event, and Title
+	// the title that statement gives it.
 	Effect string `json:"effect,omitempty"`
 	Title  string `json:"title,omitempty"`
 
-	// Via are the definitions between the two ends that are not drawn as
-	// nodes: the scripted effects a firing passes through, the production
-	// methods of a line.
+	// Via are the definitions between the two ends that are no nodes: the
+	// scripted effects a firing passes through, a line's production methods.
 	Via []string `json:"via,omitempty"`
 
-	// Relation is how a link says its two ends relate, as input or unlock.
-	// It is "" for a firing. Amount is how much of a good the link takes or
-	// makes, or how many links a counted one stands for, and "" where it has
-	// none.
+	// Relation is what a link says of its ends, as input or unlock, "" for a
+	// firing. Amount is how much of a good it takes or makes, or how many
+	// links it stands for, "" for none.
 	Relation string `json:"relation,omitempty"`
 	Amount   string `json:"amount,omitempty"`
 
-	// Share is set where the amount is a share of what is produced, as 0.25
-	// for a quarter more, and not a number of the good.
+	// Share marks an amount that is a share of what is produced.
 	Share bool `json:"share,omitempty"`
 
 	// Site is where the firing or the link is written.
 	Site lsp.Site `json:"site"`
+
+	// block is the statement of the block a link is written in, 0 at the top
+	// of its definition. need is the id of the good or category of the need
+	// it is written inside, "" for none.
+	block int32
+	need  string
 }
 
 // Filter says what a graph shows and how far it goes from its root.
@@ -212,7 +195,7 @@ type Filter struct {
 	Labels    map[string]string `json:"labels,omitempty" jsonschema:"what each database's nodes are called, for the page"`
 	Era       string            `json:"era,omitempty" jsonschema:"an era or age's id: only what is available by it, unlocked by a technology of it or an earlier one"`
 	Changed   bool              `json:"changed,omitempty" jsonschema:"whether only what the workspace's mods add or change is drawn"`
-	Potential string            `json:"potential,omitempty" jsonschema:"EU5 only: which of an age's advances to draw: shared, religions, cultures, countries, other, or the id of one country, culture or religion; empty draws the subject's own"`
+	Potential string            `json:"potential,omitempty" jsonschema:"EU5 only: which of an age's advances to draw beside those of every country: religions, cultures, countries, other, or the id of one country, culture or religion; empty draws the subject's own"`
 }
 
 // Graph is the nodes and links around a subject. It has no coordinates: the
@@ -257,9 +240,8 @@ func (s *Service) BuildGraph(subject string, filter Filter) (Graph, error) {
 	return buildFires(ws, mods, site, filter), nil
 }
 
-// findNodeType returns the type of the definitions of a database as a node
-// says it. It is "" for a database of the event graph, whose nodes the page
-// tells apart by their database, and for one with no type.
+// findNodeType returns the type a node of a database says. It is "" for a
+// database of the event graph and for one with no type.
 func findNodeType(schema *lang.Schema, database string) lang.Type {
 	if isFiringDatabase(schema, database) {
 		return ""
@@ -268,9 +250,9 @@ func findNodeType(schema *lang.Schema, database string) lang.Type {
 	return schema.LookupType(database)
 }
 
-// resolveNode returns the definition the game keeps of a node's id. Where
-// no copy is kept for every file, it takes the first loaded copy that a file
-// keeps for itself, such as a scripted effect an events file defines.
+// resolveNode returns the definition the game keeps of a node's id. Where no
+// copy is kept for every file, it is the first loaded copy a file keeps for
+// itself, as a scripted effect an events file defines.
 func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Site, error) {
 	reference := toReference(id)
 	if winner, ok := mods.FindKept(ws.Schema, reference); ok {
@@ -293,8 +275,8 @@ func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Sit
 // hiddenKey is the key whose yes makes an event show no window.
 const hiddenKey = "hidden"
 
-// makeNode returns the node of a definition at a distance from the root,
-// without the picture and trigger that only a drawn node needs.
+// makeNode returns the node of a definition, without the picture and the
+// trigger that only a drawn node needs.
 func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, distance int) Node {
 	reference := mods.ToReference(site)
 	node := Node{
@@ -303,7 +285,7 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, distanc
 		Name:     reference.Name,
 		Type:     findNodeType(ws.Schema, reference.Database),
 		What:     lang.DescribeDefinition(reference.Database, false),
-		Title:    toTitle(ws, mods, ws.LookupDefinitionText(mods, site, lang.TitleKey)),
+		Title:    describeLabel(ws, mods, ws.LookupDefinitionText(mods, site, lang.TitleKey)),
 		Site:     lsp.MakeSite(ws, mods, site),
 		Distance: distance,
 	}
@@ -335,8 +317,7 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, distanc
 	return node
 }
 
-// drawNode returns the node of a definition as the page draws it, with its
-// picture and the definition's trigger.
+// drawNode returns the node of a definition with its picture and trigger.
 func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, distance int) Node {
 	node := makeNode(ws, mods, site, distance)
 	tree, statement, err := ws.FindStatement(mods, site)
@@ -350,8 +331,7 @@ func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, distanc
 	return node
 }
 
-// findCopy returns the copy of a definition's name, the latest in load
-// order, that the kept copy hides. It returns false if it hides none.
+// findCopy returns the latest copy the kept one hides, and false for none.
 func findCopy(ws *workspace.Session, mods *index.Index, site index.Site) (index.Site, bool) {
 	winner, _ := mods.FindKeptLocal(ws.Schema, mods.ToReference(site), site.File)
 	if len(winner.Beaten) == 0 {
@@ -363,9 +343,9 @@ func findCopy(ws *workspace.Session, mods *index.Index, site index.Site) (index.
 
 func toID(mods *index.Index, site index.Site) string { return mods.ToReference(site).ToID() }
 
-// makeFold returns the fold node of a parent that stands for the links its
-// fan-out leaves out, one for each of the given databases. A fold of one
-// database says what its links are.
+// makeFold returns the fold that stands for the links a parent's fan-out
+// leaves out, one for each of the given databases. A fold of one database
+// says what its links are.
 func makeFold(id, parent string, distance int, databases []string) Node {
 	node := Node{ID: id, Distance: distance, Parent: parent, Count: len(databases)}
 	if distinct := slices.Compact(slices.Sorted(slices.Values(databases))); len(distinct) == 1 {
@@ -375,8 +355,8 @@ func makeFold(id, parent string, distance int, databases []string) Node {
 	return node
 }
 
-// toKey returns a key that two edges share when they join the same nodes
-// the same way.
+// toKey returns a key two edges share when they join the same nodes the same
+// way.
 func toKey(edge Edge) string {
 	return strings.Join(slices.Concat([]string{edge.From, edge.To, edge.Delay}, edge.Via), "\x00")
 }
@@ -402,18 +382,15 @@ func appendNew[Element comparable](elements []Element, element Element) []Elemen
 	return append(elements, element)
 }
 
-// latest keeps what is worked out from the latest index of the mods, by key.
-// Working it out loads every definition it reads, which a question would
-// otherwise do again each time it is asked. The index is held weakly, so a
-// closed workspace's index is not kept alive, and a new index starts empty.
+// latest keeps what was worked out from the latest index, by key. The index
+// is held weakly, so a closed workspace's is not kept alive.
 type latest[Key comparable, Result any] struct {
 	sync.Mutex
 	mods    weak.Pointer[index.Index]
 	results map[Key]Result
 }
 
-// load returns what is worked out for a key and an index, working it out the
-// first time it is asked for.
+// load returns the result of a key for an index, built the first time.
 func (l *latest[Key, Result]) load(mods *index.Index, key Key, build func() Result) Result {
 	pointer := weak.Make(mods)
 	l.Lock()
@@ -440,9 +417,8 @@ func (l *latest[Key, Result]) load(mods *index.Index, key Key, build func() Resu
 }
 
 // Defaults returns the filter of a new event graph: every origin and every
-// database that fires drawn, three steps from the root, every fold closed.
-// Its Labels give the plural word of each of those databases. It returns an
-// empty filter if no workspace is open.
+// database that fires, three steps deep, every fold closed. It is empty if
+// no workspace is open.
 func (s *Service) Defaults() Filter {
 	ws, err := s.Workspace.Session()
 	if err != nil {
@@ -464,8 +440,8 @@ func (s *Service) Defaults() Filter {
 	return filter
 }
 
-// listTypedDatabases returns the databases of the open workspace's game whose
-// definitions are of a type the test accepts, sorted by name.
+// listTypedDatabases returns the game's databases of a type the test
+// accepts, sorted by name.
 func listTypedDatabases(ws *workspace.Session, accepts func(lang.Type) bool) []string {
 	var databases []string
 	for label, database := range ws.Schema.Databases {

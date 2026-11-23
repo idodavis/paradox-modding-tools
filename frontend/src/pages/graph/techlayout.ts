@@ -28,10 +28,7 @@ export type Block = Box & { id: string; title: string; count: number };
  */
 export type Wire = { requirement: string; dependent: string; path: string; head: string };
 
-/**
- * TreeLayout is where every card, block and wire of a tree is, and how big
- * the canvas is.
- */
+/** TreeLayout is where every card, block and wire of a tree is. */
 export type TreeLayout = {
   shape: Shape;
   width: number;
@@ -66,18 +63,12 @@ const SPACING = {
 /** EMPTY is the layout of no tree, shown while one is worked out. */
 export const EMPTY: TreeLayout = { shape: "eras", width: 0, height: 0, cards: {}, blocks: [], wires: [] };
 
-/**
- * chainOf returns the ids of the technology asked about and of everything it
- * needs and leads to.
- */
+/** chainOf returns the ids of the subject and of all it needs and leads to. */
 export function chainOf(tree: TreeGraph): Set<string> {
   return new Set([tree.subject, ...(tree.needs ?? []), ...(tree.leads ?? [])]);
 }
 
-/**
- * markOf returns the part a technology has in the chain of the one asked
- * about.
- */
+/** markOf returns a technology's part in the subject's chain. */
 export function markOf(tree: TreeGraph, chain: ReadonlySet<string>, id: string): Mark {
   if (id === tree.subject) return "subject";
 
@@ -128,8 +119,8 @@ export function layoutTree(tree: TreeGraph, direction: Direction): Promise<TreeL
 }
 
 /**
- * layoutChain returns where the technology asked about and its chain go, with
- * nothing else of the tree, in one block with no title.
+ * layoutChain returns where the subject and its chain go, in one block with
+ * no title.
  */
 export function layoutChain(tree: TreeGraph, chain: ReadonlySet<string>, direction: Direction): Promise<TreeLayout> {
   const members = (tree.technologies ?? []).filter((technology) => chain.has(technology.node.id));

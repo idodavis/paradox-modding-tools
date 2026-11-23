@@ -43,9 +43,9 @@ type Session struct {
 	Mods  atomic.Pointer[index.Index]
 	Order atomic.Pointer[[]Mod]
 
-	// Folder is the folder the workspace's agents start in. A change to the
-	// workspace's record replaces it.
-	Folder atomic.Pointer[string]
+	// AgentFolder is the folder the workspace's agents start in. A change to
+	// the workspace's record replaces it.
+	AgentFolder atomic.Pointer[string]
 
 	// Edits counts the changes to the editor's open files, so a reader can
 	// tell whether what it made from them is current.
@@ -143,7 +143,7 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 	}
 
 	ws.storeOrder(order)
-	ws.storeFolder(record)
+	ws.storeAgentFolder(record)
 
 	const stage = "Reading your mods"
 	progress(stage, 0)
@@ -165,22 +165,22 @@ func (s *Service) openSession(workspaceID string, progress func(stage string, pe
 		return nil, err
 	}
 
-	ws.watchFolder()
+	ws.watchAgentFolder()
 
 	return ws, nil
 }
 
-// storeFolder stores the folder that a workspace's record and the load order
-// give the workspace.
-func (s *Session) storeFolder(record app.Workspace) {
-	folder := findFolder(record, *s.Order.Load())
-	s.Folder.Store(&folder)
+// storeAgentFolder stores the agent folder that a workspace's record and the
+// load order give the workspace.
+func (s *Session) storeAgentFolder(record app.Workspace) {
+	folder := resolveAgentFolder(record, *s.Order.Load())
+	s.AgentFolder.Store(&folder)
 }
 
-// watchFolder watches the workspace's folder, if it is on disk. Watching a
+// watchAgentFolder watches the agent folder, if it is on disk. Watching a
 // folder that a mod's watch already covers changes nothing.
-func (s *Session) watchFolder() {
-	if folder := *s.Folder.Load(); files.IsFolder(folder) {
+func (s *Session) watchAgentFolder() {
+	if folder := *s.AgentFolder.Load(); files.IsFolder(folder) {
 		_ = addFolders(s.watcher.notifier, folder)
 	}
 }
@@ -698,14 +698,62 @@ func (s *Session) resolveText(mods *index.Index, textKey string, reference lang.
 		}
 	}
 
-	pattern, ok := lang.LookupDialect(s.Game.ID).LookupTextKey(reference.Database, key)
+	builtKey, ok := s.FindBuiltKey(mods, reference, key)
 	if !ok {
 		return ""
 	}
 
-	text, _, _ := s.LookupText(mods, fmt.Sprintf(pattern, reference.Name))
+	text, _, _ := s.LookupText(mods, builtKey)
 
 	return text
+}
+
+// FindBuiltKey returns the localization key the game builds from a
+// definition's name for its title or description, as key says. It returns
+// false if no such key has a message.
+func (s *Session) FindBuiltKey(mods *index.Index, reference lang.Reference, key string) (string, bool) {
+	for _, pattern := range lang.LookupDialect(s.Game.ID).ListTextKeys(reference.Database, key) {
+		textKey := fmt.Sprintf(pattern, reference.Name)
+		if _, _, ok := s.LookupText(mods, textKey); ok {
+			return textKey, true
+		}
+	}
+
+	return "", false
+}
+
+// spaceCall is the data call that writes a non-breaking space: Vic3's
+// pop_types_l_english.yml:18 writes it where line 34 writes a plain space.
+const spaceCall = "Nbsp"
+
+// maxTextDepth is how deep one message may name another.
+const maxTextDepth = 8
+
+// ExpandText returns the pieces of a text with each $key$ replaced by the
+// pieces of its message. A $key$ no message holds stays as it is.
+func (s *Session) ExpandText(mods *index.Index, text string) []loc.Segment {
+	return s.expandText(mods, text, 0)
+}
+
+func (s *Session) expandText(mods *index.Index, text string, depth int) []loc.Segment {
+	var expanded []loc.Segment
+	for _, segment := range loc.Segments(text, 0) {
+		switch {
+		case segment.Markup == loc.MarkupCall && segment.Text == spaceCall:
+			segment.Markup, segment.Text, segment.Call = loc.MarkupText, " ", nil
+
+		case segment.Markup == loc.MarkupKey && depth < maxTextDepth:
+			if message, _, ok := s.LookupText(mods, segment.Text); ok {
+				expanded = append(expanded, s.expandText(mods, message, depth+1)...)
+
+				continue
+			}
+		}
+
+		expanded = append(expanded, segment)
+	}
+
+	return expanded
 }
 
 // FindStatement returns the tree of a site's file and the statement that writes
@@ -740,8 +788,8 @@ func (s *Session) Rescan(changes []FileChange) error {
 		place := s.Locate(mods, change.Path)
 
 		// The index holds no file from outside the roots, and none of the
-		// workspace's folder.
-		if place.Root == "" || place.Origin == OriginWorkspace {
+		// agent folder.
+		if place.Root == "" || place.Origin == OriginAgentFolder {
 			continue
 		}
 

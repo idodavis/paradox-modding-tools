@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"paradox-modding-tools/internal/texture"
 )
 
 // pictureBytes is the size at which Steam refuses a picture.
@@ -102,7 +104,7 @@ const (
 // encodePicture encodes a picture under Steam's limit, as a PNG if it has
 // transparency and a JPEG otherwise. It shrinks the picture until it fits.
 func encodePicture(picture image.Image, transparent bool) ([]byte, error) {
-	for smaller := picture; ; smaller = buildSmaller(smaller, shrinkFactor) {
+	for smaller := picture; ; smaller = texture.Shrink(smaller, shrinkFactor) {
 		var buffer bytes.Buffer
 		var err error
 		if transparent {
@@ -122,41 +124,4 @@ func encodePicture(picture image.Image, transparent bool) ([]byte, error) {
 			return nil, errors.New("the picture cannot be made smaller than 1 MB")
 		}
 	}
-}
-
-// buildSmaller returns a copy of a picture with its sides scaled down, each at
-// least one pixel. Each pixel of the copy is the average of the pixels it
-// covers.
-func buildSmaller(picture image.Image, scale float64) image.Image {
-	bounds := picture.Bounds()
-	width, height := max(int(float64(bounds.Dx())*scale), 1), max(int(float64(bounds.Dy())*scale), 1)
-	smaller := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	for y := range height {
-		top, bottom := bounds.Min.Y+y*bounds.Dy()/height, bounds.Min.Y+(y+1)*bounds.Dy()/height
-		for x := range width {
-			left, right := bounds.Min.X+x*bounds.Dx()/width, bounds.Min.X+(x+1)*bounds.Dx()/width
-
-			var sums [4]uint64
-			for row := top; row < bottom; row++ {
-				for column := left; column < right; column++ {
-					// The channels come premultiplied by the transparency, so
-					// averaging them weighs it in.
-					red, green, blue, alpha := picture.At(column, row).RGBA()
-					sums[0] += uint64(red)
-					sums[1] += uint64(green)
-					sums[2] += uint64(blue)
-					sums[3] += uint64(alpha)
-				}
-			}
-
-			count := uint64(max((bottom-top)*(right-left), 1))
-			offset := smaller.PixOffset(x, y)
-			for channel, sum := range sums {
-				smaller.Pix[offset+channel] = uint8((sum / count) >> 8)
-			}
-		}
-	}
-
-	return smaller
 }

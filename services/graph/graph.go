@@ -1,12 +1,68 @@
-// Package graph is the service of the Event Graph page. It builds the graph
-// of what fires what from one root, and the detail of one node.
+// Package graph is the service of the Graph page. It builds the view of one
+// definition of the game, and the detail of one node.
+//
+// An event, an on_action, a decision, a message or a scripted effect has a
+// graph of what it fires and what fires it. A good, or a category of goods,
+// has a chain: who makes it, from what, and who takes it. A building has its
+// line: its levels as a table, and its production methods where the game has
+// them. A technology has its tree. A view has no coordinates: the page lays it
+// out, and it formats no number, since every amount is worded here.
+//
+// The package applies these rules of the games:
+//
+//   - The game keeps one copy of a name. A node stands for the name, drawn at
+//     the kept copy, or at the first loaded copy a file keeps for itself where
+//     no copy is kept for every file. A name the game keeps no definition of
+//     is no node.
+//   - A node fires what every copy of its name that the game runs fires, and
+//     its firings may pass through the scripted effects it calls. A node the
+//     filter hides is spliced out, its edges joined through it.
+//   - The links between goods, buildings, production methods, technologies and
+//     the places a good is found are rows, each citing the file and line of
+//     the game that writes it. The first row that holds for a link reads it.
+//   - A building is a line of levels: CK3 chains them by next_building and
+//     previous_building, EU5 by obsolete, and a Vic3 building has one. A line
+//     takes and makes what its levels and their production methods take and
+//     make. An amount over a line is the range over every level and method
+//     that writes it.
+//   - A need for a category of goods is a need for each good in it. A CK3
+//     building asks for a good as a need, and gives something when it is met.
+//   - A definition is listed under the group the game gives it: a building's
+//     district, building group or category, a good's category, a technology's
+//     tree. CK3 has one tree for each group of innovations, Vic3 one for each
+//     category, EU5 one for each age. The eras are drawn in the order the
+//     game's files define them.
+//   - An EU5 advance is for every country if it writes no potential, for the
+//     countries, religions and cultures its potential names, itself or through
+//     a scripted trigger, and otherwise for whoever meets its conditions. A
+//     name inside a negating block, as NOT, says who cannot have it.
+//   - A modifier is named as the game names it. One the game's dumps list and
+//     no text names shows its key. A statement of a modifier block whose
+//     value is a plain word is a condition of the block.
+//   - The places a good is found are counted, as the locations that hold a
+//     raw material.
+//
+// # Robustness
+//
+// A view is refused if no workspace is open, the game keeps no definition of
+// the subject, or the subject is not of the view's type. A detail is refused
+// if the file of the definition cannot be read.
+//
+// A definition whose file has changed since the scan is left out of the
+// links. A link to a name no definition has is dropped, and so is a level of a
+// line that has none. A firing in a file that cannot be walked keeps its two
+// ends and its place, with no blocks. A picture no file has, and a text no
+// language has, are "". An amount that is no number, as a script value with
+// conditions, is left out of a range. An event graph past the filter's limit
+// is cut, and says so.
 package graph
 
 import (
-	"cmp"
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
+	"weak"
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/index"
@@ -15,19 +71,24 @@ import (
 	"paradox-modding-tools/services/workspace"
 )
 
-// Service is the Wails service behind the Event Graph.
+// Service is the Wails service behind the Graph.
 type Service struct {
 	Workspace *workspace.Service
 }
 
-// Node is one entry of the event graph, or a fold that stands for the rest
-// of a node's firings.
+// Node is one definition of the game in a graph, or a fold that stands for
+// the rest of a node's links.
 type Node struct {
-	// ID is database:name. A fold's is more:<id> or more-in:<id>.
+	// ID is database:name. A fold's is more:<id> or more-in:<id>, and the
+	// places a good is found are their database with no name.
 	ID string `json:"id"`
 
 	Database string `json:"database"`
 	Name     string `json:"name"`
+
+	// Type is what the definition is, as good or technology. It is "" for a
+	// node of the event graph.
+	Type lang.Type `json:"type,omitempty"`
 
 	// What is what its database calls a definition, such as "scripted
 	// effect".
@@ -39,8 +100,29 @@ type Node struct {
 	// Display is window, hidden or message for an event or a message, else "".
 	Display string `json:"display,omitempty"`
 
-	// Background is the path of an event's picture, "" if none is found.
-	Background string `json:"background,omitempty"`
+	// Picture is the path of its picture: an event's scene or the icon of a
+	// good, building or technology. It is "" if none is found. Silhouette is set
+	// where the game tints the picture in the color of the text, so only its
+	// shape counts.
+	Picture    string `json:"picture,omitempty"`
+	Silhouette bool   `json:"silhouette,omitempty"`
+
+	// Painting is the path of the painting behind its head: a Vic3 building's
+	// background, a technology tree's illustration, a district's or an era's.
+	// It is "" if none is found.
+	Painting string `json:"painting,omitempty"`
+
+	// Group is the id of the group it is listed under: a building's district,
+	// building group or category, a production method's production method
+	// group, a good's category. It is "" if it has none.
+	Group string `json:"group,omitempty"`
+
+	// Era is the id of the era or age a technology is in, "" if it has none.
+	Era string `json:"era,omitempty"`
+
+	// Year is the year an era starts in, as the game writes it, "" for a
+	// node that is no era and for a game whose eras write none.
+	Year string `json:"year,omitempty"`
 
 	// Trigger is its own trigger in words. It is set only in a graph and a
 	// detail.
@@ -57,14 +139,15 @@ type Node struct {
 
 	Site lsp.Site `json:"site"`
 
-	// Step is its distance from the root, negative for a node that fires
-	// the root.
-	Step int `json:"step"`
+	// Distance is how many links it is from the subject, negative for one that
+	// leads to it.
+	Distance int `json:"distance"`
 
-	// Parent is the drawn node one step nearer the root, "" for the root.
+	// Parent is the drawn node one link nearer the root, "" for the root.
 	Parent string `json:"parent"`
 
-	// Count is how many firings a fold stands for, 0 for a definition.
+	// Count is how many links a fold stands for, or how many definitions a
+	// group lists. It is 0 for any other node.
 	Count int `json:"count"`
 
 	// Deep is set where the depth stopped at a node that leads further.
@@ -79,7 +162,8 @@ type Node struct {
 	Fires []Edge `json:"fires,omitempty"`
 }
 
-// Edge is one firing, from the node that fires to the node it fires.
+// Edge is one firing, from the node that fires to the node it fires, or one
+// link between two goods, buildings or technologies of the game.
 type Edge struct {
 	From string `json:"from"`
 	To   string `json:"to"`
@@ -96,28 +180,43 @@ type Edge struct {
 	Effect string `json:"effect,omitempty"`
 	Title  string `json:"title,omitempty"`
 
-	// Via are the scripted effects the firing passes through that are not
-	// drawn as nodes.
+	// Via are the definitions between the two ends that are not drawn as
+	// nodes: the scripted effects a firing passes through, the production
+	// methods of a line.
 	Via []string `json:"via,omitempty"`
 
-	// Site is where the firing is written.
+	// Relation is how a link says its two ends relate, as input or unlock.
+	// It is "" for a firing. Amount is how much of a good the link takes or
+	// makes, or how many links a counted one stands for, and "" where it has
+	// none.
+	Relation string `json:"relation,omitempty"`
+	Amount   string `json:"amount,omitempty"`
+
+	// Share is set where the amount is a share of what is produced, as 0.25
+	// for a quarter more, and not a number of the good.
+	Share bool `json:"share,omitempty"`
+
+	// Site is where the firing or the link is written.
 	Site lsp.Site `json:"site"`
 }
 
-// Filter says what the graph shows and how far it goes from its root.
+// Filter says what a graph shows and how far it goes from its root.
 type Filter struct {
-	Databases []string          `json:"databases" jsonschema:"the kinds of node drawn, by the part of a node's id before its colon, such as events"`
+	Databases []string          `json:"databases" jsonschema:"the databases of the nodes drawn, by the part of a node's id before its colon, such as events"`
 	Origins   []string          `json:"origins" jsonschema:"the mods drawn, by id, and vanilla for the game's own files"`
 	Depth     int               `json:"depth" jsonschema:"how many steps from the root are drawn"`
 	Limit     int               `json:"limit" jsonschema:"the most nodes drawn"`
-	Fanout    int               `json:"fanout" jsonschema:"the firings of one node drawn before the rest fold; 0 folds none"`
+	Fanout    int               `json:"fanout" jsonschema:"the links of one node drawn before the rest fold; 0 folds none"`
 	Expand    []string          `json:"expand" jsonschema:"the folds opened, and the nodes the depth stopped at that are opened"`
 	Follow    bool              `json:"follow" jsonschema:"whether a scripted effect is walked into for the events it fires"`
-	Labels    map[string]string `json:"labels,omitempty" jsonschema:"what each kind's nodes are called, for the page"`
+	Labels    map[string]string `json:"labels,omitempty" jsonschema:"what each database's nodes are called, for the page"`
+	Era       string            `json:"era,omitempty" jsonschema:"an era or age's id: only what is available by it, unlocked by a technology of it or an earlier one"`
+	Changed   bool              `json:"changed,omitempty" jsonschema:"whether only what the workspace's mods add or change is drawn"`
+	Potential string            `json:"potential,omitempty" jsonschema:"EU5 only: which of an age's advances to draw: shared, religions, cultures, countries, other, or the id of one country, culture or religion; empty draws the subject's own"`
 }
 
-// Graph is the event graph from one root. It has no coordinates: the page
-// lays it out.
+// Graph is the nodes and links around a subject. It has no coordinates: the
+// page lays it out.
 type Graph struct {
 	Root  string `json:"root"`
 	Nodes []Node `json:"nodes"`
@@ -136,62 +235,50 @@ const (
 	displayMessage = "message"
 )
 
-// reach is one graph while it is built from its root.
-type reach struct {
-	ws     *workspace.Session
-	mods   *index.Index
-	filter Filter
-	nodes  []Node
-
-	// ids holds the id of every node added.
-	ids map[string]bool
-
-	edges []Edge
-
-	// count is how many nodes count toward the limit; hidden ones do not.
-	// cut holds the ids of the nodes the limit kept out.
-	count int
-	cut   map[string]bool
-}
-
-// BuildGraph builds the graph of what the root fires and what fires it. It
-// returns an error if the game keeps no definition of the root.
-func (s *Service) BuildGraph(root string, filter Filter) (Graph, error) {
+// BuildGraph returns what a subject fires and what fires it. It returns an
+// error if no workspace is open, the game keeps no definition of the subject,
+// or the subject is no event, on_action, decision, message or scripted effect.
+func (s *Service) BuildGraph(subject string, filter Filter) (Graph, error) {
 	ws, err := s.Workspace.Session()
 	if err != nil {
 		return Graph{}, err
 	}
 
 	mods := ws.Mods.Load()
-	site, err := resolveNode(ws, mods, root)
+	site, err := resolveNode(ws, mods, subject)
 	if err != nil {
 		return Graph{}, err
 	}
 
-	reach := &reach{ws: ws, mods: mods, filter: filter, ids: map[string]bool{toID(mods, site): true}, count: 1, cut: map[string]bool{}}
-	reach.nodes = []Node{drawNode(ws, mods, site, 0)}
-	reach.expand(site, true)
-	reach.expand(site, false)
-	reach.splice()
+	if !isFiringDatabase(ws.Schema, mods.ToReference(site).Database) {
+		return Graph{}, fmt.Errorf("%s fires nothing and nothing fires it", subject)
+	}
 
-	return Graph{
-		Root: root, Nodes: reach.nodes, Edges: dropRepeats(reach.edges, toKey),
-		Truncated: len(reach.cut) > 0, Total: reach.count + len(reach.cut),
-	}, nil
+	return buildFires(ws, mods, site, filter), nil
+}
+
+// findNodeType returns the type of the definitions of a database as a node
+// says it. It is "" for a database of the event graph, whose nodes the page
+// tells apart by their database, and for one with no type.
+func findNodeType(schema *lang.Schema, database string) lang.Type {
+	if isFiringDatabase(schema, database) {
+		return ""
+	}
+
+	return schema.LookupType(database)
 }
 
 // resolveNode returns the definition the game keeps of a node's id. Where
 // no copy is kept for every file, it takes the first loaded copy that a file
 // keeps for itself, such as a scripted effect an events file defines.
 func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Site, error) {
-	database, name, _ := strings.Cut(id, ":")
-	reference := lang.Reference{Database: database, Name: name}
+	reference := toReference(id)
 	if winner, ok := mods.FindKept(ws.Schema, reference); ok {
 		return winner.Site, nil
 	}
 
-	for _, site := range mods.ListDefinitions(database) {
-		if mods.ToReference(site).Name != name || !mods.IsLoaded(site.File) {
+	for _, site := range mods.ListDefinitions(reference.Database) {
+		if mods.ToReference(site).Name != reference.Name || !mods.IsLoaded(site.File) {
 			continue
 		}
 
@@ -206,18 +293,19 @@ func resolveNode(ws *workspace.Session, mods *index.Index, id string) (index.Sit
 // hiddenKey is the key whose yes makes an event show no window.
 const hiddenKey = "hidden"
 
-// makeNode returns the node of a definition at a step from the root,
+// makeNode returns the node of a definition at a distance from the root,
 // without the picture and trigger that only a drawn node needs.
-func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step int) Node {
+func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, distance int) Node {
 	reference := mods.ToReference(site)
 	node := Node{
 		ID:       toID(mods, site),
 		Database: reference.Database,
 		Name:     reference.Name,
+		Type:     findNodeType(ws.Schema, reference.Database),
 		What:     lang.DescribeDefinition(reference.Database, false),
 		Title:    toTitle(ws, mods, ws.LookupDefinitionText(mods, site, lang.TitleKey)),
 		Site:     lsp.MakeSite(ws, mods, site),
-		Step:     step,
+		Distance: distance,
 	}
 	if hidden, ok := findCopy(ws, mods, site); ok {
 		node.CopyOrigin = mods.File(hidden).Origin
@@ -247,19 +335,16 @@ func makeNode(ws *workspace.Session, mods *index.Index, site index.Site, step in
 	return node
 }
 
-// drawNode returns the node of a definition as the page draws it, with an
-// event's picture and the definition's trigger.
-func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, step int) Node {
-	node := makeNode(ws, mods, site, step)
+// drawNode returns the node of a definition as the page draws it, with its
+// picture and the definition's trigger.
+func drawNode(ws *workspace.Session, mods *index.Index, site index.Site, distance int) Node {
+	node := makeNode(ws, mods, site, distance)
 	tree, statement, err := ws.FindStatement(mods, site)
 	if err != nil {
 		return node
 	}
 
-	if node.Display == displayWindow || node.Display == displayHidden {
-		node.Background = findPicture(ws, mods, tree, statement, lang.LookupDialect(ws.Game.ID).Events.Picture)
-	}
-
+	node.Picture, node.Silhouette = findPicture(ws, mods, site)
 	node.Trigger = findCondition(ws, mods, tree, statement)
 
 	return node
@@ -278,307 +363,16 @@ func findCopy(ws *workspace.Session, mods *index.Index, site index.Site) (index.
 
 func toID(mods *index.Index, site index.Site) string { return mods.ToReference(site).ToID() }
 
-// expand adds the nodes forward or backward from the root, step by step.
-// Past the filter's depth it goes on only from the nodes the filter opens,
-// and marks the rest as leading further.
-func (r *reach) expand(root index.Site, forward bool) {
-	frontier := []index.Site{root}
-	for distance := 1; len(frontier) > 0; distance++ {
-		if distance > r.filter.Depth {
-			parents := toParents(r.listHidden())
-			var opened, rest []index.Site
-			for _, site := range frontier {
-				if slices.Contains(r.filter.Expand, findDrawn(parents, toID(r.mods, site))) {
-					opened = append(opened, site)
-				} else {
-					rest = append(rest, site)
-				}
-			}
-
-			frontier = opened
-			r.markDeep(rest, forward)
-		}
-
-		step := distance
-		if !forward {
-			step = -distance
-		}
-
-		var next []index.Site
-		for _, site := range frontier {
-			for _, fire := range r.fold(site, r.listLinks(site, forward), forward, step) {
-				if end, isNew := r.addFire(fire, forward, step); isNew {
-					next = append(next, end)
-				}
-			}
-		}
-
-		frontier = next
-	}
-}
-
-// listHidden returns the nodes the filter hides. The root and the folds are
-// never hidden.
-func (r *reach) listHidden() []Node {
-	var hidden []Node
-	for _, node := range r.nodes {
-		if node.Step != 0 && node.Count == 0 && r.isHidden(node.Database, node.Site.Place.Origin) {
-			hidden = append(hidden, node)
-		}
+// makeFold returns the fold node of a parent that stands for the links its
+// fan-out leaves out, one for each of the given databases. A fold of one
+// database says what its links are.
+func makeFold(id, parent string, distance int, databases []string) Node {
+	node := Node{ID: id, Distance: distance, Parent: parent, Count: len(databases)}
+	if distinct := slices.Compact(slices.Sorted(slices.Values(databases))); len(distinct) == 1 {
+		node.What = lang.DescribeDefinition(distinct[0], len(databases) > 1)
 	}
 
-	return hidden
-}
-
-func toParents(nodes []Node) map[string]string {
-	parents := map[string]string{}
-	for _, node := range nodes {
-		parents[node.ID] = node.Parent
-	}
-
-	return parents
-}
-
-// findDrawn returns the nearest drawn node at or above a node, climbing
-// through the given parents of the hidden nodes.
-func findDrawn(parents map[string]string, id string) string {
-	for next, ok := parents[id]; ok; next, ok = parents[id] {
-		id = next
-	}
-
-	return id
-}
-
-// markDeep marks each of the nodes that leads further in the given
-// direction.
-func (r *reach) markDeep(sites []index.Site, forward bool) {
-	for _, site := range sites {
-		id := toID(r.mods, site)
-		position := slices.IndexFunc(r.nodes, func(node Node) bool { return node.Count == 0 && node.ID == id })
-		if position >= 0 && len(r.listLinks(site, forward)) > 0 {
-			r.nodes[position].Deep = true
-		}
-	}
-}
-
-// listLinks returns what a node fires going forward, or what fires it going
-// backward.
-func (r *reach) listLinks(site index.Site, forward bool) []index.Fire {
-	if forward {
-		return listFires(r.ws, r.mods, site, r.filter.Follow)
-	}
-
-	return r.mods.ListFiredBy(r.ws.Schema, site, r.filter.Follow)
-}
-
-// fold returns a node's firings up to the filter's fan-out, and adds one
-// fold node for the rest.
-func (r *reach) fold(site index.Site, fires []index.Fire, forward bool, step int) []index.Fire {
-	parent := toID(r.mods, site)
-	id, edge := "more-in:"+parent, Edge{From: "more-in:" + parent, To: parent}
-	if forward {
-		id, edge = "more:"+parent, Edge{From: parent, To: "more:" + parent}
-	}
-
-	if !r.isFolded(len(fires), id) {
-		return fires
-	}
-
-	rest := fires[r.filter.Fanout:]
-	database := func(fire index.Fire) string {
-		if forward {
-			return r.mods.ToReference(fire.Target).Database
-		}
-
-		return r.mods.ToReference(fire.Source).Database
-	}
-
-	// A fold of one kind says what its firings are.
-	node := Node{ID: id, Step: step, Parent: parent, Count: len(rest)}
-	if kinds := dropRepeats(rest, database); len(kinds) == 1 {
-		node.What = lang.DescribeDefinition(database(kinds[0]), len(rest) > 1)
-	}
-
-	r.nodes = append(r.nodes, node)
-	r.edges = append(r.edges, edge)
-
-	return fires[:r.filter.Fanout]
-}
-
-// isFolded reports whether a node's firings pass the fan-out while their
-// fold is closed.
-func (r *reach) isFolded(count int, id string) bool {
-	return r.filter.Fanout > 0 && count > r.filter.Fanout && !slices.Contains(r.filter.Expand, id)
-}
-
-// listFires returns what a node fires: the firings of every copy of its
-// name the game runs. With follow, it adds what the scripted effects it
-// calls fire.
-func listFires(ws *workspace.Session, mods *index.Index, site index.Site, follow bool) []index.Fire {
-	var fires []index.Fire
-	for _, part := range listActing(ws, mods, site) {
-		fires = append(fires, mods.ListFires(ws.Schema, part, follow)...)
-	}
-
-	return fires
-}
-
-// listActing returns the copies of a node's name that the game runs, as
-// seen from the given copy's file.
-func listActing(ws *workspace.Session, mods *index.Index, site index.Site) []index.Site {
-	return mods.ListActing(ws.Schema, mods.ToReference(site), site.File)
-}
-
-// addFire puts a firing and its nodes in the graph. Where the filter draws
-// scripted effects, each effect the firing passes through is a node on the
-// way. It returns the far end and whether that node is new; nothing past the
-// node limit is added.
-func (r *reach) addFire(fire index.Fire, forward bool, step int) (index.Site, bool) {
-	path := []index.Site{fire.Source, fire.Target}
-	if slices.Contains(r.filter.Databases, r.ws.Schema.Effects) {
-		path = slices.Concat([]index.Site{fire.Source}, fire.Via, []index.Site{fire.Target})
-	}
-
-	if !forward {
-		slices.Reverse(path)
-	}
-
-	end := path[len(path)-1]
-	isNew := !r.ids[toID(r.mods, end)]
-	whole := makeEdge(r.ws, r.mods, fire)
-	for position := 1; position < len(path); position++ {
-		if !r.add(path[position], step, path[position-1]) {
-			return end, false
-		}
-
-		source, target := path[position-1], path[position]
-		if !forward {
-			source, target = target, source
-		}
-
-		edge := Edge{Site: whole.Site}
-		if target == fire.Target {
-			edge = whole
-		}
-
-		edge.From, edge.To = toID(r.mods, source), toID(r.mods, target)
-		if len(path) > 2 {
-			edge.Via = nil
-		}
-
-		r.edges = append(r.edges, edge)
-	}
-
-	return end, isNew
-}
-
-// add puts a definition's node in the graph, reached from the given parent.
-// A name has one node, whichever copy leads to it. It returns false if the
-// node limit keeps it out.
-func (r *reach) add(site index.Site, step int, parent index.Site) bool {
-	id := toID(r.mods, site)
-	if r.ids[id] {
-		return true
-	}
-
-	if !r.isHidden(r.mods.ToReference(site).Database, r.mods.File(site).Origin) {
-		if r.count >= r.filter.Limit {
-			r.cut[id] = true
-
-			return false
-		}
-
-		r.count++
-	}
-
-	r.ids[id] = true
-	node := drawNode(r.ws, r.mods, site, step)
-	node.Parent = toID(r.mods, parent)
-	node.Looped = step < 0 && r.isLooping(node.Parent)
-	r.nodes = append(r.nodes, node)
-
-	return true
-}
-
-// isLooping reports whether a firer found through another node comes round
-// a loop: that node is one the root fires, or was found round a loop itself.
-func (r *reach) isLooping(id string) bool {
-	return slices.ContainsFunc(r.nodes, func(node Node) bool { return node.ID == id && (node.Step > 0 || node.Looped) })
-}
-
-// isHidden reports whether the filter hides a node of a database and an
-// origin. Only the kinds listKinds gives are hidden by kind.
-func (r *reach) isHidden(database, origin string) bool {
-	isHiddenKind := !slices.Contains(r.filter.Databases, database) && slices.Contains(listKinds(r.ws.Schema), database)
-
-	return isHiddenKind || !slices.Contains(r.filter.Origins, origin)
-}
-
-// listKinds returns the databases the filter picks among: those whose
-// definitions fire one another, and the scripted effects.
-func listKinds(schema *lang.Schema) []string {
-	kinds := slices.Clone(schema.FireDatabases)
-	if schema.Effects != "" {
-		kinds = append(kinds, schema.Effects)
-	}
-
-	return kinds
-}
-
-// splice takes the hidden nodes out and joins the edges through each. A
-// joined edge keeps the first firing's delay and steps.
-func (r *reach) splice() {
-	hidden := r.listHidden()
-	for _, node := range hidden {
-		var rest, incoming, outgoing []Edge
-		for _, edge := range r.edges {
-			switch {
-			case edge.From == node.ID && edge.To == node.ID: // a loop on the node goes with it
-			case edge.To == node.ID:
-				incoming = append(incoming, edge)
-			case edge.From == node.ID:
-				outgoing = append(outgoing, edge)
-			default:
-				rest = append(rest, edge)
-			}
-		}
-
-		for _, first := range incoming {
-			for _, second := range outgoing {
-				joined := first
-				joined.To, joined.Via = second.To, slices.Concat(first.Via, []string{node.Name}, second.Via)
-				rest = append(rest, joined)
-			}
-		}
-
-		r.edges = rest
-	}
-
-	parents := toParents(hidden)
-	r.nodes = slices.DeleteFunc(r.nodes, func(node Node) bool {
-		_, isHidden := parents[node.ID]
-
-		return isHidden
-	})
-	r.passDeep(hidden, parents)
-	for position := range r.nodes {
-		r.nodes[position].Parent = findDrawn(parents, r.nodes[position].Parent)
-	}
-}
-
-// passDeep moves a hidden node's deep mark to the nearest drawn node above
-// it, so that opening that node goes on past the hidden one.
-func (r *reach) passDeep(hidden []Node, parents map[string]string) {
-	for _, node := range hidden {
-		if !node.Deep {
-			continue
-		}
-
-		drawn := findDrawn(parents, node.Parent)
-		if position := slices.IndexFunc(r.nodes, func(other Node) bool { return other.ID == drawn }); position >= 0 {
-			r.nodes[position].Deep = true
-		}
-	}
+	return node
 }
 
 // toKey returns a key that two edges share when they join the same nodes
@@ -587,101 +381,100 @@ func toKey(edge Edge) string {
 	return strings.Join(slices.Concat([]string{edge.From, edge.To, edge.Delay}, edge.Via), "\x00")
 }
 
-// dropRepeats returns the items whose key no earlier item has, in order.
-func dropRepeats[Item any, Key comparable](items []Item, key func(Item) Key) []Item {
-	kept, seen := []Item{}, map[Key]bool{}
-	for _, item := range items {
-		if itemKey := key(item); !seen[itemKey] {
-			seen[itemKey] = true
-			kept = append(kept, item)
+// dropRepeats returns the elements whose key no earlier element has, in order.
+func dropRepeats[Element any, Key comparable](elements []Element, key func(Element) Key) []Element {
+	kept, seen := []Element{}, map[Key]bool{}
+	for _, element := range elements {
+		if elementKey := key(element); !seen[elementKey] {
+			seen[elementKey] = true
+			kept = append(kept, element)
 		}
 	}
 
 	return kept
 }
 
-// FindRoots returns the kept nodes whose name holds the query, the best
-// match first, up to a limit. It returns nil if no workspace is open.
-func (s *Service) FindRoots(query string, limit int) []Node {
-	ws, err := s.Workspace.Session()
-	if err != nil {
-		return nil
+func appendNew[Element comparable](elements []Element, element Element) []Element {
+	if slices.Contains(elements, element) {
+		return elements
 	}
 
-	mods := ws.Mods.Load()
-	query = strings.ToLower(query)
-	type match struct {
-		site  index.Site
-		label string
-		rank  int
-	}
-
-	var matches []match
-	for _, database := range ws.Schema.FireDatabases {
-		for _, site := range mods.ListDefinitions(database) {
-			label := strings.ToLower(mods.ToReference(site).Name)
-			if strings.Contains(label, query) && isKept(ws, mods, site) {
-				matches = append(matches, match{site, label, files.ClassifyMatch(label, query)})
-			}
-		}
-	}
-
-	slices.SortFunc(matches, func(first, second match) int {
-		return cmp.Or(cmp.Compare(first.rank, second.rank), strings.Compare(first.label, second.label))
-	})
-
-	roots := []Node{}
-	for _, one := range matches[:min(limit, len(matches))] {
-		roots = append(roots, makeNode(ws, mods, one.site, 0))
-	}
-
-	return roots
+	return append(elements, element)
 }
 
-// isKept reports whether the game runs a definition: it is the kept copy,
-// one merged into it, or, where no source says which copy is kept, any
-// loaded copy.
-func isKept(ws *workspace.Session, mods *index.Index, site index.Site) bool {
-	return slices.Contains(listActing(ws, mods, site), site)
+// latest keeps what is worked out from the latest index of the mods, by key.
+// Working it out loads every definition it reads, which a question would
+// otherwise do again each time it is asked. The index is held weakly, so a
+// closed workspace's index is not kept alive, and a new index starts empty.
+type latest[Key comparable, Result any] struct {
+	sync.Mutex
+	mods    weak.Pointer[index.Index]
+	results map[Key]Result
 }
 
-// ListOwnRoots returns the events the workspace's mods define that the game
-// keeps. It returns nil if no workspace is open.
-func (s *Service) ListOwnRoots() []Node {
-	ws, err := s.Workspace.Session()
-	if err != nil {
-		return nil
+// load returns what is worked out for a key and an index, working it out the
+// first time it is asked for.
+func (l *latest[Key, Result]) load(mods *index.Index, key Key, build func() Result) Result {
+	pointer := weak.Make(mods)
+	l.Lock()
+	result, isKept := l.results[key]
+	isKept = isKept && l.mods == pointer
+	l.Unlock()
+
+	if isKept {
+		return result
 	}
 
-	mods := ws.Mods.Load()
-	roots := []Node{}
-	for _, site := range mods.ListDefinitions(ws.Schema.Events) {
-		if mods.File(site).Origin != files.OriginVanilla && isKept(ws, mods, site) {
-			roots = append(roots, makeNode(ws, mods, site, 0))
-		}
+	result = build()
+
+	l.Lock()
+	defer l.Unlock()
+
+	if l.mods != pointer {
+		l.mods, l.results = pointer, map[Key]Result{}
 	}
 
-	return roots
+	l.results[key] = result
+
+	return result
 }
 
-// Defaults returns the filter for a new graph: every kind and origin drawn,
-// every fold closed. It returns an empty filter if no workspace is open.
+// Defaults returns the filter of a new event graph: every origin and every
+// database that fires drawn, three steps from the root, every fold closed.
+// Its Labels give the plural word of each of those databases. It returns an
+// empty filter if no workspace is open.
 func (s *Service) Defaults() Filter {
 	ws, err := s.Workspace.Session()
 	if err != nil {
 		return Filter{}
 	}
 
-	databases := listKinds(ws.Schema)
-	origins := []string{files.OriginVanilla}
+	filter := Filter{
+		Databases: listFiringDatabases(ws.Schema), Origins: []string{files.OriginVanilla},
+		Depth: 3, Limit: 200, Fanout: 6, Follow: true, Labels: map[string]string{},
+	}
 	for _, mod := range *ws.Order.Load() {
-		origins = append(origins, mod.ID)
+		filter.Origins = append(filter.Origins, mod.ID)
 	}
 
-	labels := map[string]string{}
-	for _, database := range databases {
-		labels[database] = lang.DescribeDefinition(database, true)
+	for _, database := range filter.Databases {
+		filter.Labels[database] = lang.DescribeDefinition(database, true)
 	}
 
-	return Filter{Databases: databases, Origins: origins, Depth: 3, Limit: 200, Fanout: 6, Follow: true, Labels: labels}
+	return filter
+}
+
+// listTypedDatabases returns the databases of the open workspace's game whose
+// definitions are of a type the test accepts, sorted by name.
+func listTypedDatabases(ws *workspace.Session, accepts func(lang.Type) bool) []string {
+	var databases []string
+	for label, database := range ws.Schema.Databases {
+		if accepts(database.Declaration.Type) {
+			databases = append(databases, label)
+		}
+	}
+
+	slices.Sort(databases)
+
+	return databases
 }

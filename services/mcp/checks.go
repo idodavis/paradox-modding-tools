@@ -34,11 +34,15 @@ type queryKey struct {
 
 // queryKeys holds the keys show takes, in the order the guide lists them.
 var queryKeys = []queryKey{
-	{Page: "event-graph", Key: "root", Help: "a node's id from find_roots, such as events:my_mod.0001",
+	{Page: "graph", Key: "subject", Help: "a node's id from find_roots, such as events:my_mod.0001 or goods:books",
 		Check: (*Service).checkNode},
-	{Page: "event-graph", Key: "node", Help: "a node's id, selected with its path drawn", Check: (*Service).checkNode},
-	{Page: "event-graph", Key: "filters", Help: "an Event Graph filter as JSON, as build_graph takes it, its parts " +
-		"left out at the defaults", Check: (*Service).checkFilter},
+	{Page: "graph", Key: "node", Help: "a node's id, selected with its detail shown", Check: (*Service).checkNode},
+	{Page: "graph", Key: "conditions", Help: "the view's filter as JSON, as build_graph, build_chain and " +
+		"build_tree take it, its parts left out at the defaults", Check: (*Service).checkFilter},
+	{Page: "graph", Key: "picked", Help: "a production method's id, the one its group of a Vic3 building runs"},
+	{Page: "graph", Key: "view", Help: "a technology's chain alone instead of its whole tree", Values: []string{"chain"}},
+	{Page: "graph", Key: "direction", Help: "a tree read top to bottom instead of left to right", Values: []string{"down"}},
+	{Page: "graph", Key: "wires", Help: "a tree without the wires outside the chain", Values: []string{"hidden"}},
 	{Page: "health", Key: "view", Help: "the view shown; left out, the first with a row for code or name",
 		Values: []string{"summary", "compatibility", "patch", "mod", "log"}},
 	{Page: "health", Key: "mod", Help: "the mod the mod view shows, by its id", Check: (*Service).checkMod},
@@ -51,7 +55,7 @@ var queryKeys = []queryKey{
 	{Page: "release", Key: "compare", Help: "the compare of the mod with its Steam item", Values: []string{"steam"}},
 }
 
-const nodeHint = "find_roots gives node ids, such as events:my_mod.0001"
+const nodeHint = "find_roots gives node ids, such as events:my_mod.0001 or goods:books"
 
 // checkPage returns an error if PMT has no such page, or if the query has a
 // key the page does not take or a value the key does not accept. A query needs
@@ -113,25 +117,31 @@ func (s *Service) checkNode(id string) error {
 	return err
 }
 
-// buildDetail returns one Event Graph node's detail. The error for a missing
+// buildDetail returns one Graph node's detail. The error for a missing
 // node says where node ids come from.
 func (s *Service) buildDetail(request node) (graph.Detail, error) {
 	detail, err := s.Graph.BuildDetail(request.ID)
-	if err != nil {
-		return detail, fmt.Errorf("%w; %s", err, nodeHint)
-	}
 
-	return detail, nil
+	return detail, hintNode(err)
 }
 
-// checkFilter returns an error if the text is not an Event Graph filter in
-// JSON.
+// hintNode adds where node ids come from to an error of the Graph. It
+// returns nil for no error.
+func hintNode(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("%w; %s", err, nodeHint)
+}
+
+// checkFilter returns an error if the text is not a Graph filter in JSON.
 func (s *Service) checkFilter(text string) error {
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&graph.Filter{}); err != nil {
-		return fmt.Errorf("filters is not an Event Graph filter as JSON: %w", err)
+		return fmt.Errorf("conditions is not a Graph filter as JSON: %w", err)
 	}
 
 	return nil

@@ -786,14 +786,14 @@ func (c *counter) resolveClaims(field *lang.Field, isArgument bool) {
 	// a doc names the kind of thing a value is, as <production method>, but
 	// the game may keep such things in another database, as EU5 does the
 	// unique production methods of its buildings; the files settle where
-	isDocKind := claim.Type == lang.ValueTypeReference && field.Value.Source == lang.SourceDocs &&
+	isDocKind := claim.ValueType == lang.ValueTypeReference && field.Value.Source == lang.SourceDocs &&
 		claim.Database != lang.File && !hasAll(labels, c.defined[claim.Database])
-	isOpen := claim.Type == lang.ValueTypeReference && claim.Database == "" || claim.Type == lang.ValueTypeBlock ||
-		claim.Type == lang.ValueTypeText || isDocKind
+	isOpen := claim.ValueType == lang.ValueTypeReference && claim.Database == "" || claim.ValueType == lang.ValueTypeBlock ||
+		claim.ValueType == lang.ValueTypeText || isDocKind
 
 	// a source that says the value may name a database is trusted only if
 	// that database defines every name the game's files write there
-	if claim.Type == lang.ValueTypeTarget && claim.Database != "" && !hasAll(labels, c.defined[claim.Database]) {
+	if claim.ValueType == lang.ValueTypeTarget && claim.Database != "" && !hasAll(labels, c.defined[claim.Database]) {
 		field.Value.Source = lang.SourceVanilla
 	}
 
@@ -801,7 +801,7 @@ func (c *counter) resolveClaims(field *lang.Field, isArgument bool) {
 	// does a field a source says takes a number where the game's files give
 	// it a script value
 	takesValue := (vanilla.Blocks == 0 || field.Shape.Value == lang.ShapeValue) && c.takesValues(vanilla.Values)
-	if field.Value.IsStated() && claim.Type == lang.ValueTypeNumber && takesValue {
+	if field.Value.IsStated() && claim.ValueType == lang.ValueTypeNumber && takesValue {
 		field.Value.Value.Values = true
 	}
 
@@ -825,14 +825,14 @@ func (c *counter) resolveClaims(field *lang.Field, isArgument bool) {
 	// a field a source says takes a block or a text is not taken to name one
 	isConcept := expected.Database == c.builder.Concepts
 	isGUI := strings.HasPrefix(expected.Database, lang.GUIDatabasePrefix)
-	if ok && !hasLiteral && !isGUI && (!field.Value.IsStated() || claim.Type == lang.ValueTypeReference || !isConcept) {
+	if ok && !hasLiteral && !isGUI && (!field.Value.IsStated() || claim.ValueType == lang.ValueTypeReference || !isConcept) {
 		field.Value = lang.Claim[lang.Expected]{Value: expected, Source: lang.SourceVanilla}
 
 		return
 	}
 
 	if takesValue {
-		field.Value.Resolve(lang.Expected{Type: lang.ValueTypeNumber, Values: true}, lang.SourceVanilla)
+		field.Value.Resolve(lang.Expected{ValueType: lang.ValueTypeNumber, Values: true}, lang.SourceVanilla)
 
 		return
 	}
@@ -843,20 +843,20 @@ func (c *counter) resolveClaims(field *lang.Field, isArgument bool) {
 	case vanilla.Count == 0:
 
 	case vanilla.Blocks == vanilla.Count && counts.colors == vanilla.Count:
-		field.Value.Resolve(lang.Expected{Type: lang.ValueTypeColor}, lang.SourceVanilla)
+		field.Value.Resolve(lang.Expected{ValueType: lang.ValueTypeColor}, lang.SourceVanilla)
 
 	case vanilla.Blocks == vanilla.Count:
-		field.Value.Resolve(lang.Expected{Type: lang.ValueTypeBlock}, lang.SourceVanilla)
+		field.Value.Resolve(lang.Expected{ValueType: lang.ValueTypeBlock}, lang.SourceVanilla)
 
 	case vanilla.Blocks == 0:
 		for _, valueType := range valueTests {
 			fits := len(vanilla.Values) > 0
 			for value := range vanilla.Values {
-				fits = fits && c.builder.MatchValue(lang.Expected{Type: valueType}, value)
+				fits = fits && c.builder.MatchValue(lang.Expected{ValueType: valueType}, value)
 			}
 
 			if fits {
-				field.Value.Resolve(lang.Expected{Type: valueType}, lang.SourceVanilla)
+				field.Value.Resolve(lang.Expected{ValueType: valueType}, lang.SourceVanilla)
 
 				return
 			}
@@ -908,22 +908,32 @@ func resolveShapeClaim(counts tally) lang.Shape {
 // resolveKeys finds the database the keys of a field's block name, as the
 // keys of a culture's opinions block name cultures, where every key only
 // the game's files write there is a definition of one database. Those keys
-// are then counted together as one field that stands for any key.
+// are then counted together as one field that stands for any key. Where a
+// source states the database, only the keys that database defines in the
+// game's files are counted so, and every other key keeps its own field,
+// marked plain.
 func (c *counter) resolveKeys(field *lang.Field) {
 	takes := lang.ShapeRows[field.Shape.Value].Takes
 	if slices.Contains(takes, lang.DumpEffects) || slices.Contains(takes, lang.DumpTriggers) {
 		return
 	}
 
+	isStated := field.Keys.IsStated()
 	keys := map[string]int{}
 	for key, child := range field.Children {
-		if child.Source == lang.SourceVanilla && key != lang.AnyKey && key != jomini.NumberKey {
+		if key == lang.AnyKey || key == jomini.NumberKey {
+			continue
+		}
+
+		isDefined := c.defined[field.Keys.Value][key]
+		child.Plain = isStated && !isDefined
+		if child.Source == lang.SourceVanilla && (!isStated || isDefined) {
 			keys[key] = child.Vanilla.Count
 		}
 	}
 
 	expected, ok := lang.Expected{Database: field.Keys.Value}, len(keys) > 0
-	if !field.Keys.IsStated() {
+	if !isStated {
 		expected, ok = c.resolveReference(c.listLabels(keys))
 	}
 
@@ -992,7 +1002,7 @@ func (c *counter) resolveReference(labels map[string]int) (lang.Expected, bool) 
 		return lang.Expected{}, false
 	}
 
-	return lang.Expected{Type: lang.ValueTypeReference, Database: databases[0], Nested: isNested}, true
+	return lang.Expected{ValueType: lang.ValueTypeReference, Database: databases[0], Nested: isNested}, true
 }
 
 // listLabels returns the names among a set of written values, each with how
@@ -1064,7 +1074,7 @@ var literalTypes = []lang.ValueType{lang.ValueTypeBool, lang.ValueTypeNumber, la
 // isLiteral reports whether a value is yes or no, a number or a date.
 func (c *counter) isLiteral(value string) bool {
 	return slices.ContainsFunc(literalTypes, func(valueType lang.ValueType) bool {
-		return c.builder.MatchValue(lang.Expected{Type: valueType}, value)
+		return c.builder.MatchValue(lang.Expected{ValueType: valueType}, value)
 	})
 }
 
@@ -1075,7 +1085,7 @@ func (c *counter) isLiteral(value string) bool {
 // another, as a GUI text's "Age:", is mostly prose.
 func (c *counter) resolvePrefix(prefix string, labels map[string]int) {
 	names, database := c.listLabels(labels), c.builder.findScopeDatabase(prefix)
-	expected, ok := lang.Expected{Type: lang.ValueTypeReference, Database: database}, database != ""
+	expected, ok := lang.Expected{ValueType: lang.ValueTypeReference, Database: database}, database != ""
 	if !ok || !hasAll(names, c.defined[database]) {
 		expected, ok = c.resolveReference(names)
 	}

@@ -133,7 +133,7 @@ type Problem struct {
 	// words, its database.
 	Facts map[string]string
 
-	// Expected is what a value of the wrong kind should have been. Only a
+	// Expected is what a value of the wrong type should have been. Only a
 	// problem with a value has it.
 	Expected Expected
 }
@@ -626,7 +626,7 @@ func (s *Schema) newWalker(tree *jomini.Tree, file files.File, contexts []Contex
 	walker.frames = []frame{{context: root, wraps: true}}
 
 	if database := walker.database; database != nil {
-		if database.Declaration.Contents == ContentsEvents {
+		if database.Declaration.Type == TypeEvent {
 			walker.declaring = s.InlineDatabases
 			walker.declareInline()
 		}
@@ -865,14 +865,14 @@ func (w *walker) findRootScope(database *Database, definition Copy) string {
 		return ""
 	}
 
-	switch database.Declaration.Contents {
-	case ContentsEvents:
+	switch database.Declaration.Type {
+	case TypeEvent:
 		events := w.dialect.Events
 		eventType, _ := w.tree.FindChildValue(definition.Statement, events.TypeKey)
 
 		return cmp.Or(strings.TrimSuffix(eventType, events.TypeSuffix), events.DefaultScope)
 
-	case ContentsOnActions:
+	case TypeOnAction:
 		if declared := database.Definitions[definition.Name]; declared != nil {
 			return declared.Target
 		}
@@ -1171,10 +1171,11 @@ func (w *walker) findCalledDefinition(caller, key string) (*Definition, string, 
 
 // takeField reads a key as a field of its block. Where that block's keys
 // name definitions, as a culture's opinions block names cultures, the key is
-// also a reference, unless the dumps declare it, as base in stress_impact.
+// also a reference, unless the dumps declare it or it is plain, as base in
+// stress_impact and icon in a production method.
 func takeField(parent *Context, field *Field, key string, span jomini.Span) match {
 	fit := match{category: CategoryField, field: field}
-	if parent.Field == nil || field != nil && field.Source == SourceDumps {
+	if parent.Field == nil || field != nil && (field.Source == SourceDumps || field.Plain) {
 		return fit
 	}
 
@@ -1650,7 +1651,7 @@ func (w *walker) judgeUnexplained(context *Context, statement int32) {
 
 	label := w.tree.Unquoted(current.Key)
 	if current.Parent == 0 && current.KeyClass == jomini.ClassEventID {
-		if w.database == nil || w.database.Declaration.Contents != ContentsEvents {
+		if w.database == nil || w.database.Declaration.Type != TypeEvent {
 			return
 		}
 

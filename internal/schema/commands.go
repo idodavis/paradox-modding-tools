@@ -430,7 +430,7 @@ func (b *builder) resolvePlaceholder(term string) (lang.Expected, bool) {
 	if last == "key" || last == "name" {
 		database, ok := b.ResolveTypeDatabase(stem)
 
-		return lang.Expected{Type: lang.ValueTypeReference, Database: database}, ok
+		return lang.Expected{ValueType: lang.ValueTypeReference, Database: database}, ok
 	}
 
 	if last != "scope" && last != "target" {
@@ -444,7 +444,7 @@ func (b *builder) resolvePlaceholder(term string) (lang.Expected, bool) {
 
 	database, _ := b.ResolveTypeDatabase(scope)
 
-	return lang.Expected{Type: lang.ValueTypeTarget, Scope: scope, Database: database}, true
+	return lang.Expected{ValueType: lang.ValueTypeTarget, Scope: scope, Database: database}, true
 }
 
 // dumpIterates is how the dumps begin the sentence about a command that
@@ -500,13 +500,13 @@ func (b *builder) resolveTraits(traits string) (lang.Expected, bool) {
 	list := choiceTraits.FindStringSubmatch(traits)
 	switch {
 	case comparison != nil && comparison[1] != "":
-		return lang.Expected{Type: lang.ValueTypeDate}, true
+		return lang.Expected{ValueType: lang.ValueTypeDate}, true
 
 	case comparison != nil:
-		return lang.Expected{Type: lang.ValueTypeNumber, Values: true}, true
+		return lang.Expected{ValueType: lang.ValueTypeNumber, Values: true}, true
 
 	case traits == "yes/no":
-		return lang.Expected{Type: lang.ValueTypeBool}, true
+		return lang.Expected{ValueType: lang.ValueTypeBool}, true
 
 	case class != nil:
 		database, ok := b.FindDatabaseByClass(class[1])
@@ -514,21 +514,21 @@ func (b *builder) resolveTraits(traits string) (lang.Expected, bool) {
 			return lang.Expected{}, false
 		}
 
-		return lang.Expected{Type: lang.ValueTypeReference, Database: database.Name}, true
+		return lang.Expected{ValueType: lang.ValueTypeReference, Database: database.Name}, true
 
 	case target != nil:
-		return lang.Expected{Type: lang.ValueTypeTarget, Scope: target[1]}, true
+		return lang.Expected{ValueType: lang.ValueTypeTarget, Scope: target[1]}, true
 
 	case tag != nil:
 		database, _ := b.ResolveTypeDatabase(tag[1])
 
-		return lang.Expected{Type: lang.ValueTypeTarget, Scope: tag[1], Database: database}, true
+		return lang.Expected{ValueType: lang.ValueTypeTarget, Scope: tag[1], Database: database}, true
 
 	case list != nil:
 		choices := splitList(list[1])
 		choices[len(choices)-1] = strings.TrimPrefix(choices[len(choices)-1], "and ")
 
-		return lang.Expected{Type: lang.ValueTypeChoice, Choices: choices}, true
+		return lang.Expected{ValueType: lang.ValueTypeChoice, Choices: choices}, true
 	}
 
 	return lang.Expected{}, false
@@ -565,7 +565,7 @@ func (b *builder) resolveTitleValue(command *lang.Definition, dump DumpCommand) 
 			database := lang.ShapeRows[value.Shape.Value].Values
 			value.Shape, value.Value = lang.Claim[lang.Shape]{}, lang.Claim[lang.Expected]{}
 			if database != "" {
-				value.Value.Resolve(lang.Expected{Type: lang.ValueTypeReference, Database: database}, lang.SourceDumps)
+				value.Value.Resolve(lang.Expected{ValueType: lang.ValueTypeReference, Database: database}, lang.SourceDumps)
 			}
 		}
 
@@ -592,7 +592,7 @@ func (b *builder) buildPrefixes() {
 			links.Definitions[link.Key] = link
 		}
 
-		expected := lang.Expected{Type: lang.ValueTypeReference, Database: database}
+		expected := lang.Expected{ValueType: lang.ValueTypeReference, Database: database}
 		makeField(link, lang.SourceRegistry).Value.Resolve(expected, lang.SourceRegistry)
 	}
 
@@ -637,6 +637,10 @@ var commandKeys = []commandKey{
 	// the dump gives no example line for has_trait
 	{Games: []string{game.CK3}, Command: "has_trait", Value: "traits"},
 	{Command: lang.GameRuleTrigger, Value: lang.GameRuleSettings},
+	// EU5's docs/triggers.log says "if a country is a specific historical tag
+	// or was it" and gives no value type, but the value is a country's tag, as
+	// in has_or_had_tag = BYZ (common/advances/0_age_of_traditions.txt:190)
+	{Games: []string{game.EU5}, Command: "has_or_had_tag", Value: lang.SetupCountries},
 }
 
 // buildCommandKeys applies the rows of commandKeys that hold for the game. A
@@ -664,7 +668,7 @@ func (b *builder) buildCommandKeys(dialect *lang.Dialect) {
 			}
 
 			if entry.Value != "" {
-				expected := lang.Expected{Type: lang.ValueTypeReference, Database: entry.Value, Stem: entry.Stem}
+				expected := lang.Expected{ValueType: lang.ValueTypeReference, Database: entry.Value, Stem: entry.Stem}
 				field.Value = lang.Claim[lang.Expected]{Value: expected, Source: lang.SourceDumps}
 			}
 		}

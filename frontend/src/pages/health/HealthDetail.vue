@@ -158,7 +158,7 @@ function describeSite(site: Site): string {
         :label="`Fix with ${agent.current.name}`"
         icon="i-lucide-sparkles"
         variant="subtle"
-        @click="agent.compose(toFindingPrompt(finding))"
+        @click="agent.ask(toFindingPrompt(finding))"
       />
     </template>
     <HealthSection title="What's wrong">

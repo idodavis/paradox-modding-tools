@@ -248,10 +248,10 @@ const LAUNCH = findCommand("game.launch");
     <div id="status-start" class="contents" />
     <span class="grow" />
     <div id="status-end" class="contents" />
-    <UTooltip v-if="git.running" text="Show what git prints">
+    <UTooltip v-if="git.activity" text="Show what git prints">
       <button type="button" :class="STATUS_ITEM" @click="editor.showPanel('output')">
         <UIcon name="i-lucide-loader-circle" class="size-3 shrink-0 animate-spin" />
-        {{ git.running }}…
+        {{ git.activity }}…
       </button>
     </UTooltip>
     <button v-if="agent.status && agent.active" type="button" :class="STATUS_ITEM" @click="agent.showPane()">

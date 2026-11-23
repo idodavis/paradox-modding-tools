@@ -3,7 +3,8 @@
 
 export {
     Category,
-    Reason
+    Reason,
+    Type
 } from "./models.js";
 
 export type {

@@ -14,7 +14,7 @@ import { computed } from "vue";
 import type { Agent } from "@services/agent/models";
 import * as agentApi from "@services/agent/service";
 import * as mcp from "@services/mcp/service";
-import { MakeAgentFile } from "@services/workspace/service";
+import { CreateAgentFile } from "@services/workspace/service";
 import { confirm, copyText } from "../../lib/feedback";
 import { abbreviate, list, parseTime, splitError } from "../../lib/format";
 import { accessQuery, agentsQuery, keys, nodeQuery, toolsQuery } from "../../queries";
@@ -23,7 +23,7 @@ import {
   FILE_KINDS,
   listChoices,
   SHELL_ALLOWED,
-  SHELL_REFUSED,
+  SHELL_DENIED,
   toPmtTool,
   useAgentStore,
 } from "../../stores/agent";
@@ -100,25 +100,25 @@ const permits = computed(() =>
     }),
 );
 
-// The shell rules: the starts the user refuses, then those allowed.
-const shellStart = shallowRef("");
+// The shell rules: the prefixes the user denies, then those allowed.
+const shellPrefix = shallowRef("");
 const shellRules = computed(() =>
-  [SHELL_REFUSED, SHELL_ALLOWED].flatMap((key) => settings.list(key).map((start) => ({ key, start }))),
+  [SHELL_DENIED, SHELL_ALLOWED].flatMap((key) => settings.list(key).map((prefix) => ({ key, prefix }))),
 );
-// A start is one line with no comma, since a comma parts the setting's items.
-const isShellStart = computed(() => !!shellStart.value.trim() && !/[,\n]/.test(shellStart.value));
+// A prefix is one line with no comma, since a comma parts the setting's list.
+const isShellPrefix = computed(() => !!shellPrefix.value.trim() && !/[,\n]/.test(shellPrefix.value));
 
 /**
- * addShellRule adds the typed start to the shell commands allowed or refused,
+ * addShellRule adds the typed prefix to the shell commands allowed or denied,
  * by the setting's key, and takes it out of the other list.
  */
 function addShellRule(key: string): void {
-  const start = shellStart.value.trim();
-  if (!isShellStart.value) return;
+  const prefix = shellPrefix.value.trim();
+  if (!isShellPrefix.value) return;
 
-  settings.writeItem(key === SHELL_ALLOWED ? SHELL_REFUSED : SHELL_ALLOWED, start, false);
-  settings.writeItem(key, start, true);
-  shellStart.value = "";
+  settings.writeItem(key === SHELL_ALLOWED ? SHELL_DENIED : SHELL_ALLOWED, prefix, false);
+  settings.writeItem(key, prefix, true);
+  shellPrefix.value = "";
 }
 
 const refresh = () => cache.invalidateQueries({ key: keys.agents });
@@ -180,22 +180,26 @@ const KINDS = [
 
 // What Settings says of an agent from its row: the words where the row has
 // the thing, and the words where it lacks it. Blank words say nothing.
-const FACTS: { has: (row: Agent) => boolean; yes: string; no: string }[] = [
+const FACTS: { has: (row: Agent) => boolean; hasText: string; lacksText: string }[] = [
   {
     has: (row) => !!row.steers,
-    yes: "Takes a message into the turn it is working on",
-    no: "A message sent while it works waits until the turn ends",
+    hasText: "Takes a message into the turn it is working on",
+    lacksText: "A message sent while it works waits until the turn ends",
   },
   {
     has: (row) => !!row.guards,
-    yes: "Refuses changes to the game's files and external mods by its own rules",
-    no: "Has no rules of its own for read-only folders: PMT refuses what it asks to change there",
+    hasText: "Refuses changes to the game's files and external mods by its own rules",
+    lacksText: "Has no rules of its own for read-only folders: PMT refuses what it asks to change there",
   },
-  { has: (row) => !row.unasked?.length, yes: "", no: "Has modes that ask PMT nothing, each behind a confirm" },
   {
-    has: (row) => !!row.makes?.length,
-    yes: "New skills, commands and subagents from the prompt box",
-    no: "PMT cannot make its skills and commands yet",
+    has: (row) => !row.bypasses?.length,
+    hasText: "",
+    lacksText: "Has modes that ask PMT nothing, each behind a confirm",
+  },
+  {
+    has: (row) => !!row.skeletons?.length,
+    hasText: "New skills, commands and subagents from the prompt box",
+    lacksText: "PMT cannot make its skills and commands yet",
   },
 ];
 
@@ -212,24 +216,24 @@ function findChat(parts: ReturnType<typeof makePart>[]): Agent | undefined {
  * for each fact of its row, then what it never sends.
  */
 function listFacts(row: Agent): { text: string; isLack: boolean }[] {
-  const facts = FACTS.map((fact) => ({ text: fact.has(row) ? fact.yes : fact.no, isLack: !fact.has(row) }));
-  const unsent = row.lacks?.length ? [{ text: `Sends no ${list(row.lacks)}`, isLack: true }] : [];
+  const facts = FACTS.map((fact) => ({ text: fact.has(row) ? fact.hasText : fact.lacksText, isLack: !fact.has(row) }));
+  const unsent = row.missingFeatures?.length ? [{ text: `Sends no ${list(row.missingFeatures)}`, isLack: true }] : [];
 
   return [...facts, ...unsent].filter((fact) => fact.text);
 }
 
 // Opens one of an agent's instruction files in the editor, making it empty in
-// the workspace's folder if it is missing.
+// the agent folder if it is missing.
 const { mutate: openInstructions } = useMutation({
   mutation: async (file: string) => {
-    editor.show(await MakeAgentFile(file, ""));
+    editor.show(await CreateAgentFile(file, ""));
     emit("opened");
   },
 });
 
 /**
  * listInstructions returns the instruction files the agent of a card reads
- * in the workspace's folder, without the folders it reads there.
+ * in the agent folder, without the folders it reads there.
  */
 function listInstructions(parts: ReturnType<typeof makePart>[]): string[] {
   return parts.flatMap((part) => part.row.files ?? []).filter((file) => file.endsWith(".md"));
@@ -387,7 +391,7 @@ function quote(path: string): string {
         v-if="workspace.isOpen() && listInstructions(parts).length"
         class="flex flex-wrap items-center gap-1.5 ps-9 text-12 text-dimmed"
       >
-        <span class="me-1">Its instructions in this workspace's folder</span>
+        <span class="me-1">Its instructions in this workspace's agent folder</span>
         <UButton
           v-for="file in listInstructions(parts)"
           :key="file"
@@ -406,16 +410,18 @@ function quote(path: string): string {
           <div v-for="kind in KINDS" :key="kind.label" class="flex items-center gap-2 ps-9 text-12">
             <span class="w-10 shrink-0 text-dimmed">{{ kind.label }}</span>
             <USelect
-              v-for="option in agent.offered[chat.id] ?? []"
+              v-for="option in agent.offeredOptions[chat.id] ?? []"
               :key="option.configId"
-              :model-value="String(agent.listKept(chat.id, kind.isQuick)[option.configId] ?? option.currentValue)"
+              :model-value="
+                String(agent.resolveKeptChoices(chat.id, kind.isQuick)[option.configId] ?? option.currentValue)
+              "
               :items="listChoices(option).map((choice) => ({ label: choice.name, value: choice.value }))"
               :aria-label="`${kind.label}: ${option.name}`"
               size="xs"
               class="w-44"
               @update:model-value="(value) => agent.choose(chat.id, kind.isQuick, option.configId, String(value))"
             />
-            <span v-if="!agent.offered[chat.id]" class="text-dimmed">
+            <span v-if="!agent.offeredOptions[chat.id]" class="text-dimmed">
               Start a session with {{ chat.name }} once, and its models are listed here.
             </span>
           </div>
@@ -487,24 +493,24 @@ function quote(path: string): string {
     </p>
     <form class="flex items-center gap-2" @submit.prevent="addShellRule(SHELL_ALLOWED)">
       <UInput
-        v-model="shellStart"
+        v-model="shellPrefix"
         placeholder="How the command starts, such as git status"
         aria-label="How the command starts"
         class="w-80 font-mono"
       />
-      <UButton type="submit" label="Allow" icon="i-lucide-check" :disabled="!isShellStart" />
+      <UButton type="submit" label="Allow" icon="i-lucide-check" :disabled="!isShellPrefix" />
       <UButton
         label="Refuse"
         icon="i-lucide-ban"
         color="error"
         variant="soft"
-        :disabled="!isShellStart"
-        @click="addShellRule(SHELL_REFUSED)"
+        :disabled="!isShellPrefix"
+        @click="addShellRule(SHELL_DENIED)"
       />
     </form>
     <div
       v-for="rule in shellRules"
-      :key="rule.key + rule.start"
+      :key="rule.key + rule.prefix"
       class="flex items-center gap-3 border-b border-accented py-2"
     >
       <UBadge
@@ -513,14 +519,14 @@ function quote(path: string): string {
         variant="subtle"
         class="w-16 justify-center"
       />
-      <span class="min-w-0 grow truncate font-mono text-12">{{ rule.start }}</span>
+      <span class="min-w-0 grow truncate font-mono text-12">{{ rule.prefix }}</span>
       <UButton
         label="Remove"
         icon="i-lucide-trash-2"
         color="error"
         variant="ghost"
         size="sm"
-        @click="settings.writeItem(rule.key, rule.start, false)"
+        @click="settings.writeItem(rule.key, rule.prefix, false)"
       />
     </div>
   </section>

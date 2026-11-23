@@ -524,15 +524,15 @@ async function remove(): Promise<void> {
               </UFormField>
               <UFormField
                 label="Agent folder"
-                description="Where this workspace's agents start and keep their instructions, plans and scripts. The explorer shows it as Workspace files, unless it is a mod's folder."
+                description="Where this workspace's agents start and keep their instructions, plans and scripts. The explorer lists it as Agent folder, unless it is a mod's folder."
                 orientation="horizontal"
               >
                 <FileSelector
-                  :path="active?.folder ?? ''"
+                  :path="active?.agentFolder ?? ''"
                   folder
                   :filter="[]"
                   class="w-160"
-                  @update:path="update({ ...record, folder: $event })"
+                  @update:path="update({ ...record, agentFolder: $event })"
                 />
               </UFormField>
               <UFormField
@@ -701,8 +701,8 @@ async function remove(): Promise<void> {
                     </div>
                   </div>
                   <p class="shrink-0 border-t border-default px-3.5 py-3 text-12 text-dimmed">
-                    Health and the Event Graph follow a new order as soon as you drop it. Colors stay with the mod, not
-                    the position.
+                    Health and the Graph follow a new order as soon as you drop it. Colors stay with the mod, not the
+                    position.
                   </p>
                 </div>
               </template>

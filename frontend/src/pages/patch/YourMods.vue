@@ -230,7 +230,7 @@ function describeEmpty({ mod }: Card): string {
           square
           class="shrink-0"
           :aria-label="`Fix with ${agent.current.name}`"
-          @click="agent.compose(toFindingPrompt(finding))"
+          @click="agent.ask(toFindingPrompt(finding))"
         />
       </UTooltip>
     </DefineFix>

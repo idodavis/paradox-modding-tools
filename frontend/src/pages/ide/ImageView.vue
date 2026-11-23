@@ -9,7 +9,7 @@ import type { Place } from "@services/workspace/models";
 import { canSaveAsDds } from "../../app/commands";
 import { bytes } from "../../lib/format";
 import { fileUrl, headerQuery } from "../../queries";
-import PictureViewport from "./draw/PictureViewport.vue";
+import PictureViewport from "../../ui/PictureViewport.vue";
 import SaveDdsModal from "./SaveDdsModal.vue";
 
 const { place } = defineProps<{ place: Place }>();

@@ -258,11 +258,9 @@ func findFolder(dialect *lang.Dialect, rel string) string {
 	return path.Dir(rel)
 }
 
-// fireContents are the kinds of database whose definitions fire one another.
-// A message is fired when an effect sends it.
-var fireContents = []lang.Contents{
-	lang.ContentsEvents, lang.ContentsOnActions, lang.ContentsDecisions, lang.ContentsMessages,
-}
+// fireTypes are the types of database whose definitions fire one another. A
+// message is fired when an effect sends it.
+var fireTypes = []lang.Type{lang.TypeEvent, lang.TypeOnAction, lang.TypeDecision, lang.TypeMessage}
 
 // buildDatabases makes a database for each folder and nesting, for what GUI
 // files declare, and for the events' namespaces. It then records which
@@ -291,9 +289,9 @@ func (b *builder) buildDatabases(dialect *lang.Dialect, folders []string) {
 		b.buildDatabase(dialect, label, dialect.LookupDeclaration(label))
 	}
 
-	housed := map[lang.Contents][]string{}
+	housed := map[lang.Type][]string{}
 	for label, database := range b.Databases {
-		housed[database.Declaration.Contents] = append(housed[database.Declaration.Contents], label)
+		housed[database.Declaration.Type] = append(housed[database.Declaration.Type], label)
 
 		// of several called databases of effects, or of script values, the
 		// first by name is taken
@@ -306,20 +304,19 @@ func (b *builder) buildDatabases(dialect *lang.Dialect, folders []string) {
 		}
 	}
 
-	findOnly := func(contents lang.Contents) string {
-		if len(housed[contents]) == 1 {
-			return housed[contents][0]
+	findOnly := func(definitionType lang.Type) string {
+		if len(housed[definitionType]) == 1 {
+			return housed[definitionType][0]
 		}
 
 		return ""
 	}
 
-	b.Events, b.Messages, b.Lists = findOnly(lang.ContentsEvents), findOnly(lang.ContentsMessages),
-		findOnly(lang.ContentsLists)
-	b.Concepts, b.ModifierTypes = findOnly(lang.ContentsConcepts), findOnly(lang.ContentsModifiers)
-	b.OnActions = findOnly(lang.ContentsOnActions)
+	b.Events, b.Messages, b.Lists = findOnly(lang.TypeEvent), findOnly(lang.TypeMessage), findOnly(lang.TypeList)
+	b.Concepts, b.ModifierTypes = findOnly(lang.TypeConcept), findOnly(lang.TypeModifier)
+	b.OnActions = findOnly(lang.TypeOnAction)
 
-	for _, house := range fireContents {
+	for _, house := range fireTypes {
 		b.FireDatabases = append(b.FireDatabases, housed[house]...)
 	}
 
@@ -381,7 +378,7 @@ func (b *builder) buildNested(dialect *lang.Dialect, nestings []lang.Nesting) {
 		}
 
 		label := nesting.Label()
-		declaration := lang.Declaration{Target: nesting.Target}
+		declaration := lang.Declaration{Type: nesting.Type, Target: nesting.Target, Fields: nesting.Fields}
 		if nesting.Precedence.Keeps != "" {
 			declaration.Precedences = []lang.Precedence{nesting.Precedence}
 		}
@@ -406,13 +403,19 @@ func (b *builder) listCallees() {
 }
 
 // buildFields gives each field a database's declaration lists what its row
-// says.
+// says. A row with no key path describes the definition's own block.
 func (b *builder) buildFields() {
 	for _, database := range b.Databases {
 		for _, entry := range database.Declaration.Fields {
 			field := database.Field
 			for key := range strings.SplitSeq(entry.KeyPath, "/") {
-				field = field.BuildChild(key, lang.SourceRegistry)
+				if key != "" {
+					field = field.BuildChild(key, lang.SourceRegistry)
+				}
+			}
+
+			if entry.Keys != "" {
+				field.Keys.Resolve(entry.Keys, lang.SourceRegistry)
 			}
 
 			field.Weighted = entry.Weighted

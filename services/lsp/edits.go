@@ -391,7 +391,7 @@ func resolveModStem(mod workspace.Mod) string { return files.ToSlug(filepath.Bas
 // buildNamespace returns the line that declares an event key's namespace. It
 // returns "" if the file declares it already, or the events do not apply.
 func buildNamespace(database *lang.Database, key, source string) string {
-	if database == nil || database.Declaration.Contents != lang.ContentsEvents {
+	if database == nil || database.Declaration.Type != lang.TypeEvent {
 		return ""
 	}
 

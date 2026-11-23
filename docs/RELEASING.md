@@ -71,7 +71,7 @@ On a clean Windows (Windows Sandbox or a VM) and on Ubuntu (a VM or distrobox):
 - [ ] Source control.
 - [ ] The Terminal: PowerShell and bash.
 - [ ] The Visual view and Save as DDS.
-- [ ] The Event Graph.
+- [ ] The Graph.
 - [ ] Health.
 - [ ] The Patch Center: Your mods and a version's tabs.
 - [ ] Publish to a hidden test item, and the compare. EU5 from Linux: its install has no `libsteam_api.so`.

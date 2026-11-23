@@ -26,10 +26,10 @@ export interface Agent {
     "files"?: string[] | null;
 
     /**
-     * Makes are the kinds of file PMT makes for the agent there, none for an
-     * agent whose folders PMT does not know.
+     * Skeletons are the kinds of file PMT makes for the agent there, none for
+     * an agent whose folders PMT does not know.
      */
-    "makes"?: Make[] | null;
+    "skeletons"?: Skeleton[] | null;
 
     /**
      * Instructions is what the pane adds to a session's first prompt, for an
@@ -41,8 +41,8 @@ export interface Agent {
     /**
      * Guards reports whether the agent takes the folders it must not change
      * as deny rules of its own, which hold in every mode it runs in. It
-     * takes them as program arguments where the row has a DenyArg, else as
-     * the settings of each of its sessions.
+     * takes them as program arguments where the agent takes a deny rule as
+     * one, else as the settings of each of its sessions.
      */
     "guards"?: boolean;
 
@@ -55,27 +55,27 @@ export interface Agent {
 
     /**
      * StartMode is the mode each session of the agent starts in, by the
-     * agent's own id for it; "" leaves the agent's choice. Unasked lists
+     * agent's own id for it; "" leaves the agent's choice. Bypasses lists
      * what makes the agent change files and run commands without asking PMT,
      * so that PMT cannot keep it off read-only files: a mode by its id, and a
      * value of any other setting as "setting=value", such as "allow_all=on".
      */
     "startMode"?: string;
-    "unasked"?: string[] | null;
+    "bypasses"?: string[] | null;
 
     /**
-     * PlanFolder is the folder where the agent keeps each session's plan
+     * HomePlanFolder is the folder where the agent keeps each session's plan
      * files when that is outside the workspace, as a part of its path under
      * the user's home; "" for an agent that keeps none there. A file in it
      * is a plan, never a change to review.
      */
-    "planFolder"?: string;
+    "homePlanFolder"?: string;
 
     /**
-     * Lacks names what the pane shows for other agents and this one never
-     * sends, as Settings words it: "subagents", "plans".
+     * MissingFeatures names what the pane shows for other agents and this one
+     * never sends, as Settings words it: "subagents", "plans".
      */
-    "lacks"?: string[] | null;
+    "missingFeatures"?: string[] | null;
 
     /**
      * Chat is the id of the row that chats for this one, so Settings draws
@@ -120,24 +120,6 @@ export interface Install {
     "path": string;
     "version": string;
     "scannedAt": string;
-}
-
-/**
- * A Make is one kind of file PMT makes for an agent in the workspace's
- * folder: a skill, a command or a subagent.
- */
-export interface Make {
-    /**
-     * Kind is what the file is, as its button names it.
-     */
-    "kind": string;
-
-    /**
-     * Path is the file's path under the workspace's folder, and Text is what
-     * the new file holds. Each has %s where the name the user gives goes.
-     */
-    "path": string;
-    "text": string;
 }
 
 /**
@@ -242,6 +224,24 @@ export interface Setting {
 }
 
 /**
+ * A Skeleton is the first text of one kind of file PMT makes for an agent in
+ * the agent folder: a skill, a command or a subagent.
+ */
+export interface Skeleton {
+    /**
+     * Label is what the file is, as its button names it.
+     */
+    "label": string;
+
+    /**
+     * Path is the file's path under the agent folder, and Text is what the
+     * new file holds. Each has %s where the name the user gives goes.
+     */
+    "path": string;
+    "text": string;
+}
+
+/**
  * Workspace is one recorded workspace: a game install and its mods.
  */
 export interface Workspace {
@@ -253,11 +253,11 @@ export interface Workspace {
     "homePage": string;
 
     /**
-     * Folder is the folder the workspace's agents start in and keep their
+     * AgentFolder is the folder the workspace's agents start in and keep their
      * files in. It is "" until the user picks one or an agent first starts
      * in a folder made for the workspace.
      */
-    "folder": string;
+    "agentFolder": string;
 
     /**
      * GameColor is a slot or a CSS color, or "" for the game's own.

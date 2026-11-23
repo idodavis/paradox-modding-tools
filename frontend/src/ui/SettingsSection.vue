@@ -26,7 +26,7 @@ const DRAWN_APART = [
   "appearance.simple",
   "agents.allowed",
   "agents.shellAllowed",
-  "agents.shellRefused",
+  "agents.shellDenied",
 ];
 
 const {

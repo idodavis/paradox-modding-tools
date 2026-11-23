@@ -29,7 +29,7 @@ const COLORS: Record<string, string> = {
   icon: "comment",
 };
 
-/** SAMPLE_COLORS holds the syntax color of a data call's sample text, by the kind Go gives the sample. */
+/** SAMPLE_COLORS holds the syntax color of a data call's sample text, by the sort of sample Go gives it. */
 export const SAMPLE_COLORS: Record<string, string> = {
   number: "var(--syn-number)",
   date: "var(--syn-number)",

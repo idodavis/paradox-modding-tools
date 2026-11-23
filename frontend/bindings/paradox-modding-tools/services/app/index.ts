@@ -11,9 +11,9 @@ export type {
     Calendar,
     Era,
     Install,
-    Make,
     Mod,
     Release,
     Setting,
+    Skeleton,
     Workspace
 } from "./models.js";

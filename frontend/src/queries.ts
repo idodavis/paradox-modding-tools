@@ -16,6 +16,7 @@ import * as terminal from "@services/terminal/service";
 import * as wiki from "@services/wiki/service";
 import * as workspace from "@services/workspace/service";
 import type { Format } from "@internal/files/models";
+import { Type } from "@internal/lang/models";
 import type { Coat, PictureList, States } from "@services/draw/models";
 import type { Filter } from "@services/graph/models";
 import type { Site } from "@services/lsp/models";
@@ -277,18 +278,40 @@ export const textColorsQuery = defineQueryOptions(
   }),
 );
 
-export const graphQuery = defineQueryOptions(({ root, filter }: { root: string; filter: Filter }) => ({
-  key: [...keys.graph, root, filter],
-  query: () => graph.BuildGraph(root, filter),
+export const graphQuery = defineQueryOptions(({ subject, filter }: { subject: string; filter: Filter }) => ({
+  key: [...keys.graph, subject, filter],
+  query: () => graph.BuildGraph(subject, filter),
 }));
+export const graphChainQuery = defineQueryOptions(({ id, filter }: { id: string; filter: Filter }) => ({
+  key: [...keys.graph, "chain", id, filter],
+  query: () => graph.BuildChain(id, filter),
+}));
+export const graphLineQuery = defineQueryOptions(({ id, picked }: { id: string; picked: string[] }) => ({
+  key: [...keys.graph, "line", id, picked],
+  query: () => graph.BuildLine(id, picked),
+}));
+export const graphTreeQuery = defineQueryOptions(({ id, filter }: { id: string; filter: Filter }) => ({
+  key: [...keys.graph, "tree", id, filter],
+  query: () => graph.BuildTree(id, filter),
+}));
+export const graphErasQuery = defineQueryOptions({
+  key: [...keys.graph, "eras"],
+  query: () => graph.ListDefinitions(Type.TypeEra),
+});
 export const detailQuery = defineQueryOptions((id: string) => ({
   key: [...keys.graph, "detail", id],
   query: () => graph.BuildDetail(id),
 }));
-export const graphRootsQuery = defineQueryOptions((query: string) => ({
-  key: [...keys.graph, "roots", query],
-  query: () => graph.FindRoots(query, 50),
-}));
+export const graphCatalogsQuery = defineQueryOptions({
+  key: [...keys.graph, "catalogs"],
+  query: () => graph.ListCatalogs(),
+});
+export const graphCatalogQuery = defineQueryOptions(
+  ({ types, query, limit }: { types: Type[]; query: string; limit: number }) => ({
+    key: [...keys.graph, "catalog", types, query, limit],
+    query: () => graph.ListCatalog(types, query, limit),
+  }),
+);
 export const ownRootsQuery = defineQueryOptions({
   key: [...keys.graph, "own"],
   query: () => graph.ListOwnRoots(),

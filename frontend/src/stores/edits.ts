@@ -64,15 +64,15 @@ export function listChanges(entries: Entry[]): FileEdit[] {
  * said yes.
  */
 export async function confirmUndo(places: Place[], isTurn = false): Promise<boolean> {
-  const [only] = places;
-  const subject = only && places.length === 1 ? only.rel || only.path : plural(places.length, "file");
-  const taken = isTurn
+  const [first] = places;
+  const subject = first && places.length === 1 ? first.rel || first.path : plural(places.length, "file");
+  const effect = isTurn
     ? `${subject} ${places.length === 1 ? "goes" : "go"} back to the text from before this turn. ` +
       "What a later turn changed in the same file goes back too. "
     : `The edits to ${subject} are taken back, except for the changes you kept. `;
   const answer = await confirm.open({
     title: isTurn ? "Undo this turn's changes?" : "Undo the agent's changes?",
-    body: `${taken}A file an agent created goes to PMT's trash.`,
+    body: `${effect}A file an agent created goes to PMT's trash.`,
     confirm: isTurn ? "Undo this turn" : "Undo all",
     destructive: true,
   });

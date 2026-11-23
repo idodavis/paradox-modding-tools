@@ -82,8 +82,8 @@ var operatorSays = map[string]string{
 // it also returns the key without its any_.
 func findPhrase(key string) (phrase, string) {
 	lower := strings.ToLower(key)
-	if entry, ok := phrases[lower]; ok {
-		return entry, ""
+	if row, ok := phrases[lower]; ok {
+		return row, ""
 	}
 
 	if rest, ok := strings.CutPrefix(lower, anyPrefix); ok {
@@ -147,15 +147,15 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 	current := tree.Statements[statement]
 	key := tree.Unquoted(current.Key)
 	condition := Condition{Value: tree.Unquoted(current.Value), Line: toSourceLine(tree, current.Span)}
-	keyword, rest := findPhrase(key)
+	wording, rest := findPhrase(key)
 	switch {
-	case keyword.Covers:
+	case wording.Covers:
 		condition.Text, condition.Value = describeCover(ws, mods, tree, statement)
 
 		return condition
 
-	case keyword.Says != "":
-		condition.Text = strings.Replace(keyword.Says, "*", toWords(rest), 1)
+	case wording.Says != "":
+		condition.Text = strings.Replace(wording.Says, "*", toWords(rest), 1)
 
 	case ws.Schema.IsLink(key) || current.KeyClass == jomini.ClassParameter:
 		condition.Subject = key
@@ -184,7 +184,7 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 		}
 	}
 
-	if keyword.ValueFirst {
+	if wording.ValueFirst {
 		condition.Subject, condition.Value = condition.Value, ""
 	}
 
@@ -192,20 +192,20 @@ func makeCondition(ws *workspace.Session, mods *index.Index, tree *jomini.Tree, 
 		condition.Conditions = listConditions(ws, mods, tree, statement)
 	}
 
-	return foldCondition(condition, keyword)
+	return foldCondition(condition, wording)
 }
 
 // foldCondition folds a block that wraps one condition into it: a negating
 // key negates the condition, and a key that leads to a scope becomes its
 // subject.
-func foldCondition(condition Condition, keyword phrase) Condition {
+func foldCondition(condition Condition, wording phrase) Condition {
 	if len(condition.Conditions) != 1 {
 		return condition
 	}
 
 	inner := condition.Conditions[0]
 	switch {
-	case keyword.Negates:
+	case wording.Negates:
 		inner.Negated = !inner.Negated
 
 		return inner

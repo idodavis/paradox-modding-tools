@@ -5,6 +5,8 @@
 <script lang="ts">
 /** How far a press must move, in pixels, to be a drag rather than a click. */
 export const DRAG = 4;
+/** How much of the pane a fitted picture leaves free, in pixels. */
+export const MARGIN = 32;
 </script>
 
 <script setup lang="ts">
@@ -16,11 +18,10 @@ import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef } from
 
 import * as draw from "@services/draw/service";
 
-import { useDrawStore } from "../../../stores/draw";
+import { useDrawStore } from "../stores/draw";
 
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 32;
-const MARGIN = 32;
 const CHECKS = "repeating-conic-gradient(var(--bg-0) 0 25%, var(--bg-4) 0 50%) 0 0 / 16px 16px";
 // Any backdrop value not listed here is a color.
 const BACKDROPS = [
@@ -31,9 +32,15 @@ const BACKDROPS = [
 
 const {
   backdrop = false,
+  ground = "",
   snapshot = null,
   title = "picture",
 } = defineProps<{
+  /**
+   * A CSS background behind the content, in place of the checks and the
+   * backdrop.
+   */
+  ground?: string;
   /** Whether the picture sits on the backdrop chosen in the bar instead of on checks. */
   backdrop?: boolean;
   /** Makes the PNG that Export writes. With none, there is no Export. */
@@ -46,8 +53,9 @@ const store = useDrawStore();
 const toast = useToast();
 const pane = useTemplateRef("pane");
 const content = useTemplateRef("content");
-const paint = computed(() =>
-  backdrop ? (BACKDROPS.find(({ value }) => value === store.backdrop)?.paint ?? store.backdrop) : CHECKS,
+const paint = computed(
+  () =>
+    ground || (backdrop ? (BACKDROPS.find(({ value }) => value === store.backdrop)?.paint ?? store.backdrop) : CHECKS),
 );
 
 const { mutate: exportPng, isLoading: isExporting } = useMutation({

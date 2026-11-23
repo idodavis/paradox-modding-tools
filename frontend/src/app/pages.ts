@@ -174,47 +174,47 @@ export const PAGES = {
       },
     ],
   },
-  "event-graph": {
-    title: "Event Graph",
+  graph: {
+    title: "Graph",
     icon: "i-lucide-git-branch",
     workspace: true,
     start: [
-      "Type an id, a namespace or a number in Root.",
-      "The graph shows what that event, on_action, decision, message or scripted effect fires, and what fires it.",
-      "With no root, the page lists the roots you drew last and the events your mods define. Back and Forward step through the roots you drew.",
+      "Pick a good, a building, a technology or an event in the list on the left, or on the start page.",
+      "Search narrows the list you are on, and a tab picks goods, buildings, technologies or events.",
+      "With nothing picked, the page offers the game's goods, building groups and technologies, the definitions your mods add or change, and the ones you opened last.",
     ],
     help: [
       {
-        heading: "Root",
-        text: "Type an id, a namespace or a number in Root to see what that event, on_action, decision, message or scripted effect fires and what fires it. With no root, the page lists the roots you drew last and the events your mods define; Back and Forward step through the roots you drew.",
+        heading: "Subject",
+        text: "The list on the left holds the game's goods, buildings, technologies and events, each tab under the game's own groups. Click a row to make it the subject; Back and Forward step through what you opened. In the IDE, Ctrl Shift G opens the name under the cursor. The kind of the subject picks the view.",
       },
       {
-        heading: "The graph",
-        text: "The graph lays the chain out left to right by step. An event shows as its scene, with its origin's dot; a hidden one is hatched, and a message is a toast. Path opens the nodes on the way from the root to the one you select into a row per firing, with the block each sits in, its weight and its delay; All opens every node that fires anything.",
+        heading: "A good",
+        text: "A good is a sheet: its head says where it is found and what it costs. How it's made lists the buildings that make it, a building whose levels take goods as a table of its levels. What uses it lists the buildings that take it, by group; click a group to open it. CK3 says of each building whether it produces the good, boosts it by a share, or gives it when a need is met. By era and From narrow both lists.",
       },
       {
-        heading: "What fires an event",
-        text: "Any entry that fires an event, such as a character interaction, shows before it with the rest of what fires it, whatever kinds Filters picks. An on_action the game calls from its own code is marked game.",
+        heading: "A building",
+        text: "A Victoria 3 building shows its production method groups: pick one method in each, and the totals follow your picks. A CK3 building line or an EU5 building shows its levels side by side, with what changes across them as bars and what never changes said once.",
       },
       {
-        heading: "Filters",
-        text: "Filters picks the kinds drawn, the mods (and game files) shown, the depth and the node limit. Follow macros walks into scripted effects to find the events they fire.",
+        heading: "A technology",
+        text: "Whole tree draws every technology of the tree, with the chain of the selected one lit: what it needs and what it leads to. Only its chain draws that chain alone. A technology stands after everything it requires. The arrows at the top right turn the tree left to right or top to bottom, and the eye shows or hides the wires outside the chain. An EU5 age can also show the advances of one religion, culture or country. CK3's innovations have no prerequisites, so they are a grid of era by group.",
       },
       {
-        heading: "A node's detail",
-        text: "Click a node for its detail: an overview of how it triggers, from the game down to it, the game rule it reads, the game's copy it replaces, with Compare, and its properties; its texts; its firings both ways, a row for each, which selects that node when clicked; and its script. On the selected node's way back to the root, the rows that lead along it are lit. Double-click a node, or a row of its firings, to draw the graph from it, and click an N more group to open it.",
+        heading: "Detail",
+        text: "The button at the right edge opens the detail of what is selected: what it is, what it says in the game's words, its links both ways, and its script. Click anything it names to open that in the Graph. Open in IDE goes to its definition. If it replaces the game's copy, you can compare the two.",
       },
       {
-        heading: "Dashed nodes",
-        text: "A dashed node is one the depth stopped at that links further: click it to add its next step. Collapse all closes every group and dashed node you opened.",
+        heading: "Event graph",
+        text: "An event, an on_action, a decision, a message or a scripted effect is drawn as what fires it and what it fires. Show picks which of those are drawn, From which origins, Through scripted effects follows an effect to what it fires, and Reach sets how deep and how many nodes. Reset puts them back.",
+      },
+      {
+        heading: "Stepping",
+        text: "Click a node to light its path. Double-click it to make it the subject. A dashed node is one the depth stopped at, and an N more group holds the rest: click either to open it, and Collapse all closes what you opened.",
       },
       {
         heading: "What the graph does not work out",
         text: "A weight is the number written, marked ± where blocks change it, never worked out. A trigger is shown, never evaluated. A delay written as a value or a name is not put in order. A CK3 message sent without a type is not drawn.",
-      },
-      {
-        heading: "From the IDE",
-        text: "In the IDE, Ctrl Shift G opens the event under the cursor here.",
       },
     ],
   },
@@ -340,7 +340,7 @@ export const PANE_HELP: readonly HelpSection[] = [
   },
   {
     heading: "Tools and permissions",
-    text: "Every session is given PMT's tools, so the agent finds names, problems, Health's findings and the Event Graph as PMT does, with your unsaved text. What the agent asks permission for shows in the session, and a link it asks to open shows as a card; nothing opens before you choose.",
+    text: "Every session is given PMT's tools, so the agent finds names, problems, Health's findings and the Graph as PMT does, with your unsaved text. What the agent asks permission for shows in the session, and a link it asks to open shows as a card; nothing opens before you choose.",
   },
   {
     heading: "Attachments and sessions",

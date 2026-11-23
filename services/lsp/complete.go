@@ -154,9 +154,9 @@ func listValues(
 	switch {
 	case context.Callee != nil:
 		constants = ws.Schema.Databases[context.Callee.Database].Declaration.Values
-	case expected.Type == lang.ValueTypeBool:
+	case expected.ValueType == lang.ValueTypeBool:
 		constants = lang.Bools
-	case expected.Type == lang.ValueTypeChoice:
+	case expected.ValueType == lang.ValueTypeChoice:
 		constants = expected.Choices
 	}
 
@@ -182,7 +182,7 @@ func listValues(
 		values = listWritten(vanilla, makeConstant)
 	}
 
-	if expected.Type == lang.ValueTypeTarget && expected.Scope != "" {
+	if expected.ValueType == lang.ValueTypeTarget && expected.Scope != "" {
 		isScope := func(scope string) bool { return scope == expected.Scope }
 		values = append(values, listPrefixes(ws, expected.Scope)...)
 		values = append(values, listScopeLinks(context, isScope, rank)...)
@@ -241,7 +241,7 @@ func listLinks(language *lang.Schema, scope, head string, rank func(key string) 
 func findExpected(context *lang.Context) (lang.Expected, map[string]int) {
 	switch {
 	case context.Category == lang.CategoryLink:
-		return lang.Expected{Type: lang.ValueTypeTarget, Scope: context.Scope}, nil
+		return lang.Expected{ValueType: lang.ValueTypeTarget, Scope: context.Scope}, nil
 	case context.Field == nil:
 		return lang.Expected{}, nil
 	}
@@ -257,7 +257,7 @@ func listTyped(context *lang.Context, expected lang.Expected, start, offset int)
 		return reference.Span.Start < start || reference.Span.Start > offset ||
 			reference.Database == lang.SavedScopes || slices.Contains(lang.Dumps, reference.Database)
 	})
-	claims := expected.Type == lang.ValueTypeReference || expected.Type == lang.ValueTypeTarget
+	claims := expected.ValueType == lang.ValueTypeReference || expected.ValueType == lang.ValueTypeTarget
 	if start == offset && len(references) == 0 && claims && expected.Database != "" {
 		references = []lang.Reference{{Database: expected.Database, Span: jomini.Span{Start: offset, End: offset}}}
 	}
@@ -446,7 +446,7 @@ func listFields(mods *index.Index, file int32, holder *lang.Context) []Completio
 	for _, key := range listDeclared(holder.Field) {
 		field := holder.Field.Children[key]
 		fields = append(fields, makeKey(Completion{
-			Label: key, Category: lang.CategoryField, Detail: string(field.Value.Value.Type), Blurb: field.Blurb.Value,
+			Label: key, Category: lang.CategoryField, Detail: string(field.Value.Value.ValueType), Blurb: field.Blurb.Value,
 			Rank: field.Vanilla.Count,
 		}, isBlockField(field)))
 	}
@@ -595,7 +595,7 @@ func isBlockShape(shape lang.Shape) bool {
 }
 
 func isBlockField(field *lang.Field) bool {
-	return field != nil && (field.Value.Value.Type == lang.ValueTypeBlock || len(field.Children) > 0 ||
+	return field != nil && (field.Value.Value.ValueType == lang.ValueTypeBlock || len(field.Children) > 0 ||
 		field.Shape.IsStated() && isBlockShape(field.Shape.Value) ||
 		field.Vanilla.Blocks > 0 && field.Vanilla.Blocks == field.Vanilla.Count)
 }

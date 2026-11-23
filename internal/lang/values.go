@@ -69,7 +69,7 @@ func (w *walker) lookupValue(context *Context, statement int32, level int) {
 	case isSaved || len(context.References) > before:
 		context.ValueGroup = CategoryReference
 
-	case field != nil && field.Value.Value.Type == ValueTypeChoice && w.schema.MatchValue(field.Value.Value, text):
+	case field != nil && field.Value.Value.ValueType == ValueTypeChoice && w.schema.MatchValue(field.Value.Value, text):
 		context.ValueGroup = CategoryChoice
 
 	case !slices.Contains(Bools, text) && w.schema.isChain(text):
@@ -106,15 +106,23 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 	}
 
 	claim, databases := w.listClaimed(context, text, command)
+	place, hasPlace := w.findPlace(context, statement, level, text)
+
+	// a row of this package outranks what only the game's files suggest
+	if hasPlace && context.Field != nil && context.Field.Value.Source == SourceVanilla {
+		claim, databases = "", nil
+	}
 
 	// a switch's trigger may be a trigger such as has_culture, or a link
 	if keyword := context.Keyword; keyword != nil && keyword.Names != "" && w.schema.LookupDefinition(keyword.Names, text) != nil {
 		databases = append(databases, keyword.Names)
 	}
 
-	place, hasPlace := w.findPlace(context, statement, level, text)
 	if hasPlace {
 		databases = append(databases, place.Target)
+		if place.Also != "" {
+			databases = append(databases, place.Also)
+		}
 	}
 
 	// a value with a space is literal text, since a message key has none
@@ -123,11 +131,11 @@ func (w *walker) listNames(context *Context, statement int32, level int, span jo
 	}
 
 	// an event id names an event where its field takes events, or takes
-	// nothing and an events file declares its namespace
+	// nothing, no row places it and an events file declares its namespace
 	namespace, _, _ := strings.Cut(text, ".")
 	if w.schema.Events != "" && w.file.Format == files.FormatScript && class == jomini.ClassEventID &&
 		(claim == w.schema.Events ||
-			claim == "" && w.schema.LookupScripted(w.winners, EventNamespaces, namespace) != nil) {
+			claim == "" && !hasPlace && w.schema.LookupScripted(w.winners, EventNamespaces, namespace) != nil) {
 		databases = append(databases, w.schema.Events)
 	}
 
@@ -179,7 +187,7 @@ func (c *Context) isMath() bool {
 // is a link.
 func (w *walker) listArgumentReferences(command *Definition, arguments *Field, argument jomini.Argument) []Reference {
 	field := arguments.findChild(command.ArgumentKey)
-	if field != nil && field.Value.Value.Type == ValueTypeReference && field.Value.Value.Database != "" &&
+	if field != nil && field.Value.Value.ValueType == ValueTypeReference && field.Value.Value.Database != "" &&
 		!w.schema.IsLink(argument.Text) {
 		return []Reference{{
 			Database: field.Value.Value.Database, Name: argument.Text, Span: argument.Span,
@@ -417,7 +425,7 @@ func (w *walker) takesNumber(opener *Context) bool {
 		return true
 	}
 
-	switch expected := opener.Field.Value.Value; expected.Type {
+	switch expected := opener.Field.Value.Value; expected.ValueType {
 	case ValueTypeNumber, ValueTypeBlock, ValueTypeUnknown:
 		return true
 	case ValueTypeReference:
@@ -427,9 +435,9 @@ func (w *walker) takesNumber(opener *Context) bool {
 	return false
 }
 
-// judgeValue records a problem for a value of a kind its key does not take,
+// judgeValue records a problem for a value of a type its key does not take,
 // as a word where a number goes. It does so only where a firm source states
-// the kind and every value the game's own files write there fits it.
+// the type and every value the game's own files write there fits it.
 func (w *walker) judgeValue(context *Context, statement int32) {
 	field, current := context.Field, w.tree.Statements[statement]
 	eligible := context.Category == CategoryField || context.Category == CategoryReference ||
@@ -440,13 +448,13 @@ func (w *walker) judgeValue(context *Context, statement int32) {
 	}
 
 	expected, text := field.Value.Value, w.tree.Text(current.Value)
-	if expected.Database == File || expected.Type == ValueTypeText || expected.Type == ValueTypeBlock {
+	if expected.Database == File || expected.ValueType == ValueTypeText || expected.ValueType == ValueTypeBlock {
 		return
 	}
 
 	// where a number is expected the game also reads a script value, or a
 	// trigger that returns a number
-	if expected.Type == ValueTypeNumber && current.ValueClass.IsIdentifier() || strings.ContainsAny(text, "[$@") ||
+	if expected.ValueType == ValueTypeNumber && current.ValueClass.IsIdentifier() || strings.ContainsAny(text, "[$@") ||
 		w.schema.MatchValue(expected, text) {
 		return
 	}
@@ -474,7 +482,7 @@ func (w *walker) judgeDate(context *Context, statement int32) {
 	}
 
 	field := context.Field
-	if field != nil && !current.IsBlock() && field.Value.Value.Type == ValueTypeDate && field.Value.Source.CanAccuse() {
+	if field != nil && !current.IsBlock() && field.Value.Value.ValueType == ValueTypeDate && field.Value.Source.CanAccuse() {
 		spans = append(spans, current.Value)
 	}
 

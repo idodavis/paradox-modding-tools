@@ -71,7 +71,7 @@ func (f *fireWalk) forward(current Site, effects []Site) {
 	f.open[current] = true
 	defer delete(f.open, current)
 
-	for _, use := range f.index.listReferences(current) {
+	for _, use := range f.index.ListReferences(current) {
 		if f.index.Occurrence(use).Firing == 0 {
 			continue
 		}
@@ -141,10 +141,10 @@ func (f *fireWalk) backward(current Site, effects []Site, use Site) {
 	}
 }
 
-// listReferences returns the references that sit directly inside a
+// ListReferences returns the references that sit directly inside a
 // definition, in source order. They follow it without a break, so the list
 // ends at the first occurrence outside it.
-func (i *Index) listReferences(definition Site) []Site {
+func (i *Index) ListReferences(definition Site) []Site {
 	var sites []Site
 
 	occurrences := i.Occurrences[definition.File]
@@ -242,11 +242,11 @@ func (c *collector) isFiring(context *lang.Context, reference lang.Reference) bo
 	if effect != nil && isEffect(effect, c.schema.Effects) {
 		target := c.schema.Databases[reference.Database]
 
-		return target == nil || target.Declaration.Contents != lang.ContentsDecisions ||
+		return target == nil || target.Declaration.Type != lang.TypeDecision ||
 			slices.Contains(c.index.dialect().DecisionEffects, effect.Label)
 	}
 
-	if holder := c.schema.Databases[context.Database]; holder != nil && holder.Declaration.Contents == lang.ContentsOnActions {
+	if holder := c.schema.Databases[context.Database]; holder != nil && holder.Declaration.Type == lang.TypeOnAction {
 		return true
 	}
 

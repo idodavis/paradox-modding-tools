@@ -15,11 +15,8 @@ import { stateQuery, workspacesQuery } from "../queries";
 
 /** VANILLA is Go's name for the game's own files as an origin. */
 export const VANILLA = "vanilla";
-/**
- * WORKSPACE is Go's name, as an origin, for the files of the workspace's
- * folder that are in no mod.
- */
-export const WORKSPACE = "workspace";
+/** ORIGIN_AGENT_FOLDER is Go's name, as an origin, for the files of the agent folder that are in no mod. */
+export const ORIGIN_AGENT_FOLDER = "agentFolder";
 /**
  * FILE_DRAG is the kind of drag data that holds a dragged file's path on
  * disk, which the explorer adds beside the tree's own.
@@ -74,10 +71,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   /**
    * originName returns the name of the active workspace's game, of one of its
-   * mods or of its own folder, or the origin if unknown.
+   * mods or of its agent folder, or the origin if unknown.
    */
   const originName = (origin: string): string => {
-    if (origin === WORKSPACE) return "Workspace files";
+    if (origin === ORIGIN_AGENT_FOLDER) return "Agent folder";
     if (origin !== VANILLA) return findMod(origin)?.descriptor.name || origin;
     return active()?.game?.name ?? origin;
   };
@@ -87,8 +84,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   /** originColor returns an origin's color as CSS. The given color is the mod's own, for another workspace. */
   const originColor = (origin: string, recorded?: string): string => {
-    // The workspace's folder is no mod's and not the game's: it has no color.
-    if (origin === WORKSPACE) return "var(--fg-2)";
+    // The agent folder is no mod's and not the game's: it has no color.
+    if (origin === ORIGIN_AGENT_FOLDER) return "var(--fg-2)";
     const color = recorded ?? (origin === VANILLA ? active()?.record.gameColor : findMod(origin)?.color);
     if (!color) return "var(--game)";
     return SLOTS.includes(color) ? `var(--${color})` : color;

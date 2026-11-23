@@ -94,7 +94,7 @@ export function setupMonaco(): void {
   monaco.editor.registerCommand("pmt.files", () => commandBus.emit("editor.goToFile"));
   monaco.editor.registerCommand("pmt.back", () => useEditorStore().go(-1));
   monaco.editor.registerCommand("pmt.forward", () => useEditorStore().go(1));
-  monaco.editor.registerCommand("pmt.ask", () => useAgentStore().compose());
+  monaco.editor.registerCommand("pmt.ask", () => useAgentStore().ask());
   monaco.editor.addKeybindingRules([
     // Ctrl+L asks the agent, in place of Monaco's own "select the line".
     { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, command: "pmt.ask" },

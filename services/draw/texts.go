@@ -19,9 +19,9 @@ import (
 
 // What a data call in a text writes.
 const (
-	kindNumber = "number"
-	kindText   = "text"
-	kindDate   = "date"
+	outputNumber = "number"
+	outputText   = "text"
+	outputDate   = "date"
 )
 
 // minSample is the least number a sample number shows.
@@ -39,30 +39,22 @@ var loremSentences = []string{
 // callOutputs says whether a data call in a text writes a number or text, by
 // the type its last function returns. A type with no row writes text.
 var callOutputs = map[string]string{
-	"CString": kindText, "CUTF8String": kindText, "CPdxStringView": kindText,
-	"int8": kindNumber, "int16": kindNumber, "int32": kindNumber, "int64": kindNumber,
-	"uint8": kindNumber, "uint16": kindNumber, "uint32": kindNumber, "uint64": kindNumber,
-	"CFixedPoint": kindNumber, "float": kindNumber, "double": kindNumber,
+	"CString": outputText, "CUTF8String": outputText, "CPdxStringView": outputText,
+	"int8": outputNumber, "int16": outputNumber, "int32": outputNumber, "int64": outputNumber,
+	"uint8": outputNumber, "uint16": outputNumber, "uint32": outputNumber, "uint64": outputNumber,
+	"CFixedPoint": outputNumber, "float": outputNumber, "double": outputNumber,
 }
 
 // resolveText returns what a player sees of a text: each $key$ replaced by its
 // message's text, and each line break as a new line. A data call stays as it
 // is.
-func (l *library) resolveText(text string, depth int) []loc.Segment {
+func (l *library) resolveText(text string) []loc.Segment {
 	var resolved []loc.Segment
-	for _, segment := range loc.Segments(text, 0) {
+	for _, segment := range l.ws.ExpandText(l.mods, text) {
 		if segment.Markup == loc.MarkupCall {
 			resolved = append(resolved, segment)
 
 			continue
-		}
-
-		if segment.Markup == loc.MarkupKey && depth < maxDepth {
-			if message, _, ok := l.ws.LookupText(l.mods, segment.Text); ok {
-				resolved = append(resolved, l.resolveText(message, depth+1)...)
-
-				continue
-			}
 		}
 
 		segment.Markup, segment.Text = loc.MarkupText, loc.ToPlain([]loc.Segment{segment})
@@ -87,7 +79,7 @@ func (l *library) sampleText(segments []loc.Segment, context context, properties
 			continue
 		}
 
-		sample, kind := l.sampleCall(segment.Text, context, properties)
+		sample, output := l.sampleCall(segment.Text, context, properties)
 		if position > 0 {
 			last, _ := utf8.DecodeLastRuneInString(segments[position-1].Text)
 			if !unicode.IsSpace(last) && !strings.ContainsRune(openingBrackets, last) {
@@ -95,7 +87,7 @@ func (l *library) sampleText(segments []loc.Segment, context context, properties
 			}
 		}
 
-		segments[position].Text, segments[position].Kind = sample, kind
+		segments[position].Text, segments[position].Sample = sample, output
 	}
 
 	return segments
@@ -108,32 +100,32 @@ const (
 	resizeKey    = "autoresize"
 )
 
-// sampleCall returns the sample drawn for a data call and its kind: a number,
-// a date or text. How much text fits depends on the given properties of the
-// widget that shows it. The call's text seeds the sample, so the same call
-// always gets the same one.
-func (l *library) sampleCall(source string, context context, properties iter.Seq[Property]) (sample, kind string) {
+// sampleCall returns the sample drawn for a data call and what it writes: a
+// number, a date or text. How much text fits depends on the given properties
+// of the widget that shows it. The call's text seeds the sample, so the same
+// call always gets the same one.
+func (l *library) sampleCall(source string, context context, properties iter.Seq[Property]) (sample, output string) {
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(source))
 	seed := hash.Sum32()
 	call, _ := jomini.ParseCall(source, 0)
 	path := context.expand(l.ws.Schema, call)
 	function, _ := l.ws.Schema.FindFunction(path, "", len(path.Steps)-1)
-	kind, known := callOutputs[function.Returns]
+	output, known := callOutputs[function.Returns]
 	switch {
-	case kind == kindNumber:
-		return sampleNumber(seed, call.Suffix), kind
+	case output == outputNumber:
+		return sampleNumber(seed, call.Suffix), output
 	case isDate(function):
-		return l.sampleDate(seed), kindDate
+		return l.sampleDate(seed), outputDate
 	case !known:
-		return sampleWords(seed, 2), kindText
+		return sampleWords(seed, 2), outputText
 	case !isOn(properties, multilineKey):
-		return sampleWords(seed, 2+int(seed%2)), kind
+		return sampleWords(seed, 2+int(seed%2)), output
 	case isOn(properties, resizeKey):
-		return sampleSentences(seed, 1+int(seed%2)), kind
+		return sampleSentences(seed, 1+int(seed%2)), output
 	}
 
-	return sampleSentences(seed, len(loremSentences)), kind
+	return sampleSentences(seed, len(loremSentences)), output
 }
 
 // The format codes a data call in a text writes after |, as $VALUE|+2%$

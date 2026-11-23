@@ -20,9 +20,9 @@ const agent = useAgentStore();
 const editor = useEditorStore();
 // What the dialog shows of the plan: its text, where it has no file to open
 // in the editor, or what the agent changed in it.
-const viewed = shallowRef<"" | "text" | "changes">("");
+const dialog = shallowRef<"" | "text" | "changes">("");
 
-const shown = computed(
+const current = computed(
   () => session.documents.find((document) => document.id === session.shownPlan) ?? session.documents.at(-1),
 );
 const picker = computed(
@@ -30,7 +30,7 @@ const picker = computed(
     session.documents.map((document) => ({
       type: "checkbox" as const,
       label: describePlan(document),
-      checked: document === shown.value,
+      checked: document === current.value,
       document,
       slot: "plan" as const,
       onUpdateChecked: () => agent.showPlan(session, document.id),
@@ -56,7 +56,7 @@ async function open(document: PlanDocument): Promise<void> {
   agent.showPlan(session, document.id);
   const place = document.path ? await loadQuery(placeQuery(document.path)).catch(() => undefined) : undefined;
   if (!place) {
-    viewed.value = "text";
+    dialog.value = "text";
     return;
   }
 
@@ -67,14 +67,14 @@ async function open(document: PlanDocument): Promise<void> {
 
 <template>
   <div
-    v-if="shown"
+    v-if="current"
     class="flex h-8 shrink-0 items-center gap-1.5 border-b border-default ps-2.5 pe-1.5 text-12 whitespace-nowrap"
   >
     <UIcon name="i-lucide-file-text" class="size-3.5 shrink-0 text-dimmed" />
     <span class="shrink-0 text-dimmed">Plan</span>
     <UDropdownMenu v-if="session.documents.length > 1" :items="picker" :content="{ align: 'start' }">
       <UButton
-        :label="describePlan(shown)"
+        :label="describePlan(current)"
         trailing-icon="i-lucide-chevron-down"
         variant="ghost"
         color="neutral"
@@ -97,39 +97,39 @@ async function open(document: PlanDocument): Promise<void> {
             variant="subtle"
             size="sm"
           />
-          <UBadge v-if="item.document.before" label="updated" color="neutral" variant="subtle" size="sm" />
+          <UBadge v-if="item.document.previousText" label="updated" color="neutral" variant="subtle" size="sm" />
         </span>
       </template>
     </UDropdownMenu>
-    <span v-else class="min-w-0 truncate font-medium" :title="describePlan(shown)">{{ describePlan(shown) }}</span>
+    <span v-else class="min-w-0 truncate font-medium" :title="describePlan(current)">{{ describePlan(current) }}</span>
     <UBadge
-      v-if="describeState(shown)"
-      :label="describeState(shown)"
-      :color="shown.isApproved ? 'success' : 'primary'"
+      v-if="describeState(current)"
+      :label="describeState(current)"
+      :color="current.isApproved ? 'success' : 'primary'"
       variant="subtle"
       size="sm"
       class="shrink-0"
     />
     <span class="grow" />
-    <template v-if="shown.before">
+    <template v-if="current.previousText">
       <UBadge label="updated" color="neutral" variant="subtle" size="sm" class="shrink-0" />
-      <UButton label="Show changes" variant="ghost" color="neutral" size="xs" @click="viewed = 'changes'" />
+      <UButton label="Show changes" variant="ghost" color="neutral" size="xs" @click="dialog = 'changes'" />
     </template>
-    <UButton label="Open" variant="ghost" color="neutral" size="xs" @click="open(shown)" />
+    <UButton label="Open" variant="ghost" color="neutral" size="xs" @click="open(current)" />
 
     <UModal
-      :open="!!viewed"
-      :title="describePlan(shown)"
-      :description="viewed === 'changes' ? 'What the agent changed in the plan' : 'The agent\'s plan'"
+      :open="!!dialog"
+      :title="describePlan(current)"
+      :description="dialog === 'changes' ? 'What the agent changed in the plan' : 'The agent\'s plan'"
       :ui="{ content: 'max-w-4xl', body: 'p-0 sm:p-0' }"
-      @update:open="(isOpen) => isOpen || (viewed = '')"
+      @update:open="(isOpen) => isOpen || (dialog = '')"
     >
       <template #body>
         <!-- The diff editor fills its box, so the box has its own height. -->
-        <div v-if="viewed === 'changes'" class="flex h-[70vh] flex-col">
+        <div v-if="dialog === 'changes'" class="flex h-[70vh] flex-col">
           <CompareView
-            :left="shown.before"
-            :right="shown.text"
+            :left="current.previousText"
+            :right="current.text"
             language="markdown"
             left-label="Before"
             right-label="Now"
@@ -137,7 +137,7 @@ async function open(document: PlanDocument): Promise<void> {
         </div>
         <UEditor
           v-else
-          :model-value="shown.text"
+          :model-value="current.text"
           content-type="markdown"
           :extensions="TABLES"
           :editable="false"

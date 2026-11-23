@@ -61,6 +61,17 @@ export function Close(): $CancellablePromise<void> {
 }
 
 /**
+ * CreateAgentFile returns the place of a file a coding agent reads in the
+ * agent folder, given the file's path under that folder, such as CLAUDE.md or
+ * .claude/skills/review/SKILL.md. A file that is missing is made with the
+ * given text, and so is the agent folder. It returns an error if no workspace
+ * is open, the path leads out of the folder, or the file cannot be made.
+ */
+export function CreateAgentFile(rel: string, text: string): $CancellablePromise<$models.Place> {
+    return $Call.ByID(626343468, rel, text);
+}
+
+/**
  * CreateCopy copies a file to the same place in a mod and returns the copy's
  * path. It fails if the mod has a file there.
  */
@@ -137,13 +148,13 @@ export function DetectInstalls(gameID: string): $CancellablePromise<game$0.Detec
 }
 
 /**
- * FindReadOnly returns the read-only folder that a text names, such as a
- * shell command an agent asks to run, or "" if it names none. A folder is
+ * FindReadOnlyFolder returns the read-only folder that a text names, such as
+ * a shell command an agent asks to run, or "" if it names none. A folder is
  * found written with either slash, with a doubled one, and in any letter
  * case. What the text does in the folder is not known.
  */
-export function FindReadOnly(text: string): $CancellablePromise<string> {
-    return $Call.ByID(1869703952, text);
+export function FindReadOnlyFolder(text: string): $CancellablePromise<string> {
+    return $Call.ByID(455155604, text);
 }
 
 /**
@@ -218,8 +229,8 @@ export function ListReviews(): $CancellablePromise<$models.Review[] | null> {
 }
 
 /**
- * ListRoots returns the places of the workspace's roots: its folder if that
- * is on disk and in no mod, the mods' in load order, then the game's own
+ * ListRoots returns the places of the workspace's roots: the agent folder if
+ * that is on disk and in no mod, the mods' in load order, then the game's own
  * folder.
  */
 export function ListRoots(): $CancellablePromise<$models.Place[] | null> {
@@ -248,18 +259,6 @@ export function ListWorkspaces(): $CancellablePromise<$models.Workspace[] | null
  */
 export function Locate(path: string): $CancellablePromise<$models.Place> {
     return $Call.ByID(1496256747, path);
-}
-
-/**
- * MakeAgentFile returns the place of a file a coding agent reads in the
- * workspace's folder, given the file's path under that folder, such as
- * CLAUDE.md or .claude/skills/review/SKILL.md. A file that is missing is made
- * with the given text, and so is the workspace's folder. It returns an error
- * if no workspace is open, the path leads out of the folder, or the file
- * cannot be made.
- */
-export function MakeAgentFile(rel: string, text: string): $CancellablePromise<$models.Place> {
-    return $Call.ByID(3075280318, rel, text);
 }
 
 /**

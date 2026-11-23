@@ -8,8 +8,8 @@
 [![License](https://img.shields.io/github/license/idodavis/paradox-modding-tools)](LICENSE)
 
 A desktop workspace for modding **Crusader Kings III**, **Victoria 3** and **Europa Universalis V** (partial). Open a
-game install with the mods you are working on, and PMT gives you an editor that knows the game's script, a graph of
-your events, a health check of your load order, what each game patch changed under your mods and Workshop
+game install with the mods you are working on, and PMT gives you an editor that knows the game's script, a graph that
+answers questions about your events, goods, buildings and techs, a health check of your load order, what each game patch changed under your mods and Workshop
 publishing, in one window.
 
 **Alpha: expect bugs.** Windows and Linux. Unofficial, and not affiliated with Paradox Interactive. Tested on CK3
@@ -24,8 +24,8 @@ publishing, in one window.
 
 | | |
 |---|---|
-| [<img src="docs/images/ide.png" width="400" alt="IDE">](docs/FEATURES.md#ide) | [<img src="docs/images/event-graph.png" width="400" alt="Event Graph">](docs/FEATURES.md#event-graph) |
-| **[IDE](docs/FEATURES.md#ide):** an editor that knows the game's script: hover cards, completion, go to definition, checks as you type, and the game's own files beside yours. | **[Event Graph](docs/FEATURES.md#event-graph):** what fires what, from any event, with each branch's conditions. |
+| [<img src="docs/images/ide.png" width="400" alt="IDE">](docs/FEATURES.md#ide) | [<img src="docs/images/event-graph.png" width="400" alt="Graph">](docs/FEATURES.md#graph) |
+| **[IDE](docs/FEATURES.md#ide):** an editor that knows the game's script: hover cards, completion, go to definition, checks as you type, and the game's own files beside yours. | **[Graph](docs/FEATURES.md#graph):** what fires an event, how a good is made, what needs it, a building's levels and a tech's tree. |
 | [<img src="docs/images/health.png" width="400" alt="Health">](docs/FEATURES.md#health) | [<img src="docs/images/visual-view-gui.png" width="400" alt="Visual view">](docs/FEATURES.md#visual-view) |
 | **[Health](docs/FEATURES.md#health):** what conflicts between your mods and the game, and what is wrong in each mod, worst first. | **[Visual view](docs/FEATURES.md#visual-view):** GUI windows and coats of arms drawn as the game draws them. |
 | [<img src="docs/images/publish.png" width="400" alt="Publish">](docs/FEATURES.md#publish) | [<img src="docs/images/patch-center.png" width="400" alt="Patch Center">](docs/FEATURES.md#patch-center) |

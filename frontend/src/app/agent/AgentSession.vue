@@ -10,14 +10,21 @@ import { refDebounced, until, useEventBus, useEventListener, useIntervalFn, useT
 import { groupBy } from "es-toolkit";
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 
-import type { Make } from "@services/app/models";
+import type { Skeleton } from "@services/app/models";
 import type { Chip } from "@services/mcp/models";
 import type { Place } from "@services/workspace/models";
-import { MakeAgentFile } from "@services/workspace/service";
+import { CreateAgentFile } from "@services/workspace/service";
 import { reportError } from "../../lib/feedback";
 import { describeCost, describeDuration, plural } from "../../lib/format";
 import { fileSearchQuery, loadQuery, placeQuery, symbolsQuery } from "../../queries";
-import { CHOSEN, isUnaskedMode, listChoices, useAgentStore, type Image, type Session } from "../../stores/agent";
+import {
+  CHOICE_CATEGORIES,
+  isBypassMode,
+  listChoices,
+  useAgentStore,
+  type Image,
+  type Session,
+} from "../../stores/agent";
 import { useEditorStore } from "../../stores/editor";
 import { useToolViewStore } from "../../stores/toolView";
 import { FILE_DRAG } from "../../stores/workspace";
@@ -25,7 +32,7 @@ import AgentSignIn from "../../ui/AgentSignIn.vue";
 import { COMMAND_BUS } from "../../stores/windows";
 import AgentPlan from "./AgentPlan.vue";
 import AgentSetting from "./AgentSetting.vue";
-import AgentTranscript, { splitMentions } from "./AgentTranscript.vue";
+import AgentTranscript, { splitChips } from "./AgentTranscript.vue";
 import AgentUsage from "./AgentUsage.vue";
 import AgentWork from "./AgentWork.vue";
 
@@ -40,7 +47,7 @@ const CATEGORIES = ["model", "thought_level", "mode"];
 // names it.
 const SUBAGENTS = "agent";
 // The name of a new skill, command or subagent: letters, digits and dashes.
-const NAME = /^[a-z0-9][a-z0-9-]*$/i;
+const IDENTIFIER = /^[a-z0-9][a-z0-9-]*$/i;
 // The prompt box is an inset card whose border turns lighter, not colored, while it has the focus.
 const PROMPT_CARD =
   "rounded-lg px-2.5 focus-within:ring-accented has-[textarea:focus-visible]:outline-0 has-[textarea:focus-visible]:ring-accented";
@@ -91,7 +98,7 @@ const EFFORTS: Record<string, string> = {
 // GitHub Copilot's, which ends in "#plan".
 const PLAN = /(^|#)plan$/;
 // A panel is as wide as the usage one and scrolls inside the room it has.
-const PANEL = "flex max-h-(--reka-popover-content-available-height) w-90 flex-col overflow-y-auto";
+const PANEL_CLASS = "flex max-h-(--reka-popover-content-available-height) w-90 flex-col overflow-y-auto";
 // Where the list of commands puts each: the agent's own, the user's, a plugin.
 const YOURS = "Yours";
 
@@ -102,13 +109,13 @@ const toast = useToast();
 const toolView = useToolViewStore();
 const box = useTemplateRef("box");
 // The prompt box's text is the session's, so it outlives the box.
-const text = computed({ get: () => session.draft, set: (draft) => agent.writeDraft(session, draft) });
-const picked = shallowRef<Chip[]>([]);
+const text = computed({ get: () => session.draft, set: (draft) => agent.setDraft(session, draft) });
+const pickedChips = shallowRef<Chip[]>([]);
 const images = shallowRef<Image[]>([]);
 const picking = shallowRef(false);
 const pickingCommand = shallowRef(false);
 // Which list the tray of what runs shows, "" while it is closed.
-const tray = shallowRef<"" | "tasks" | "subagents" | "background">("");
+const tray = shallowRef<"" | "checklist" | "subagents" | "background">("");
 const term = shallowRef("");
 // What the list of commands is searched for, which also names what New makes.
 const commandTerm = shallowRef("");
@@ -122,7 +129,7 @@ const { data: definitions } = useQuery(() => ({
   enabled: picking.value && !!search.value,
 }));
 const now = useTimestamp({ scheduler: (tick) => useIntervalFn(tick, 1000) });
-// The prompt box's card takes a file dragged from the explorer and a picture
+// The prompt box's card takes a file dragged from the explorer and an image
 // pasted from the clipboard.
 const card = (): HTMLElement | undefined => box.value?.$el as HTMLElement | undefined;
 useEventListener(card, "keydown", recall);
@@ -137,10 +144,10 @@ const waiting = computed(() => agent.isWaiting(session));
 const empty = computed(() => session.state === "idle" && !session.entries.length);
 // The request to start on a plan, which the prompt box holds: the agent's
 // own choices to start, and its own to go on planning.
-const asking = computed(() => session.entries.find((entry) => entry.kind === "permission" && !!entry.plan));
-const choices = computed(() => (asking.value?.kind === "permission" ? asking.value.options : []));
-const approvals = computed(() => choices.value.filter((option) => option.kind.startsWith("allow")));
-const refusals = computed(() => choices.value.filter((option) => !option.kind.startsWith("allow")));
+const planRequest = computed(() => session.entries.find((entry) => entry.kind === "permission" && !!entry.plan));
+const options = computed(() => (planRequest.value?.kind === "permission" ? planRequest.value.options : []));
+const approvals = computed(() => options.value.filter((option) => option.kind.startsWith("allow")));
+const refusals = computed(() => options.value.filter((option) => !option.kind.startsWith("allow")));
 const otherApprovals = computed<DropdownMenuItem[]>(() =>
   approvals.value.slice(1).map((option) => ({ label: option.name, onSelect: () => answer(option.id) })),
 );
@@ -148,7 +155,7 @@ const otherApprovals = computed<DropdownMenuItem[]>(() =>
 // takes it into the turn, and for any other it waits in the queue.
 const placeholder = computed(() => {
   const { name, steers } = session.agent;
-  if (asking.value) return `Or tell ${name} what to change`;
+  if (planRequest.value) return `Or tell ${name} what to change`;
   if (busy.value) return steers ? `Tell ${name} something while it works` : "Queue a message for when this turn ends";
 
   return session.commands.length
@@ -156,11 +163,11 @@ const placeholder = computed(() => {
     : `Ask ${name}, or type @ to add a file`;
 });
 // How long the running turn has run, "" while none runs.
-const elapsed = computed(() => (session.startedAt ? describeDuration(now.value - session.startedAt) : ""));
+const duration = computed(() => (session.startedAt ? describeDuration(now.value - session.startedAt) : ""));
 // The chips of the next prompt: the page's own, then the ones picked.
 const chips = computed(() => [
   ...(toolView.promptChip ? [{ chip: toolView.promptChip, isPage: true }] : []),
-  ...picked.value.map((chip) => ({ chip, isPage: false })),
+  ...pickedChips.value.map((chip) => ({ chip, isPage: false })),
 ]);
 // What @ finds: the workspace's files, and its definitions by name, each
 // attached as its file at its lines.
@@ -188,7 +195,7 @@ const commands = computed(() => {
   const own = `${session.agent.name}'s own`;
   // A plugin's command is named plugin:command, and Claude ends the line of
   // one installed for the user's account with "(user)".
-  const listed = session.commands.map((command) => {
+  const rows = session.commands.map((command) => {
     const plugin = command.name.includes(":") ? (command.name.split(":")[0] ?? "") : "";
     const source = plugin || (/\(user\)\s*$/.test(command.description) ? YOURS : own);
     return {
@@ -196,37 +203,37 @@ const commands = computed(() => {
       suffix: command.description,
       source,
       isPlugin: !!plugin,
-      onSelect: () => write(`/${command.name} `),
+      onSelect: () => setText(`/${command.name} `),
     };
   });
-  const bySource = groupBy(listed, (item) => item.source);
+  const sourceGroups = groupBy(rows, (row) => row.source);
   // With nothing typed, a plugin is one row, which lists its commands.
   const plugins = Object.entries(
     groupBy(
-      listed.filter((item) => item.isPlugin),
-      (item) => item.source,
+      rows.filter((row) => row.isPlugin),
+      (row) => row.source,
     ),
-  ).map(([plugin, items]) => ({
+  ).map(([plugin, pluginRows]) => ({
     label: plugin,
-    suffix: plural(items.length, "command"),
+    suffix: plural(pluginRows.length, "command"),
     source: plugin,
     onSelect: () => (commandTerm.value = `${plugin}:`),
   }));
-  const subagents = (personas.value ? listChoices(personas.value) : [])
+  const subagents = (subagentOption.value ? listChoices(subagentOption.value) : [])
     .filter((choice) => choice.value !== "default")
     .map((choice) => ({
       label: choice.name,
       suffix: choice.description ?? "",
       source: "Subagents",
-      onSelect: () => write(`Use the ${choice.name} subagent to `),
+      onSelect: () => setText(`Use the ${choice.name} subagent to `),
     }));
-  const isName = NAME.test(commandTerm.value);
-  const makes = session.agent.makes ?? [];
-  const made = makes.map((make) => ({
-    label: isName ? `New ${make.kind}: ${commandTerm.value}` : `New ${make.kind}: type its name above`,
+  const isIdentifier = IDENTIFIER.test(commandTerm.value);
+  const skeletons = session.agent.skeletons ?? [];
+  const newRows = skeletons.map((skeleton) => ({
+    label: isIdentifier ? `New ${skeleton.label}: ${commandTerm.value}` : `New ${skeleton.label}: type its name above`,
     icon: "i-lucide-plus",
-    disabled: !isName,
-    onSelect: () => void makeFile(make, commandTerm.value),
+    disabled: !isIdentifier,
+    onSelect: () => void createFile(skeleton, commandTerm.value),
   }));
   // An agent whose folders PMT does not know keeps the row, off, with why.
   const none = {
@@ -236,39 +243,40 @@ const commands = computed(() => {
   };
 
   return [
-    { id: "own", label: own, items: bySource[own] ?? [] },
-    { id: "yours", label: YOURS, items: bySource[YOURS] ?? [] },
+    { id: "own", label: own, items: sourceGroups[own] ?? [] },
+    { id: "yours", label: YOURS, items: sourceGroups[YOURS] ?? [] },
     {
       id: "plugins",
       label: "Plugins",
-      items: commandTerm.value ? listed.filter((item) => item.isPlugin) : plugins,
+      items: commandTerm.value ? rows.filter((row) => row.isPlugin) : plugins,
     },
     { id: "subagents", label: "Subagents", items: subagents },
-    { id: "new", label: "New", ignoreFilter: true, items: makes.length ? made : [none] },
+    { id: "new", label: "New", ignoreFilter: true, items: skeletons.length ? newRows : [none] },
   ].filter((group) => group.items.length);
 });
 // The row of the list the keys or the pointer are on, read whole under it.
-const pointed = shallowRef<{ label: string; suffix?: string; source?: string }>();
+const highlight = shallowRef<{ label: string; suffix?: string; source?: string }>();
 
 const selects = computed(() => session.options.filter((option): option is SelectOption => option.type === "select"));
 // The setting whose choices are the agent's subagents, which is no setting
 // of the session's own: the list of commands shows them.
-const personas = computed(() => selects.value.find((option) => option.configId === SUBAGENTS));
+const subagentOption = computed(() => selects.value.find((option) => option.configId === SUBAGENTS));
 // The mode the session had before Plan was turned on, to go back to.
 const lastMode = shallowRef("");
 // Plan as its own switch: the setting that holds it, the value that turns it
 // on and the one that turns it off. Where Plan is one of the agent's modes,
-// off is the mode the session had before; where it is a setting of its own,
-// off is its other choice. It is undefined for an agent with no plan mode.
+// it goes back to the mode the session had before; where it is a setting of
+// its own, to its other choice. It is undefined for an agent with no plan
+// mode.
 const plan = computed(() => {
   const option = selects.value.find((row) => listChoices(row).some((choice) => PLAN.test(choice.value)));
   if (!option) return undefined;
 
   const others = listChoices(option).filter((choice) => !PLAN.test(choice.value));
-  const on = listChoices(option).find((choice) => PLAN.test(choice.value))?.value ?? "";
-  const off = (others.find((choice) => choice.value === lastMode.value) ?? others[0])?.value ?? "";
+  const planValue = listChoices(option).find((choice) => PLAN.test(choice.value))?.value ?? "";
+  const previousValue = (others.find((choice) => choice.value === lastMode.value) ?? others[0])?.value ?? "";
 
-  return { option, on, off, isOn: option.currentValue === on };
+  return { option, planValue, previousValue, isOn: option.currentValue === planValue };
 });
 watch(
   () => plan.value?.option.currentValue,
@@ -277,16 +285,17 @@ watch(
   },
   { immediate: true },
 );
-// The box's pickers, one for each kind of setting in PANELS. A kind the agent
-// has no setting of keeps its picker, off. While Plan is on, the picker of
-// the setting that holds it shows the choice the session goes back to.
+// The box's pickers, one for each kind of setting that has a picker. A kind
+// the agent has no setting of keeps its picker, off. While Plan is on, the
+// picker of the setting that holds it shows the choice the session goes back
+// to.
 const pickers = computed(() =>
   CATEGORIES.map((category) => {
     const option = selects.value.find((row) => row.category === category);
     const panel = PANELS[category] ?? { name: category, title: "", description: "" };
     const holdsPlan = !!option && plan.value?.option.configId === option.configId;
-    const shown = holdsPlan && plan.value?.isOn ? plan.value.off : option?.currentValue;
-    const quick = option ? agent.listKept(session.agent.id, true)[option.configId] : undefined;
+    const currentValue = holdsPlan && plan.value?.isOn ? plan.value.previousValue : option?.currentValue;
+    const quick = option ? agent.resolveKeptChoices(session.agent.id, true)[option.configId] : undefined;
 
     return {
       category,
@@ -294,10 +303,10 @@ const pickers = computed(() =>
       option,
       title: panel.title.replace("{agent}", session.agent.name),
       description: panel.description.replace("{agent}", session.agent.name),
-      label: (option && listChoices(option).find((choice) => choice.value === shown)?.name) || panel.name,
+      label: (option && listChoices(option).find((choice) => choice.value === currentValue)?.name) || panel.name,
       isPlanned: holdsPlan && !!plan.value?.isOn,
-      hidden: holdsPlan && plan.value ? [plan.value.on] : [],
-      marks: typeof quick === "string" && CHOSEN.includes(category) ? { [quick]: "Quick" } : {},
+      hiddenChoices: holdsPlan && plan.value ? [plan.value.planValue] : [],
+      badges: typeof quick === "string" && CHOICE_CATEGORIES.includes(category) ? { [quick]: "Quick" } : {},
     };
   }),
 );
@@ -316,7 +325,7 @@ const switches = computed(() => [
     name: "Follow the files the agent opens",
     description: "The editor shows each file as the agent reads or changes it.",
     isOn: agent.follow,
-    isRed: false,
+    isBypass: false,
     set: (isOn: boolean) => (agent.follow = isOn),
   },
   ...others.value.filter(isSwitch).map((option) => ({
@@ -324,18 +333,18 @@ const switches = computed(() => [
     name: option.name,
     description: option.description ?? "",
     isOn: option.currentValue === true || option.currentValue === "on",
-    isRed: isUnaskedMode(session.agent, option, "on"),
+    isBypass: isBypassMode(session.agent, option, "on"),
     set: (isOn: boolean) =>
       void agent.configure(session, option.configId, option.type === "boolean" ? isOn : isOn ? "on" : "off"),
   })),
 ]);
 // The model a new session starts on and the one a quick session uses, by
 // name, for the model's panel. Each is "" until the user has chosen one.
-const starts = computed(() => {
+const keptModels = computed(() => {
   const model = selects.value.find((option) => option.category === "model");
   const find = (isQuick: boolean): string => {
-    const kept = model && agent.listKept(session.agent.id, isQuick)[model.configId];
-    return (model && listChoices(model).find((choice) => choice.value === kept)?.name) || "";
+    const keptChoice = model && agent.resolveKeptChoices(session.agent.id, isQuick)[model.configId];
+    return (model && listChoices(model).find((choice) => choice.value === keptChoice)?.name) || "";
   };
 
   return { chat: find(false), quick: find(true) };
@@ -375,24 +384,24 @@ watch(
 async function send(): Promise<void> {
   const prompt = text.value.trim();
   if (!prompt || (session.state !== "idle" && session.state !== "running")) return;
-  const [chosen, pictures] = [picked.value, images.value];
+  const [promptChips, promptImages] = [pickedChips.value, images.value];
   text.value = "";
-  picked.value = [];
+  pickedChips.value = [];
   images.value = [];
-  if (asking.value) {
+  if (planRequest.value) {
     answer(refusals.value[0]?.id ?? null);
     await until(() => session.state).not.toBe("running", { timeout: 5000 });
   }
 
-  await agent.prompt(session, prompt, chosen, pictures);
+  await agent.prompt(session, prompt, promptChips, promptImages);
 }
 
 /**
  * answer answers the request to start on a plan with one of the agent's
- * choices, or cancels it for null.
+ * options, or cancels it for null.
  */
-function answer(choice: string | null): void {
-  if (asking.value) agent.answer(session, asking.value.id, choice);
+function answer(optionId: string | null): void {
+  if (planRequest.value) agent.reply(session, planRequest.value.id, optionId);
 }
 
 /**
@@ -413,39 +422,39 @@ async function dropFile(event: DragEvent): Promise<void> {
 }
 
 /**
- * pasteImages adds the pictures on the clipboard to the next prompt. For an
- * agent that takes no pictures it adds none and says so.
+ * pasteImages adds the images on the clipboard to the next prompt. For an
+ * agent that takes no images it adds none and says so.
  */
 async function pasteImages(event: ClipboardEvent): Promise<void> {
   const files = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"));
   if (!files.length) return;
   event.preventDefault();
-  if (!session.images) {
-    toast.add({ title: `${session.agent.name} takes no pictures in a prompt` });
+  if (!session.takesImages) {
+    toast.add({ title: `${session.agent.name} takes no images in a prompt` });
     return;
   }
 
-  const pasted = await Promise.all(
+  const newImages = await Promise.all(
     files.map(async (file): Promise<Image> => {
-      const data = new Uint8Array(await file.arrayBuffer()).toBase64();
-      return { type: "image", mimeType: file.type, data };
+      const base64 = new Uint8Array(await file.arrayBuffer()).toBase64();
+      return { type: "image", mimeType: file.type, data: base64 };
     }),
   );
-  images.value = [...images.value, ...pasted];
+  images.value = [...images.value, ...newImages];
 }
 
 /** pick adds a chip to the next prompt, once. */
 function pick(chip: Chip): void {
-  const isPicked = picked.value.some((other) => other.path === chip.path && other.startLine === chip.startLine);
-  if (!isPicked) picked.value = [...picked.value, chip];
+  const isPicked = pickedChips.value.some((other) => other.path === chip.path && other.startLine === chip.startLine);
+  if (!isPicked) pickedChips.value = [...pickedChips.value, chip];
   picking.value = false;
   term.value = "";
 }
 
-/** leaveOut takes a chip off the next prompt. */
-function leaveOut(chip: Chip, isPage: boolean): void {
+/** removeChip takes a chip off the next prompt. */
+function removeChip(chip: Chip, isPage: boolean): void {
   if (isPage) toolView.chipLeftOut = true;
-  else picked.value = picked.value.filter((other) => other !== chip);
+  else pickedChips.value = pickedChips.value.filter((other) => other !== chip);
 }
 
 /**
@@ -466,24 +475,24 @@ function recall(event: KeyboardEvent): void {
   const last = session.entries.findLast((entry) => entry.kind === "user");
   if (event.key !== "ArrowUp" || text.value || last?.kind !== "user") return;
   event.preventDefault();
-  text.value = splitMentions(last.text).text;
+  text.value = splitChips(last.text).text;
 }
 
-/** write puts a text in the prompt box and closes the list of commands. */
-function write(draft: string): void {
+/** setText puts a text in the prompt box and closes the list of commands. */
+function setText(draft: string): void {
   text.value = draft;
   pickingCommand.value = false;
 }
 
 /**
- * makeFile makes a skill, a command or a subagent of the given name for the
- * session's agent in the workspace's folder, and opens its file in the
- * editor. A file that is there already is opened as it is.
+ * createFile makes a skill, a command or a subagent of the given name for the
+ * session's agent in the agent folder, and opens its file in the editor. A
+ * file that is there already is opened as it is.
  */
-async function makeFile(make: Make, name: string): Promise<void> {
+async function createFile(skeleton: Skeleton, name: string): Promise<void> {
   pickingCommand.value = false;
   try {
-    editor.show(await MakeAgentFile(make.path.replaceAll("%s", name), make.text.replaceAll("%s", name)));
+    editor.show(await CreateAgentFile(skeleton.path.replaceAll("%s", name), skeleton.text.replaceAll("%s", name)));
   } catch (error) {
     reportError(error, "agent");
   }
@@ -496,12 +505,12 @@ function focusBox(event: Event): void {
 }
 
 /**
- * point keeps the row of the list of commands that the keys or the pointer
- * are on. The list hands out a new object for the same row each time it is
- * drawn, so a row with the label already kept changes nothing.
+ * setHighlight keeps the row of the list of commands that the keys or the
+ * pointer are on. The list hands out a new object for the same row each time
+ * it is drawn, so a row with the label already kept changes nothing.
  */
-function point(row: typeof pointed.value): void {
-  if (row?.label !== pointed.value?.label) pointed.value = row;
+function setHighlight(row: typeof highlight.value): void {
+  if (row?.label !== highlight.value?.label) highlight.value = row;
 }
 
 /**
@@ -542,13 +551,13 @@ function describeSource(source = ""): string {
         <AgentSignIn
           :methods="session.methods"
           @choose="(method) => agent.signIn(session, method)"
-          @done="agent.retry(session)"
+          @done="agent.restart(session)"
         />
       </div>
       <div v-else-if="session.state === 'ended'" class="flex max-w-180 flex-col gap-2.5">
         <span class="text-13 font-medium">The session ended</span>
         <span v-if="session.error" class="text-12 whitespace-pre-wrap text-error">{{ session.error }}</span>
-        <UButton label="Start it again" icon="i-lucide-refresh-cw" class="self-start" @click="agent.retry(session)" />
+        <UButton label="Start it again" icon="i-lucide-refresh-cw" class="self-start" @click="agent.restart(session)" />
       </div>
       <div v-else-if="empty" class="flex flex-col gap-2">
         <span class="text-12 text-dimmed">Ask {{ session.agent.name }} anything, or start with a task.</span>
@@ -573,7 +582,7 @@ function describeSource(source = ""): string {
 
     <template #prompt>
       <div>
-        <AgentWork v-model:open="tray" :session="session" />
+        <AgentWork v-model:open-tab="tray" :session="session" />
         <UChatPrompt
           ref="box"
           v-model="text"
@@ -581,14 +590,14 @@ function describeSource(source = ""): string {
           :disabled="session.state !== 'idle' && session.state !== 'running'"
           variant="subtle"
           :rows="2"
-          :class="[PROMPT_CARD, { 'ring-primary': asking }]"
+          :class="[PROMPT_CARD, { 'ring-primary': planRequest }]"
           :ui="{ footer: 'flex-wrap', header: 'flex-col items-stretch' }"
           @submit="send"
           @close="stop"
         >
           <template #header>
             <!-- The plan's own text is never here: the pinned row opens it. -->
-            <div v-if="asking" class="flex flex-col gap-2 border-b border-default pb-2">
+            <div v-if="planRequest" class="flex flex-col gap-2 border-b border-default pb-2">
               <span class="flex items-center gap-2 text-13 font-medium">
                 <UIcon name="i-lucide-file-text" class="size-3.5 shrink-0 text-primary" />
                 {{ session.agent.name }} finished its plan. Start on it?
@@ -617,18 +626,18 @@ function describeSource(source = ""): string {
             </div>
             <div v-if="session.queue.length" class="flex flex-col gap-1">
               <div
-                v-for="queued in session.queue"
-                :key="queued.id"
+                v-for="prompt in session.queue"
+                :key="prompt.id"
                 class="flex h-6.5 items-center gap-1.5 rounded-sm bg-elevated ps-2 pe-1 text-12"
               >
                 <UIcon name="i-lucide-clock" class="size-3 shrink-0 text-dimmed" />
                 <span class="shrink-0 text-dimmed">Queued</span>
-                <span class="min-w-0 grow truncate" :title="queued.text">{{ queued.text }}</span>
+                <span class="min-w-0 grow truncate" :title="prompt.text">{{ prompt.text }}</span>
                 <UButton
                   :label="busy ? 'Stop and send' : 'Send'"
                   variant="ghost"
                   size="xs"
-                  @click="agent.sendQueued(session, queued.id)"
+                  @click="agent.sendNow(session, prompt.id)"
                 />
                 <UButton
                   icon="i-lucide-x"
@@ -637,7 +646,7 @@ function describeSource(source = ""): string {
                   size="xs"
                   square
                   aria-label="Remove"
-                  @click="agent.unqueue(session, queued.id)"
+                  @click="agent.unqueue(session, prompt.id)"
                 />
               </div>
             </div>
@@ -658,7 +667,7 @@ function describeSource(source = ""): string {
                   size="xs"
                   square
                   aria-label="Leave it out"
-                  @click="leaveOut(chip, isPage)"
+                  @click="removeChip(chip, isPage)"
                 />
               </span>
               <span
@@ -668,10 +677,10 @@ function describeSource(source = ""): string {
               >
                 <img
                   :src="`data:${image.mimeType};base64,${image.data}`"
-                  alt="A pasted picture"
+                  alt="A pasted image"
                   class="size-4 rounded-xs object-cover"
                 />
-                Picture
+                Image
                 <UButton
                   icon="i-lucide-x"
                   variant="ghost"
@@ -720,19 +729,19 @@ function describeSource(source = ""): string {
                   :fuse="{ resultLimit: session.commands.length + 50 }"
                   placeholder="Find a command, a skill or a subagent, or name a new one"
                   class="h-96 w-112"
-                  @highlight="(payload) => point(payload?.value as typeof pointed)"
+                  @highlight="(payload) => setHighlight(payload?.value as typeof highlight)"
                 >
                   <!-- The slot is always there: one that came and went
                        would draw the list again and move its highlight. -->
                   <template #footer>
                     <div
-                      v-if="pointed?.suffix"
+                      v-if="highlight?.suffix"
                       class="flex max-h-36 flex-col gap-1 overflow-y-auto bg-muted px-3 py-2.5"
                     >
-                      <span class="font-mono text-12 font-medium">{{ pointed.label }}</span>
-                      <p class="text-12 leading-4.5 text-toned">{{ pointed.suffix }}</p>
-                      <p v-if="describeSource(pointed.source)" class="text-11 text-dimmed">
-                        {{ describeSource(pointed.source) }}
+                      <span class="font-mono text-12 font-medium">{{ highlight.label }}</span>
+                      <p class="text-12 leading-4.5 text-toned">{{ highlight.suffix }}</p>
+                      <p v-if="describeSource(highlight.source)" class="text-11 text-dimmed">
+                        {{ describeSource(highlight.source) }}
                       </p>
                     </div>
                   </template>
@@ -759,15 +768,15 @@ function describeSource(source = ""): string {
                   :ui="{ trailingIcon: 'text-dimmed' }"
                 />
                 <template #content>
-                  <div :class="PANEL">
+                  <div :class="PANEL_CLASS">
                     <AgentSetting
                       :session="session"
                       :option="picker.option"
                       :title="picker.title"
                       :description="picker.description"
-                      :hidden="picker.hidden"
-                      :lines="EFFORTS"
-                      :marks="picker.marks"
+                      :hidden-choices="picker.hiddenChoices"
+                      :descriptions="EFFORTS"
+                      :badges="picker.badges"
                     >
                       <div
                         v-if="picker.category === 'model'"
@@ -777,10 +786,10 @@ function describeSource(source = ""): string {
                         <p v-if="session.usage?.cost" class="text-12 text-toned tabular-nums">
                           {{ describeCost(session.usage.cost) }} at API prices so far
                         </p>
-                        <p v-if="starts.chat || starts.quick" class="text-11 leading-4 text-dimmed">
-                          <template v-if="starts.chat">New sessions start on {{ starts.chat }}. </template>
-                          <template v-if="starts.quick">
-                            Quick sessions, the inline ask and a drafted commit message use {{ starts.quick }}.
+                        <p v-if="keptModels.chat || keptModels.quick" class="text-11 leading-4 text-dimmed">
+                          <template v-if="keptModels.chat">New sessions start on {{ keptModels.chat }}. </template>
+                          <template v-if="keptModels.quick">
+                            Quick sessions, the inline ask and a drafted commit message use {{ keptModels.quick }}.
                           </template>
                         </p>
                         <UButton
@@ -792,7 +801,7 @@ function describeSource(source = ""): string {
                         />
                       </div>
                       <p
-                        v-else-if="picker.category === 'mode' && session.agent.unasked?.length"
+                        v-else-if="picker.category === 'mode' && session.agent.bypasses?.length"
                         class="border-t border-default px-3 py-2.5 text-11 leading-4 text-dimmed"
                       >
                         A red choice lets {{ session.agent.name }} work without asking PMT. It asks you first and lasts
@@ -814,20 +823,22 @@ function describeSource(source = ""): string {
               label="Plan"
               size="xs"
               @update:model-value="
-                (isOn) => plan && agent.configure(session, plan.option.configId, isOn ? plan.on : plan.off, false)
+                (isOn) =>
+                  plan &&
+                  agent.configure(session, plan.option.configId, isOn ? plan.planValue : plan.previousValue, false)
               "
             />
             <UPopover :content="{ align: 'start', side: 'top' }">
               <UButton icon="i-lucide-sliders-horizontal" variant="ghost" size="sm" square aria-label="More settings" />
               <template #content>
-                <div :class="PANEL">
+                <div :class="PANEL_CLASS">
                   <label
                     v-for="row in switches"
                     :key="row.key"
                     class="flex items-center gap-3 border-b border-default px-3 py-2.5"
                   >
                     <span class="flex min-w-0 grow flex-col gap-0.5">
-                      <span class="text-13 font-semibold" :class="row.isRed && 'text-error'">{{ row.name }}</span>
+                      <span class="text-13 font-semibold" :class="row.isBypass && 'text-error'">{{ row.name }}</span>
                       <span v-if="row.description" class="text-12 leading-4.5 text-toned">{{ row.description }}</span>
                     </span>
                     <USwitch :model-value="row.isOn" size="sm" :aria-label="row.name" @update:model-value="row.set" />
@@ -847,8 +858,8 @@ function describeSource(source = ""): string {
             <span
               v-else-if="busy"
               class="text-11 text-dimmed tabular-nums"
-              :aria-label="`${session.agent.name} has worked for ${elapsed}`"
-              >{{ elapsed }}</span
+              :aria-label="`${session.agent.name} has worked for ${duration}`"
+              >{{ duration }}</span
             >
             <UButton
               v-if="busy"

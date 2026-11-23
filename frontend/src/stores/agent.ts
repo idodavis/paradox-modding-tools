@@ -16,7 +16,7 @@ import type { Agent } from "@services/agent/models";
 import { FlashWindow } from "@services/app/service";
 import type { Finding } from "@services/health/models";
 import type { Diagnostic } from "@services/lsp/models";
-import { ListNewProblems } from "@services/lsp/service";
+import { ListNewDiagnostics } from "@services/lsp/service";
 import type { Chip, Tool } from "@services/mcp/models";
 import type { Place, Review } from "@services/workspace/models";
 import { KeepFile, Read, UndoFile } from "@services/workspace/service";
@@ -27,18 +27,17 @@ import { accessQuery, agentsQuery, loadQuery, placeQuery, reviewsQuery, toolsQue
 import { unsavedModels } from "../pages/ide/editor/models";
 import {
   answerLink,
-  describeWish,
-  findNamed,
+  describePermission,
   findOption,
-  listChanged,
-  toAnswer,
+  findReadOnlyFolder,
+  listChangedPlaces,
   toForm,
   toLink,
-  type PermissionAnswer,
+  toPermissionResponse,
 } from "./agentRequests";
 import {
   applyMessage,
-  applyTool,
+  applyToolCall,
   BUILDERS,
   IMAGE_LABEL,
   MESSAGES,
@@ -47,14 +46,14 @@ import {
   type Thread,
 } from "./agentThread";
 import {
+  applyBackground,
+  applyDocument,
+  applyPlanRequest,
   applyRunning,
   applySubagent,
-  findSubagent,
   isPlanFile,
-  keepBackground,
-  keepDocument,
-  keepRequested,
-  trackPlan,
+  receivePlan,
+  resolveSubagent,
   type Subagent,
   type Work,
 } from "./agentWork";
@@ -99,11 +98,11 @@ export type PlanLimit = {
 export type Usage = { used: number; size: number; cost: v2.Cost | null; limit: PlanLimit | null };
 
 /**
- * A Queued is a prompt as it is sent: its text and chips as the transcript
+ * A Prompt is a prompt as it is sent: its text and chips as the transcript
  * shows them, and its blocks. A session holds the prompts written while a
  * turn runs, for an agent that takes none into a running turn.
  */
-export type Queued = { id: string; text: string; chips: string[]; blocks: v2.ContentBlock[] };
+export type Prompt = { id: string; text: string; chips: string[]; blocks: v2.ContentBlock[] };
 
 /**
  * A Session is one chat with an agent in this window, with its thread and
@@ -121,35 +120,35 @@ export type Session = Thread &
     state: "starting" | "sign-in" | "idle" | "running" | "ended";
     startedAt: number; // when its running turn started, in milliseconds; 0 while none runs
     turn: string; // the id of its running turn, or of its last
-    changed: string[]; // the files that turn changed that went under review
-    paid: number; // what the session had cost when that turn started
-    last: Queued | null; // the prompt sent last, which Retry sends again
+    paths: string[]; // the files that turn changed that went under review
+    startCost: number; // what the session had cost when that turn started
+    last: Prompt | null; // the prompt sent last, which Retry sends again
     isQuick: boolean; // whether it started on its agent's Quick choices
     /**
-     * allows is null for a session the pane shows. For a session run out of
-     * sight it lists the files the session may change: it is asked nothing
-     * else, so every other request is refused.
+     * allowedPaths is null for a session the pane shows. For a session run
+     * out of sight it lists the files the session may change: it is asked
+     * nothing else, so every other request is refused.
      */
-    allows: string[] | null;
+    allowedPaths: string[] | null;
     isFailed: boolean; // whether its last turn failed, or it ended with an error
     draft: string; // the text in its prompt box, not sent yet
-    queue: Queued[]; // the prompts held until the running turn ends, oldest first
+    queue: Prompt[]; // the prompts held until the running turn ends, oldest first
     options: v2.SessionConfigOption[];
     commands: v2.AvailableCommand[];
     methods: SignIn[];
     usage: Usage | null; // null until the agent sends a usage update
     resumable: boolean;
     deletable: boolean;
-    directories: boolean;
-    images: boolean; // whether its agent takes pictures in a prompt
+    takesDirectories: boolean; // whether its agent takes other folders to work in
+    takesImages: boolean; // whether its agent takes images in a prompt
     embeds: boolean; // whether its agent takes a file's text in a prompt
     forkable: boolean; // whether its agent can copy a session into a new one
-    titled: boolean; // whether its agent takes a title the user gives a session
+    renamable: boolean; // whether its agent takes a title the user gives a session
     error: string;
   };
 
 /** A SessionState is where a session stands, as the session menu marks it. */
-export type SessionState = "needs" | "working" | "failed" | "done";
+export type SessionState = "waiting" | "working" | "failed" | "done";
 
 /** An Image is a picture a prompt carries, as the protocol sends it. */
 export type Image = Extract<v2.ContentBlock, { type: "image" }>;
@@ -178,7 +177,7 @@ type Dialect = {
   configure: (id: string, configId: string, value: string | boolean) => Promise<Offers>;
   cancel: (id: string) => Promise<void>;
   cancelTerminal: (id: string, terminalId: string) => Promise<void>;
-  cancelTool: (id: string, toolCallId: string) => Promise<void>;
+  cancelToolCall: (id: string, toolCallId: string) => Promise<void>;
   fork: (id: string, start: Start, cursorId: string) => Promise<string>;
   rename: (id: string, title: string) => Promise<void>;
   delete: (id: string) => Promise<void>;
@@ -200,23 +199,23 @@ type Method = {
 type HttpServer = { type: "http"; name: string; url: string; headers: { name: string; value: string }[] };
 
 /**
- * A Reply is the user's answer to an open request: a permission's option or
+ * A Reply is the user's reply to an open request: a permission's option or
  * a link's action by its id, what a form was filled in with, or null to
  * cancel or decline.
  */
 type Reply = string | Record<string, unknown> | null;
 
 /**
- * Answers are what a session's open requests wait for, by the id of the
+ * Replies are what a session's open requests wait for, by the id of the
  * entry that shows each.
  */
-type Answers = Map<string, (reply: Reply) => void>;
+type Replies = Map<string, (reply: Reply) => void>;
 
 /**
- * A Link is what a session holds that is never shown. Its start is what Go
- * said of where the agent runs, null until Go has.
+ * A Connection is what a session holds that is never shown. Its start is what
+ * Go said of where the agent runs, null until Go has.
  */
-type Link = { dialect: Dialect; answers: Answers; start: Start | null };
+type Connection = { dialect: Dialect; replies: Replies; start: Start | null };
 
 /** REQUESTS holds the kinds of entry that wait for the user's answer. */
 const REQUESTS = ["permission", "link", "form"];
@@ -232,15 +231,15 @@ type RateLimit = { status: PlanLimit["status"]; rateLimitType?: string; utilizat
 
 /** PROTOCOLS is the local storage key of the version each agent answered last. */
 const PROTOCOLS = "pmt.agent.protocol";
-/** OPTIONS is the local storage key of the model, effort and mode each agent was last given. */
-const OPTIONS = "pmt.agent.options";
+/** CHAT_OPTIONS is the local storage key of the model, effort and mode each agent was last given. */
+const CHAT_OPTIONS = "pmt.agent.chat";
 /** ALLOWED is the setting that holds the tools the user allowed always, each with its agent. */
 export const ALLOWED = "agents.allowed";
 /** The kinds of option Settings keeps a Chat and a Quick choice of. */
-export const CHOSEN = ["model", "thought_level"];
-/** The settings of the shell rules: the starts allowed, and those refused. */
+export const CHOICE_CATEGORIES = ["model", "thought_level"];
+/** The settings of the shell rules: the prefixes allowed, and those denied. */
 export const SHELL_ALLOWED = "agents.shellAllowed";
-export const SHELL_REFUSED = "agents.shellRefused";
+export const SHELL_DENIED = "agents.shellDenied";
 /**
  * FILE_KINDS holds the kinds of tool call an agent allows always as a whole, as Claude's "allow all edits" does, with
  * the words Settings shows for each. Any other tool is allowed always by its title, such as one command.
@@ -305,19 +304,19 @@ export const useAgentStore = defineStore("agent", () => {
   const { data: tools } = useQuery(toolsQuery);
   const { data: reviews } = useQuery(reviewsQuery);
   const sessions = reactive<Session[]>([]);
-  const links = new Map<string, Link>();
+  const connections = new Map<string, Connection>();
   // The sessions whose user just refused a plan, by key, until their turn ends.
   const revising = new Set<string>();
   const protocols = useLocalStorage<Record<string, Protocol>>(PROTOCOLS, {});
   const records = useLocalStorage<SessionRecord[]>("pmt.agent.sessions", []);
   const lastAgent = useLocalStorage("pmt.agent.last", "");
-  // The options the user last picked for each agent, by agent and by option.
-  const lastOptions = useLocalStorage<Record<string, Record<string, string | boolean>>>(OPTIONS, {});
+  // The Chat options the user last picked for each agent, by agent and by option.
+  const chatOptions = useLocalStorage<Record<string, Record<string, string | boolean>>>(CHAT_OPTIONS, {});
   // The options of each agent's quick sessions that differ from its chats'.
   const quickOptions = useLocalStorage<Record<string, Record<string, string | boolean>>>("pmt.agent.quick", {});
   // The models and efforts each agent last offered a session, by agent, so
   // that Settings lists them while no session runs.
-  const offered = useLocalStorage<Record<string, v2.SessionConfigOption[]>>("pmt.agent.offered", {});
+  const offeredOptions = useLocalStorage<Record<string, v2.SessionConfigOption[]>>("pmt.agent.offeredOptions", {});
   // The sessions run out of sight, which no list of sessions holds.
   const unseen = new Set<Session>();
   // The unsent text of each remembered session, by the session's id. A text
@@ -341,9 +340,9 @@ export const useAgentStore = defineStore("agent", () => {
     () => sessions.map((session) => [session.agent.id, session.options] as const),
     (pairs) => {
       for (const [agentId, options] of pairs) {
-        const kept = options.filter((option) => CHOSEN.includes(option.category ?? ""));
-        if (kept.length && !isEqual(kept, offered.value[agentId]))
-          offered.value = { ...offered.value, [agentId]: kept };
+        const keptOptions = options.filter((option) => CHOICE_CATEGORIES.includes(option.category ?? ""));
+        if (keptOptions.length && !isEqual(keptOptions, offeredOptions.value[agentId]))
+          offeredOptions.value = { ...offeredOptions.value, [agentId]: keptOptions };
       }
     },
   );
@@ -378,13 +377,13 @@ export const useAgentStore = defineStore("agent", () => {
   const isWaiting = (session: Session): boolean => session.entries.some((entry) => REQUESTS.includes(entry.kind));
   /**
    * classify returns the state the session menu shows a remembered session
-   * in: it needs the user, it is at work, its last turn failed, or it is
+   * in: it waits for the user, it is at work, its last turn failed, or it is
    * done. A session that does not run in this window is failed or done, as
    * its last turn here left it.
    */
   const classify = (record: SessionRecord): SessionState => {
     const live = sessions.find((session) => session.id === record.id);
-    if (live && (isWaiting(live) || live.state === "sign-in")) return "needs";
+    if (live && (isWaiting(live) || live.state === "sign-in")) return "waiting";
     if (live?.state === "running") return "working";
 
     return (live ?? record).isFailed ? "failed" : "done";
@@ -392,8 +391,8 @@ export const useAgentStore = defineStore("agent", () => {
   // The taskbar button flashes when one more session waits for the user.
   watch(
     () => sessions.filter(isWaiting).length,
-    (count, before) => {
-      if (count > before) flash();
+    (count, previous) => {
+      if (count > previous) flash();
     },
   );
 
@@ -454,35 +453,35 @@ export const useAgentStore = defineStore("agent", () => {
       state: "starting",
       startedAt: 0,
       turn: "",
-      changed: [],
-      paid: 0,
+      paths: [],
+      startCost: 0,
       last: null,
       isQuick: false,
-      allows: null,
+      allowedPaths: null,
       isFailed: record?.isFailed ?? false,
       entries: [],
       draft: (record && drafts.value[record.id]) ?? "",
       queue: [],
       terminals: {},
-      plans: [],
+      checklists: [],
       subagents: [],
       background: [],
-      backgrounded: [],
+      backgroundTerminalIds: [],
       documents: [],
       shownPlan: "",
       planFolder: "",
-      ownPlans: agent.planFolder ?? "",
+      homePlanFolder: agent.homePlanFolder ?? "",
       options: [],
       commands: [],
       methods: [],
       usage: null,
       resumable: false,
       deletable: false,
-      directories: false,
-      images: false,
+      takesDirectories: false,
+      takesImages: false,
       embeds: false,
       forkable: false,
-      titled: false,
+      renamable: false,
       error: "",
     });
   }
@@ -491,7 +490,7 @@ export const useAgentStore = defineStore("agent", () => {
   async function connect(session: Session, step: "create" | "resume"): Promise<void> {
     try {
       const { start: startMessage, dialect } = await openDialect(session);
-      session.planFolder = startMessage.plans;
+      session.planFolder = startMessage.planFolder;
       try {
         await dialect.initialize();
       } catch (error) {
@@ -508,7 +507,7 @@ export const useAgentStore = defineStore("agent", () => {
       // session is remembered when that turn ends.
       if (step === "resume") remember(session);
       else await applyLastOptions(session);
-      await leaveUnasked(session);
+      await applyStartMode(session);
     } catch (error) {
       if (isAuthRequired(error)) {
         session.state = "sign-in";
@@ -521,21 +520,21 @@ export const useAgentStore = defineStore("agent", () => {
   /** openDialect opens a stream to a session's agent and wraps it for the SDK. */
   async function openDialect(session: Session): Promise<{ start: Start; dialect: Dialect }> {
     const opened = openStream(session.agent, editor.activeFile()?.path ?? "", () => {
-      if (links.get(session.key) === link) session.state = "ended";
+      if (connections.get(session.key) === connection) session.state = "ended";
     });
-    const answers: Answers = new Map();
-    const dialect = markRaw(makeDialect(session, opened.stream, opened, answers));
-    const link: Link = { dialect, answers, start: null };
-    links.set(session.key, link);
-    link.start = await opened.started;
+    const replies: Replies = new Map();
+    const dialect = markRaw(makeDialect(session, opened.stream, opened, replies));
+    const connection: Connection = { dialect, replies, start: null };
+    connections.set(session.key, connection);
+    connection.start = await opened.started;
 
-    return { start: link.start, dialect };
+    return { start: connection.start, dialect };
   }
 
-  /** unlink closes a session's stream and forgets its link. */
+  /** unlink closes a session's stream and forgets its connection. */
   function unlink(session: Session): void {
-    links.get(session.key)?.dialect.close();
-    links.delete(session.key);
+    connections.get(session.key)?.dialect.close();
+    connections.delete(session.key);
   }
 
   /** VERSIONS holds what the protocol's two versions say differently. */
@@ -556,27 +555,27 @@ export const useAgentStore = defineStore("agent", () => {
           elicitation: { url: {}, form: {} },
         },
       } satisfies unstable.InitializeRequest,
-      toCapabilities: (answer: unknown) => {
-        const { capabilities, authMethods } = answer as unstable.InitializeResponse;
+      toCapabilities: (response: unknown) => {
+        const { capabilities, authMethods } = response as unstable.InitializeResponse;
         return {
           resumable: true,
           deletable: !!capabilities?.session?.delete,
-          directories: !!capabilities?.session?.additionalDirectories,
-          images: !!capabilities?.session?.prompt?.image,
+          takesDirectories: !!capabilities?.session?.additionalDirectories,
+          takesImages: !!capabilities?.session?.prompt?.image,
           embeds: !!capabilities?.session?.prompt?.embeddedContext,
           forkable: !!capabilities?.session?.fork,
-          titled: !!capabilities?.session?.title,
+          renamable: !!capabilities?.session?.title,
           methods: (authMethods ?? []).map((method) => ({ ...method, id: method.methodId })),
         };
       },
-      resume: (id: string, start: Start, folders: object): [string, object] => [
+      resume: (id: string, start: Start, params: object): [string, object] => [
         "session/resume",
         {
           sessionId: id,
           cwd: start.folder,
           mcpServers: listServers(),
           replayFrom: { type: "start" },
-          ...folders,
+          ...params,
         } satisfies v2.ResumeSessionRequest,
       ],
       configure: (id: string, configId: string, value: string | boolean) =>
@@ -594,22 +593,22 @@ export const useAgentStore = defineStore("agent", () => {
         return { title: toolCall.title ?? "", toolCall: toolCall as v2.ToolCallUpdate, options };
       },
       initialize: V1_INITIALIZE,
-      toCapabilities: (answer: unknown) => {
-        const { agentCapabilities, authMethods } = answer as v1.InitializeResponse;
+      toCapabilities: (response: unknown) => {
+        const { agentCapabilities, authMethods } = response as v1.InitializeResponse;
         return {
           resumable: !!agentCapabilities?.loadSession,
           deletable: !!agentCapabilities?.sessionCapabilities?.delete,
-          directories: !!agentCapabilities?.sessionCapabilities?.additionalDirectories,
-          images: !!agentCapabilities?.promptCapabilities?.image,
+          takesDirectories: !!agentCapabilities?.sessionCapabilities?.additionalDirectories,
+          takesImages: !!agentCapabilities?.promptCapabilities?.image,
           embeds: !!agentCapabilities?.promptCapabilities?.embeddedContext,
           forkable: !!(agentCapabilities?.sessionCapabilities as { fork?: object } | undefined)?.fork,
-          titled: !!(agentCapabilities?.sessionCapabilities as { title?: object } | undefined)?.title,
+          renamable: !!(agentCapabilities?.sessionCapabilities as { title?: object } | undefined)?.title,
           methods: authMethods ?? [],
         };
       },
-      resume: (id: string, start: Start, folders: object): [string, object] => [
+      resume: (id: string, start: Start, params: object): [string, object] => [
         "session/load",
-        { sessionId: id, cwd: start.folder, mcpServers: listServers(), ...folders } satisfies v1.LoadSessionRequest,
+        { sessionId: id, cwd: start.folder, mcpServers: listServers(), ...params } satisfies v1.LoadSessionRequest,
       ],
       configure: (id: string, configId: string, value: string | boolean) =>
         (typeof value === "boolean"
@@ -622,7 +621,7 @@ export const useAgentStore = defineStore("agent", () => {
   };
 
   /** makeDialect makes the Dialect for a session's version of the protocol over a stream. */
-  function makeDialect(session: Session, stream: v2.Stream, socket: { close: () => void }, answers: Answers): Dialect {
+  function makeDialect(session: Session, stream: v2.Stream, socket: { close: () => void }, replies: Replies): Dialect {
     const row = VERSIONS[session.protocol];
     // Both versions' clients take a method by its name, with params in each version's own shape.
     const client: {
@@ -640,20 +639,20 @@ export const useAgentStore = defineStore("agent", () => {
       const { sessionId, update } = params as v2.UpdateSessionNotification;
       // A subagent's updates come on its parent's stream under its own id.
       if (!session.id || sessionId === session.id) applyUpdate(session, update);
-      else applyChild(session, findSubagent(session, sessionId), update);
+      else applySubagentUpdate(session, resolveSubagent(session, sessionId), update);
     });
     client.onRequest("session/request_permission", ({ params }) => {
       const { title, toolCall, options } = row.toPermission(params);
       // The call a subagent asks about joins that subagent's thread.
       const asker = (params as { sessionId?: string }).sessionId;
-      const thread = asker && session.id && asker !== session.id ? findSubagent(session, asker) : session;
-      return ask(session, thread, answers, title, toolCall, options);
+      const thread = asker && session.id && asker !== session.id ? resolveSubagent(session, asker) : session;
+      return askPermission(session, thread, replies, title, toolCall, options);
     });
     client.onRequest("elicitation/create", ({ params }) =>
-      askUser(session, answers, params as v2.CreateElicitationRequest),
+      elicit(session, replies, params as v2.CreateElicitationRequest),
     );
     client.onNotification("elicitation/complete", ({ params }) =>
-      closeEntry(session, answers, (params as v2.CompleteElicitationNotification).elicitationId, null),
+      closeEntry(session, replies, (params as v2.CompleteElicitationNotification).elicitationId, null),
     );
     const connection = client.connect(stream);
     const agent = connection.agent;
@@ -680,19 +679,19 @@ export const useAgentStore = defineStore("agent", () => {
         Object.assign(session, capabilities, { methods: methods.map((method) => toSignIn(session.agent, method)) });
       },
       create: async (start) => {
-        const request = { cwd: start.folder, mcpServers: listServers(), ...folders(session, start) };
-        const answer = (await agent.request("session/new", request)) as Offers & { sessionId: string };
-        applyOffers(session, answer);
-        return answer.sessionId;
+        const request = { cwd: start.folder, mcpServers: listServers(), ...toSessionParams(session, start) };
+        const response = (await agent.request("session/new", request)) as Offers & { sessionId: string };
+        applyOffers(session, response);
+        return response.sessionId;
       },
       resume: async (id, start) => {
         if (!session.resumable) throw new Error(`${session.agent.name} cannot replay a session`);
         // An agent replays a session's history only from the folder the
         // session was made in, which is not always the one it starts in now.
         const folder = (await locate(id)) || start.folder;
-        const others = [start.folder, ...(start.directories ?? [])].filter((other) => other !== folder);
-        const own = { ...start, folder, directories: others };
-        applyOffers(session, (await agent.request(...row.resume(id, own, folders(session, own)))) as Offers);
+        const others = [start.folder, ...(start.folders ?? [])].filter((other) => other !== folder);
+        const own = { ...start, folder, folders: others };
+        applyOffers(session, (await agent.request(...row.resume(id, own, toSessionParams(session, own)))) as Offers);
       },
       prompt: async (id, blocks) => {
         startTurn(session);
@@ -700,22 +699,23 @@ export const useAgentStore = defineStore("agent", () => {
         const key = row.keysPrompts ? { idempotencyKey: crypto.randomUUID() } : {};
         const request = { sessionId: id, prompt: blocks, ...key };
         unanswered++;
-        let answer: { stopReason: string; usage?: unstable.Usage | null };
+        let response: { stopReason: string; usage?: unstable.Usage | null };
         try {
-          answer = (await agent.request("session/prompt", request)) as typeof answer;
+          response = (await agent.request("session/prompt", request)) as typeof response;
         } finally {
           unanswered--;
         }
         // A prompt taken into a running turn is answered with it, so the turn
         // is over once every prompt is answered.
-        if (row.endsTurnOnPrompt && !unanswered) finishTurn(session, answer.stopReason, "", answer.usage?.totalTokens);
+        if (row.endsTurnOnPrompt && !unanswered)
+          finishTurn(session, response.stopReason, "", response.usage?.totalTokens);
       },
       configure: async (id, configId, value) =>
         (await agent.request("session/set_config_option", row.configure(id, configId, value))) as Offers,
       cancel: (id) => agent.notify("session/cancel", { sessionId: id }),
       cancelTerminal: async (id, terminalId) =>
         void (await agent.request("terminal/cancel", { sessionId: id, terminalId })),
-      cancelTool: async (id, toolCallId) =>
+      cancelToolCall: async (id, toolCallId) =>
         void (await agent.request("tool_call/cancel", { sessionId: id, toolCallId })),
       fork: async (id, start, cursorId) => {
         const point = cursorId ? { cursorId } : {};
@@ -723,7 +723,7 @@ export const useAgentStore = defineStore("agent", () => {
           sessionId: id,
           cwd: start.folder,
           mcpServers: listServers(),
-          ...folders(session, start),
+          ...toSessionParams(session, start),
           ...point,
         };
 
@@ -761,13 +761,13 @@ export const useAgentStore = defineStore("agent", () => {
       remember(session);
     } else if (kind === "state_update") {
       const state = update as v2.StateUpdate & v2.IdleStateUpdate & v2.ErrorStopReason & { usage?: unstable.Usage };
-      if (state.background) keepBackground(session, state.background);
+      if (state.background) applyBackground(session, state.background);
       if (state.state === "running") startTurn(session);
       else if (state.state === "idle")
         finishTurn(session, state.stopReason ?? "end_turn", state.error?.message, state.usage?.totalTokens);
     } else if (kind === "subagent_update") {
-      const sent = update as v2.SubagentUpdate;
-      applySubagent(findSubagent(session, sent.sessionId), sent);
+      const subagentUpdate = update as v2.SubagentUpdate;
+      applySubagent(resolveSubagent(session, subagentUpdate.sessionId), subagentUpdate);
     } else if (kind === "config_option_update" || kind === "available_commands_update") {
       applyOffers(session, update as Offers);
     } else if (kind === "usage_update") {
@@ -776,11 +776,11 @@ export const useAgentStore = defineStore("agent", () => {
   }
 
   /**
-   * applyChild applies one update a subagent of a session sent: what builds
-   * its thread, its state, and the message that started it, which is its
-   * first prompt.
+   * applySubagentUpdate applies one update a subagent of a session sent: what
+   * builds its thread, its state, and the message that started it, which is
+   * its first prompt.
    */
-  function applyChild(session: Session, subagent: Subagent, update: v2.SessionUpdate): void {
+  function applySubagentUpdate(session: Session, subagent: Subagent, update: v2.SessionUpdate): void {
     if (applyThread(session, subagent, update)) return;
 
     if (update.sessionUpdate === "state_update") applyRunning(subagent, (update as { state: string }).state);
@@ -803,8 +803,8 @@ export const useAgentStore = defineStore("agent", () => {
     const message = MESSAGES[kind];
     if (message) applyMessage(thread, update as v2.ContentChunk | v2.UserMessage, message);
     else if (kind === "tool_call" || kind === "tool_call_update" || kind === "tool_call_content_chunk")
-      trackTool(session, thread, update as v2.ToolCallUpdate | v2.ToolCallContentChunk);
-    else if (kind === "plan" || kind === "plan_update") trackPlan(session, thread, update as PlanUpdate);
+      receiveToolCall(session, thread, update as v2.ToolCallUpdate | v2.ToolCallContentChunk);
+    else if (kind === "plan" || kind === "plan_update") receivePlan(session, thread, update as PlanUpdate);
     else if (kind in BUILDERS) BUILDERS[kind]?.(thread, update as never);
     else return false;
 
@@ -812,21 +812,25 @@ export const useAgentStore = defineStore("agent", () => {
   }
 
   /**
-   * trackTool applies an update about a tool call to a thread of a session.
-   * It starts the review of the files a call changed once the call is done,
-   * and shows the file the call names if the user follows the agent.
+   * receiveToolCall applies an update about a tool call to a thread of a
+   * session. It starts the review of the files a call changed once the call is
+   * done, and shows the file the call names if the user follows the agent.
    */
-  function trackTool(session: Session, thread: Thread, update: v2.ToolCallUpdate | v2.ToolCallContentChunk): void {
-    const { entry, isNewlyDone } = applyTool(thread, update);
+  function receiveToolCall(
+    session: Session,
+    thread: Thread,
+    update: v2.ToolCallUpdate | v2.ToolCallContentChunk,
+  ): void {
+    const { entry, isNewlyDone } = applyToolCall(thread, update);
     // A resumed session replays its old calls while it starts. Their edits
     // are old, so they start no review. Nor does an edit of a plan file,
     // which an agent writes to often: it is a plan, not a change to review.
     // An edit that gives the plan file's whole text is the plan document.
-    const [plans, reviewed] = partition(entry.edits, (edit) => isPlanFile(session, edit.path));
+    const [planEdits, otherEdits] = partition(entry.edits, (edit) => isPlanFile(session, edit.path));
     if (isNewlyDone && session.state !== "starting") {
-      startReviews(session, reviewed);
-      for (const edit of plans.filter((plan) => !plan.patch))
-        keepDocument(session, { id: edit.path, text: edit.hunks.at(-1)?.after.join("\n") ?? "", path: edit.path });
+      startReviews(session, otherEdits);
+      for (const edit of planEdits.filter((candidate) => !candidate.patch))
+        applyDocument(session, { id: edit.path, text: edit.hunks.at(-1)?.after.join("\n") ?? "", path: edit.path });
     }
     const location = "locations" in update ? update.locations?.[0] : undefined;
     if (follow.value && location) void toolView.followFile(location.path, location.line ?? 1);
@@ -845,10 +849,10 @@ export const useAgentStore = defineStore("agent", () => {
       const isReviewed = !!findReview(path);
       trackEdits(fileEdits, session.turn)
         .then(async () => {
-          if (!session.changed.includes(path)) session.changed.push(path);
+          if (!session.paths.includes(path)) session.paths.push(path);
           if (isReviewed) return;
           // A session run out of sight leaves the pane as it is.
-          if (!session.allows) showPane();
+          if (!session.allowedPaths) showPane();
           const place = await loadQuery(placeQuery(path));
           if (place && !place.root)
             session.entries.push({
@@ -872,8 +876,8 @@ export const useAgentStore = defineStore("agent", () => {
       Object.assign(session, {
         startedAt: Date.now(),
         turn: crypto.randomUUID(),
-        changed: [],
-        paid: session.usage?.cost?.amount ?? 0,
+        paths: [],
+        startCost: session.usage?.cost?.amount ?? 0,
       });
     session.state = "running";
   }
@@ -897,11 +901,11 @@ export const useAgentStore = defineStore("agent", () => {
       session.entries.push({
         kind: "turn",
         id: session.turn,
-        elapsed: Date.now() - session.startedAt,
+        duration: Date.now() - session.startedAt,
         tokens,
-        cost: cost ? describeCost({ ...cost, amount: cost.amount - session.paid }) : "",
-        canRetry: !isExpected,
-        paths: session.changed,
+        cost: cost ? describeCost({ ...cost, amount: cost.amount - session.startCost }) : "",
+        isUnfinished: !isExpected,
+        paths: session.paths,
         problems: [],
       });
       void diagnoseTurn(session.entries.at(-1));
@@ -923,50 +927,50 @@ export const useAgentStore = defineStore("agent", () => {
     if (turn?.kind !== "turn") return;
 
     for (const path of turn.paths) {
-      const problems = (await ListNewProblems(path).catch(() => null)) ?? [];
+      const problems = (await ListNewDiagnostics(path).catch(() => null)) ?? [];
       const place = problems.length ? await loadQuery(placeQuery(path)) : undefined;
       if (place) turn.problems.push({ place, problems });
     }
   }
 
   /**
-   * ask answers a permission request at once if PMT may, else shows it in a
-   * session and answers the agent with the option the user picks. A request
-   * to change a file PMT keeps read-only (the game's, an external mod's) is
-   * refused at once, with a notice, whatever the user allowed always. A
-   * request that changes only the agent's own plan files is allowed at once.
-   * A request to change another file outside the workspace, or to run a
-   * shell command that names a read-only folder, is always shown, says so,
-   * and offers no "allow always".
+   * askPermission answers a permission request at once if PMT may, else shows
+   * it in a session and answers the agent with the option the user picks. A
+   * request to change a file PMT keeps read-only (the game's, an external
+   * mod's) is refused at once, with a notice, whatever the user allowed
+   * always. A request that changes only the agent's own plan files is allowed
+   * at once. A request to change another file outside the workspace, or to
+   * run a shell command that names a read-only folder, is always shown, says
+   * so, and offers no "allow always".
    */
-  async function ask(
+  async function askPermission(
     session: Session,
     thread: Thread,
-    answers: Answers,
+    replies: Replies,
     title: string,
     toolCall: v2.ToolCallUpdate | undefined,
     options: v2.PermissionOption[],
-  ): Promise<PermissionAnswer> {
-    if (toolCall) trackTool(session, thread, toolCall);
-    const changed = await listChanged(toolCall);
-    const kept = changed.find((place) => place.readOnly);
-    if (kept) {
+  ): Promise<v2.RequestPermissionResponse> {
+    if (toolCall) receiveToolCall(session, thread, toolCall);
+    const places = await listChangedPlaces(toolCall);
+    const readOnlyPlace = places.find((place) => place.readOnly);
+    if (readOnlyPlace) {
       const owner =
-        kept.origin === VANILLA
+        readOnlyPlace.origin === VANILLA
           ? "one of the game's own files"
-          : `in ${workspace.originName(kept.origin)}, an external mod`;
+          : `in ${workspace.originName(readOnlyPlace.origin)}, an external mod`;
       session.entries.push({
         kind: "notice",
         id: `n${session.entries.length}`,
-        text: `Refused: ${kept.rel || kept.name} is ${owner}.`,
+        text: `Refused: ${readOnlyPlace.rel || readOnlyPlace.name} is ${owner}.`,
       });
-      return toAnswer(findOption(options, "reject_once", "reject_always")?.optionId ?? null);
+      return toPermissionResponse(findOption(options, "reject_once", "reject_always")?.optionId ?? null);
     }
 
     // An agent writes its own plan files often, and they are no change to
     // the mods: a call that changes nothing else is not asked about.
-    if (changed.length && changed.every((place) => isPlanFile(session, place.path)))
-      return toAnswer(findOption(options, "allow_once", "allow_always")?.optionId ?? null);
+    if (places.length && places.every((place) => isPlanFile(session, place.path)))
+      return toPermissionResponse(findOption(options, "allow_once", "allow_always")?.optionId ?? null);
 
     const toolTitle = toolCall?.title || title;
     // GitHub Copilot's CLI names some calls of PMT's tools by the tool's own
@@ -976,39 +980,40 @@ export const useAgentStore = defineStore("agent", () => {
     );
     const scope = toolCall?.kind && toolCall.kind in FILE_KINDS ? toolCall.kind : toolTitle;
     const permit = `${session.agent.id}:${scope.replaceAll(",", ";")}`;
-    const outside = changed.find((place) => !place.root);
-    const named = await findNamed(toolCall);
+    const foreignPlace = places.find((place) => !place.root);
+    const readOnlyFolder = await findReadOnlyFolder(toolCall);
     // Neither is ever allowed for good: each is asked again, every time.
-    const isOnce = !!outside || !!named;
+    const isOnce = !!foreignPlace || !!readOnlyFolder;
     // A request to start on a plan is always asked too, and its answer is
     // never kept: the agents offer "use auto mode" as an allow always, which
     // would approve every later plan unseen.
     const isPlan = toolCall?.kind === "switch_mode";
-    const allowed = isOnce || isPlan ? undefined : pickAllowed(tool, permit, options);
-    if (allowed) return toAnswer(allowed.optionId);
+    const autoOption = isOnce || isPlan ? undefined : pickAllowed(tool, permit, options);
+    if (autoOption) return toPermissionResponse(autoOption.optionId);
     // A session run out of sight has no one to ask: it may change the files
     // it was started for, and nothing else.
-    if (session.allows) {
-      const isOwn = changed.length > 0 && changed.every((place) => session.allows?.includes(place.path));
+    if (session.allowedPaths) {
+      const isOwn = places.length > 0 && places.every((place) => session.allowedPaths?.includes(place.path));
       const kinds = isOwn ? ["allow_once", "allow_always"] : ["reject_once", "reject_always"];
 
-      return toAnswer(findOption(options, ...kinds)?.optionId ?? null);
+      return toPermissionResponse(findOption(options, ...kinds)?.optionId ?? null);
     }
 
     const id = `p${session.entries.length}`;
-    let wish = `${session.agent.name} asks: ${toolTitle || "allow this?"}`;
-    if (tool) wish = describeWish(session.agent.name, tool, toolCall);
-    if (outside) wish = `${session.agent.name} wants to change a file outside the workspace: ${outside.path}`;
-    if (named)
-      wish =
-        `${session.agent.name} wants to run a command that names ${workspace.originName(named.origin)}, ` +
+    let permissionTitle = `${session.agent.name} asks: ${toolTitle || "allow this?"}`;
+    if (tool) permissionTitle = describePermission(session.agent.name, tool, toolCall);
+    if (foreignPlace)
+      permissionTitle = `${session.agent.name} wants to change a file outside the workspace: ${foreignPlace.path}`;
+    if (readOnlyFolder)
+      permissionTitle =
+        `${session.agent.name} wants to run a command that names ${workspace.originName(readOnlyFolder.origin)}, ` +
         `which is read-only. PMT cannot see what the command does there: ${toolTitle}`;
-    const document = isPlan ? keepRequested(session, toolCall) : undefined;
+    const document = isPlan ? applyPlanRequest(session, toolCall) : undefined;
     if (document) document.request = id;
     session.entries.push({
       kind: "permission",
       id,
-      title: wish,
+      title: permissionTitle,
       permit: isPlan ? "" : permit,
       options: options
         .filter((option) => !isOnce || option.kind !== "allow_always")
@@ -1016,7 +1021,7 @@ export const useAgentStore = defineStore("agent", () => {
       plan: document?.id,
     });
     return new Promise((resolve) =>
-      answers.set(id, (optionId) => resolve(toAnswer(typeof optionId === "string" ? optionId : null))),
+      replies.set(id, (optionId) => resolve(toPermissionResponse(typeof optionId === "string" ? optionId : null))),
     );
   }
 
@@ -1037,16 +1042,16 @@ export const useAgentStore = defineStore("agent", () => {
   }
 
   /**
-   * askUser shows what an agent asks of the user beside a permission: a link
+   * elicit shows what an agent asks of the user beside a permission: a link
    * to open, or a form to fill in. It answers with what the user chose or
    * filled in, and declines a request that is neither.
    */
-  function askUser(
+  function elicit(
     session: Session,
-    answers: Answers,
+    replies: Replies,
     request: v2.CreateElicitationRequest,
   ): Promise<v2.CreateElicitationResponse> {
-    if (session.allows) return Promise.resolve({ action: "decline" });
+    if (session.allowedPaths) return Promise.resolve({ action: "decline" });
 
     const link = toLink(request);
     const form = link ? null : toForm(request, `f${session.entries.length}`);
@@ -1055,9 +1060,9 @@ export const useAgentStore = defineStore("agent", () => {
 
     return new Promise((resolve) => {
       if (link)
-        answers.set(link.id, (action) => resolve(answerLink(link.url, typeof action === "string" ? action : null)));
+        replies.set(link.id, (action) => resolve(answerLink(link.url, typeof action === "string" ? action : null)));
       else if (form)
-        answers.set(form.id, (content) =>
+        replies.set(form.id, (content) =>
           resolve(typeof content === "object" && content ? { action: "accept", content } : { action: "decline" }),
         );
       else resolve({ action: "decline" });
@@ -1065,32 +1070,32 @@ export const useAgentStore = defineStore("agent", () => {
   }
 
   /** closeEntry answers a session's open request and removes it from the transcript. */
-  function closeEntry(session: Session, answers: Answers, id: string, reply: Reply): void {
-    answers.get(id)?.(reply);
-    answers.delete(id);
+  function closeEntry(session: Session, replies: Replies, id: string, reply: Reply): void {
+    replies.get(id)?.(reply);
+    replies.delete(id);
     session.entries = session.entries.filter((entry) => !(REQUESTS.includes(entry.kind) && entry.id === id));
   }
 
   /**
-   * answer answers a session's open request: a permission with one of its
+   * reply answers a session's open request: a permission with one of its
    * options, a link with an action, a form with what the user filled in. Null
    * cancels a permission or a link and declines a form.
    */
-  const answer = (session: Session, id: string, reply: Reply): void => {
-    const link = links.get(session.key);
-    if (!link) return;
+  const reply = (session: Session, id: string, reply: Reply): void => {
+    const connection = connections.get(session.key);
+    if (!connection) return;
     const entry = session.entries.find((candidate) => candidate.kind === "permission" && candidate.id === id);
-    const picked = entry?.kind === "permission" ? entry.options.find((row) => row.id === reply) : undefined;
+    const option = entry?.kind === "permission" ? entry.options.find((row) => row.id === reply) : undefined;
     // A request without a permit is never allowed for good.
-    if (entry?.kind === "permission" && entry.permit && picked?.kind === "allow_always")
+    if (entry?.kind === "permission" && entry.permit && option?.kind === "allow_always")
       settings.writeItem(ALLOWED, entry.permit, true);
     const document = session.documents.find((other) => other.request === id);
-    const isApproved = !!picked?.kind.startsWith("allow");
+    const isApproved = !!option?.kind.startsWith("allow");
     if (document) Object.assign(document, { request: "", isApproved });
     // Claude ends the turn of a refused plan with an error of its own, which
     // says nothing to the user.
     if (document && !isApproved) revising.add(session.key);
-    closeEntry(session, link.answers, id, reply);
+    closeEntry(session, connection.replies, id, reply);
   };
 
   /**
@@ -1099,56 +1104,56 @@ export const useAgentStore = defineStore("agent", () => {
    * steers gets it at once, into that turn; for any other agent it joins the
    * session's queue.
    */
-  const prompt = async (session: Session, text: string, picked: Chip[], images: Image[] = []): Promise<void> => {
+  const prompt = async (session: Session, text: string, pickedChips: Chip[], images: Image[] = []): Promise<void> => {
     const isRunning = session.state === "running";
     if (session.state !== "idle" && !isRunning) return;
     // A command goes without the page's chip: Claude takes "/compact" with
     // a file attached for plain words and runs nothing.
     const pageChip = text.startsWith("/") ? null : toolView.promptChip;
-    const chips = [...picked, ...(pageChip ? [pageChip] : [])];
-    const attached = chips.flatMap((chip) => toBlocks(chip, session.embeds));
-    const blocks: v2.ContentBlock[] = [{ type: "text", text }, ...attached, ...images];
+    const chips = [...pickedChips, ...(pageChip ? [pageChip] : [])];
+    const chipBlocks = chips.flatMap((chip) => toBlocks(chip, session.embeds));
+    const blocks: v2.ContentBlock[] = [{ type: "text", text }, ...chipBlocks, ...images];
     // An agent that drops the tool server's instructions gets them once,
     // after the user's own words, which name the session.
     if (session.agent.instructions && !session.entries.some((entry) => entry.kind === "user"))
       blocks.push({ type: "text", text: session.agent.instructions });
     const labels = [...chips.map((chip) => chip.label), ...images.map(() => IMAGE_LABEL)];
-    const queued = { id: crypto.randomUUID(), text, chips: labels, blocks };
-    if (isRunning && !session.agent.steers) session.queue.push(queued);
-    else await send(session, queued);
+    const prompt = { id: crypto.randomUUID(), text, chips: labels, blocks };
+    if (isRunning && !session.agent.steers) session.queue.push(prompt);
+    else await send(session, prompt);
   };
 
   /**
    * send sends a prompt to a session's agent, and shows it in the transcript
    * where the agent does not send it back.
    */
-  async function send(session: Session, queued: Queued): Promise<void> {
-    const link = links.get(session.key);
-    if (!link) return;
-    session.last = queued;
+  async function send(session: Session, prompt: Prompt): Promise<void> {
+    const connection = connections.get(session.key);
+    if (!connection) return;
+    session.last = prompt;
     // A version 2 agent sends the prompt back, but a version 1 agent does not.
     if (session.protocol === 1)
-      session.entries.push({ kind: "user", id: `u${session.entries.length}`, text: queued.text, chips: queued.chips });
+      session.entries.push({ kind: "user", id: `u${session.entries.length}`, text: prompt.text, chips: prompt.chips });
     try {
-      await link.dialect.prompt(session.id, queued.blocks);
+      await connection.dialect.prompt(session.id, prompt.blocks);
     } catch (error) {
       finishTurn(session, describeError(error));
     }
   }
 
   /**
-   * sendQueued sends one of a session's queued prompts now. It stops a running
+   * sendNow sends one of a session's queued prompts now. It stops a running
    * turn first and waits for it to end.
    */
-  const sendQueued = async (session: Session, id: string): Promise<void> => {
-    const queued = session.queue.find((other) => other.id === id);
-    if (!queued) return;
+  const sendNow = async (session: Session, id: string): Promise<void> => {
+    const prompt = session.queue.find((other) => other.id === id);
+    if (!prompt) return;
     unqueue(session, id);
     if (session.state === "running") {
       cancel(session);
       await until(() => session.state).not.toBe("running");
     }
-    await send(session, queued);
+    await send(session, prompt);
   };
 
   /**
@@ -1158,10 +1163,10 @@ export const useAgentStore = defineStore("agent", () => {
    * files and is refused everything else it asks. It rejects if no agent can
    * start, or with the agent's words if the turn did not end normally.
    */
-  const run = async (text: string, allows: string[] = []): Promise<string> => {
+  const run = async (text: string, allowedPaths: string[] = []): Promise<string> => {
     if (!current.value) throw new Error("No agent is installed");
     const session = makeSession(current.value);
-    Object.assign(session, { isQuick: true, allows });
+    Object.assign(session, { isQuick: true, allowedPaths });
     unseen.add(session);
     try {
       await connect(session, "create");
@@ -1170,7 +1175,7 @@ export const useAgentStore = defineStore("agent", () => {
       await until(() => session.state).not.toBe("running");
       const turn = session.entries.findLast((entry) => entry.kind === "turn");
       const notice = session.entries.findLast((entry) => entry.kind === "notice");
-      if (turn?.kind !== "turn" || turn.canRetry)
+      if (turn?.kind !== "turn" || turn.isUnfinished)
         throw new Error(notice?.kind === "notice" ? notice.text : "No answer");
 
       const answer = session.entries.findLast((entry) => entry.kind === "agent");
@@ -1182,21 +1187,21 @@ export const useAgentStore = defineStore("agent", () => {
     }
   };
 
-  /** stopUnseen stops the turn of every session that runs out of sight. */
-  const stopUnseen = (): void => unseen.forEach(cancel);
+  /** cancelUnseen stops the turn of every session that runs out of sight. */
+  const cancelUnseen = (): void => unseen.forEach(cancel);
 
   /**
-   * resend sends a session's last prompt again, which is what Retry does
+   * retry sends a session's last prompt again, which is what Retry does
    * after a turn that was stopped or failed. It does nothing while a turn
    * runs.
    */
-  const resend = (session: Session): void => {
+  const retry = (session: Session): void => {
     if (session.last && session.state === "idle") void send(session, session.last);
   };
 
   /** unqueue takes a prompt out of a session's queue. */
   const unqueue = (session: Session, id: string): void => {
-    session.queue = session.queue.filter((queued) => queued.id !== id);
+    session.queue = session.queue.filter((prompt) => prompt.id !== id);
   };
 
   /**
@@ -1212,26 +1217,26 @@ export const useAgentStore = defineStore("agent", () => {
     value: string | boolean,
     isKept = true,
   ): Promise<void> => {
-    const link = links.get(session.key);
-    if (!link) return;
+    const connection = connections.get(session.key);
+    if (!connection) return;
     const option = session.options.find((row) => row.configId === configId);
-    const isUnasked = !!option && isUnaskedMode(session.agent, option, value);
-    if (isUnasked && !(await confirmUnasked(session.agent, option, value))) return;
+    const isBypass = !!option && isBypassMode(session.agent, option, value);
+    if (isBypass && !(await confirmBypass(session.agent, option, value))) return;
     try {
-      applyOffers(session, await link.dialect.configure(session.id, configId, value));
-      if (isKept && !isUnasked) choose(session.agent.id, session.isQuick, configId, value);
+      applyOffers(session, await connection.dialect.configure(session.id, configId, value));
+      if (isKept && !isBypass) choose(session.agent.id, session.isQuick, configId, value);
     } catch (error) {
       session.entries.push({ kind: "notice", id: `n${session.entries.length}`, text: describeError(error) });
     }
   };
 
   /**
-   * listKept returns the options kept for an agent's next session, by
-   * option: its Chat choices, or its Quick ones, which are the Chat choices
+   * resolveKeptChoices returns the options kept for an agent's next session,
+   * by option: its Chat choices, or its Quick ones, which are the Chat choices
    * but where a Quick one is set.
    */
-  const listKept = (agentId: string, isQuick: boolean): Record<string, string | boolean> => ({
-    ...lastOptions.value[agentId],
+  const resolveKeptChoices = (agentId: string, isQuick: boolean): Record<string, string | boolean> => ({
+    ...chatOptions.value[agentId],
     ...(isQuick ? quickOptions.value[agentId] : {}),
   });
 
@@ -1240,8 +1245,8 @@ export const useAgentStore = defineStore("agent", () => {
    * its Chat choices or its Quick ones.
    */
   const choose = (agentId: string, isQuick: boolean, configId: string, value: string | boolean): void => {
-    const kept = isQuick ? quickOptions : lastOptions;
-    kept.value = { ...kept.value, [agentId]: { ...kept.value[agentId], [configId]: value } };
+    const choices = isQuick ? quickOptions : chatOptions;
+    choices.value = { ...choices.value, [agentId]: { ...choices.value[agentId], [configId]: value } };
   };
 
   /**
@@ -1251,52 +1256,52 @@ export const useAgentStore = defineStore("agent", () => {
    * whatever was kept before.
    */
   async function applyLastOptions(session: Session): Promise<void> {
-    for (const [configId, value] of Object.entries(listKept(session.agent.id, session.isQuick))) {
+    for (const [configId, value] of Object.entries(resolveKeptChoices(session.agent.id, session.isQuick))) {
       const option = session.options.find((row) => row.configId === configId);
       if (!option || option.currentValue === value || !isOffered(option, value)) continue;
-      if (!isUnaskedMode(session.agent, option, value)) await configure(session, configId, value);
+      if (!isBypassMode(session.agent, option, value)) await configure(session, configId, value);
     }
   }
 
   /**
-   * leaveUnasked puts a session that starts in a mode in which its agent
+   * applyStartMode puts a session that starts in a mode in which its agent
    * asks PMT nothing into the mode the agent's row starts in. Codex starts
    * every session in such a mode by itself.
    */
-  async function leaveUnasked(session: Session): Promise<void> {
+  async function applyStartMode(session: Session): Promise<void> {
     const { startMode } = session.agent;
-    const mode = session.options.find((option) => isUnaskedMode(session.agent, option, option.currentValue));
+    const mode = session.options.find((option) => isBypassMode(session.agent, option, option.currentValue));
     if (!mode || !startMode || !isOffered(mode, startMode)) return;
-    const offers = await links.get(session.key)?.dialect.configure(session.id, mode.configId, startMode);
+    const offers = await connections.get(session.key)?.dialect.configure(session.id, mode.configId, startMode);
     if (offers) applyOffers(session, offers);
   }
 
   /** cancel asks a session's agent to stop its turn. */
-  const cancel = (session: Session): void => void links.get(session.key)?.dialect.cancel(session.id);
+  const cancel = (session: Session): void => void connections.get(session.key)?.dialect.cancel(session.id);
 
   /** report shows and logs a failure of what the user asked of an agent. */
   const report = (error: unknown): void => reportError(error, "agent");
 
   /**
-   * stopSubagent asks a session's agent to stop one subagent, which leaves
+   * cancelSubagent asks a session's agent to stop one subagent, which leaves
    * the turn going.
    */
-  const stopSubagent = (session: Session, subagent: Subagent): void =>
-    void links.get(session.key)?.dialect.cancel(subagent.id).catch(report);
+  const cancelSubagent = (session: Session, subagent: Subagent): void =>
+    void connections.get(session.key)?.dialect.cancel(subagent.id).catch(report);
 
   /**
-   * stopTerminal asks a session's agent to stop one terminal of the
+   * cancelTerminal asks a session's agent to stop one terminal of the
    * session's own thread or of a subagent's, which leaves the turn going.
    */
-  const stopTerminal = (session: Session, thread: Session | Subagent, terminalId: string): void =>
-    void links.get(session.key)?.dialect.cancelTerminal(thread.id, terminalId).catch(report);
+  const cancelTerminal = (session: Session, thread: Session | Subagent, terminalId: string): void =>
+    void connections.get(session.key)?.dialect.cancelTerminal(thread.id, terminalId).catch(report);
 
   /**
-   * stopTool asks a session's agent to stop one tool call of the session's
-   * own thread or of a subagent's, which leaves the turn going.
+   * cancelToolCall asks a session's agent to stop one tool call of the
+   * session's own thread or of a subagent's, which leaves the turn going.
    */
-  const stopTool = (session: Session, thread: Session | Subagent, toolCallId: string): void =>
-    void links.get(session.key)?.dialect.cancelTool(thread.id, toolCallId).catch(report);
+  const cancelToolCall = (session: Session, thread: Session | Subagent, toolCallId: string): void =>
+    void connections.get(session.key)?.dialect.cancelToolCall(thread.id, toolCallId).catch(report);
 
   /** close ends a session here: its agent stops, and its record stays in the sessions list. */
   const close = (session: Session): void => {
@@ -1309,14 +1314,14 @@ export const useAgentStore = defineStore("agent", () => {
   const signIn = async (session: Session, method: SignIn): Promise<void> => {
     if (method.command.length) return runSignIn(method.command);
 
-    await links.get(session.key)?.dialect.signIn(method.id);
+    await connections.get(session.key)?.dialect.signIn(method.id);
     unlink(session);
     session.state = "starting";
     void connect(session, session.id ? "resume" : "create");
   };
 
-  /** retry starts a session's agent again after a sign-in in the terminal or an error. */
-  const retry = (session: Session): void => {
+  /** restart starts a session's agent again after a sign-in in the terminal or an error. */
+  const restart = (session: Session): void => {
     unlink(session);
     Object.assign(session, { state: "starting", error: "" });
     void connect(session, session.id ? "resume" : "create");
@@ -1328,7 +1333,7 @@ export const useAgentStore = defineStore("agent", () => {
 
   /** remember writes a session to every window's sessions list, newest first. */
   function remember(session: Session): void {
-    if (!session.id || session.allows) return;
+    if (!session.id || session.allowedPaths) return;
     const previous = records.value.find((other) => other.id === session.id);
     const record = {
       agent: session.agent.id,
@@ -1355,7 +1360,7 @@ export const useAgentStore = defineStore("agent", () => {
     const live = sessions.find((session) => session.id === id);
     if (live) Object.assign(live, { title: text, isRenamed: true });
     // The agent keeps the title too, where it takes one.
-    if (live?.titled) void links.get(live.key)?.dialect.rename(id, text).catch(report);
+    if (live?.renamable) void connections.get(live.key)?.dialect.rename(id, text).catch(report);
   };
 
   /**
@@ -1365,10 +1370,10 @@ export const useAgentStore = defineStore("agent", () => {
    * for an agent that cannot copy a session.
    */
   const fork = async (session: Session, prompt?: Extract<Entry, { kind: "user" }>): Promise<void> => {
-    const link = links.get(session.key);
-    if (!link?.start || !session.forkable) return;
+    const connection = connections.get(session.key);
+    if (!connection?.start || !session.forkable) return;
     try {
-      const id = await link.dialect.fork(session.id, link.start, prompt?.cursor ?? "");
+      const id = await connection.dialect.fork(session.id, connection.start, prompt?.cursor ?? "");
       const copy = start(session.agent.id, {
         agent: session.agent.id,
         workspace: session.workspace,
@@ -1470,26 +1475,26 @@ export const useAgentStore = defineStore("agent", () => {
   };
 
   /**
-   * findHome returns the window that shows the agent: the agent's own if it
-   * is open, else the main one.
+   * resolveAgentWindow returns the window that shows the agent: the agent's
+   * own if it is open, else the main one.
    */
-  const findHome = (): string => (windows.listWindows().includes("agent") ? "agent" : "main");
-  // What a window hands the agent's home for its prompt box: a text, or ""
+  const resolveAgentWindow = (): string => (windows.listWindows().includes("agent") ? "agent" : "main");
+  // What a window hands the agent's window for its prompt box: a text, or ""
   // for the caret alone. The time makes each one new.
-  const handed = useLocalStorage("pmt.agent.handed", { at: 0, text: "" });
-  watch(handed, ({ text }) => {
-    if (THIS_WINDOW === findHome()) compose(text);
+  const handoff = useLocalStorage("pmt.agent.handoff", { sentAt: 0, text: "" });
+  watch(handoff, ({ text }) => {
+    if (THIS_WINDOW === resolveAgentWindow()) ask(text);
   });
 
   /**
-   * compose shows the agent pane with the caret in its prompt box, and puts
-   * the given text there unless it is "". It starts a session if the pane
-   * shows none. In a window that is not the agent's home, the home does it.
+   * ask shows the agent pane with the caret in its prompt box, and puts the
+   * given text there unless it is "". It starts a session if the pane shows
+   * none. In a window that is not the agent's own, that window does it.
    */
-  function compose(text = ""): void {
-    const home = findHome();
+  function ask(text = ""): void {
+    const home = resolveAgentWindow();
     if (THIS_WINDOW !== home) {
-      handed.value = { at: Date.now(), text };
+      handoff.value = { sentAt: Date.now(), text };
       windows.showWindow(home);
       return;
     }
@@ -1509,7 +1514,7 @@ export const useAgentStore = defineStore("agent", () => {
       : sessions.filter((session) => session.state === "running" && isPlanFile(session, path));
     for (const session of writers)
       void Read(path)
-        .then((file) => keepDocument(session, { id: path, text: file.text.text, path }))
+        .then((file) => applyDocument(session, { id: path, text: file.text.text, path }))
         .catch(() => undefined);
   });
 
@@ -1521,8 +1526,8 @@ export const useAgentStore = defineStore("agent", () => {
     session.shownPlan = id;
   };
 
-  /** writeDraft sets the unsent text of a session's prompt box. */
-  const writeDraft = (session: Session, text: string): void => {
+  /** setDraft sets the unsent text of a session's prompt box. */
+  const setDraft = (session: Session, text: string): void => {
     session.draft = text;
   };
 
@@ -1537,7 +1542,7 @@ export const useAgentStore = defineStore("agent", () => {
   const undo = async (places: Place[], turn = ""): Promise<void> => {
     if (!(await confirmUndo(places, !!turn))) return;
 
-    const undone = await Promise.all(
+    const undonePaths = await Promise.all(
       places.map((place) =>
         UndoFile(place.path, turn)
           .then(() => place.path)
@@ -1548,7 +1553,7 @@ export const useAgentStore = defineStore("agent", () => {
     for (const session of sessions) {
       const first = session.entries.findIndex((entry) => entry.kind === "turn" && entry.id === turn);
       for (const entry of first < 0 ? [] : session.entries.slice(first))
-        if (entry.kind === "turn") entry.paths = entry.paths.filter((path) => !undone.includes(path));
+        if (entry.kind === "turn") entry.paths = entry.paths.filter((path) => !undonePaths.includes(path));
     }
   };
 
@@ -1595,28 +1600,28 @@ export const useAgentStore = defineStore("agent", () => {
     findReview,
     showFile,
     prompt,
-    sendQueued,
+    sendNow,
     run,
-    stopUnseen,
-    offered,
-    listKept,
+    cancelUnseen,
+    offeredOptions,
+    resolveKeptChoices,
     choose,
-    resend,
+    retry,
     unqueue,
     configure,
     cancel,
-    stopSubagent,
-    stopTerminal,
-    stopTool,
+    cancelSubagent,
+    cancelTerminal,
+    cancelToolCall,
     close,
-    answer,
+    reply,
     signIn,
-    retry,
+    restart,
     popOut,
     showPane,
-    compose,
+    ask,
     showPlan,
-    writeDraft,
+    setDraft,
     keep,
     undo,
     togglePane,
@@ -1702,9 +1707,9 @@ export function toPmtTool(title: string): string {
  */
 export function listChoices(option: v2.SessionConfigOption): v2.SessionConfigSelectOption[] {
   if (option.type !== "select") return [];
-  const values = option.options as (v2.SessionConfigSelectOption | v2.SessionConfigSelectGroup)[];
+  const options = option.options as (v2.SessionConfigSelectOption | v2.SessionConfigSelectGroup)[];
 
-  return values.flatMap((row) => ("options" in row ? row.options : [row]));
+  return options.flatMap((row) => ("options" in row ? row.options : [row]));
 }
 
 /**
@@ -1718,23 +1723,23 @@ function isOffered(option: v2.SessionConfigOption, value: string | boolean): boo
 }
 
 /**
- * isUnaskedMode reports whether a value of one of an agent's settings makes
+ * isBypassMode reports whether a value of one of an agent's settings makes
  * the agent ask PMT nothing, as its row lists them: a mode by its value, and
  * a value of any other setting as "setting=value", such as GitHub Copilot's
  * "allow_all=on".
  */
-export function isUnaskedMode(agent: Agent, option: v2.SessionConfigOption, value: unknown): boolean {
-  const entry = option.category === "mode" ? String(value) : `${option.configId}=${String(value)}`;
+export function isBypassMode(agent: Agent, option: v2.SessionConfigOption, value: unknown): boolean {
+  const choice = option.category === "mode" ? String(value) : `${option.configId}=${String(value)}`;
 
-  return !!agent.unasked?.includes(entry);
+  return !!agent.bypasses?.includes(choice);
 }
 
 /**
- * confirmUnasked asks whether an agent may use a mode or a setting with
+ * confirmBypass asks whether an agent may use a mode or a setting with
  * which it asks PMT nothing, and says what PMT cannot do then. A mode goes
  * by its own name, any other setting by the setting's.
  */
-async function confirmUnasked(agent: Agent, option: v2.SessionConfigOption, value: unknown): Promise<boolean> {
+async function confirmBypass(agent: Agent, option: v2.SessionConfigOption, value: unknown): Promise<boolean> {
   const mode = listChoices(option).find((row) => row.value === value)?.name ?? String(value);
   const subject = option.category === "mode" ? mode : option.name;
   const answer = await confirm.open({
@@ -1779,9 +1784,9 @@ function toBlocks(chip: Chip, embeds: boolean): v2.ContentBlock[] {
  * place the finding is at by its whole path and its line.
  */
 export function toFindingPrompt(finding: Finding): string {
-  const places = (finding.sites ?? []).map((site) => `- ${site.place.path}:${site.line}`);
+  const sites = (finding.sites ?? []).map((site) => `- ${site.place.path}:${site.line}`);
 
-  return [`Fix this finding (${finding.code}): ${joinParts(finding.message)}`, ...places].join("\n");
+  return [`Fix this finding (${finding.code}): ${joinParts(finding.message)}`, ...sites].join("\n");
 }
 
 /**
@@ -1827,13 +1832,13 @@ export function toSignIn(agent: Agent, method: Method): SignIn {
 }
 
 /**
- * folders returns what a session's agent is told beside the folder it starts
- * in: the other folders it may work in, if it takes them, and the metadata Go
- * gives its sessions.
+ * toSessionParams returns what a session's agent is told beside the folder it
+ * starts in: the other folders it may work in, if it takes them, and the
+ * metadata Go gives its sessions.
  */
-function folders(session: Session, start: Start): { additionalDirectories?: string[]; _meta?: object } {
+function toSessionParams(session: Session, start: Start): { additionalDirectories?: string[]; _meta?: object } {
   return {
-    ...(session.directories && start.directories?.length ? { additionalDirectories: start.directories } : {}),
+    ...(session.takesDirectories && start.folders?.length ? { additionalDirectories: start.folders } : {}),
     ...(start.meta ? { _meta: start.meta } : {}),
   };
 }

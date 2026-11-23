@@ -211,7 +211,7 @@ func (w *walker) findScriptDefinition(statement int32, level int) (Copy, bool) {
 	}
 
 	mode, label := w.dialect.SplitMode(label)
-	if database.Declaration.Contents == ContentsEvents && !w.isEvent(label, statement) {
+	if database.Declaration.Type == TypeEvent && !w.isEvent(label, statement) {
 		return Copy{}, false
 	}
 

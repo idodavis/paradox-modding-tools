@@ -1,6 +1,7 @@
 // Package texture reads the images the games ship and writes pictures as DDS
 // files. It reads an image's header without its pixels, decodes one mip level
-// of it, and finds the image file that a path written in script names.
+// of it, scales a picture down, and finds the image file that a path written
+// in script names.
 //
 // The bytes say the format, whatever the extension:
 //
@@ -270,6 +271,43 @@ func EncodeDDS(picture image.Image, dxgi uint32, mipmaps bool) ([]byte, error) {
 	}
 
 	return file.Bytes(), nil
+}
+
+// Shrink returns a copy of a picture with each side multiplied by a scale
+// under 1, each side at least one pixel. Each pixel of the copy is the average
+// of the pixels it covers.
+func Shrink(picture image.Image, scale float64) image.Image {
+	bounds := picture.Bounds()
+	width, height := max(int(float64(bounds.Dx())*scale), 1), max(int(float64(bounds.Dy())*scale), 1)
+	smaller := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	for y := range height {
+		top, bottom := bounds.Min.Y+y*bounds.Dy()/height, bounds.Min.Y+(y+1)*bounds.Dy()/height
+		for x := range width {
+			left, right := bounds.Min.X+x*bounds.Dx()/width, bounds.Min.X+(x+1)*bounds.Dx()/width
+
+			var sums [4]uint64
+			for row := top; row < bottom; row++ {
+				for column := left; column < right; column++ {
+					// The channels come premultiplied by the transparency, so
+					// averaging them weighs it in.
+					red, green, blue, alpha := picture.At(column, row).RGBA()
+					sums[0] += uint64(red)
+					sums[1] += uint64(green)
+					sums[2] += uint64(blue)
+					sums[3] += uint64(alpha)
+				}
+			}
+
+			count := uint64(max((bottom-top)*(right-left), 1))
+			offset := smaller.PixOffset(x, y)
+			for channel, sum := range sums {
+				smaller.Pix[offset+channel] = uint8((sum / count) >> 8)
+			}
+		}
+	}
+
+	return smaller
 }
 
 // Resolve finds the image file a script path names. Like the game, it tries

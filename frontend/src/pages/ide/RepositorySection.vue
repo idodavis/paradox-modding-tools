@@ -48,7 +48,7 @@ const SYNC = [
 ] as const;
 // What an agent is asked for a commit's message, ahead of the staged diff,
 // and how many characters of the diff it is sent.
-const DRAFT =
+const DRAFT_PROMPT =
   "Write the git commit message for the staged diff below. Give a subject line of at most 72 characters, then, " +
   "only if the change needs explaining, a blank line and a short body. Answer with the message alone: no quotes, " +
   "no code block, no other words. Use no tool.";
@@ -150,7 +150,7 @@ const { mutate: commit } = useMutation({
 const { mutate: draft, isLoading: drafting } = useMutation({
   mutation: async () => {
     const diff = await gitApi.Run(root, "diff", "--cached");
-    message.value = (await agent.run(`${DRAFT}\n\n${diff.slice(0, DRAFT_DIFF)}`)).trim();
+    message.value = (await agent.run(`${DRAFT_PROMPT}\n\n${diff.slice(0, DRAFT_DIFF)}`)).trim();
   },
 });
 

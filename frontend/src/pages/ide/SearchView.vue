@@ -13,7 +13,7 @@ import { plural } from "../../lib/format";
 import { rootsQuery } from "../../queries";
 import { tabId, useEditorStore } from "../../stores/editor";
 import { useSearchStore } from "../../stores/search";
-import { useWorkspaceStore, WORKSPACE } from "../../stores/workspace";
+import { ORIGIN_AGENT_FOLDER, useWorkspaceStore } from "../../stores/workspace";
 import OriginChip from "../../ui/OriginChip.vue";
 
 /** OPEN_HITS is how many hits are listed open before the remaining files start folded. */
@@ -36,9 +36,9 @@ const disabled = shallowRef(new Set<string>());
 const flips = shallowRef(new Set<string>());
 
 const { data: roots } = useQuery(() => ({ ...rootsQuery, enabled: workspace.isOpen() }));
-// Search reads the index, which holds no file of the workspace's folder.
+// Search reads the index, which holds no file of the agent folder.
 const origins = computed(() => [
-  ...new Set((roots.value ?? []).map((root) => root.origin).filter((origin) => origin !== WORKSPACE)),
+  ...new Set((roots.value ?? []).map((root) => root.origin).filter((origin) => origin !== ORIGIN_AGENT_FOLDER)),
 ]);
 const query = computed<Query>(() => ({
   text: text.value,

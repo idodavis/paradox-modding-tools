@@ -11,7 +11,7 @@ reads that workspace. Each page also has its own Help, in the top bar's gear men
   - [Library](#library)
   - [New workspace](#new-workspace)
   - [IDE](#ide)
-  - [Event Graph](#event-graph)
+  - [Graph](#graph)
   - [Health](#health)
   - [Patch Center](#patch-center)
   - [Publish](#publish)
@@ -103,25 +103,44 @@ An editor that knows the game's script, localization and GUI files.
 - **Delete** moves a file to PMT's trash. **Undo** in the message brings it back.
 - **The command palette** (Ctrl K) runs any command. Type `>` for the commands and settings.
 
-## Event Graph
+## Graph
 
-![Event Graph](images/event-graph.png)
+![Graph](images/event-graph.png)
 
-Type an event id, a namespace or a number in **Root**. The graph shows what that event, on_action, decision, message
-or scripted effect fires, and what fires it. It reads left to right, from what fires to what it fires.
+Pick a good, a building, a technology or an event in the list on the left, under the game's own groups, or on the
+start page. The kind of thing you pick decides how it is drawn:
 
-- A hidden event is hatched, and a message is drawn as a toast. An on_action the game calls from its own code is marked.
-- **Filters** picks the kinds drawn, the mods shown, the depth and the node limit. **Follow macros** walks into
-  scripted effects to find the events they fire.
-- Click a node for its detail: how it triggers, its texts, every firing both ways, and its script. If it replaces the
-  game's copy, you can compare the two.
-- Picking a node lights the way to it from the root. A delayed firing is dashed, one through a scripted effect
-  dotted, and hovering a line shows the conditions it fires under.
-- Loops stay readable. Firers that reach the root only round a loop of its own chain fold into a "↺ more firers" pill,
-  which opens on a click, and a firing back into its own chain ends in a "↺" marker naming the node it fires.
+| Pick | Drawn as |
+|---|---|
+| An event, on_action, decision, message or scripted effect | A graph, left to right, of what fires it and what it fires |
+| A good (CK3 also a good category) | A sheet: where it is found and what it costs, the buildings that make it with what they take, and the buildings that use it, by group |
+| A Vic3 building or production method | Its production method groups: pick a method in each, and the totals follow |
+| A CK3 building line or an EU5 building | Its levels side by side, the change across them as bars, what never changes said once |
+| A Vic3 technology or an EU5 advance | The whole tree with the chain of the one you pick lit, or that chain alone |
+| A CK3 innovation | A grid of era by group, each innovation with its picture |
+
+- A good's sheet narrows **By era** and by where a definition comes **From**: the game, a mod, or only what your mods
+  add or change. CK3 says of each building whether it produces a good, boosts it by a share, or gives it when a need
+  is met. An event's graph picks the kinds drawn, the mods shown, and whether scripted effects are walked into for the
+  events they fire; **Reach** sets how deep it goes and how many nodes it draws.
+- A tree reads left to right or top to bottom, and shows the wires outside the chain faint or not at all. An EU5 age
+  can also show the advances of one religion, culture or country.
+- Click a card to select it; double-click it to make it the subject. A card of a technology's tree becomes the
+  subject on a click. Back and Forward step through what you opened.
+- The start page shows the game's goods, building groups and trees, the ones you opened last and the things your mods
+  define. In the IDE, Ctrl Shift G opens the name under the cursor.
+- The detail opens from the button at the right edge. It has an Overview, the links both ways and the script. The
+  Overview says what the thing is, what a technology needs, leads to, unlocks and gives, and what it says in the
+  game's words. Click anything it names, such as a building a technology unlocks, to open that in the Graph. If it
+  replaces the game's copy, you can compare the two.
+- A dashed node of an event's graph is one the depth stopped at, and a group that says "N more" holds the rest; click
+  either to open it.
+- In an event's graph, a hidden event is hatched and a message is drawn as a toast. A delayed firing is dashed, one
+  through a scripted effect dotted, and hovering a line shows the conditions it fires under. Firers that reach the root
+  only round a loop of its own chain fold into a "↺ more firers" pill.
 
 A weight is the number as written, marked where blocks change it. A trigger is shown, never worked out. A CK3 message
-sent without a type is not drawn.
+sent without a type is not drawn. CK3 has no prerequisites between innovations, so its grid has no wires.
 
 ## Health
 
@@ -296,7 +315,7 @@ A pane that chats with a coding agent: Claude, GitHub Copilot, Codex, or one of 
 and signs in to its own account. PMT never sees it. PMT installs the agent for you from the Agent Client Protocol's
 registry into its own folder, with Node if your system has none new enough.
 
-- The agent is given PMT's tools, so it finds names, problems, Health's findings and the Event Graph as PMT does, with
+- The agent is given PMT's tools, so it finds names, problems, Health's findings and the Graph as PMT does, with
   your unsaved text. It can also read what each game version changed, which is what it needs to bring a mod up to date
   after a patch. The same tools can be added to an agent you run yourself.
 - What it asks permission for shows in the session. Nothing opens before you choose. PMT's own tools that only read
@@ -349,7 +368,8 @@ it out of your totals.
 
 Every page works. A mod's descriptor is its `.mod` file. When two events share an id, the game keeps the one with the
 highest `id_override_priority`, and Health's Compatibility view explains how the game picks. The Visual view draws
-CK3's GUI windows and coats of arms. The Event Graph follows CK3's events, on_actions, decisions and messages.
+CK3's GUI windows and coats of arms. The Graph follows CK3's events, on_actions, decisions and messages, and answers about its goods, building levels and
+innovations.
 
 ### Victoria 3
 
@@ -368,7 +388,7 @@ What EU5 has:
 - The editor, with hover, completion, go to and rename, over EU5's three stages (`in_game`, `main_menu` and
   `loading_screen`).
 - Entry modes such as `INJECT:` and `REPLACE:` before a name, which the editor knows and checks.
-- The Event Graph, Health, the Patch Center, the Visual view and Publish.
+- The Graph, Health, the Patch Center, the Visual view and Publish.
 
 EU5 has no Linux build. On Linux it runs through Proton, PMT finds its documents folder in Steam's Proton folder, and
 PMT cannot start the game for you. See [Each system](#each-system).

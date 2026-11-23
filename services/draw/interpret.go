@@ -708,7 +708,7 @@ func toNumbers(schema *lang.Schema, context context, argument jomini.Argument, c
 		switch {
 		case len(steps) == 1 && steps[0].Text == modelSize:
 			return []float64{float64(count)}
-		case len(steps) > 1 && callOutputs[function.Returns] == kindNumber:
+		case len(steps) > 1 && callOutputs[function.Returns] == outputNumber:
 			return []float64{minSample, math.Inf(1)}
 		}
 

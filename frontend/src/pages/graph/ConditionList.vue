@@ -31,10 +31,9 @@ export function writeConditions(conditions: Condition[], indent = ""): string {
 import { createReusableTemplate } from "@vueuse/core";
 
 const { conditions } = defineProps<{ conditions: Condition[] }>();
-// Code shows a subject or a value by its in-game name, with the text as written on hover.
 const [DefineCode, Code] = createReusableTemplate<{ text: string; name?: string; isValue?: boolean }>();
 
-/** splitValue splits a subject or a value into its prefix, such as estate_type:, and the rest. */
+/** splitValue splits a name into a prefix, as "estate_type:", and the rest. */
 function splitValue(value: string): [string, string] {
   const match = /^([\w.]+:)(.+)$/.exec(value);
   return match ? [match[1], match[2]] : ["", value];

@@ -153,11 +153,12 @@ const { mutate: undo } = useMutation({
   mutation: (change: LineChange) => undoChange(model, change),
   onSettled: () => view.value?.focus(),
 });
-// The inline ask: a one-line box at the caret. `asking` is where the box
-// stands in the window, null while it is closed, and `wish` is its text.
-const asking = shallowRef<DOMRect | null>(null);
-const wish = shallowRef("");
-const askAnchor = { getBoundingClientRect: () => asking.value ?? new DOMRect() };
+// The inline ask is a one-line box at the caret. Where its box stands in the
+// window, null while it is closed.
+const askRect = shallowRef<DOMRect | null>(null);
+// The inline ask's text.
+const askText = shallowRef("");
+const askAnchor = { getBoundingClientRect: () => askRect.value ?? new DOMRect() };
 // Why the inline ask cannot be sent for this file, "" if it can: an agent
 // reads and changes the file on disk.
 const askRefusal = computed(() => {
@@ -172,9 +173,9 @@ const askRefusal = computed(() => {
 const { mutate: sendAsk, isLoading: isAsking } = useMutation({
   mutation: async () => {
     const lines = model.lines ?? { start: model.caret.line, end: model.caret.line };
-    const where = lines.start === lines.end ? `line ${lines.start}` : `lines ${lines.start} to ${lines.end}`;
+    const lineLabel = lines.start === lines.end ? `line ${lines.start}` : `lines ${lines.start} to ${lines.end}`;
     await agent.run(
-      `In the file ${model.place.path}, at ${where}: ${wish.value}\n` +
+      `In the file ${model.place.path}, at ${lineLabel}: ${askText.value}\n` +
         "Change only that file, with your file tools, and answer in one short sentence.",
       [model.place.path],
     );
@@ -187,7 +188,7 @@ function openAsk(): void {
   const caret = view.value?.getPosition();
   const spot = caret && view.value?.getScrolledVisiblePosition(caret);
   const frame = view.value?.getDomNode()?.getBoundingClientRect();
-  if (spot && frame) asking.value = new DOMRect(frame.left + spot.left, frame.top + spot.top, 0, spot.height);
+  if (spot && frame) askRect.value = new DOMRect(frame.left + spot.left, frame.top + spot.top, 0, spot.height);
 }
 
 /**
@@ -195,9 +196,9 @@ function openAsk(): void {
  * still runs, and gives the editor the focus back.
  */
 function closeAsk(): void {
-  if (isAsking.value) agent.stopUnseen();
-  asking.value = null;
-  wish.value = "";
+  if (isAsking.value) agent.cancelUnseen();
+  askRect.value = null;
+  askText.value = "";
   view.value?.focus();
 }
 
@@ -399,7 +400,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
   ],
   [
     {
-      label: "Open in Event Graph",
+      label: "Open in Graph",
       kbds: findKbds("editor.openGraph"),
       disabled: !card.value?.node,
       onSelect: (event) => void findCommand("editor.openGraph")?.onSelect?.(event),
@@ -418,7 +419,7 @@ const groups = computed<ContextMenuItem[][]>(() => [
     {
       label: `Ask ${agent.current?.name ?? "an agent"} about this`,
       icon: "i-lucide-sparkles",
-      onSelect: () => agent.compose(),
+      onSelect: () => agent.ask(),
     },
     {
       label: "Ask the agent to change this",
@@ -530,15 +531,18 @@ const menu = computed(() => hideDisabled(groups.value));
         </template>
       </UPopover>
       <UPopover
-        :open="!!asking"
+        :open="!!askRect"
         :reference="askAnchor"
         :content="{ side: 'bottom', align: 'start', sideOffset: 4 }"
         @update:open="(open) => open || closeAsk()"
       >
         <template #content>
-          <form class="flex w-112 items-center gap-1.5 p-1.5" @submit.prevent="askRefusal || !wish.trim() || sendAsk()">
+          <form
+            class="flex w-112 items-center gap-1.5 p-1.5"
+            @submit.prevent="askRefusal || !askText.trim() || sendAsk()"
+          >
             <UInput
-              v-model="wish"
+              v-model="askText"
               :placeholder="askRefusal || `Tell ${agent.current?.name} what to change here`"
               :disabled="!!askRefusal || isAsking"
               :loading="isAsking"
@@ -557,7 +561,7 @@ const menu = computed(() => hideDisabled(groups.value));
               size="sm"
               @click="closeAsk()"
             />
-            <UButton v-else type="submit" label="Send" size="sm" :disabled="!!askRefusal || !wish.trim()" />
+            <UButton v-else type="submit" label="Send" size="sm" :disabled="!!askRefusal || !askText.trim()" />
           </form>
         </template>
       </UPopover>

@@ -40,7 +40,7 @@ import { tabId, useEditorStore } from "../../stores/editor";
 import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { COMMAND_BUS, useWindowsStore } from "../../stores/windows";
-import { FILE_DRAG, useWorkspaceStore, VANILLA, WORKSPACE } from "../../stores/workspace";
+import { FILE_DRAG, ORIGIN_AGENT_FOLDER, useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import { findIcon, listIcons } from "./editor/tabs";
 import SaveDdsModal from "./SaveDdsModal.vue";
 
@@ -703,7 +703,7 @@ function buildMenu(row: string): ContextMenuItem[][] {
         ]
       : [];
   const modItems: ContextMenuItem[] =
-    isRoot(row) && place && place.origin !== VANILLA && place.origin !== WORKSPACE
+    isRoot(row) && place && place.origin !== VANILLA && place.origin !== ORIGIN_AGENT_FOLDER
       ? [
           {
             label: "Mod settings",

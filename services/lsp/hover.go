@@ -53,8 +53,8 @@ type Card struct {
 	Stale    bool `json:"stale,omitempty"`
 	Inferred bool `json:"inferred"`
 
-	// Node is the Event Graph's id of the name, "" if the graph does not draw
-	// it.
+	// Node is the Graph's id of the name, "" if the Graph asks no question
+	// about it.
 	Node string `json:"node,omitempty"`
 
 	// Color is the CSS color the word stands for, "" for none.
@@ -449,7 +449,7 @@ func describeCommand(card *Card, cursor cursor, span jomini.Span, command *lang.
 	}
 
 	if !describeTakes(card, cursor.context.Parent.FindArguments(command)) && command.Target != "" {
-		card.add(rowTakes, describeExpected(lang.Expected{Type: lang.ValueTypeTarget, Scope: command.Target}))
+		card.add(rowTakes, describeExpected(lang.Expected{ValueType: lang.ValueTypeTarget, Scope: command.Target}))
 	}
 }
 
@@ -524,7 +524,9 @@ func describeDefinitions(card *Card, ws *workspace.Session, mods *index.Index, p
 	card.What = lang.DescribeDefinition(reference.Database, false)
 	card.Sites, card.Color = MakeSites(ws, mods, entries, winner), findDefinedColor(ws, mods, winner)
 	card.add(rowImage, describeImage(mods, reference))
-	if slices.Contains(ws.Schema.FireDatabases, reference.Database) {
+	graphTypes := lang.LookupDialect(ws.Game.ID).GraphTypes
+	if slices.Contains(ws.Schema.FireDatabases, reference.Database) ||
+		slices.Contains(graphTypes, ws.Schema.LookupType(reference.Database)) {
 		card.Node = reference.ToID()
 	}
 
@@ -682,7 +684,7 @@ func findNestedCall(call jomini.Call, offset int) (jomini.Call, bool) {
 // findDate returns the date a statement's value writes, if its field expects
 // one.
 func findDate(tree *jomini.Tree, statement int32, context *lang.Context) (jomini.Date, bool) {
-	if context.Field == nil || context.Field.Value.Value.Type != lang.ValueTypeDate {
+	if context.Field == nil || context.Field.Value.Value.ValueType != lang.ValueTypeDate {
 		return jomini.Date{}, false
 	}
 

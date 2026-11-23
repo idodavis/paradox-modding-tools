@@ -9,9 +9,9 @@
 //   - A method names a repository by its root folder.
 //   - Run sends git:changed after a command, also when git failed, since a
 //     failed command can leave the repository changed. A read sends nothing.
-//   - Run sends git:running with the words for a command that can take long
-//     (a commit, a merge, and each one that reaches a remote) while it runs,
-//     so the window can show that git is at work.
+//   - A command that can take long (a commit, a merge, and each one that
+//     reaches a remote) sends git:running with its words while it runs, so
+//     the window can show that git is at work.
 //   - A merge that stops on a conflict is not an error: the markers stay in
 //     the files for the editor to resolve.
 //   - Deleting a branch with commits no other branch has is refused, with no

@@ -236,7 +236,7 @@ function buildLines(row: GraphRow): { path: string; lane: number }[] {
       <template #repositories>
         <div class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto py-1">
           <!-- A moving bar while a git command that takes long runs. -->
-          <UProgress v-if="git.running" size="2xs" class="absolute inset-x-0 top-0" :aria-label="`${git.running}…`" />
+          <UProgress v-if="git.activity" size="2xs" class="absolute inset-x-0 top-0" :aria-label="`${git.activity}…`" />
           <RepositorySection v-for="{ root, mods } in git.repositories" :key="root" :root="root" :mods="mods ?? []" />
           <div v-if="git.bare.length" class="flex flex-col gap-1 px-3 py-2.5">
             <p class="pb-1.5 text-dimmed">Not in a git repository</p>

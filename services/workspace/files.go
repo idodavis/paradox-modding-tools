@@ -99,9 +99,9 @@ var extensionLanguages = map[string]string{
 }
 
 // Locate returns the place of a file in an index of the mods. A path under no
-// root is placed in the workspace's folder if it is there, and else gets only
-// its path, key, name and language. A file whose format has no editor
-// language takes the one of its ending, else plain text.
+// root is placed in the agent folder if it is there, and else gets only its
+// path, key, name and language. A file whose format has no editor language
+// takes the one of its ending, else plain text.
 func (s *Session) Locate(mods *index.Index, path string) Place {
 	place := Place{
 		File: files.File{Path: path, Key: files.ToKey(path)}, Name: filepath.Base(path), Position: -1,
@@ -109,7 +109,7 @@ func (s *Session) Locate(mods *index.Index, path string) Place {
 	}
 	root, ok := mods.FindRoot(path)
 	if !ok {
-		return s.locateOwn(place)
+		return s.locateAgentFile(place)
 	}
 
 	// A root's own folder has no rel.
@@ -141,12 +141,12 @@ func (s *Session) Locate(mods *index.Index, path string) Place {
 	return place
 }
 
-// locateOwn places a file of the workspace's folder: the folder is its root
-// and OriginWorkspace its origin. The game reads nothing there, so a file
+// locateAgentFile places a file of the agent folder: the folder is its root
+// and its origin is the folder's. The game reads nothing there, so a file
 // written as script or localization is plain text. A path outside the folder
 // is returned as it came, and so is every path in a session with no folder.
-func (s *Session) locateOwn(place Place) Place {
-	folder := s.Folder.Load()
+func (s *Session) locateAgentFile(place Place) Place {
+	folder := s.AgentFolder.Load()
 	if folder == nil {
 		return place
 	}
@@ -156,7 +156,7 @@ func (s *Session) locateOwn(place Place) Place {
 		return place
 	}
 
-	place.Rel, place.Origin, place.Root = rel, OriginWorkspace, *folder
+	place.Rel, place.Origin, place.Root = rel, OriginAgentFolder, *folder
 	place.Format = files.Classify(rel)
 	if place.Format.IsText() && place.Format != files.FormatMarkdown {
 		place.Format = files.FormatText
@@ -206,8 +206,8 @@ func (s *Service) ListCopies(path string) []Place {
 	return places
 }
 
-// ListRoots returns the places of the workspace's roots: its folder if that
-// is on disk and in no mod, the mods' in load order, then the game's own
+// ListRoots returns the places of the workspace's roots: the agent folder if
+// that is on disk and in no mod, the mods' in load order, then the game's own
 // folder.
 func (s *Service) ListRoots() []Place {
 	ws, err := s.Session()
@@ -217,7 +217,7 @@ func (s *Service) ListRoots() []Place {
 
 	mods := ws.Mods.Load()
 	dirs := []string{}
-	if folder := *ws.Folder.Load(); files.IsFolder(folder) && ws.Locate(mods, folder).Origin == OriginWorkspace {
+	if folder := *ws.AgentFolder.Load(); files.IsFolder(folder) && ws.Locate(mods, folder).Origin == OriginAgentFolder {
 		dirs = append(dirs, folder)
 	}
 
@@ -318,7 +318,7 @@ func (s *Service) ReadHeader(path string) (texture.Header, error) {
 }
 
 // FindWritable returns the open session if every path is in one of the user's
-// own mods or in the workspace's folder, or is a file under review, which an
+// own mods or in the agent folder, or is a file under review, which an
 // agent the user allowed has changed already. It fails for the game's own
 // files and an external mod's.
 //
@@ -336,7 +336,7 @@ func (s *Service) FindWritable(paths ...string) (*Session, error) {
 			return nil, fmt.Errorf("%s is outside the workspace", path)
 		}
 
-		if err := ws.checkOwned(place); err != nil {
+		if err := ws.checkWritable(place); err != nil {
 			return nil, err
 		}
 	}
@@ -344,12 +344,12 @@ func (s *Service) FindWritable(paths ...string) (*Session, error) {
 	return ws, nil
 }
 
-// ListReadOnly returns the folders of the open workspace that nothing may
-// change: the install's, then each external mod's that has a folder. It
+// ListReadOnlyFolders returns the folders of the open workspace that nothing
+// may change: the install's, then each external mod's that has a folder. It
 // returns none while no workspace is open.
 //
 //wails:ignore
-func (s *Service) ListReadOnly() []string {
+func (s *Service) ListReadOnlyFolders() []string {
 	ws, err := s.Session()
 	if err != nil {
 		return nil
@@ -365,17 +365,17 @@ func (s *Service) ListReadOnly() []string {
 	return dirs
 }
 
-// FindReadOnly returns the read-only folder that a text names, such as a
-// shell command an agent asks to run, or "" if it names none. A folder is
+// FindReadOnlyFolder returns the read-only folder that a text names, such as
+// a shell command an agent asks to run, or "" if it names none. A folder is
 // found written with either slash, with a doubled one, and in any letter
 // case. What the text does in the folder is not known.
-func (s *Service) FindReadOnly(text string) string {
+func (s *Service) FindReadOnlyFolder(text string) string {
 	text = strings.ToLower(strings.ReplaceAll(text, `\`, "/"))
 	for strings.Contains(text, "//") {
 		text = strings.ReplaceAll(text, "//", "/")
 	}
 
-	for _, dir := range s.ListReadOnly() {
+	for _, dir := range s.ListReadOnlyFolders() {
 		if strings.Contains(text, files.ToKey(dir)) {
 			return dir
 		}
@@ -384,9 +384,9 @@ func (s *Service) FindReadOnly(text string) string {
 	return ""
 }
 
-// checkOwned returns why a place is never changed: it is one of the game's
+// checkWritable returns why a place is never changed: it is one of the game's
 // own files, or an external mod's. It returns nil for any other place.
-func (s *Session) checkOwned(place Place) error {
+func (s *Session) checkWritable(place Place) error {
 	switch {
 	case place.Origin == files.OriginVanilla:
 		return errors.New("the game's own files are not changed")
@@ -457,20 +457,19 @@ func (s *Service) CreateFile(path string) error {
 	return file.Close()
 }
 
-// MakeAgentFile returns the place of a file a coding agent reads in the
-// workspace's folder, given the file's path under that folder, such as
-// CLAUDE.md or .claude/skills/review/SKILL.md. A file that is missing is made
-// with the given text, and so is the workspace's folder. It returns an error
-// if no workspace is open, the path leads out of the folder, or the file
-// cannot be made.
-func (s *Service) MakeAgentFile(rel, text string) (Place, error) {
-	folder, err := s.MakeFolder()
+// CreateAgentFile returns the place of a file a coding agent reads in the
+// agent folder, given the file's path under that folder, such as CLAUDE.md or
+// .claude/skills/review/SKILL.md. A file that is missing is made with the
+// given text, and so is the agent folder. It returns an error if no workspace
+// is open, the path leads out of the folder, or the file cannot be made.
+func (s *Service) CreateAgentFile(rel, text string) (Place, error) {
+	folder, err := s.CreateAgentFolder()
 	if err != nil {
 		return Place{}, err
 	}
 
 	if !filepath.IsLocal(filepath.FromSlash(rel)) {
-		return Place{}, fmt.Errorf("%s is not a path under the workspace's folder", rel)
+		return Place{}, fmt.Errorf("%s is not a path under the agent folder", rel)
 	}
 
 	path := files.Join(folder, rel)

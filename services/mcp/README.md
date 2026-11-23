@@ -6,7 +6,7 @@ The mcp service is PMT's tool server for coding agents. It serves PMT's tools, i
 over MCP to the agents on this computer, and passes on to the main window what an agent asks it to show.
 
 The tools hold no logic of their own. Each answers through the method of another service that answers the same
-question for a page: the editor's, Health's, the Event Graph's, the wiki's, the Patch Center's, the Visual view's,
+question for a page: the editor's, Health's, the Graph's, the wiki's, the Patch Center's, the Visual view's,
 the search's and the workspace's. What the assistant pane says to an agent is [agent](../agent/README.md)'s.
 
 **Uses** [files](../../internal/files/README.md), [jomini](../../internal/jomini/README.md),
@@ -22,7 +22,7 @@ the search's and the workspace's. What the assistant pane says to an agent is [a
 flowchart LR
   agentprog["A coding agent"] -->|"HTTP, with the token"| gate["Token and origin checks"]
   gate --> tools["PMT's tools"]
-  tools --> lsp & health & eventgraph["graph"] & wiki & patch & draw & search & workspace
+  tools --> lsp & health & graphs["graph"] & wiki & patch & draw & search & workspace
   tools -->|show| event(["mcp:show"])
   event --> main["Main window"]
   pages["Pages"] -->|view and pages| tools
@@ -67,6 +67,14 @@ assistant pane, which answers an agent's request to use a read-only tool itself,
 
 `read_file` adds a note to a file the game does not read: why, and the mod
 whose copy or `replace_path` hides it (`hidingNotes`, a row for each reason).
+
+The Graph's tools, in `tools.go`, give an agent what the page shows. `find_roots` finds the events, goods,
+buildings, methods and techs whose name holds a query. Each view has a tool that takes a node's id: `build_graph`
+gives what an event, an on_action, a decision, a message or a scripted effect fires and what fires it;
+`build_chain` who makes and who takes a good; `build_line` a building's levels and production methods, with the
+methods picked; `build_tree` the tree a technology is in. Those that take a filter use the one the page starts with
+unless the agent gives one (`answerGraph`). `build_detail` gives one node's texts, links and script. `show` on the
+`graph` page takes `subject`, `node` and `conditions`, the same filter as JSON.
 
 The tools past the editor are in `game.go`: the game's error log (cut to the lines that hold a query, since a log runs
 to hundreds of thousands of characters), starting the game, a picture as a PNG whose longest side is at most 1568

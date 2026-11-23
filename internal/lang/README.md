@@ -64,7 +64,11 @@ flowchart TD
 - **Declaration**: what is known about a database before any file is read.
 - **Nesting**: a database whose definitions are written inside another database's definitions.
 - **Field**: one key that may be written in a definition, with what it takes.
-- **Expected**, **ValueType**: what a field's value must be.
+- **Type**: what the definitions of a database are, where the app treats them in a way of its own: an `event`, an
+  `on_action`, a `good`, a `building`, a `technology`. A `Declaration` holds it, and `Dialect.Questions` holds the
+  questions the Graph asks about a definition of each type.
+- **Expected**: what a field's value must be. **ValueType**: which type of value it is, as a `number` or a `reference`.
+  A type of scope is a scope type, and a type of value a value type, so a bare "type" is a `Type`.
 - **Requirement**: whether a field must be written.
 - **Vanilla**: what the game's own files write at a field, counted.
 - **Shape**: what a block holds, which decides how its keys are read.

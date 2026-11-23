@@ -354,8 +354,8 @@ export interface Workspace {
     "mods": Mod[] | null;
 
     /**
-     * Folder is the folder the workspace's agents start in: the record's, or
-     * the one a workspace has until its record names one.
+     * AgentFolder is the folder the workspace's agents start in: the record's,
+     * or the one a workspace has until its record names one.
      */
-    "folder": string;
+    "agentFolder": string;
 }

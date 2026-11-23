@@ -48,6 +48,11 @@ type Dialect struct {
 	// CoatColor is how the game's coats of arms write a color, as
 	// rgb { 255 255 255 }.
 	CoatColor jomini.ColorForm
+
+	// GraphTypes are the types of definition the Graph has a view of, beside
+	// what fires. A Vic3 production method opens its building, and a CK3
+	// category of goods is shown as a good is.
+	GraphTypes []Type
 }
 
 // Keyword is a fixed word of the script language, such as if, limit or add.
@@ -191,8 +196,11 @@ const LimitKey = "limit"
 // TriggerKey is the key of a block's own conditions, as in an event.
 const TriggerKey = "trigger"
 
-// Yes is the language's word for true.
-const Yes = "yes"
+// Yes and No are the language's words for true and false.
+const (
+	Yes = "yes"
+	No  = "no"
+)
 
 // Bools are the two values of a yes or no.
 var Bools = []string{Yes, "no"}
@@ -271,6 +279,7 @@ var dialects = map[string]*Dialect{
 		DecisionEffects:   []string{"execute_decision"},
 		UndeclaredWidgets: []string{"zoomarea", "text_occluder"},
 		CoatColor:         jomini.ColorForm{Tag: "rgb", Example: []string{"255", "255", "255"}},
+		GraphTypes:        []Type{TypeGood, TypeGoodCategory, TypeBuilding, TypeTechnology},
 	},
 	game.Vic3: {
 		ID: game.Vic3,
@@ -285,6 +294,7 @@ var dialects = map[string]*Dialect{
 		LocReplaceFolders: []string{"localization/%s/replace", "localization/replace/%s"},
 		UndeclaredWidgets: []string{"overlappingitembox", "treemapchart", "portrait_button", "axis"},
 		CoatColor:         jomini.ColorForm{Tag: jomini.TagHSV360, Example: []string{"360", "100", "100"}},
+		GraphTypes:        []Type{TypeGood, TypeBuilding, TypeProductionMethod, TypeTechnology},
 	},
 	game.EU5: {
 		ID: game.EU5,
@@ -309,6 +319,7 @@ var dialects = map[string]*Dialect{
 		BookmarkFolder: "common/bookmarks", SetupKey: "setup_folder",
 		UndeclaredWidgets: []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
 		CoatColor:         jomini.ColorForm{Tag: jomini.TagHSV360, Example: []string{"360", "100", "100"}},
+		GraphTypes:        []Type{TypeGood, TypeBuilding, TypeTechnology},
 	},
 }
 

@@ -76,26 +76,26 @@ A `Place` is where one file sits in the workspace: its root (the game or a mod),
 database, whether it is read only and whether the Visual view draws it. Every payload that names a file carries a
 place, and the page shows its fields as they are. The game's own files and an external mod's are read only.
 
-`ListReadOnly` lists the folders nothing may change, the install's and each external mod's, which the agent service
-gives an agent as deny rules. `FindReadOnly` returns the one of them a text names, such as a shell command an agent
-asks to run.
+`ListReadOnlyFolders` lists the folders nothing may change, the install's and each external mod's, which the agent
+service gives an agent as deny rules. `FindReadOnlyFolder` returns the one of them a text names, such as a shell
+command an agent asks to run.
 
 A place's `Language` is the editor's language for the file: the one of its format, else the one of its ending for a
 JavaScript, TypeScript or Python file (`extensionLanguages`), which the editor only colors, else plain text.
 
-## The workspace's folder
+## The agent folder
 
 A workspace has one folder that its agents start in and keep their instructions, plans and scripts in.
-`Workspace.Folder` gives it to the pages, and the session holds it as `Folder`.
+`Workspace.AgentFolder` gives it to the pages, and the session holds it as `AgentFolder`.
 
-- It is the folder the record names (`app.Workspace.Folder`), which Settings sets.
+- It is the folder the record names (`app.Workspace.AgentFolder`), which Settings sets.
 - A record that names none has its own mod's folder when exactly one of its mods is the user's own and has a folder,
   so one mod keeps an agent's files beside it. Otherwise it is `Documents/Paradox Modding Tools/<name>`, a folder
   that is no mod's.
-- `MakeFolder` makes it when an agent starts, and records a folder made for the workspace, so renaming the workspace
-  leaves the folder where it is. `MakeAgentFile` returns the place of a file under it, such as `CLAUDE.md` or a
-  skill's, and makes the file with a given text if it is missing; it refuses a path that leads out of the folder.
-- Its files that are in no mod have the origin `OriginWorkspace`. They can be changed and reviewed, the watcher
+- `CreateAgentFolder` makes it when an agent starts, and records a folder made for the workspace, so renaming the
+  workspace leaves the folder where it is. `CreateAgentFile` returns the place of a file under it, such as `CLAUDE.md`
+  or a skill's, and makes the file with a given text if it is missing; it refuses a path that leads out of the folder.
+- Its files that are in no mod have the origin `OriginAgentFolder`. They can be changed and reviewed, the watcher
   reports them, and `ListRoots` lists the folder first. The index never reads them, since the game does not: a file
   written as script there is plain text.
 
@@ -168,7 +168,7 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
   game whose launcher reads local mods only from its mod folder (`Game.FixedModFolder`). The launcher file always goes
   in the game's mod folder.
 - `ResolveFolder` gives the folder a shell or a program that completes code starts in: the mod that holds the active
-  file, else the first mod whose folder exists, else the home folder. A chat starts in the workspace's folder.
+  file, else the first mod whose folder exists, else the home folder. A chat starts in the agent folder.
 - `Launch` starts the game with its debug flag. When the game exits, `game:exited` says whether it wrote fresher dumps
   than the schema's.
 
@@ -211,8 +211,8 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 - **Broken**: a mod whose folder is missing.
 - **External mod**: someone else's mod, which the workspace checks the user's mods against and PMT never changes or
   publishes.
-- **Folder**: the workspace's folder, which its agents start in.
-- **Watcher**: what watches the mods' folders and the workspace's, and reports a burst of changes together.
+- **AgentFolder**: the workspace's folder that its agents start in.
+- **Watcher**: what watches the mods' folders and the agent folder, and reports a burst of changes together.
 - **State**: the open workspace as the frontend sees it.
 - **FileText**: a file's text in its encoding, with its place and the editor's draft.
 - **FileChange**: one file that changed or was deleted on disk.

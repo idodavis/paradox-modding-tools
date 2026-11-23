@@ -8,16 +8,16 @@ import type { SessionConfigOption } from "@agentclientprotocol/sdk/experimental/
 import { uniqBy } from "es-toolkit";
 import { computed } from "vue";
 
-import { isUnaskedMode, listChoices, useAgentStore, type Session } from "../../stores/agent";
+import { isBypassMode, listChoices, useAgentStore, type Session } from "../../stores/agent";
 
 const {
   session,
   option,
   title = "",
   description = "",
-  hidden = [],
-  lines = {},
-  marks = {},
+  hiddenChoices = [],
+  descriptions = {},
+  badges = {},
 } = defineProps<{
   session: Session;
   option: SessionConfigOption;
@@ -25,17 +25,17 @@ const {
   title?: string;
   description?: string;
   /** The values left out of the list, which another control sets. */
-  hidden?: string[];
+  hiddenChoices?: string[];
   /** PMT's line for a choice, by its value, where the agent sends none. */
-  lines?: Record<string, string>;
+  descriptions?: Record<string, string>;
   /** A badge beside a choice, by its value. */
-  marks?: Record<string, string>;
+  badges?: Record<string, string>;
 }>();
 
 const agent = useAgentStore();
 // An agent may send one choice twice, as GitHub Copilot does its Auto model.
 const choices = computed(() =>
-  uniqBy(listChoices(option), (choice) => choice.value).filter((choice) => !hidden.includes(choice.value)),
+  uniqBy(listChoices(option), (choice) => choice.value).filter((choice) => !hiddenChoices.includes(choice.value)),
 );
 </script>
 
@@ -63,20 +63,20 @@ const choices = computed(() =>
         :class="choice.value !== option.currentValue && 'invisible'"
       />
       <span class="flex min-w-0 grow flex-col">
-        <span class="text-13" :class="isUnaskedMode(session.agent, option, choice.value) && 'text-error'">
+        <span class="text-13" :class="isBypassMode(session.agent, option, choice.value) && 'text-error'">
           {{ choice.name }}
         </span>
         <span
-          v-if="choice.description || lines[choice.value]"
+          v-if="choice.description || descriptions[choice.value]"
           class="line-clamp-3 text-11.5 leading-4 text-dimmed"
           :title="choice.description ?? ''"
         >
-          {{ choice.description || lines[choice.value] }}
+          {{ choice.description || descriptions[choice.value] }}
         </span>
       </span>
       <UBadge
-        v-if="marks[choice.value]"
-        :label="marks[choice.value]"
+        v-if="badges[choice.value]"
+        :label="badges[choice.value]"
         color="neutral"
         variant="subtle"
         size="sm"

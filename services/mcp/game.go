@@ -9,8 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"image"
-	"image/color"
 	"image/png"
 	"maps"
 	"os"
@@ -63,8 +61,8 @@ type listingKey struct {
 	Key string `json:"key,omitempty" jsonschema:"the game version of an older page; leave it out for the mod's own"`
 }
 
-// listingEdit is the texts to write to one of a mod's Steam pages.
-type listingEdit struct {
+// listingTexts is the texts to write to one of a mod's Steam pages.
+type listingTexts struct {
 	listingKey
 	Title       string `json:"title,omitempty" jsonschema:"the new title; leave it out to keep the title"`
 	Description string `json:"description,omitempty" jsonschema:"the new description, in BBCode; leave it out to keep it"`
@@ -72,15 +70,15 @@ type listingEdit struct {
 	Token       string `json:"token,omitempty" jsonschema:"the preview's token, which makes the change"`
 }
 
-// listingPage is one of a mod's Steam pages with the drafts of its next
+// listingNotes is one of a mod's Steam pages with the drafts of its next
 // change note.
-type listingPage struct {
+type listingNotes struct {
 	steam.Listing
 	ChangeNotes []steam.ChangeNote `json:"changeNotes"`
 }
 
-// offeredFix is one quick fix a file has, as fix lists it.
-type offeredFix struct {
+// fixRow is one quick fix a file has, with the line of its problem.
+type fixRow struct {
 	Line  int    `json:"line"`
 	Title string `json:"title"`
 	Code  string `json:"code"`
@@ -154,9 +152,8 @@ func (s *Service) addChangeTools(server *sdk.Server) {
 		answer(s.writeListing))
 }
 
-// readErrorLog answers read_error_log with the lines of the game's error log
-// whose message holds the query, up to the limit. With no query it gives the
-// log's first lines.
+// readErrorLog returns the lines of the game's error log whose message holds
+// the query, up to the limit. With no query it gives the log's first lines.
 func (s *Service) readErrorLog(request textQuery) (health.GameLog, error) {
 	gameLog, err := s.Health.ListErrorLog()
 	gameLog.Findings = pickRows(gameLog.Findings, request.Query, request.Limit, func(finding health.Finding) string {
@@ -166,18 +163,18 @@ func (s *Service) readErrorLog(request textQuery) (health.GameLog, error) {
 	return gameLog, err
 }
 
-// viewImage answers view_image with the file as a PNG whose longest side fits
-// an agent's picture. A DDS file gives the largest of its own mip levels that
-// fits. A picture with no level small enough, as a PNG or a TGA has none, is
-// shrunk. It returns an error if the file is in neither the workspace nor
-// the game, or is no picture PMT decodes.
+// viewImage returns the file as a PNG whose longest side fits an agent's
+// picture. A DDS file gives the largest of its own mip levels that fits. A
+// picture with no level small enough, as a PNG or a TGA has none, is shrunk.
+// It returns an error if the file is in neither the workspace nor the game, or
+// is no picture PMT decodes.
 func (s *Service) viewImage(_ context.Context, _ *sdk.CallToolRequest, request document) (
 	*sdk.CallToolResult, any, error) {
 	if _, err := s.locateFile(request.Path); err != nil {
 		return nil, nil, err
 	}
 
-	data, err := os.ReadFile(request.Path)
+	file, err := os.ReadFile(request.Path)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -194,51 +191,23 @@ func (s *Service) viewImage(_ context.Context, _ *sdk.CallToolRequest, request d
 		level++
 	}
 
-	picture, err := texture.Decode(data, level)
+	picture, err := texture.Decode(file, level)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, shrink(picture, imageSide)); err != nil {
+	if longest := max(picture.Bounds().Dx(), picture.Bounds().Dy()); longest > imageSide {
+		picture = texture.Shrink(picture, float64(imageSide)/float64(longest))
+	}
+
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, picture); err != nil {
 		return nil, nil, err
 	}
 
-	content := &sdk.ImageContent{Data: encoded.Bytes(), MIMEType: "image/png"}
+	content := &sdk.ImageContent{Data: buffer.Bytes(), MIMEType: "image/png"}
 
 	return &sdk.CallToolResult{Content: []sdk.Content{content}}, nil, nil
-}
-
-// shrink returns a picture whose longest side is at most the given count of
-// pixels. A larger picture is divided by a whole number, each new pixel the
-// average of the pixels it covers. A picture that fits comes back as it is.
-func shrink(picture image.Image, side int) image.Image {
-	bounds := picture.Bounds()
-	factor := (max(bounds.Dx(), bounds.Dy()) + side - 1) / side
-	if factor <= 1 {
-		return picture
-	}
-
-	small := image.NewNRGBA64(image.Rect(0, 0, bounds.Dx()/factor, bounds.Dy()/factor))
-	for y := range small.Rect.Dy() {
-		for x := range small.Rect.Dx() {
-			var sum [4]uint64
-			for offset := range factor * factor {
-				pixel := color.NRGBA64Model.Convert(picture.At(
-					bounds.Min.X+x*factor+offset%factor, bounds.Min.Y+y*factor+offset/factor,
-				)).(color.NRGBA64)
-				sum[0], sum[1] = sum[0]+uint64(pixel.R), sum[1]+uint64(pixel.G)
-				sum[2], sum[3] = sum[2]+uint64(pixel.B), sum[3]+uint64(pixel.A)
-			}
-
-			count := uint64(factor * factor)
-			small.SetNRGBA64(x, y, color.NRGBA64{
-				R: uint16(sum[0] / count), G: uint16(sum[1] / count), B: uint16(sum[2] / count), A: uint16(sum[3] / count),
-			})
-		}
-	}
-
-	return small
 }
 
 // override previews copying a game definition, or a whole file where the
@@ -274,29 +243,29 @@ func (s *Service) fix(request fixing) (any, error) {
 		return s.confirm(request.Token)
 	}
 
-	problems, err := s.LSP.Diagnose(request.Path)
+	diagnostics, err := s.LSP.Diagnose(request.Path)
 	if err != nil {
 		return nil, err
 	}
 
 	if request.Line > 0 {
-		problems = slices.DeleteFunc(problems, func(problem lsp.Diagnostic) bool {
-			return problem.Range.StartLine != request.Line
+		diagnostics = slices.DeleteFunc(diagnostics, func(diagnostic lsp.Diagnostic) bool {
+			return diagnostic.Range.StartLine != request.Line
 		})
 	}
 
-	fixes, err := s.LSP.ListFixes(request.Path, problems)
+	fixes, err := s.LSP.ListFixes(request.Path, diagnostics)
 	if err != nil {
 		return nil, err
 	}
 
 	if request.Line == 0 {
-		offered := make([]offeredFix, len(fixes))
+		rows := make([]fixRow, len(fixes))
 		for position, fix := range fixes {
-			offered[position] = offeredFix{Title: fix.Title, Code: fix.Code, Line: findLine(problems, fix.Code)}
+			rows[position] = fixRow{Title: fix.Title, Code: fix.Code, Line: findLine(diagnostics, fix.Code)}
 		}
 
-		return offered, nil
+		return rows, nil
 	}
 
 	if len(fixes) == 0 {
@@ -306,12 +275,12 @@ func (s *Service) fix(request fixing) (any, error) {
 	return s.previewFix(fixes[0])
 }
 
-// findLine returns the line of the first problem with the given code, 0 if
+// findLine returns the line of the first diagnostic with the given code, 0 if
 // none has it.
-func findLine(problems []lsp.Diagnostic, code string) int {
-	for _, problem := range problems {
-		if problem.Code == code {
-			return problem.Range.StartLine
+func findLine(diagnostics []lsp.Diagnostic, code string) int {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == code {
+			return diagnostic.Range.StartLine
 		}
 	}
 
@@ -335,9 +304,9 @@ func (s *Service) previewFix(fix lsp.Fix) (any, error) {
 
 // isFile reports whether a path is a file on disk.
 func isFile(path string) bool {
-	info, err := os.Stat(path)
+	stat, err := os.Stat(path)
 
-	return err == nil && !info.IsDir()
+	return err == nil && !stat.IsDir()
 }
 
 // format previews formatting a script file with the editor's indent settings,
@@ -366,24 +335,24 @@ func (s *Service) format(request formatting) (any, error) {
 	return s.preview([]string{request.Path}, change, func() (any, error) { return s.writeEdits(change) })
 }
 
-// readListing answers read_listing with one of a mod's Steam pages and the
-// drafts of its next change note. A failure to read the drafts, as where the
-// mod has no git, leaves them out.
-func (s *Service) readListing(request listingKey) (listingPage, error) {
+// readListing returns one of a mod's Steam pages and the drafts of its next
+// change note. A failure to read the drafts, as where the mod has no git,
+// leaves them out.
+func (s *Service) readListing(request listingKey) (listingNotes, error) {
 	listing, err := s.Steam.ReadListing(request.Mod, request.Key)
 	if err != nil {
-		return listingPage{}, err
+		return listingNotes{}, err
 	}
 
 	notes, _ := s.Steam.ListChangeNotes(request.Mod, request.Key)
 
-	return listingPage{Listing: listing, ChangeNotes: notes}, nil
+	return listingNotes{Listing: listing, ChangeNotes: notes}, nil
 }
 
 // writeListing previews writing the texts the request gives to one of a
 // mod's Steam pages, or makes the change a token names. It returns an error
 // if the mod has no such page or the request gives no text.
-func (s *Service) writeListing(request listingEdit) (any, error) {
+func (s *Service) writeListing(request listingTexts) (any, error) {
 	if request.Token != "" {
 		return s.confirm(request.Token)
 	}

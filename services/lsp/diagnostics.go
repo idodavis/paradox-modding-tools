@@ -419,31 +419,31 @@ func (s *Service) DiagnoseText(path, text string) ([]Diagnostic, error) {
 	return s.listEnabled(ws.ID, diagnoseDocument(ws, mods, place, ws.WalkText(place, text))), nil
 }
 
-// ListNewProblems returns the problems a file under review has that its
+// ListNewDiagnostics returns the diagnostics a file under review has that its
 // baseline, its text from before an agent changed it, does not have. A
-// problem is one the baseline has too where its code and its message are the
-// same, since a change moves the lines of the problems under it. It returns
-// an error if no workspace is open, the file has no review or it cannot be
-// read.
-func (s *Service) ListNewProblems(path string) ([]Diagnostic, error) {
+// diagnostic is one the baseline has too where its code and its message are
+// the same, since a change moves the lines of the diagnostics under it. It
+// returns an error if no workspace is open, the file has no review or it
+// cannot be read.
+func (s *Service) ListNewDiagnostics(path string) ([]Diagnostic, error) {
 	baseline, err := s.Workspace.Baseline(path)
 	if err != nil {
 		return nil, err
 	}
 
-	problems, err := s.Diagnose(path)
+	diagnostics, err := s.Diagnose(path)
 	if err != nil {
 		return nil, err
 	}
 
-	earlier, err := s.DiagnoseText(path, baseline)
+	baselineDiagnostics, err := s.DiagnoseText(path, baseline)
 	if err != nil {
 		return nil, err
 	}
 
-	return slices.DeleteFunc(problems, func(problem Diagnostic) bool {
-		return slices.ContainsFunc(earlier, func(other Diagnostic) bool {
-			return other.Code == problem.Code && other.Message == problem.Message
+	return slices.DeleteFunc(diagnostics, func(diagnostic Diagnostic) bool {
+		return slices.ContainsFunc(baselineDiagnostics, func(other Diagnostic) bool {
+			return other.Code == diagnostic.Code && other.Message == diagnostic.Message
 		})
 	}), nil
 }
@@ -763,16 +763,16 @@ var valueDescriptions = map[lang.ValueType]string{
 // describeExpected returns the words for what a value must be.
 func describeExpected(expected lang.Expected) string {
 	switch {
-	case expected.Type == lang.ValueTypeChoice:
+	case expected.ValueType == lang.ValueTypeChoice:
 		return "one of " + strings.Join(expected.Choices, ", ")
 
-	case expected.Type == lang.ValueTypeReference && expected.Database != "":
+	case expected.ValueType == lang.ValueTypeReference && expected.Database != "":
 		return "the name of a " + lang.DescribeDefinition(expected.Database, false)
 
-	case expected.Type == lang.ValueTypeReference:
+	case expected.ValueType == lang.ValueTypeReference:
 		return "a name"
 
-	case expected.Type == lang.ValueTypeTarget:
+	case expected.ValueType == lang.ValueTypeTarget:
 		description := "a link"
 		if expected.Scope != "" {
 			description += " to " + describeScope(expected.Scope)
@@ -785,7 +785,7 @@ func describeExpected(expected lang.Expected) string {
 		return description
 	}
 
-	return valueDescriptions[expected.Type]
+	return valueDescriptions[expected.ValueType]
 }
 
 // describeDiagnostics fills in each label, level and message.

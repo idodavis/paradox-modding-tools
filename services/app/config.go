@@ -88,10 +88,10 @@ type Workspace struct {
 	Language string `json:"language"`
 	HomePage string `json:"homePage"`
 
-	// Folder is the folder the workspace's agents start in and keep their
+	// AgentFolder is the folder the workspace's agents start in and keep their
 	// files in. It is "" until the user picks one or an agent first starts
 	// in a folder made for the workspace.
-	Folder string `json:"folder"`
+	AgentFolder string `json:"agentFolder"`
 
 	// GameColor is a slot or a CSS color, or "" for the game's own.
 	GameColor string `json:"gameColor"`
@@ -105,14 +105,14 @@ type Workspace struct {
 	IgnoredPairs [][2]string `json:"ignoredPairs"`
 }
 
-// A Make is one kind of file PMT makes for an agent in the workspace's
-// folder: a skill, a command or a subagent.
-type Make struct {
-	// Kind is what the file is, as its button names it.
-	Kind string `json:"kind"`
+// A Skeleton is the first text of one kind of file PMT makes for an agent in
+// the agent folder: a skill, a command or a subagent.
+type Skeleton struct {
+	// Label is what the file is, as its button names it.
+	Label string `json:"label"`
 
-	// Path is the file's path under the workspace's folder, and Text is what
-	// the new file holds. Each has %s where the name the user gives goes.
+	// Path is the file's path under the agent folder, and Text is what the
+	// new file holds. Each has %s where the name the user gives goes.
 	Path string `json:"path"`
 	Text string `json:"text"`
 }
@@ -133,9 +133,9 @@ type Agent struct {
 	// Files are the instruction files and folders the agent reads in a mod.
 	Files []string `json:"files,omitempty"`
 
-	// Makes are the kinds of file PMT makes for the agent there, none for an
-	// agent whose folders PMT does not know.
-	Makes []Make `json:"makes,omitempty"`
+	// Skeletons are the kinds of file PMT makes for the agent there, none for
+	// an agent whose folders PMT does not know.
+	Skeletons []Skeleton `json:"skeletons,omitempty"`
 
 	// Instructions is what the pane adds to a session's first prompt, for an
 	// agent that drops the instructions PMT's tool server gives it. It is ""
@@ -144,8 +144,8 @@ type Agent struct {
 
 	// Guards reports whether the agent takes the folders it must not change
 	// as deny rules of its own, which hold in every mode it runs in. It
-	// takes them as program arguments where the row has a DenyArg, else as
-	// the settings of each of its sessions.
+	// takes them as program arguments where the agent takes a deny rule as
+	// one, else as the settings of each of its sessions.
 	Guards bool `json:"guards,omitempty"`
 
 	// DirArg is the program argument that comes before each folder the agent
@@ -161,22 +161,22 @@ type Agent struct {
 	Steers bool `json:"steers,omitempty"`
 
 	// StartMode is the mode each session of the agent starts in, by the
-	// agent's own id for it; "" leaves the agent's choice. Unasked lists
+	// agent's own id for it; "" leaves the agent's choice. Bypasses lists
 	// what makes the agent change files and run commands without asking PMT,
 	// so that PMT cannot keep it off read-only files: a mode by its id, and a
 	// value of any other setting as "setting=value", such as "allow_all=on".
 	StartMode string   `json:"startMode,omitempty"`
-	Unasked   []string `json:"unasked,omitempty"`
+	Bypasses  []string `json:"bypasses,omitempty"`
 
-	// PlanFolder is the folder where the agent keeps each session's plan
+	// HomePlanFolder is the folder where the agent keeps each session's plan
 	// files when that is outside the workspace, as a part of its path under
 	// the user's home; "" for an agent that keeps none there. A file in it
 	// is a plan, never a change to review.
-	PlanFolder string `json:"planFolder,omitempty"`
+	HomePlanFolder string `json:"homePlanFolder,omitempty"`
 
-	// Lacks names what the pane shows for other agents and this one never
-	// sends, as Settings words it: "subagents", "plans".
-	Lacks []string `json:"lacks,omitempty"`
+	// MissingFeatures names what the pane shows for other agents and this one
+	// never sends, as Settings words it: "subagents", "plans".
+	MissingFeatures []string `json:"missingFeatures,omitempty"`
 
 	// Chat is the id of the row that chats for this one, so Settings draws
 	// the two as one agent; "" if there is none. Each row starts on its own.
@@ -208,14 +208,14 @@ var AgentFiles = map[string][]string{
 // ListAgentFiles returns the instruction files and folders the offered agents
 // read in a mod, each once, sorted.
 func ListAgentFiles() []string {
-	var entries []string
-	for _, files := range AgentFiles {
-		entries = append(entries, files...)
+	var paths []string
+	for _, agentPaths := range AgentFiles {
+		paths = append(paths, agentPaths...)
 	}
 
-	slices.Sort(entries)
+	slices.Sort(paths)
 
-	return slices.Compact(entries)
+	return slices.Compact(paths)
 }
 
 // Window is how the main window was left.
@@ -308,7 +308,7 @@ var Catalog = []Setting{
 		Help:  "The size of the whole interface, as a percentage.",
 		Words: "zoom size percent"},
 	{Key: "appearance.pages", Label: "Pages a workspace shows",
-		Section: "appearance", Type: "text", Default: "workspace-ide,event-graph,health,patch-center,release",
+		Section: "appearance", Type: "text", Default: "workspace-ide,graph,health,patch-center,release",
 		Help:  "The pages the top bar shows, in order.",
 		Words: "sidebar navigation hide"},
 	{Key: "guidance.newModders", Label: "Guidance for new modders",
@@ -339,7 +339,7 @@ var Catalog = []Setting{
 		Section: "agents", Type: "text", Default: "",
 		Help:  "A shell command of Claude's that starts with one of these runs without asking you.",
 		Words: "permissions shell bash terminal command allow rules agents"},
-	{Key: "agents.shellRefused", Label: "Shell commands refused",
+	{Key: "agents.shellDenied", Label: "Shell commands refused",
 		Section: "agents", Type: "text", Default: "",
 		Help:  "A shell command of Claude's that starts with one of these is refused without asking you.",
 		Words: "permissions shell bash terminal command deny refuse block rules agents"},
@@ -613,20 +613,20 @@ func (c *ConfigFile) LookupSetting(workspaceID, key string) (string, bool) {
 	return c.Config().readSetting(workspaceID, Catalog[row]), true
 }
 
-// ListSetting returns the items of a setting that holds a list, which is
-// written with a comma between them. Blank items are left out, and a setting
+// ListSetting returns the parts of a setting that holds a list, which is
+// written with a comma between them. Blank parts are left out, and a setting
 // the catalog lacks has none.
 func (c *ConfigFile) ListSetting(workspaceID, key string) []string {
 	value, _ := c.LookupSetting(workspaceID, key)
 
-	var items []string
-	for item := range strings.SplitSeq(value, ",") {
-		if item = strings.TrimSpace(item); item != "" {
-			items = append(items, item)
+	var parts []string
+	for part := range strings.SplitSeq(value, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			parts = append(parts, part)
 		}
 	}
 
-	return items
+	return parts
 }
 
 // readSetting returns a setting's value in a workspace, or the catalog's

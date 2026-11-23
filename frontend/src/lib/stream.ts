@@ -15,8 +15,8 @@ import type { Agent } from "@services/agent/models";
  */
 export type Start = {
   folder: string;
-  directories: string[] | null;
-  plans: string;
+  folders: string[] | null;
+  planFolder: string;
   meta: Record<string, unknown> | null;
   error: string;
 };

@@ -28,7 +28,7 @@ flowchart TD
 
 | file | what it holds |
 |---|---|
-| `texture.go` | An image's header, decoding one of its levels, writing a picture as a DDS, and the lookup of a written path. |
+| `texture.go` | An image's header, decoding one of its levels, scaling a picture down, writing a picture as a DDS, and the lookup of a written path. |
 
 ## Terms
 

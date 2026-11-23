@@ -28,13 +28,11 @@ a 👍, or open a feature request.
 - **Play in the Visual view:** click a window as in the game, so its tabs, buttons and panels change what is shown.
 - **Preview values:** a binding such as `[Character.GetName]` shows text or a number you give it, or one read from a
   save game.
-- **An event's own window in the Event Graph**, drawn the way the game draws it.
-- **Building Chain Graph**: Using the Event Graph page as abase, showing building chains for games like EU5 visually. Showing the building chain and production methods over time all in a visual dagre graph like events.
-
-- **Event Graph lenses**, each a toggle on the same graph: the problems in a chain (a firing that names nothing, a
+- **An event's own window in the Graph**, drawn the way the game draws it.
+- **Graph lenses**, each a toggle on the same graph: the problems in a chain (a firing that names nothing, a
   link a replaced file breaks, an event nothing fires, a loop), what your mod adds, overrides and cuts against the
   game's chains, what else hooks the same on_action or decision, and a mod's own entry points and dead ends.
-- **A loop view of the Event Graph**: a force or radial layout that draws every loop of a chain whole, beside the
+- **A loop view of the Graph**: a force or radial layout that draws every loop of a chain whole, beside the
   left-to-right view that folds them.
 
 ### Health and publishing

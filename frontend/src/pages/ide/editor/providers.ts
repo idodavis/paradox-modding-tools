@@ -200,8 +200,8 @@ function registerWriting(selector: languages.LanguageFilter[]): void {
       if (agent) {
         const title = `Fix with ${agent.name}`;
         // The model's own place has the path as the workspace spells it.
-        const asked = [fileModel?.place ?? place, problems];
-        actions.push({ title, kind: "quickfix", command: { id: ASK_COMMAND, title, arguments: asked } });
+        const args = [fileModel?.place ?? place, problems];
+        actions.push({ title, kind: "quickfix", command: { id: ASK_COMMAND, title, arguments: args } });
       }
 
       return { actions, dispose: () => undefined };
@@ -210,7 +210,7 @@ function registerWriting(selector: languages.LanguageFilter[]): void {
   // The editor store runs a fix because a fix may create a file and place the caret.
   monaco.editor.registerCommand(FIX_COMMAND, (_accessor, fix: Fix) => useEditorStore().applyFix(fix));
   monaco.editor.registerCommand(ASK_COMMAND, (_accessor, place: Place, problems: Diagnostic[]) =>
-    useAgentStore().compose(toFixPrompt(place, problems)),
+    useAgentStore().ask(toFixPrompt(place, problems)),
   );
 }
 

@@ -8,18 +8,15 @@ import { lowerFirst } from "es-toolkit";
 
 import type { Tool } from "@services/mcp/models";
 import type { Place } from "@services/workspace/models";
-import { FindReadOnly } from "@services/workspace/service";
+import { FindReadOnlyFolder } from "@services/workspace/service";
 import { loadQuery, placeQuery } from "../queries";
 import { fileLabel } from "./edits";
-
-/** A PermissionAnswer is the user's answer to a permission request. */
-export type PermissionAnswer = { outcome: { outcome: "cancelled" } | { outcome: "selected"; optionId: string } };
 
 /** A LinkRequest is a link an agent asks the user to open. */
 export type LinkRequest = { id: string; message: string; url: string };
 
-/** A Field is one question of a form an agent asks the user to fill in. */
-export type Field = {
+/** A FormProperty is one question of a form an agent asks the user to fill in. */
+export type FormProperty = {
   key: string;
   title: string;
   description: string;
@@ -36,7 +33,7 @@ export type Field = {
 };
 
 /** A FormRequest is a form an agent asks the user to fill in. */
-export type FormRequest = { id: string; message: string; fields: Field[] };
+export type FormRequest = { id: string; message: string; properties: FormProperty[] };
 
 /** A Property is one property of a form's schema, of any type. */
 type Property = {
@@ -48,14 +45,14 @@ type Property = {
   items?: { enum?: string[] | null; anyOf?: v2.EnumOption[] | null } | null;
 };
 
-/** CHANGES holds the kinds of tool call that change files. */
-const CHANGES = ["edit", "delete", "move"];
+/** CHANGE_KINDS holds the kinds of tool call that change files. */
+const CHANGE_KINDS = ["edit", "delete", "move"];
 
 /**
- * toAnswer returns the answer to a permission request that selects an
- * option, or cancels it for null.
+ * toPermissionResponse returns the response to a permission request that
+ * selects an option, or cancels it for null.
  */
-export function toAnswer(optionId: string | null): PermissionAnswer {
+export function toPermissionResponse(optionId: string | null): v2.RequestPermissionResponse {
   return { outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" } };
 }
 
@@ -68,37 +65,37 @@ export function findOption(options: v2.PermissionOption[], ...kinds: string[]): 
 }
 
 /**
- * describeWish returns a permission prompt for a tool of PMT's: which agent
- * wants to do what, and to which file if the call names one.
+ * describePermission returns a permission prompt for a tool of PMT's: which
+ * agent wants to do what, and to which file if the call names one.
  */
-export function describeWish(agent: string, tool: Tool, toolCall: v2.ToolCallUpdate | undefined): string {
+export function describePermission(agentName: string, tool: Tool, toolCall: v2.ToolCallUpdate | undefined): string {
   const path = findPath(toolCall);
 
-  return `${agent} wants to ${lowerFirst(tool.title)}${path ? `: ${fileLabel(path)}` : ""}`;
+  return `${agentName} wants to ${lowerFirst(tool.title)}${path ? `: ${fileLabel(path)}` : ""}`;
 }
 
 /**
- * listChanged returns the places of the files a tool call would change, and
- * none for a tool call that changes no file.
+ * listChangedPlaces returns the places of the files a tool call would change,
+ * and none for a tool call that changes no file.
  */
-export async function listChanged(toolCall: v2.ToolCallUpdate | undefined): Promise<Place[]> {
-  if (!toolCall?.kind || !CHANGES.includes(toolCall.kind)) return [];
+export async function listChangedPlaces(toolCall: v2.ToolCallUpdate | undefined): Promise<Place[]> {
+  if (!toolCall?.kind || !CHANGE_KINDS.includes(toolCall.kind)) return [];
   const places = await Promise.all(listPaths(toolCall).map((path) => loadQuery(placeQuery(path))));
 
   return places.filter((place) => !!place);
 }
 
 /**
- * findNamed returns the place of the read-only folder that a shell command
- * names, the game's or an external mod's, or undefined if the tool call is no
- * shell command or names none. No path rule of an agent covers its shell, so
- * the user is told.
+ * findReadOnlyFolder returns the place of the read-only folder that a shell
+ * command names, the game's or an external mod's, or undefined if the tool
+ * call is no shell command or names none. No path rule of an agent covers its
+ * shell, so the user is told.
  */
-export async function findNamed(toolCall: v2.ToolCallUpdate | undefined): Promise<Place | undefined> {
+export async function findReadOnlyFolder(toolCall: v2.ToolCallUpdate | undefined): Promise<Place | undefined> {
   if (toolCall?.kind !== "execute") return undefined;
   const input = toolCall.rawInput as { command?: unknown } | null | undefined;
   const command = typeof input?.command === "string" ? input.command : "";
-  const dir = await FindReadOnly(`${toolCall.title ?? ""}\n${command}`);
+  const dir = await FindReadOnlyFolder(`${toolCall.title ?? ""}\n${command}`);
 
   return dir ? ((await loadQuery(placeQuery(dir))) ?? undefined) : undefined;
 }
@@ -139,16 +136,16 @@ export function answerLink(url: string, action: string | null): v2.CreateElicita
 export function toForm(request: v2.CreateElicitationRequest, id: string): FormRequest | null {
   if (request.mode !== "form" || !("requestedSchema" in request)) return null;
   const schema = request.requestedSchema as v2.ElicitationSchema;
-  const fields = Object.entries(schema.properties as Record<string, Property>).map(([key, property]) => {
+  const properties = Object.entries(schema.properties as Record<string, Property>).map(([key, property]) => {
     const plain = (property.enum ?? property.items?.enum ?? []).map((value) => ({ const: value, title: value }));
-    const listed: v2.EnumOption[] = [...(property.oneOf ?? property.items?.anyOf ?? []), ...plain];
+    const options: v2.EnumOption[] = [...(property.oneOf ?? property.items?.anyOf ?? []), ...plain];
 
     return {
       key,
       title: property.title ?? key,
       description: property.description ?? "",
       type: property.type ?? "string",
-      choices: listed.map((choice) => ({
+      choices: options.map((choice) => ({
         value: choice.const,
         title: choice.title,
         description: choice.description ?? "",
@@ -157,7 +154,7 @@ export function toForm(request: v2.CreateElicitationRequest, id: string): FormRe
     };
   });
 
-  return { id, message: request.message, fields };
+  return { id, message: request.message, properties };
 }
 
 /**

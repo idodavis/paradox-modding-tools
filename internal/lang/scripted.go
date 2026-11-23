@@ -271,8 +271,8 @@ func (s *Schema) Declares(file files.File) bool {
 
 	database, ok := s.FindDatabase(file)
 
-	return ok && (len(database.Declaration.Callers) > 0 || database.Declaration.Contents == ContentsModifiers ||
-		database.Declaration.Contents == ContentsEvents)
+	return ok && (len(database.Declaration.Callers) > 0 || database.Declaration.Type == TypeModifier ||
+		database.Declaration.Type == TypeEvent)
 }
 
 // listDeclarers reads what each file declares, several files at a time. A
@@ -364,7 +364,7 @@ func (s *Schema) findTypingClaim(typing typing) Claim[Expected] {
 			return Claim[Expected]{}
 		}
 
-		return Claim[Expected]{Value: Expected{Type: ValueTypeReference, Database: database}, Source: SourceDefinitions}
+		return Claim[Expected]{Value: Expected{ValueType: ValueTypeReference, Database: database}, Source: SourceDefinitions}
 	}
 
 	claim := typing.Field.Value
@@ -561,10 +561,10 @@ func (d *declarer) declare(definition Copy, tree *jomini.Tree, statement int32) 
 
 	// a modifier takes yes or no where its type writes boolean = yes, else a
 	// number or a script value
-	if database.Declaration.Contents == ContentsModifiers {
-		expected := Expected{Type: ValueTypeNumber, Values: true}
+	if database.Declaration.Type == TypeModifier {
+		expected := Expected{ValueType: ValueTypeNumber, Values: true}
 		if value, _ := tree.FindChildValue(statement, modifierBoolKey); value == Yes {
-			expected = Expected{Type: ValueTypeBool}
+			expected = Expected{ValueType: ValueTypeBool}
 		}
 
 		d.declared = append(d.declared, &Definition{

@@ -168,10 +168,10 @@ type Claim[T any] struct {
 	Source Source
 }
 
-// ValueType is the kind of value a field takes.
+// ValueType is the type of value a field takes.
 type ValueType string
 
-// The kinds of value.
+// The types of value.
 const (
 	ValueTypeUnknown ValueType = "unknown"
 	ValueTypeBool    ValueType = "bool"
@@ -200,7 +200,7 @@ const (
 
 // Expected is what a field's value must be.
 type Expected struct {
-	Type ValueType `json:"type"`
+	ValueType ValueType `json:"valueType"`
 
 	// Database is the database a reference names, or a target may name. It
 	// is "" for none.
@@ -276,6 +276,11 @@ type Field struct {
 	// Weighted is whether the key is a number that gives its chance among its
 	// siblings, as in an on_action's random_events.
 	Weighted bool
+
+	// Plain is whether the key is a field of its own in a block whose keys a
+	// source says name definitions: the database defines no such name in the
+	// game's files, as icon in an EU5 production method.
+	Plain bool
 
 	Vanilla Vanilla
 }
@@ -548,7 +553,7 @@ type Schema struct {
 	UnlistedCalls map[string]bool
 
 	// Lists, Events, OnActions, Messages, Concepts, ModifierTypes, Effects
-	// and Values name the databases of those kinds. Each is "" for a game
+	// and Values name the databases of those types. Each is "" for a game
 	// without one.
 	Lists         string
 	Events        string
@@ -661,7 +666,7 @@ func (f *Field) findPatternChild(key string, class jomini.Class) *Field {
 // namesDatabase reports whether the value is the name of a definition: a
 // reference, or a target whose field names a database.
 func (e Expected) namesDatabase() bool {
-	return e.Database != "" && (e.Type == ValueTypeReference || e.Type == ValueTypeTarget)
+	return e.Database != "" && (e.ValueType == ValueTypeReference || e.ValueType == ValueTypeTarget)
 }
 
 // declares reports whether a row, the dumps or the docs list a key as a
@@ -693,6 +698,16 @@ func (s *Schema) FindDatabase(file files.File) (*Database, bool) {
 	}
 
 	return nil, false
+}
+
+// LookupType returns the type of a database's definitions. It returns "" for a
+// database of no type of its own, and for one the schema does not have.
+func (s *Schema) LookupType(database string) Type {
+	if declared := s.Databases[database]; declared != nil {
+		return declared.Declaration.Type
+	}
+
+	return ""
 }
 
 // classDatabases holds the folder of the database of each dump class name
@@ -794,10 +809,10 @@ func (s *Schema) findSeparator(database string) string {
 }
 
 // MatchValue reports whether a value, as written, fits what a field expects.
-// A kind of value with no check of its own fits anything.
+// A type of value with no check of its own fits anything.
 func (s *Schema) MatchValue(expected Expected, text string) bool {
 	unquoted := strings.Trim(text, `"`)
-	switch expected.Type {
+	switch expected.ValueType {
 	case ValueTypeBool:
 		return slices.Contains(Bools, text)
 

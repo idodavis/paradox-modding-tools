@@ -193,15 +193,15 @@ export function ListLegend(): $CancellablePromise<$models.Legend> {
 }
 
 /**
- * ListNewProblems returns the problems a file under review has that its
+ * ListNewDiagnostics returns the diagnostics a file under review has that its
  * baseline, its text from before an agent changed it, does not have. A
- * problem is one the baseline has too where its code and its message are the
- * same, since a change moves the lines of the problems under it. It returns
- * an error if no workspace is open, the file has no review or it cannot be
- * read.
+ * diagnostic is one the baseline has too where its code and its message are
+ * the same, since a change moves the lines of the diagnostics under it. It
+ * returns an error if no workspace is open, the file has no review or it
+ * cannot be read.
  */
-export function ListNewProblems(path: string): $CancellablePromise<$models.Diagnostic[] | null> {
-    return $Call.ByID(13551803, path);
+export function ListNewDiagnostics(path: string): $CancellablePromise<$models.Diagnostic[] | null> {
+    return $Call.ByID(555970785, path);
 }
 
 /**

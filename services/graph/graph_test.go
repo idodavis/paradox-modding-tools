@@ -198,7 +198,7 @@ func TestBuildGraphSplicesHiddenNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if position := slices.IndexFunc(backward.Nodes, func(node Node) bool { return node.ID == eventD1 }); position < 0 ||
-		backward.Nodes[position].Step != -2 {
+		backward.Nodes[position].Distance != -2 {
 		t.Errorf("graph from the fired event: %+v", backward.Nodes)
 	}
 	filter.Origins = []string{files.OriginVanilla, modA}
@@ -382,7 +382,7 @@ func TestBuildGraphOnInstalls(t *testing.T) {
 			}
 			branches := buildDetail(t, gph, row.weighted).Node
 			if !slices.ContainsFunc(branches.Fires, func(edge Edge) bool {
-				return slices.ContainsFunc(edge.Steps, func(step Step) bool { return step.Kind == kindWeight })
+				return slices.ContainsFunc(edge.Steps, func(step Step) bool { return step.Block == blockWeight })
 			}) {
 				t.Errorf("%s fires nothing in a weighted branch: %+v", row.weighted, branches.Fires)
 			}
@@ -407,13 +407,13 @@ func checkBirth(t *testing.T, gph *Service, filter Filter) {
 		return Edge{}
 	}
 	if steps := findFire("events:birth.1001").Steps; !slices.ContainsFunc(steps, func(step Step) bool {
-		return step.Kind == kindWeight && step.Weight == "95"
+		return step.Block == blockWeight && step.Weight == "95"
 	}) {
 		t.Errorf("the steps to birth.1001: %+v", steps)
 	}
 	var steps []string
 	for _, step := range findFire("events:birth.1010").Steps {
-		steps = append(steps, step.Key+" "+step.Kind)
+		steps = append(steps, step.Key+" "+step.Block)
 	}
 	want := []string{"scope:child.dynasty scope", "if branch", "random_player list"}
 	if !slices.Equal(steps[max(len(steps)-3, 0):], want) {
@@ -421,8 +421,8 @@ func checkBirth(t *testing.T, gph *Service, filter Filter) {
 	}
 	window := findNode(graph, "events:birth.1001")
 	if root.Display != displayHidden || window.Display != displayWindow ||
-		!strings.HasSuffix(filepath.ToSlash(window.Background), "event_scenes/bedchamber.dds") {
-		t.Errorf("birth.0001 shows as %q; birth.1001 as %q with %q", root.Display, window.Display, window.Background)
+		!strings.HasSuffix(filepath.ToSlash(window.Picture), "event_scenes/bedchamber.dds") {
+		t.Errorf("birth.0001 shows as %q; birth.1001 as %q with %q", root.Display, window.Display, window.Picture)
 	}
 	if actions := gph.FindRoots("on_birth_mother", 1); len(actions) != 1 || !actions[0].Hardcoded {
 		t.Errorf("on_birth_mother: %+v", actions)
@@ -453,10 +453,10 @@ func logDetails(t *testing.T, gph *Service, root string, graph Graph) {
 		if findDescription(detail) != "" {
 			texts++
 		}
-		if detail.Node.Background != "" {
+		if detail.Node.Picture != "" {
 			backgrounds++
 		}
-		if node.Display == displayWindow && detail.Node.Background == "" {
+		if node.Display == displayWindow && detail.Node.Picture == "" {
 			t.Logf("%s shows no background", node.ID)
 		}
 	}

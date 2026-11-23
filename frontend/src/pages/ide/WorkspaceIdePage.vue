@@ -33,7 +33,7 @@ import { useGitStore } from "../../stores/git";
 import { useSettingsStore } from "../../stores/settings";
 import { useTerminalStore } from "../../stores/terminal";
 import { COMMAND_BUS, describeWindow, THIS_WINDOW, useWindowsStore } from "../../stores/windows";
-import { deleteLayouts, LAYOUT_KEY, useWorkspaceStore, VANILLA, WORKSPACE } from "../../stores/workspace";
+import { deleteLayouts, LAYOUT_KEY, ORIGIN_AGENT_FOLDER, useWorkspaceStore, VANILLA } from "../../stores/workspace";
 import CompareView from "../../ui/CompareView.vue";
 import AddModMenu from "../../ui/AddModMenu.vue";
 import OriginChip from "../../ui/OriginChip.vue";
@@ -187,11 +187,11 @@ const { data: folderPlace } = useQuery(() => ({
   ...placeQuery(THIS_WINDOW.slice("files:".length)),
   enabled: part === "files",
 }));
-const mods = computed(() =>
+const workspaceRoots = computed(() =>
   (roots.value ?? []).filter((root) => root.origin !== VANILLA && !workspace.isExternal(root.origin)),
 );
-// The workspace's own folder is listed with the mods and is none of them.
-const modCount = computed(() => mods.value.filter((root) => root.origin !== WORKSPACE).length);
+// The agent folder is listed with the mods and is none of them.
+const modCount = computed(() => workspaceRoots.value.filter((root) => root.origin !== ORIGIN_AGENT_FOLDER).length);
 const externals = computed(() => (roots.value ?? []).filter((root) => workspace.isExternal(root.origin)));
 const game = computed(() => (roots.value ?? []).filter((root) => root.origin === VANILLA));
 // Only the setting decides, because a pane that appears as the roots load, while the explorer is hidden, gets no room.
@@ -252,7 +252,7 @@ watch(
 // The Workspace section opens as high as its header and a row for each mod, so External mods sits right under it.
 const modsHeight = computed(() => {
   const row = FILE_TREE_DENSITY_PRESETS[settings.value("ide.density") as FileTreeDensityKeyword].itemHeight;
-  return Math.min(320, settings.toPixels(2.25) + mods.value.length * row);
+  return Math.min(320, settings.toPixels(2.25) + workspaceRoots.value.length * row);
 });
 const explorerPanes = computed<SplitterItem[]>(() => [
   {
@@ -575,7 +575,7 @@ function collapseAll(): void {
                     </AddModMenu>
                   </div>
                   <p v-if="!modCount" class="px-2.5 py-1 text-12 text-dimmed">No mods yet. Add one with +.</p>
-                  <ExplorerTree ref="modTree" v-model:filtering="filtering.mods" :roots="mods" @open="show" />
+                  <ExplorerTree ref="modTree" v-model:filtering="filtering.mods" :roots="workspaceRoots" @open="show" />
                 </div>
               </template>
               <template #external>
@@ -818,7 +818,7 @@ function collapseAll(): void {
                               square
                               class="shrink-0"
                               :aria-label="`Fix with ${agent.current.name}`"
-                              @click.stop="agent.compose(toFixPrompt(item.place, [item.problem]))"
+                              @click.stop="agent.ask(toFixPrompt(item.place, [item.problem]))"
                             />
                           </UTooltip>
                         </template>

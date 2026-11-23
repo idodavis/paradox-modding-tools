@@ -603,13 +603,13 @@ function buildText(widget: Drawn, element: HTMLElement): HTMLElement | null {
   return span;
 }
 
-/** buildSegment builds one piece of a text: plain text, or a data call's sample in the color of its kind. */
+/** buildSegment builds one piece of a text: plain text, or a data call's sample in the color of its sort. */
 function buildSegment(segment: Segment): Node | string {
   if (segment.markup !== Markup.MarkupCall) return segment.text;
   const sample = document.createElement("span");
   sample.textContent = segment.text;
   sample.dataset.sample = segment.text;
-  sample.style.setProperty("color", SAMPLE_COLORS[segment.kind]);
+  sample.style.setProperty("color", SAMPLE_COLORS[segment.sample]);
   return sample;
 }
 

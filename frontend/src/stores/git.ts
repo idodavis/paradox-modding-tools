@@ -40,8 +40,8 @@ export const useGitStore = defineStore("git", () => {
    * The words for the git command that takes long and runs now, such as
    * "Pushing", or "" while none runs.
    */
-  const running = shallowRef("");
-  Events.On("git:running", ({ data }) => (running.value = data));
+  const activity = shallowRef("");
+  Events.On("git:running", ({ data }) => (activity.value = data));
 
   /** The user's own mods in no repository: only they may be given one. */
   const bare = computed(() =>
@@ -61,5 +61,5 @@ export const useGitStore = defineStore("git", () => {
     onSuccess: () => cache.invalidateQueries({ key: keys.gits }),
   });
 
-  return { isInstalled, repositories, bare, graphRoot, folded, commitTarget, running, findRoot, output, initialize };
+  return { isInstalled, repositories, bare, graphRoot, folded, commitTarget, activity, findRoot, output, initialize };
 });

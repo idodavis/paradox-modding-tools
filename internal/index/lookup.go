@@ -306,7 +306,7 @@ func (i *Index) ToReference(site Site) lang.Reference {
 // given lang.TitleKey, or for its description, given lang.DescriptionKey. It
 // returns false if the definition writes none.
 func (i *Index) FindTextKey(definition Site, key string) (string, bool) {
-	for _, site := range i.listReferences(definition) {
+	for _, site := range i.ListReferences(definition) {
 		occurrence := i.Occurrence(site)
 		if key == lang.TitleKey && occurrence.Titles || key == lang.DescriptionKey && occurrence.Describes {
 			return i.Names.Texts[occurrence.Name], true

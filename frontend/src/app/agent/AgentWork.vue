@@ -10,27 +10,27 @@ import { computed, reactive, shallowRef } from "vue";
 
 import { describeDuration, plural } from "../../lib/format";
 import { useAgentStore, type Session } from "../../stores/agent";
-import { listChecklist, printTerminal, type Terminal } from "../../stores/agentThread";
+import { describeTerminal, listChecklist, type Terminal } from "../../stores/agentThread";
 import type { Subagent } from "../../stores/agentWork";
-import AgentTranscript, { describeTool, STATUSES } from "./AgentTranscript.vue";
+import AgentTranscript, { describeToolCall, STATUSES } from "./AgentTranscript.vue";
 
 /** A Tab is one of the tray's lists, "" while the tray is closed. */
-type Tab = "" | "tasks" | "subagents" | "background";
+type Tab = "" | "checklist" | "subagents" | "background";
 
 /** TAIL is how many of a command's last lines the tray shows. */
 const TAIL = 8;
 
 const { session } = defineProps<{ session: Session }>();
-const open = defineModel<Tab>("open", { default: "" });
+const openTab = defineModel<Tab>("openTab", { default: "" });
 
 const agent = useAgentStore();
 const now = useTimestamp({ scheduler: (tick) => useIntervalFn(tick, 1000) });
 // The rows the user unfolded or folded by hand. A running row is unfolded
 // and an ended one folded until then.
-const toggled = reactive(new Set<string>());
+const flips = reactive(new Set<string>());
 // What the dialog shows whole: a subagent's conversation or a command's
 // output.
-const viewed = shallowRef<{ subagent?: Subagent; terminal?: Terminal }>();
+const dialog = shallowRef<{ subagent?: Subagent; terminal?: Terminal }>();
 
 const steps = computed(() => listChecklist(session));
 // The step the agent is on: the one in progress, else the first not done.
@@ -41,50 +41,50 @@ const current = computed(
 // Where the checklist stands: the current step's place, or every step once
 // all are done.
 const position = computed(() => (current.value ? steps.value.indexOf(current.value) + 1 : steps.value.length));
-const running = computed(() => session.subagents.filter((subagent) => subagent.isRunning).length);
+const runningSubagentCount = computed(() => session.subagents.filter((subagent) => subagent.isRunning).length);
 // The commands that ran in the background, the ended ones too.
-const commands = computed(() => session.backgrounded.flatMap((id) => session.terminals[id] ?? []));
-const runningCommands = computed(() => commands.value.filter((terminal) => !terminal.isDone).length);
+const backgroundTerminals = computed(() => session.backgroundTerminalIds.flatMap((id) => session.terminals[id] ?? []));
+const runningCommandCount = computed(() => backgroundTerminals.value.filter((terminal) => !terminal.isDone).length);
 const tabs = computed(() =>
   [
     {
-      value: "tasks" as const,
-      label: `Tasks ${position.value} of ${steps.value.length}`,
+      value: "checklist" as const,
+      label: `Checklist ${position.value} of ${steps.value.length}`,
       icon: "i-lucide-list-checks",
       count: steps.value.length,
       isLive: false,
     },
     {
       value: "subagents" as const,
-      label: `Subagents ${running.value}`,
+      label: `Subagents ${runningSubagentCount.value}`,
       icon: "i-lucide-bot",
       count: session.subagents.length,
-      isLive: running.value > 0,
+      isLive: runningSubagentCount.value > 0,
     },
     {
       value: "background" as const,
-      label: `Background ${runningCommands.value}`,
+      label: `Background ${runningCommandCount.value}`,
       icon: "i-lucide-terminal",
-      count: commands.value.length,
-      isLive: runningCommands.value > 0,
+      count: backgroundTerminals.value.length,
+      isLive: runningCommandCount.value > 0,
     },
   ].filter((tab) => tab.count),
 );
 /** isUnfolded reports whether a row of the tray shows its details. */
 function isUnfolded(id: string, isRunning: boolean): boolean {
-  return toggled.has(id) ? !isRunning : isRunning;
+  return flips.has(id) ? !isRunning : isRunning;
 }
 
 /** toggle unfolds a folded row of the tray, or folds an unfolded one. */
 function toggle(id: string): void {
-  if (!toggled.delete(id)) toggled.add(id);
+  if (!flips.delete(id)) flips.add(id);
 }
 
 /**
- * describeTime returns how long something has run so far, or ran before it
+ * describeRunTime returns how long something has run so far, or ran before it
  * ended.
  */
-function describeTime(startedAt: number, endedAt: number): string {
+function describeRunTime(startedAt: number, endedAt: number): string {
   return describeDuration((endedAt || now.value) - startedAt);
 }
 
@@ -93,7 +93,7 @@ function describeTime(startedAt: number, endedAt: number): string {
  * its end.
  */
 function listLines(terminal: Terminal): string[] {
-  return printTerminal({ ...terminal, command: "" })
+  return describeTerminal({ ...terminal, command: "" })
     .trimEnd()
     .split(/\r?\n/);
 }
@@ -103,7 +103,7 @@ function listLines(terminal: Terminal): string[] {
   <!-- The row stays once the session has anything to list, so a folded tray
        can always be opened again. -->
   <div v-if="tabs.length" class="flex flex-col">
-    <div v-if="!open" class="flex h-6.5 items-center gap-1 ps-2 text-12">
+    <div v-if="!openTab" class="flex h-6.5 items-center gap-1 ps-2 text-12">
       <template v-if="steps.length">
         <UIcon name="i-lucide-list-checks" class="size-3.5 shrink-0 text-dimmed" />
         <span class="shrink-0 font-medium tabular-nums">{{ position }} of {{ steps.length }}</span>
@@ -112,7 +112,7 @@ function listLines(terminal: Terminal): string[] {
       <span class="grow" />
       <template v-for="tab in tabs" :key="tab.value">
         <UButton
-          v-if="tab.value !== 'tasks'"
+          v-if="tab.value !== 'checklist'"
           :label="tab.label.split(' ').at(-1)"
           :icon="tab.icon"
           variant="ghost"
@@ -120,7 +120,7 @@ function listLines(terminal: Terminal): string[] {
           size="xs"
           :aria-label="tab.label"
           :ui="{ leadingIcon: tab.isLive ? 'text-primary' : 'text-dimmed' }"
-          @click="open = tab.value"
+          @click="openTab = tab.value"
         />
       </template>
       <UButton
@@ -130,7 +130,7 @@ function listLines(terminal: Terminal): string[] {
         size="xs"
         square
         aria-label="Show what is running"
-        @click="open = tabs[0]?.value ?? ''"
+        @click="openTab = tabs[0]?.value ?? ''"
       />
     </div>
 
@@ -141,11 +141,11 @@ function listLines(terminal: Terminal): string[] {
           :key="tab.value"
           :label="tab.label"
           :icon="tab.icon"
-          :variant="open === tab.value ? 'soft' : 'ghost'"
+          :variant="openTab === tab.value ? 'soft' : 'ghost'"
           color="neutral"
           size="xs"
           :ui="{ leadingIcon: tab.isLive ? 'text-primary' : 'text-dimmed' }"
-          @click="open = tab.value"
+          @click="openTab = tab.value"
         />
         <span class="grow" />
         <UButton
@@ -155,12 +155,12 @@ function listLines(terminal: Terminal): string[] {
           size="xs"
           square
           aria-label="Fold what is running"
-          @click="open = ''"
+          @click="openTab = ''"
         />
       </div>
 
       <div class="flex max-h-72 flex-col gap-0.5 overflow-y-auto p-1 text-12">
-        <template v-if="open === 'tasks'">
+        <template v-if="openTab === 'checklist'">
           <span v-for="(step, index) in steps" :key="index" class="flex min-h-6 items-center gap-2 px-2 text-toned">
             <UIcon
               :name="STATUSES[step.status]?.icon ?? 'i-lucide-circle'"
@@ -173,7 +173,7 @@ function listLines(terminal: Terminal): string[] {
           </span>
         </template>
 
-        <template v-else-if="open === 'subagents'">
+        <template v-else-if="openTab === 'subagents'">
           <template v-for="subagent in session.subagents" :key="subagent.id">
             <div class="flex min-h-7 items-center gap-2 ps-2 pe-0.5">
               <UIcon
@@ -181,10 +181,10 @@ function listLines(terminal: Terminal): string[] {
                 :class="subagent.isRunning ? 'animate-spin text-primary' : 'text-success'"
                 class="size-3.5 shrink-0"
               />
-              <span class="shrink-0 font-medium">{{ subagent.kind || "Subagent" }}</span>
+              <span class="shrink-0 font-medium">{{ subagent.description || "Subagent" }}</span>
               <span class="min-w-0 grow truncate text-toned" :title="subagent.title">{{ subagent.title }}</span>
               <span class="shrink-0 text-11 text-dimmed tabular-nums">
-                {{ describeTime(subagent.startedAt, subagent.endedAt) }}
+                {{ describeRunTime(subagent.startedAt, subagent.endedAt) }}
               </span>
               <UButton
                 v-if="subagent.isRunning && subagent.canCancel"
@@ -194,7 +194,7 @@ function listLines(terminal: Terminal): string[] {
                 size="xs"
                 square
                 aria-label="Stop this subagent"
-                @click="agent.stopSubagent(session, subagent)"
+                @click="agent.cancelSubagent(session, subagent)"
               />
               <UButton
                 :icon="isUnfolded(subagent.id, subagent.isRunning) ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
@@ -202,7 +202,9 @@ function listLines(terminal: Terminal): string[] {
                 color="neutral"
                 size="xs"
                 square
-                :aria-label="isUnfolded(subagent.id, subagent.isRunning) ? 'Fold its steps' : 'Show its steps'"
+                :aria-label="
+                  isUnfolded(subagent.id, subagent.isRunning) ? 'Fold its tool calls' : 'Show its tool calls'
+                "
                 @click="toggle(subagent.id)"
               />
             </div>
@@ -217,7 +219,7 @@ function listLines(terminal: Terminal): string[] {
                     :class="[STATUSES[entry.status]?.color, { 'animate-spin': entry.status === 'in_progress' }]"
                     class="size-3.5 shrink-0"
                   />
-                  <span class="min-w-0 truncate" :title="entry.title">{{ describeTool(entry).text }}</span>
+                  <span class="min-w-0 truncate" :title="entry.title">{{ describeToolCall(entry).text }}</span>
                 </span>
               </template>
               <UButton
@@ -227,14 +229,14 @@ function listLines(terminal: Terminal): string[] {
                 color="neutral"
                 size="xs"
                 class="-ms-1.5 self-start"
-                @click="viewed = { subagent }"
+                @click="dialog = { subagent }"
               />
             </div>
           </template>
         </template>
 
         <template v-else>
-          <template v-for="terminal in commands" :key="terminal.id">
+          <template v-for="terminal in backgroundTerminals" :key="terminal.id">
             <div class="flex min-h-7 items-center gap-2 ps-2 pe-0.5">
               <UIcon
                 :name="terminal.isDone ? 'i-lucide-check' : 'i-lucide-loader-circle'"
@@ -245,7 +247,7 @@ function listLines(terminal: Terminal): string[] {
                 {{ terminal.command }}
               </span>
               <span class="shrink-0 text-11 text-dimmed tabular-nums">
-                {{ terminal.isDone ? "ended after " : "" }}{{ describeTime(terminal.startedAt, terminal.endedAt) }}
+                {{ terminal.isDone ? "ended after " : "" }}{{ describeRunTime(terminal.startedAt, terminal.endedAt) }}
               </span>
               <UButton
                 v-if="!terminal.isDone && terminal.canCancel"
@@ -255,7 +257,7 @@ function listLines(terminal: Terminal): string[] {
                 size="xs"
                 square
                 aria-label="Stop this command"
-                @click="agent.stopTerminal(session, session, terminal.id)"
+                @click="agent.cancelTerminal(session, session, terminal.id)"
               />
               <UButton
                 :icon="isUnfolded(terminal.id, !terminal.isDone) ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
@@ -281,7 +283,7 @@ function listLines(terminal: Terminal): string[] {
                   variant="ghost"
                   color="neutral"
                   size="xs"
-                  @click="viewed = { terminal }"
+                  @click="dialog = { terminal }"
                 />
               </div>
             </template>
@@ -291,17 +293,19 @@ function listLines(terminal: Terminal): string[] {
     </div>
 
     <UModal
-      :open="!!viewed"
+      :open="!!dialog"
       :title="
-        viewed?.subagent ? `${viewed.subagent.kind || 'Subagent'}: ${viewed.subagent.title}` : viewed?.terminal?.command
+        dialog?.subagent
+          ? `${dialog.subagent.description || 'Subagent'}: ${dialog.subagent.title}`
+          : dialog?.terminal?.command
       "
       :ui="{ content: 'max-w-3xl', body: 'max-h-[70vh] overflow-y-auto' }"
-      @update:open="(isOpen) => isOpen || (viewed = undefined)"
+      @update:open="(isOpen) => isOpen || (dialog = undefined)"
     >
       <template #body>
-        <AgentTranscript v-if="viewed?.subagent" :session="session" :thread="viewed.subagent" />
-        <pre v-else-if="viewed?.terminal" class="font-mono text-11 leading-4.5 whitespace-pre-wrap text-toned">{{
-          printTerminal(viewed.terminal)
+        <AgentTranscript v-if="dialog?.subagent" :session="session" :thread="dialog.subagent" />
+        <pre v-else-if="dialog?.terminal" class="font-mono text-11 leading-4.5 whitespace-pre-wrap text-toned">{{
+          describeTerminal(dialog.terminal)
         }}</pre>
       </template>
     </UModal>

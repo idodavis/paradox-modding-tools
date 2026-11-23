@@ -37,7 +37,10 @@ linters:
       - frontend
     rules:
       # the registry's rows repeat a word as data: two rows naming one database are two facts
-      - path: internal/(lang/(declarations|keywords|keep|gui)|schema/(dumps|docs|commands)|index/fires)\.go
+      - path: internal/(lang/(declarations|keywords|keep|gui|model)|schema/(dumps|docs|commands)|index/fires)\.go
+        linters: [goconst]
+      # the graph's relation, picture, group, audience and detail rows repeat a database and a key of a game as data
+      - path: services/graph/(model|pictures|groups|audiences|detail)\.go
         linters: [goconst]
       # the coat's rows and the placeholders repeat a game's key or a placeholder's term as data
       - path: services/draw/(coat|textures)\.go

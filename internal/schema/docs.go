@@ -292,10 +292,10 @@ func buildDocFields(dialect *lang.Dialect, field, doc *lang.Field, holder string
 // holdsScript reports whether the block of a doc's key holds script rather
 // than fields of its own.
 func holdsScript(dialect *lang.Dialect, shape lang.Shape, holder, key string, field *lang.Field) bool {
-	isBlock := len(field.Children) > 0 || field.Value.Value.Type == lang.ValueTypeBlock
+	isBlock := len(field.Children) > 0 || field.Value.Value.ValueType == lang.ValueTypeBlock
 	keyword, ok := dialect.LookupKeyword(shape, holder, key, isBlock)
 
-	return field.Shape.IsStated() || field.Value.Value.Type == lang.ValueTypeNumber || ok && keyword.Shape != ""
+	return field.Shape.IsStated() || field.Value.Value.ValueType == lang.ValueTypeNumber || ok && keyword.Shape != ""
 }
 
 // The kinds of line a doc is made of. hashRun is the #s that open a line.
@@ -679,7 +679,7 @@ func resolveDocType(field *lang.Field, term string, source lang.Source) {
 	}
 
 	if row.Value != "" {
-		field.Value.Resolve(lang.Expected{Type: row.Value, Database: row.Database, Values: row.Values}, source)
+		field.Value.Resolve(lang.Expected{ValueType: row.Value, Database: row.Database, Values: row.Values}, source)
 	}
 }
 
@@ -745,7 +745,7 @@ func (d *docReader) resolveValue(field *lang.Field, value string) {
 		}
 
 	case namesDatabase:
-		field.Value.Resolve(lang.Expected{Type: lang.ValueTypeReference, Database: database}, lang.SourceDocs)
+		field.Value.Resolve(lang.Expected{ValueType: lang.ValueTypeReference, Database: database}, lang.SourceDocs)
 
 	case isPlaceholder || isType:
 		resolveDocType(field, inner, lang.SourceDocs)
@@ -769,7 +769,7 @@ func (d *docReader) resolveValue(field *lang.Field, value string) {
 // default, and a list of only yes and no makes the field a yes or no.
 func resolveChoices(field *lang.Field, values []string, source lang.Source) {
 	var choices []string
-	if field.Value.Value.Type == lang.ValueTypeChoice {
+	if field.Value.Value.ValueType == lang.ValueTypeChoice {
 		choices = field.Value.Value.Choices
 	}
 
@@ -792,9 +792,9 @@ func resolveChoices(field *lang.Field, values []string, source lang.Source) {
 		return
 	}
 
-	expected := lang.Expected{Type: lang.ValueTypeChoice, Choices: choices}
+	expected := lang.Expected{ValueType: lang.ValueTypeChoice, Choices: choices}
 	if slices.Equal(slices.Sorted(slices.Values(choices)), slices.Sorted(slices.Values(lang.Bools))) {
-		expected = lang.Expected{Type: lang.ValueTypeBool}
+		expected = lang.Expected{ValueType: lang.ValueTypeBool}
 	}
 
 	field.Value = lang.Claim[lang.Expected]{Value: expected, Source: source}

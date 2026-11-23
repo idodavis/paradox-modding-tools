@@ -29,14 +29,14 @@ export const useToolViewStore = defineStore("toolView", () => {
   /**
    * The starter tasks the page shown offers. A task that names pages is offered only on those. A file's task needs a
    * file open, and one that edits the file needs one the user can change. A mod's task needs a mod of the user's own,
-   * and the event's an event open in the Event Graph.
+   * and the event's an event open in the Graph.
    */
   const tasks = computed(() =>
     (starters.value ?? []).filter((task) => {
       if (task.pages?.length && !task.pages.includes(String(route.name))) return false;
       if (task.chip === "file") return !!chip.value?.path && !(task.edits && editor.activeFile()?.readOnly);
       if (task.chip === "mod") return workspace.listOwnMods().length > 0;
-      if (task.chip === "event") return route.name === "event-graph" && !!chip.value;
+      if (task.chip === "event") return route.name === "graph" && !!chip.value;
       return true;
     }),
   );

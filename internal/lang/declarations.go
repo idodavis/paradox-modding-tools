@@ -24,7 +24,7 @@ type Declaration struct {
 	// Games are the games the row holds for, all if none.
 	Games []string
 
-	Contents Contents
+	Type Type
 
 	// NameKey is the key inside a definition whose value is the
 	// definition's name, as id = x. It is "" where the key of the block is
@@ -125,20 +125,46 @@ const (
 	DefinedByNothing DefinedBy = "nothing"
 )
 
-// Contents is what kind of thing the definitions of a database are, where
-// the app treats that kind in a way of its own. It is "" for any other
-// database.
-type Contents string
+// Type is what the definitions of a database are, where the app treats them
+// in a way of its own. It is "" for any other database.
+type Type string
 
-// The kinds of definition the app treats in a way of their own.
+// The types the app reads in a way of its own.
 const (
-	ContentsEvents    Contents = "events"
-	ContentsOnActions Contents = "on_actions"
-	ContentsDecisions Contents = "decisions"
-	ContentsMessages  Contents = "messages"
-	ContentsLists     Contents = "lists"
-	ContentsConcepts  Contents = "concepts"
-	ContentsModifiers Contents = "modifiers"
+	TypeEvent    Type = "event"
+	TypeOnAction Type = "on_action"
+	TypeDecision Type = "decision"
+	TypeMessage  Type = "message"
+	TypeList     Type = "list"
+	TypeConcept  Type = "concept"
+	TypeModifier Type = "modifier"
+)
+
+// The types the Graph draws.
+const (
+	// TypeGood is a good, as wood is. TypeGoodCategory is a group of goods,
+	// as CK3's trade_category_mandala_arms is.
+	TypeGood         Type = "good"
+	TypeGoodCategory Type = "good_category"
+
+	// TypeBuilding is a building, a level of one in CK3. TypeBuildingGroup is
+	// what holds buildings: a district, a holding, a category.
+	TypeBuilding      Type = "building"
+	TypeBuildingGroup Type = "building_group"
+
+	// TypeProductionMethodGroup is a slot of production methods, and
+	// TypeProductionMethod a way a building produces.
+	TypeProductionMethodGroup Type = "production_method_group"
+	TypeProductionMethod      Type = "production_method"
+
+	// TypeTechnology is a technology, an innovation or an advance, and TypeEra
+	// the era or age it belongs to.
+	TypeTechnology Type = "technology"
+	TypeEra        Type = "era"
+
+	// TypeDemand is a demand for goods that is no building, as a pop need or
+	// an army's upkeep.
+	TypeDemand Type = "demand"
 )
 
 // Nesting is a database whose definitions are written as keys inside the
@@ -151,6 +177,10 @@ type Nesting struct {
 	// Parent is the folder or file of the parent database. A nesting listed
 	// in a declaration leaves it empty, and ListNestings fills it in.
 	Parent string
+
+	// Type is what the nested definitions are, as a declaration's Type is. It
+	// is "" for any other nesting.
+	Type Type
 
 	// Sets is whether the keys define nothing: they only switch a name on,
 	// or give a definition a second name.
@@ -182,6 +212,9 @@ type Nesting struct {
 	// Precedence says which copy of a name the game keeps. The zero value
 	// leaves it to the game's rule for the folder.
 	Precedence Precedence
+
+	// Fields are the keys of a nested definition that no dump describes.
+	Fields []DatabaseField
 }
 
 // FileType is what the extension of a file says about the file, beside what
@@ -216,6 +249,11 @@ type KeyReference struct {
 	// database the row is in.
 	Target string
 
+	// Also is a second database the values may name, as an EU5 building's
+	// possible methods may name another building's unique method. It is ""
+	// for none.
+	Also string
+
 	// Folder is the folder of a file that a value names with no folder of
 	// its own. It is "" where the values are no such files.
 	Folder string
@@ -232,8 +270,14 @@ type DatabaseField struct {
 	Games []string
 
 	// KeyPath is the way from the definition to the key, as keys joined by
-	// slashes. <number> stands for a key that is a number.
+	// slashes. <number> stands for a key that is a number. It is "" for the
+	// definition's own block.
 	KeyPath string
+
+	// Keys is the database whose definitions the keys of the field's block
+	// name, as the goods an EU5 production method takes. It is "" where its
+	// keys name nothing.
+	Keys string
 
 	// Shape is what the key's block holds. It is "" where the row does not
 	// say.
@@ -395,11 +439,12 @@ const portraitAnimations = "gfx/portraits/portrait_animations"
 // traitIcons is the folder of CK3's trait icons.
 const traitIcons = "gfx/interface/icons/traits"
 
-// The databases that the managers of an EU5 start setup set up.
-const (
-	namedLocations = "map_data/named_locations"
-	setupCountries = "setup/countries"
-)
+// SetupCountries is the database of the countries EU5's start setup sets up,
+// whose names are the countries' tags.
+const SetupCountries = "setup/countries"
+
+// namedLocations is the database of the locations EU5's start setup names.
+const namedLocations = "map_data/named_locations"
 
 // onActionPrecedence says what the game keeps of several copies of one
 // on_action: it joins their lists, and their trigger or effect blocks
@@ -463,6 +508,9 @@ func listOnActionFields(randomKey string) []DatabaseField {
 	}
 }
 
+// goodsKeys says that the keys of a definition's own block name goods.
+var goodsKeys = []DatabaseField{{Keys: "goods"}}
+
 // Declarations holds the declaration of each database that needs one. The
 // rows of one game come before the rows of every game. A row for a folder a
 // game does not have does nothing. A game's rows cite its .info files
@@ -470,14 +518,14 @@ func listOnActionFields(randomKey string) []DatabaseField {
 var Declarations = []Declaration{
 	// CK3 and EU5 _on_action.info
 	{
-		Folder: "common/on_action", Games: ck3AndEU5, Contents: ContentsOnActions, RunOrder: onActionOrder,
+		Folder: "common/on_action", Games: ck3AndEU5, Type: TypeOnAction, RunOrder: onActionOrder,
 		Precedences: []Precedence{onActionPrecedence},
 		References:  listOnActionReferences("random_on_action"), Fields: listOnActionFields("random_on_action"),
 	},
 	// scope = <type> sets an event's root scope (CK3 _events.info:12); its
 	// copies: _events.info:77-83
 	{
-		Folder: "events", Games: []string{game.CK3}, Contents: ContentsEvents, RunOrder: ck3EventOrder, RootKey: "scope",
+		Folder: "events", Games: []string{game.CK3}, Type: TypeEvent, RunOrder: ck3EventOrder, RootKey: "scope",
 		Precedences: []Precedence{{Keeps: KeepHighest, PriorityKey: "id_override_priority"}},
 		// a portrait's animation names a portrait animation (CK3
 		// _events.info:101,107)
@@ -490,10 +538,10 @@ var Declarations = []Declaration{
 	},
 	// CK3 _messages.info:1; Vic3's post_notification sends one
 	// (effects.log:27072)
-	{Folder: "common/messages", Games: ck3AndVic3, Contents: ContentsMessages},
+	{Folder: "common/messages", Games: ck3AndVic3, Type: TypeMessage},
 	// _decisions.info:194,200,208
 	{
-		Folder: "common/decisions", Games: []string{game.CK3}, Contents: ContentsDecisions,
+		Folder: "common/decisions", Games: []string{game.CK3}, Type: TypeDecision,
 		RunOrder: []string{"is_shown", "is_valid", "cost", "cooldown", "effect"},
 	},
 	// a group is also a name, which has_trait holds for any trait in it
@@ -506,8 +554,21 @@ var Declarations = []Declaration{
 	},
 	// the DLC subfolder writes the same blocks
 	{Folder: "common/opinion_modifiers", Games: []string{game.CK3}},
-	// its subfolders are one database (_districts.info:44,54)
-	{Folder: "common/buildings", Games: []string{game.CK3}},
+	// its subfolders are one database (_districts.info:44,54); a building's
+	// trade good need names a category of goods (buildings/
+	// 00_duchy_capital_buildings.txt:1804)
+	{
+		Folder: "common/buildings", Games: []string{game.CK3}, Type: TypeBuilding,
+		References: []KeyReference{{KeyPath: "trade_good_need/trade_good_category", Target: "trade/trade_good_categories"}},
+	},
+	// the types of CK3's goods, buildings and technologies that the Graph draws
+	{Folder: "common/domiciles/buildings", Games: []string{game.CK3}, Type: TypeBuilding},
+	{Folder: "common/districts", Games: []string{game.CK3}, Type: TypeBuildingGroup},
+	{Folder: "common/holdings", Games: []string{game.CK3}, Type: TypeBuildingGroup},
+	{Folder: "common/trade/trade_good_types", Games: []string{game.CK3}, Type: TypeGood},
+	{Folder: "common/trade/trade_good_categories", Games: []string{game.CK3}, Type: TypeGoodCategory},
+	{Folder: "common/culture/innovations", Games: []string{game.CK3}, Type: TypeTechnology},
+	{Folder: "common/culture/eras", Games: []string{game.CK3}, Type: TypeEra},
 	// an outbreak's notification fires events (CK3 _epidemics.info:124-128)
 	{
 		Folder: "common/epidemics", Games: []string{game.CK3},
@@ -576,14 +637,14 @@ var Declarations = []Declaration{
 	{Folder: "common/situation/situations", Games: []string{game.CK3}, Prefixes: []string{"situation"}},
 	// Vic3 _on_actions.md
 	{
-		Folder: "common/on_actions", Games: []string{game.Vic3}, Contents: ContentsOnActions, RunOrder: onActionOrder,
+		Folder: "common/on_actions", Games: []string{game.Vic3}, Type: TypeOnAction, RunOrder: onActionOrder,
 		Precedences: []Precedence{onActionPrecedence},
 		References:  listOnActionReferences("random_on_actions"), Fields: listOnActionFields("random_on_actions"),
 	},
 	// the Vic3 wiki and EU5 _events.info. Vic3 Events and EU5 l.169: the
 	// first copy loaded wins.
 	{
-		Folder: "events", Games: vic3AndEU5, Contents: ContentsEvents, RunOrder: eventOrder,
+		Folder: "events", Games: vic3AndEU5, Type: TypeEvent, RunOrder: eventOrder,
 		Precedences: []Precedence{{Keeps: KeepFirst}},
 		References: []KeyReference{
 			{KeyPath: "title", Target: Localization},
@@ -593,7 +654,15 @@ var Declarations = []Declaration{
 			{KeyPath: "option/name", Target: Localization},
 		},
 	},
-	{Folder: "common/decisions", Games: []string{game.Vic3}, Contents: ContentsDecisions},
+	{Folder: "common/decisions", Games: []string{game.Vic3}, Type: TypeDecision},
+	// the types of Vic3's goods, buildings and technologies that the Graph draws
+	{Folder: "common/goods", Games: []string{game.Vic3}, Type: TypeGood},
+	{Folder: "common/buildings", Games: []string{game.Vic3}, Type: TypeBuilding},
+	{Folder: "common/building_groups", Games: []string{game.Vic3}, Type: TypeBuildingGroup},
+	{Folder: "common/production_method_groups", Games: []string{game.Vic3}, Type: TypeProductionMethodGroup},
+	{Folder: "common/production_methods", Games: []string{game.Vic3}, Type: TypeProductionMethod},
+	{Folder: "common/technology/technologies", Games: []string{game.Vic3}, Type: TypeTechnology},
+	{Folder: "common/technology/eras", Games: []string{game.Vic3}, Type: TypeEra},
 	{
 		Folder: "gfx/map/post_effects", Games: []string{game.Vic3}, NameKey: "name", WrapperKeys: []string{"posteffect_volumes"},
 	},
@@ -602,7 +671,7 @@ var Declarations = []Declaration{
 	// every file is a test suite (scripted_tests.md:2)
 	{Folder: "tools/scripted_tests", Games: []string{game.Vic3}, DefinedBy: DefinedByFile},
 	// Vic3 modifier_types.md:1-3,16-17 and EU5 00_modifier_types.txt:1,3
-	{Folder: "common/modifier_type_definitions", Games: vic3AndEU5, Contents: ContentsModifiers},
+	{Folder: "common/modifier_type_definitions", Games: vic3AndEU5, Type: TypeModifier},
 	// map_data/province_terrains.txt:21698 defines x7F25CD, and
 	// common/history/states/00_states.txt:137 writes x7f25cd
 	{Folder: "map_data/province_terrains.txt", Games: []string{game.Vic3}, FoldsCase: true},
@@ -633,7 +702,7 @@ var Declarations = []Declaration{
 	},
 	// a formable's tag names the country it forms
 	// (00_formable_countries.txt:18)
-	{Folder: "common/formable_countries", Games: []string{game.EU5}, Aliases: map[string]string{"tag": setupCountries}},
+	{Folder: "common/formable_countries", Games: []string{game.EU5}, Aliases: map[string]string{"tag": SetupCountries}},
 	{Folder: "gfx/map/map_objects", Games: []string{game.EU5}, DefinedBy: DefinedByNothing},
 	{Folder: "gfx/map/city_data", Games: []string{game.EU5}, NameKey: "name"},
 	// EU5 in_game/gfx/map/map_modes/readme.txt:6: a map mode's tooltip_key is
@@ -646,7 +715,7 @@ var Declarations = []Declaration{
 	// common/game_concepts/00_game_concepts.txt:2 gives vassal the second
 	// names of an alias
 	{
-		Folder: "common/game_concepts", Games: []string{game.EU5}, Contents: ContentsConcepts, FoldsCase: true,
+		Folder: "common/game_concepts", Games: []string{game.EU5}, Type: TypeConcept, FoldsCase: true,
 		Nestings: []Nesting{{KeyPath: "alias", Sets: true}},
 	},
 	// its top keys are the managers that hold the nestings, and each sets up
@@ -656,7 +725,7 @@ var Declarations = []Declaration{
 		Nestings: []Nesting{
 			{KeyPath: "character_db", Database: "character"},
 			{KeyPath: "dynasty_manager", Database: "dynasty"},
-			{KeyPath: "countries/countries", Database: "country", Target: setupCountries},
+			{KeyPath: "countries/countries", Database: "country", Target: SetupCountries},
 			{KeyPath: "locations", Database: "location", Target: namedLocations},
 			{KeyPath: "road_network", Database: "road", Target: namedLocations},
 			{KeyPath: "townrights_manager", Database: "town_rights", Target: namedLocations},
@@ -688,9 +757,36 @@ var Declarations = []Declaration{
 	{Folder: "common/laws", Games: []string{game.EU5}, Nestings: []Nesting{{Database: "policy"}}},
 	{Folder: "common/languages", Games: []string{game.EU5}, Nestings: []Nesting{{KeyPath: "dialects", Database: "dialect"}}},
 	{Folder: "common/gods", Games: []string{game.EU5}, Nestings: []Nesting{{KeyPath: "omens", Database: "omen"}}},
+	// a production method writes <goods_input> = <amount> (in_game/common/
+	// production_methods/__readme.txt:2)
+	{Folder: "common/production_methods", Games: []string{game.EU5}, Type: TypeProductionMethod, Fields: goodsKeys},
+	// a building's unique methods are written as production methods are; its
+	// possible methods name production methods, or another building's unique
+	// method (building_types/00_unique_buildings_to_make_obsolete.txt:66)
 	{
-		Folder: "common/building_types", Games: []string{game.EU5},
-		Nestings: []Nesting{{KeyPath: "unique_production_methods", Database: "unique_production_method"}},
+		Folder: "common/building_types", Games: []string{game.EU5}, Type: TypeBuilding,
+		Nestings: []Nesting{{
+			KeyPath: "unique_production_methods", Database: "unique_production_method", Type: TypeProductionMethod,
+			Fields: goodsKeys,
+		}},
+		References: []KeyReference{{
+			KeyPath: "possible_production_methods", Target: "production_methods",
+			Also: "building_types.unique_production_method",
+		}},
+	},
+	// a demand writes a good and its amount, as wine = 1 (in_game/common/
+	// goods_demand/pop_demands.txt:15)
+	{Folder: "common/goods_demand", Games: []string{game.EU5}, Type: TypeDemand, Fields: goodsKeys},
+	// the types of EU5's goods, buildings and technologies that the Graph draws
+	{Folder: "common/goods", Games: []string{game.EU5}, Type: TypeGood},
+	{Folder: "common/building_categories", Games: []string{game.EU5}, Type: TypeBuildingGroup},
+	{Folder: "common/advances", Games: []string{game.EU5}, Type: TypeTechnology},
+	{Folder: "common/age", Games: []string{game.EU5}, Type: TypeEra},
+	// a need's entries name goods, and so does its default
+	// (common/pop_needs/00_pop_needs.txt:1,7)
+	{
+		Folder: "common/pop_needs", Games: []string{game.Vic3}, Type: TypeDemand,
+		References: []KeyReference{{KeyPath: "entry/goods", Target: "goods"}, {KeyPath: "default", Target: "goods"}},
 	},
 	// EU5 in_game/common/subject_types/readme.txt:80 writes it as goal keys,
 	// each holding a type and a bias
@@ -741,7 +837,7 @@ var Declarations = []Declaration{
 		Folder: "common/script_values", Callers: []string{CallTrigger, CallValue}, Shape: ShapeValue,
 		Precedences: unsettledPrecedences,
 	},
-	{Folder: "common/scripted_lists", Contents: ContentsLists},
+	{Folder: "common/scripted_lists", Type: TypeList},
 	// CK3 _effect_localization.info:9-17 and _trigger_localization.info:15;
 	// EU5 international_organization_effects.txt:169 refers to one no entry
 	// defines
@@ -772,7 +868,7 @@ var Declarations = []Declaration{
 	// common/game_concepts/00_game_concepts.txt:2 gives vassal the second
 	// names of an alias
 	{
-		Folder: "common/game_concepts", Contents: ContentsConcepts,
+		Folder: "common/game_concepts", Type: TypeConcept,
 		Nestings: []Nesting{{Games: []string{game.CK3}, KeyPath: "alias", Sets: true}},
 	},
 	{Folder: "common/achievement_groups.txt", NameKey: "name"},
@@ -975,6 +1071,13 @@ var DefinitionTexts = []TextKeys{
 		"situation/situations",
 	}},
 	{Games: []string{game.CK3}, Title: "situation_group_type_%s", Databases: []string{"situation/situation_group_types"}},
+	// duchy_office_buildings_l_english.yml:20
+	{Games: []string{game.CK3}, Description: "building_type_%s_desc", Databases: []string{"buildings"}},
+	// common/domiciles/buildings/_domicile_buildings.info:2-3
+	{
+		Games: []string{game.CK3}, Title: "%s_domicile_building", Description: "%s_domicile_building_desc",
+		Databases: []string{"domiciles/buildings"},
+	},
 	{Games: []string{game.EU5}, Description: "%s_desc", Databases: []string{
 		"advances", "age", "ai_personalities", "artist_work", "avatars", "building_categories", "building_types",
 		"bureaucracies", "cabinet_actions", "casus_belli", "character_interactions", "child_educations",
@@ -1009,11 +1112,12 @@ var DefinitionTexts = []TextKeys{
 	{Games: []string{game.Vic3}, Title: "%s_name", Description: "%s_desc", Databases: []string{"proposal_types"}},
 }
 
-// LookupTextKey returns the localization key of a definition's title or
-// description, with %s for its name, where the definition names none
-// itself. key is TitleKey or DescriptionKey. Without a row the title's key
-// is the name, and there is no description.
-func (d *Dialect) LookupTextKey(database, key string) (string, bool) {
+// ListTextKeys returns the localization keys that may hold a definition's
+// title or description, with %s for its name, where the definition names none
+// itself. key is TitleKey or DescriptionKey. Without a row the title's key is
+// the name, and there is no description.
+func (d *Dialect) ListTextKeys(database, key string) []string {
+	var patterns []string
 	for _, row := range DefinitionTexts {
 		if !d.Matches(row.Games) || !slices.Contains(row.Databases, database) {
 			continue
@@ -1025,11 +1129,15 @@ func (d *Dialect) LookupTextKey(database, key string) (string, bool) {
 		}
 
 		if pattern != "" {
-			return pattern, true
+			patterns = append(patterns, pattern)
 		}
 	}
 
-	return "%s", key == TitleKey
+	if len(patterns) == 0 && key == TitleKey {
+		return []string{"%s"}
+	}
+
+	return patterns
 }
 
 // Nestings holds the nestings that are written in the definitions of every

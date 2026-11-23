@@ -1,67 +1,53 @@
 <!--
-  One item of the canvas: an event's frame, a message's toast, a pill for any other entry, a fold's pill, or a loop's
-  pill: the firers that come round a loop, or a firing back into its own chain.
+  One node of the event graph: an event's frame, a message's toast, a pill for
+  any other definition, a fold's pill, or a loop's pill: the firers that come
+  round a loop, or a firing back into its own chain.
 -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
 import { fileUrl } from "../../queries";
 import OriginChip from "../../ui/OriginChip.vue";
-import type { Drawn } from "./layout";
+import FoldPill from "./FoldPill.vue";
+import { isPastDepth, NODE_STATE, type Drawn } from "./layout";
+import { whatOf } from "./nodes";
 
 const { drawn } = defineProps<{ drawn: Drawn }>();
 
-/** STATE is the classes that fade a node off the lit route and ring the root and the selection. */
-const STATE =
-  "in-[.dim]:opacity-40 in-[.root]:border-primary in-[.root]:ring-3 in-[.root]:ring-(--accent-soft) in-[.selected]:border-secondary in-[.selected]:ring-3 in-[.selected]:ring-(--link-soft)";
-/** HATCHED is the hatching of a hidden event's scene. */
 const HATCHED = "bg-[repeating-linear-gradient(135deg,var(--bg-2)_0_6px,var(--bg-1)_6px_12px)]";
 
 const node = computed(() => drawn.node);
 const hidden = computed(() => node.value.display === "hidden");
-/** dashed is true for a node beyond the depth limit that is not the root. */
-const dashed = computed(() => node.value.deep && node.value.step !== 0);
-/** fill is the colors of a pill. */
+const dashed = computed(() => isPastDepth(node.value));
 const fill = computed(() => (drawn.look.filled ? "bg-muted text-highlighted" : "bg-default text-muted"));
 const icon = computed(() => (hidden.value ? "i-lucide-eye-off" : drawn.look.icon));
 const scene = computed(() =>
-  node.value.background ? { backgroundImage: `url("${fileUrl(node.value.background)}")` } : undefined,
+  node.value.picture ? { backgroundImage: `url("${fileUrl(node.value.picture)}")` } : undefined,
 );
-/** The frame's first line: the title, else what it is. */
 const caption = computed(() => {
   if (dashed.value) return "Beyond depth, expand to load";
-  return node.value.title || (hidden.value ? "hidden event" : node.value.what);
+  return node.value.title || whatOf(node.value);
 });
 </script>
 
 <template>
-  <div
+  <FoldPill
     v-if="drawn.loop"
-    :class="STATE"
+    icon="i-lucide-repeat"
+    :label="drawn.loop.marker === 'firers' ? `${drawn.loop.count} more firers` : node.name"
+    :mono="drawn.loop.marker === 'back'"
+    :opens="drawn.loop.marker === 'firers'"
     :title="
-      drawn.loop.kind === 'firers'
+      drawn.loop.marker === 'firers'
         ? 'They fire this only round a loop through the root\'s own chain. Click to show them.'
         : `Fires ${node.name} again, a loop back into its own chain. Click to select it.`
     "
-    class="flex h-6.5 w-44 items-center gap-1.5 rounded-full border border-dashed border-accented px-2.5 text-12 whitespace-nowrap text-dimmed"
-  >
-    <UIcon name="i-lucide-repeat" class="size-3 shrink-0" />
-    <span v-if="drawn.loop.kind === 'firers'" class="truncate">{{ drawn.loop.count }} more firers</span>
-    <span v-else class="truncate font-mono text-11">{{ node.name }}</span>
-    <UIcon v-if="drawn.loop.kind === 'firers'" name="i-lucide-chevron-right" class="ms-auto size-3 shrink-0" />
-  </div>
-  <div
-    v-else-if="node.count"
-    :class="STATE"
-    class="flex h-6.5 w-44 items-center gap-1.5 rounded-full border border-dashed border-accented px-2.5 text-12 whitespace-nowrap text-dimmed"
-  >
-    <UIcon name="i-lucide-layers" class="size-3 shrink-0" />
-    <span class="truncate">{{ node.count }} more</span>
-    <UIcon name="i-lucide-chevron-right" class="ms-auto size-3 shrink-0" />
-  </div>
+    class="w-44"
+  />
+  <FoldPill v-else-if="node.count" icon="i-lucide-layers" :label="`${node.count} more`" class="w-44" />
   <div
     v-else-if="drawn.look.shape === 'frame'"
-    :class="[STATE, dashed ? 'border-dashed' : 'bg-(--bg-3)']"
+    :class="[NODE_STATE, dashed ? 'border-dashed' : 'bg-(--bg-3)']"
     class="w-49 overflow-hidden rounded-md border border-(--line-2)"
   >
     <div
@@ -71,14 +57,14 @@ const caption = computed(() => {
     >
       <UIcon v-if="hidden || !scene" :name="icon" class="size-4.5" />
       <span
-        class="absolute start-1.5 top-1.5 flex size-4.5 items-center justify-center rounded-full bg-(--bg-1) shadow-[0_0_0_2px_rgb(14_16_20/0.6)]"
+        class="absolute start-1.5 top-1.5 flex size-4.5 items-center justify-center rounded-full bg-(--bg-1) shadow-[0_0_0_2px_color-mix(in_srgb,var(--bg-0)_60%,transparent)]"
       >
         <UIcon :name="drawn.look.icon" class="size-3" :style="{ color: drawn.look.color }" />
       </span>
       <OriginChip
         :origin="node.site.place.origin"
         dot
-        class="absolute end-1.5 top-1.5 rounded-full shadow-[0_0_0_2px_rgb(14_16_20/0.6)]"
+        class="absolute end-1.5 top-1.5 rounded-full shadow-[0_0_0_2px_color-mix(in_srgb,var(--bg-0)_60%,transparent)]"
       />
     </div>
     <div class="flex flex-col pt-1 pe-1.75 pb-1.25 ps-1.75 whitespace-nowrap">
@@ -90,7 +76,7 @@ const caption = computed(() => {
   </div>
   <div
     v-else-if="drawn.look.shape === 'toast'"
-    :class="STATE"
+    :class="NODE_STATE"
     class="flex h-11.5 w-49 items-center gap-2 overflow-hidden rounded-[10px] border border-(--line-2) bg-(--bg-2) ps-1.75 pe-2.5 whitespace-nowrap"
   >
     <UIcon :name="drawn.look.icon" class="size-6 shrink-0" :style="{ color: drawn.look.color }" />
@@ -101,7 +87,7 @@ const caption = computed(() => {
   </div>
   <div
     v-else
-    :class="[STATE, dashed ? 'border-dashed' : fill]"
+    :class="[NODE_STATE, dashed ? 'border-dashed' : fill]"
     class="flex h-6.5 w-44 items-center gap-1.5 overflow-hidden rounded-full border border-accented ps-2 pe-2.5 font-mono text-11 whitespace-nowrap"
   >
     <OriginChip :origin="node.site.place.origin" dot />

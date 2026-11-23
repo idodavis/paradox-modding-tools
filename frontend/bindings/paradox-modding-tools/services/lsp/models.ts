@@ -62,8 +62,8 @@ export interface Card {
     "inferred": boolean;
 
     /**
-     * Node is the Event Graph's id of the name, "" if the graph does not draw
-     * it.
+     * Node is the Graph's id of the name, "" if the Graph asks no question
+     * about it.
      */
     "node"?: string;
 

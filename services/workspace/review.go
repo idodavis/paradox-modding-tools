@@ -85,7 +85,7 @@ func (s *Service) TrackEdits(path string, edits [][]Hunk, isNew bool, turn strin
 	}
 
 	place := ws.Locate(ws.Mods.Load(), path)
-	if err := ws.checkOwned(place); err != nil {
+	if err := ws.checkWritable(place); err != nil {
 		return err
 	}
 
@@ -95,7 +95,7 @@ func (s *Service) TrackEdits(path string, edits [][]Hunk, isNew bool, turn strin
 		return nil
 	}
 
-	before, err := revertFile(path, edits, isNew)
+	turnBaseline, err := revertFile(path, edits, isNew)
 	if err != nil && isTracked {
 		return nil
 	}
@@ -109,11 +109,11 @@ func (s *Service) TrackEdits(path string, edits [][]Hunk, isNew bool, turn strin
 	ws.reviewsMu.Lock()
 	review, isTracked = ws.reviews[key]
 	if !isTracked {
-		review = fileReview{path: path, baseline: before, isNew: isNew}
+		review = fileReview{path: path, baseline: turnBaseline, isNew: isNew}
 	}
 
 	if review.findTurn(turn) < 0 {
-		review.turns = append(review.turns, turnText{turn: turn, text: before})
+		review.turns = append(review.turns, turnText{turn: turn, text: turnBaseline})
 		ws.reviews[key] = review
 	}
 	ws.reviewsMu.Unlock()
@@ -244,8 +244,8 @@ func (s *Service) UndoFile(path, turn string) error {
 	}
 
 	if position > 0 {
-		before := review.turns[position].text
-		if err := s.Write(path, files.Text{Text: before, Encoding: text.Encoding}); err != nil {
+		turnBaseline := review.turns[position].text
+		if err := s.Write(path, files.Text{Text: turnBaseline, Encoding: text.Encoding}); err != nil {
 			return err
 		}
 
@@ -271,10 +271,10 @@ func (s *Service) UndoFile(path, turn string) error {
 	return nil
 }
 
-// findTurn returns the index of a turn among the turns that changed the
+// findTurn returns the position of a turn among the turns that changed the
 // file. It returns -1 if the turn did not change it, and for "".
 func (f fileReview) findTurn(turn string) int {
-	return slices.IndexFunc(f.turns, func(kept turnText) bool { return turn != "" && kept.turn == turn })
+	return slices.IndexFunc(f.turns, func(candidate turnText) bool { return turn != "" && candidate.turn == turn })
 }
 
 // readSaved returns a file's text on disk. It returns an error if the editor

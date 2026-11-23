@@ -3,10 +3,157 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as lang$0 from "../../internal/lang/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as loc$0 from "../../internal/loc/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as lsp$0 from "../lsp/models.js";
+
+/**
+ * Among says which of a level's production methods take a good.
+ */
+export enum Among {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * Which production methods take a good. The zero value is every one.
+     *
+     * AmongSome is only some of them.
+     */
+    AmongSome = "some",
+
+    /**
+     * AmongEither is one way of several: each production method takes
+     * exactly one of the goods marked so, as an EU5 printer runs with lumber
+     * or with leather.
+     */
+    AmongEither = "either",
+};
+
+/**
+ * Amount is a good with how much of it.
+ */
+export interface Amount {
+    /**
+     * Good is the good, or the category a need asks for.
+     */
+    "good": Node;
+
+    /**
+     * Text is how much, as the page shows it: a number, a range or a share.
+     * It is "" where the game writes no number.
+     */
+    "text": string;
+
+    /**
+     * Among says which of a level's production methods take it.
+     */
+    "among"?: Among;
+}
+
+/**
+ * Audience is one row of the list of whom an age's advances are for: a group,
+ * or one country, religion or culture in it.
+ */
+export interface Audience {
+    /**
+     * ID is the filter's Potential that draws the row: a group's ID, or the id
+     * of a definition.
+     */
+    "id": string;
+
+    /**
+     * Group is the ID of the group the row is in. A group's own row has it as
+     * its ID.
+     */
+    "group": string;
+    "title": string;
+
+    /**
+     * Count is how many advances the row draws.
+     */
+    "count": number;
+}
+
+/**
+ * Catalog is the definitions of one type that the page lists together.
+ */
+export interface Catalog {
+    /**
+     * Types are the types of its definitions.
+     */
+    "types": lang$0.Type[] | null;
+
+    /**
+     * Label is what the game calls its definitions.
+     */
+    "label": string;
+
+    /**
+     * Count is how many it lists. A building's line counts once.
+     */
+    "count": number;
+
+    /**
+     * Groups are the groups its definitions are listed under, in the order
+     * the game's files reach them: a district, a building group, a category
+     * of goods, and the wider group each of those is in. A group's Count is
+     * how many definitions it and the groups in it list. They are none where
+     * the game groups nothing.
+     */
+    "groups": Node[] | null;
+}
+
+/**
+ * Cell is what one level says of a fact.
+ */
+export interface Cell {
+    /**
+     * Text is the fact as the page shows it, "" where the level does not say
+     * it.
+     */
+    "text": string;
+
+    /**
+     * Part is the cell's number as a share of the row's largest, for a bar.
+     * It is 0 where the text is no single number.
+     */
+    "part": number;
+}
+
+/**
+ * Chain is a good with the building lines that make it, what they take, and
+ * the lines that use it.
+ */
+export interface Chain {
+    "good": Node;
+
+    /**
+     * Found is where the good is found, none for a good no place holds.
+     */
+    "found": Source[] | null;
+
+    /**
+     * Makers are the lines that make the good, those that produce it first,
+     * then those that boost it, then those that give it when a need is met.
+     * A line that makes it in two ways is there twice, and Lines counts it
+     * once.
+     */
+    "makers": Maker[] | null;
+    "lines": number;
+
+    /**
+     * Piles are the lines that take the good, by the widest group each is in.
+     * Users is how many lines and needs they are.
+     */
+    "piles": Pile[] | null;
+    "users": number;
+}
 
 /**
  * Condition is one statement of a block of triggers in words, with the
@@ -52,12 +199,12 @@ export interface Condition {
 }
 
 /**
- * Detail is what the page shows about one node: its texts, its keys, its
- * firings and the game rules it reads.
+ * Detail is what the page shows about one node.
  */
 export interface Detail {
     /**
-     * Node is the node, with every firing it makes as its Fires.
+     * Node is the node, with its trigger and every firing it makes as its
+     * Fires.
      */
     "node": Node;
 
@@ -72,15 +219,39 @@ export interface Detail {
     "source": string;
 
     /**
+     * About are the facts listed under the node's name: each group above its
+     * own, how many levels its line has, where it is found and what it
+     * costs. An event has none.
+     */
+    "about": Fact[] | null;
+
+    /**
+     * Gives is what the node's modifiers give, as a technology's. An event
+     * has none.
+     */
+    "gives": Fact[] | null;
+
+    /**
      * Sections are the keys at the top of the definition but its option
-     * blocks, which are Options.
+     * blocks, which are Options. A good, a building and a technology keep
+     * only their title and description.
      */
     "sections": Section[] | null;
     "options": Section[] | null;
     "firedBy": Edge[] | null;
 
     /**
-     * Linked holds the node at the other end of each firing, by id.
+     * Links are every link from and to the node among the game's goods,
+     * buildings and technologies. A good's are joined by building line. A
+     * technology also has a link from each definition that checks it, and an
+     * event one to each good, building and technology its script names, the
+     * relation the type of what it names.
+     */
+    "links": Edge[] | null;
+
+    /**
+     * Linked holds the node at the other end of each firing and each link, by
+     * id, and the node's own group and era.
      */
     "linked": { [_ in string]?: Node } | null;
 
@@ -96,7 +267,8 @@ export interface Detail {
 }
 
 /**
- * Edge is one firing, from the node that fires to the node it fires.
+ * Edge is one firing, from the node that fires to the node it fires, or one
+ * link between two goods, buildings or technologies of the game.
  */
 export interface Edge {
     "from": string;
@@ -121,19 +293,71 @@ export interface Edge {
     "title"?: string;
 
     /**
-     * Via are the scripted effects the firing passes through that are not
-     * drawn as nodes.
+     * Via are the definitions between the two ends that are not drawn as
+     * nodes: the scripted effects a firing passes through, the production
+     * methods of a line.
      */
     "via"?: string[] | null;
 
     /**
-     * Site is where the firing is written.
+     * Relation is how a link says its two ends relate, as input or unlock.
+     * It is "" for a firing. Amount is how much of a good the link takes or
+     * makes, or how many links a counted one stands for, and "" where it has
+     * none.
+     */
+    "relation"?: string;
+    "amount"?: string;
+
+    /**
+     * Share is set where the amount is a share of what is produced, as 0.25
+     * for a quarter more, and not a number of the good.
+     */
+    "share"?: boolean;
+
+    /**
+     * Site is where the firing or the link is written.
      */
     "site": lsp$0.Site;
 }
 
 /**
- * Filter says what the graph shows and how far it goes from its root.
+ * Fact is one thing a modifier of a definition gives.
+ */
+export interface Fact {
+    /**
+     * Label is the modifier's name in the game's words. Text is its value as
+     * the game shows it, "" for one that is simply on.
+     */
+    "label": string;
+    "text": string;
+
+    /**
+     * Tone says whether the value is a gain or a loss, "" where the game
+     * says neither.
+     */
+    "tone"?: Tone;
+
+    /**
+     * Where is what the modifier's block applies to, in words, as "In the
+     * county". It is "" where the block says nothing of it.
+     */
+    "where"?: string;
+
+    /**
+     * When is the condition the modifier's block writes, in the game's words
+     * where it has any. It is "" where the block writes none.
+     */
+    "when"?: string;
+
+    /**
+     * Need is the id of the good or category whose need gives the modifier
+     * when it is met, "" for a modifier no need gives.
+     */
+    "need"?: string;
+}
+
+/**
+ * Filter says what a graph shows and how far it goes from its root.
  */
 export interface Filter {
     "databases": string[] | null;
@@ -144,11 +368,14 @@ export interface Filter {
     "expand": string[] | null;
     "follow": boolean;
     "labels"?: { [_ in string]?: string } | null;
+    "era"?: string;
+    "changed"?: boolean;
+    "potential"?: string;
 }
 
 /**
- * Graph is the event graph from one root. It has no coordinates: the page
- * lays it out.
+ * Graph is the nodes and links around a subject. It has no coordinates: the
+ * page lays it out.
  */
 export interface Graph {
     "root": string;
@@ -164,16 +391,170 @@ export interface Graph {
 }
 
 /**
- * Node is one entry of the event graph, or a fold that stands for the rest
- * of a node's firings.
+ * Line is a building's line as a table.
+ */
+export interface Line {
+    /**
+     * Head is the first level, with the line's levels. Group is the group the
+     * line is listed under, the zero node where it is in none.
+     */
+    "head": Node;
+    "group": Node;
+
+    /**
+     * Levels are the columns, first to last.
+     */
+    "levels": LineLevel[] | null;
+
+    /**
+     * Rows are the facts the levels say differently, or only some say. Same
+     * are the facts every level says alike, each with one cell.
+     */
+    "rows": LineRow[] | null;
+    "same": LineRow[] | null;
+
+    /**
+     * Groups are the production method groups, none where the game has none.
+     * Totals is what the picked methods come to, nil with no groups.
+     */
+    "groups": MethodGroup[] | null;
+    "totals"?: Totals | null;
+}
+
+/**
+ * LineLevel is one level of a line.
+ */
+export interface LineLevel {
+    "level": Node;
+    "number": number;
+
+    /**
+     * Unlock is the first technology that unlocks the level, and Era that
+     * technology's era or age. Each is nil where there is none.
+     */
+    "unlock"?: Node | null;
+    "era"?: Node | null;
+}
+
+/**
+ * LineRow is one fact of a line across its levels.
+ */
+export interface LineRow {
+    /**
+     * Says is what the fact is: output, boost, gives, input, need, employment,
+     * cost or bonus.
+     */
+    "says": string;
+
+    /**
+     * Subject is the good or pop type the fact is about, nil for a cost and
+     * a bonus. Label is the fact in the game's words.
+     */
+    "subject"?: Node | null;
+    "label": string;
+
+    /**
+     * When is the condition the fact's block writes, "" for none. Where is
+     * what a bonus applies to and Tone whether it is a gain or a loss, as a
+     * Fact has them.
+     */
+    "when"?: string;
+    "where"?: string;
+    "tone"?: Tone;
+
+    /**
+     * Need is the id of the good or category whose need gives the fact when
+     * it is met: the subject of one of the line's need rows. It is "" for a
+     * fact no need gives.
+     */
+    "need"?: string;
+
+    /**
+     * Among says which of a level's production methods take an input.
+     */
+    "among"?: Among;
+
+    /**
+     * Cells holds the fact for each level, in the order of the levels.
+     */
+    "cells": Cell[] | null;
+}
+
+/**
+ * Maker is a building line that makes a good.
+ */
+export interface Maker {
+    /**
+     * Says is how it makes the good: output, boost or gives.
+     */
+    "says": string;
+
+    /**
+     * Line is the line with the rows of what its levels make of the good that
+     * way, and of what they take to do it. A level that does not write the
+     * good has an empty cell.
+     */
+    "line": Line;
+}
+
+/**
+ * Method is a production method of a group.
+ */
+export interface Method {
+    "method": Node;
+
+    /**
+     * Unlock is the first technology that unlocks it, and Era that
+     * technology's era. Each is nil where there is none.
+     */
+    "unlock"?: Node | null;
+    "era"?: Node | null;
+
+    /**
+     * Takes, Makes and Employs are its goods and its pop types, with how
+     * much. Gives is what else its modifiers write.
+     */
+    "takes": Amount[] | null;
+    "makes": Amount[] | null;
+    "employs": Amount[] | null;
+    "gives": Fact[] | null;
+}
+
+/**
+ * MethodGroup is a production method group of a building.
+ */
+export interface MethodGroup {
+    /**
+     * Group is the group, the zero node for the methods a building names
+     * itself in no group, as EU5's buildings do.
+     */
+    "group": Node;
+    "methods": Method[] | null;
+
+    /**
+     * Picked is the id of the method the group runs.
+     */
+    "picked": string;
+}
+
+/**
+ * Node is one definition of the game in a graph, or a fold that stands for
+ * the rest of a node's links.
  */
 export interface Node {
     /**
-     * ID is database:name. A fold's is more:<id> or more-in:<id>.
+     * ID is database:name. A fold's is more:<id> or more-in:<id>, and the
+     * places a good is found are resource:<id>.
      */
     "id": string;
     "database": string;
     "name": string;
+
+    /**
+     * Type is what the definition is, as good or technology. It is "" for a
+     * node of the event graph.
+     */
+    "type"?: lang$0.Type;
 
     /**
      * What is what its database calls a definition, such as "scripted
@@ -192,9 +573,38 @@ export interface Node {
     "display"?: string;
 
     /**
-     * Background is the path of an event's picture, "" if none is found.
+     * Picture is the path of its picture: an event's scene or the icon of a
+     * good, building or technology. It is "" if none is found. Silhouette is set
+     * where the game tints the picture in the color of the text, so only its
+     * shape counts.
      */
-    "background"?: string;
+    "picture"?: string;
+    "silhouette"?: boolean;
+
+    /**
+     * Painting is the path of the painting behind its head: a Vic3 building's
+     * background, a technology tree's illustration, a district's or an era's.
+     * It is "" if none is found.
+     */
+    "painting"?: string;
+
+    /**
+     * Group is the id of the group it is listed under: a building's district,
+     * building group or category, a production method's production method
+     * group, a good's category. It is "" if it has none.
+     */
+    "group"?: string;
+
+    /**
+     * Era is the id of the era or age a technology is in, "" if it has none.
+     */
+    "era"?: string;
+
+    /**
+     * Year is the year an era starts in, as the game writes it, "" for a
+     * node that is no era and for a game whose eras write none.
+     */
+    "year"?: string;
 
     /**
      * Trigger is its own trigger in words. It is set only in a graph and a
@@ -219,18 +629,19 @@ export interface Node {
     "site": lsp$0.Site;
 
     /**
-     * Step is its distance from the root, negative for a node that fires
-     * the root.
+     * Distance is how many links it is from the subject, negative for one that
+     * leads to it.
      */
-    "step": number;
+    "distance": number;
 
     /**
-     * Parent is the drawn node one step nearer the root, "" for the root.
+     * Parent is the drawn node one link nearer the root, "" for the root.
      */
     "parent": string;
 
     /**
-     * Count is how many firings a fold stands for, 0 for a definition.
+     * Count is how many links a fold stands for, or how many definitions a
+     * group lists. It is 0 for any other node.
      */
     "count": number;
 
@@ -250,6 +661,18 @@ export interface Node {
      * in a detail.
      */
     "fires"?: Edge[] | null;
+}
+
+/**
+ * Pile is the lines that take a good under one group.
+ */
+export interface Pile {
+    /**
+     * Group is the widest group its lines are in, with how many they are as
+     * its Count. It is the zero node for what is part of no building.
+     */
+    "group": Node;
+    "users": User[] | null;
 }
 
 /**
@@ -302,6 +725,24 @@ export interface Section {
 }
 
 /**
+ * Source is where a good is found.
+ */
+export interface Source {
+    /**
+     * Gathering is how it is gathered, in the game's word, as Mining. It is
+     * "" where the game says none.
+     */
+    "gathering": string;
+
+    /**
+     * Count is how many places hold it, 0 where the game lists none. Places
+     * is what the game calls them, as counties.
+     */
+    "count": number;
+    "places": string;
+}
+
+/**
  * Step is one block a firing is written inside.
  */
 export interface Step {
@@ -312,9 +753,10 @@ export interface Step {
     "key": string;
 
     /**
-     * Kind is branch, weight, list, scope, option or block.
+     * Block is what sort of block the firing sits in: branch, weight, list,
+     * scope, option or block.
      */
-    "kind": string;
+    "block": string;
 
     /**
      * Weight is a weighted branch's number, as written.
@@ -327,10 +769,180 @@ export interface Step {
     "line": number;
 
     /**
-     * Conditions is the step in words as the page lists it: the kind of
+     * Conditions is the step in words as the page lists it: the sort of
      * block, then the conditions it runs on. A plain block has none.
      */
     "conditions"?: Condition[] | null;
+}
+
+/**
+ * Technology is one technology of a tree.
+ */
+export interface Technology {
+    "node": Node;
+
+    /**
+     * Gives is what its modifiers give, and Unlocks what it unlocks.
+     */
+    "gives": Fact[] | null;
+    "unlocks": Node[] | null;
+
+    /**
+     * Root is the id of the technology its own tree inside an age starts
+     * from. It is "" for a technology that stands alone, and for a game that
+     * draws a tree whole.
+     */
+    "root"?: string;
+
+    /**
+     * Audience is the row of Audiences it is drawn for, "" for one every
+     * country can have.
+     */
+    "audience"?: string;
+}
+
+/**
+ * Tone says whether a value is good or bad for whoever has it.
+ */
+export enum Tone {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * The tones of a value. The zero value is neither.
+     */
+    ToneGain = "gain",
+    ToneLoss = "loss",
+};
+
+/**
+ * Total is one good or pop type with how much the picked methods come to.
+ */
+export interface Total {
+    "good": Node;
+    "text": string;
+
+    /**
+     * Before is how much the first method of each group comes to, "" where
+     * those have none of it.
+     */
+    "before": string;
+}
+
+/**
+ * Totals is what the picked production methods of a building come to.
+ */
+export interface Totals {
+    "takes": Total[] | null;
+    "makes": Total[] | null;
+    "employs": Total[] | null;
+
+    /**
+     * Jobs is how many pops they employ in all, and JobsBefore how many the
+     * first method of each group employs.
+     */
+    "jobs": string;
+    "jobsBefore": string;
+}
+
+/**
+ * Tree is one of a game's technology trees.
+ */
+export interface Tree {
+    /**
+     * ID is what its technologies share: a CK3 group, a Vic3 category or the
+     * id of an EU5 age. Title is its name in the game's words.
+     */
+    "id": string;
+    "title": string;
+
+    /**
+     * Painting is the path of the painting behind its head, "" if it has
+     * none.
+     */
+    "painting"?: string;
+
+    /**
+     * Count is how many technologies it holds. First is the id of the one
+     * that opens it: the first the game's files define that every country
+     * can have, else the first.
+     */
+    "count": number;
+    "first": string;
+}
+
+/**
+ * TreeGraph is the technologies of one tree, around the one asked about.
+ */
+export interface TreeGraph {
+    /**
+     * Subject is the id of the technology asked about, and Tree the id of the
+     * tree it is in.
+     */
+    "subject": string;
+    "tree": string;
+
+    /**
+     * Trees are the game's trees, and Eras the eras of the technologies
+     * drawn, each in the order the game's files define them.
+     */
+    "trees": Tree[] | null;
+    "eras": Node[] | null;
+
+    /**
+     * Technologies are the tree's technologies, or every tree's in a game of
+     * joinedTrees, and Requires the links from each to what it requires.
+     */
+    "technologies": Technology[] | null;
+    "requires": Edge[] | null;
+
+    /**
+     * Unlocks are the databases of what the technologies unlock, in the order
+     * found: each a node whose Title is the game's word for its definitions
+     * and whose Count is how many of the technologies unlock one.
+     */
+    "unlocks": Node[] | null;
+
+    /**
+     * Needs are the ids of what the subject requires, at any distance, and
+     * Leads the ids of what requires it.
+     */
+    "needs": string[] | null;
+    "leads": string[] | null;
+
+    /**
+     * Audiences are the rows of whom the tree's advances are for, none for a
+     * game whose technologies are for everyone.
+     */
+    "audiences": Audience[] | null;
+}
+
+/**
+ * User is a line that takes a good.
+ */
+export interface User {
+    "line": Node;
+
+    /**
+     * Amount is how much it takes, from the first level that takes it to the
+     * last, as the page shows it.
+     */
+    "amount": string;
+
+    /**
+     * LevelCount is how many levels the line has. FirstLevel and LastLevel
+     * are the first and the last that take the good, counting from 1.
+     */
+    "levelCount": number;
+    "firstLevel": number;
+    "lastLevel": number;
+
+    /**
+     * Through is the category its need asks for, nil where it names the good.
+     */
+    "through"?: Node | null;
 }
 
 /**
@@ -362,4 +974,11 @@ export interface Version {
      * Line counts from one.
      */
     "line": number;
+
+    /**
+     * Message is where the key's text is written in the localization file:
+     * the detail's language's line, else the base language's, which is the
+     * text to translate from. It is the zero Site where neither has one.
+     */
+    "message": lsp$0.Site;
 }

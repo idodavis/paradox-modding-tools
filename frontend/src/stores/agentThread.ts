@@ -1,6 +1,6 @@
 /**
  * A thread: what an agent's updates build for one conversation, a session's
- * own or a subagent's: its transcript, its terminals and its plans.
+ * own or a subagent's: its transcript, its terminals and its checklists.
  */
 import type * as v2 from "@agentclientprotocol/sdk/experimental/v2";
 import type * as unstable from "@agentclientprotocol/sdk/experimental/v2/unstable";
@@ -8,7 +8,7 @@ import { reactive } from "vue";
 
 import type { Diagnostic } from "@services/lsp/models";
 import type { Place } from "@services/workspace/models";
-import type { Field } from "./agentRequests";
+import type { FormProperty } from "./agentRequests";
 import { fileLabel, toEdits, type DiffContent, type FileEdit } from "./edits";
 
 /** An Entry is one item of a thread's transcript. */
@@ -42,7 +42,7 @@ export type Entry =
       plan?: string; // the id of the plan document the request asks to start on, if it asks that
     }
   | { kind: "link"; id: string; message: string; url: string }
-  | { kind: "form"; id: string; message: string; fields: Field[] } // questions the agent asks the user to answer
+  | { kind: "form"; id: string; message: string; properties: FormProperty[] } // questions the agent asks the user to answer
   | { kind: "notice"; id: string; text: string } // what PMT tells the user in the transcript
   | { kind: "compaction"; id: string; status: string; text: string } // the agent shortening its context; text is its summary
   | { kind: "subagent"; id: string } // where the agent started the subagent that has this id
@@ -50,10 +50,10 @@ export type Entry =
   | {
       kind: "turn"; // where a turn ended; its id is the one Go keeps its files' texts under
       id: string;
-      elapsed: number; // how long it took, in milliseconds
+      duration: number; // how long it took, in milliseconds
       tokens: number; // the tokens it used, 0 where the agent reports none
       cost: string; // what it cost, "" where the agent reports no cost
-      canRetry: boolean; // whether it was stopped or failed
+      isUnfinished: boolean; // whether it was stopped or failed
       paths: string[]; // the files it changed that went under review
       problems: FileProblems[]; // the problems it added, by file, filled in once Go has judged the files
     };
@@ -61,11 +61,11 @@ export type Entry =
 /** A FileProblems is the problems an agent's turn added to one file. */
 export type FileProblems = { place: Place; problems: Diagnostic[] };
 
-/** A Step is one line of a checklist an agent keeps. */
-export type Step = { text: string; status: string };
+/** A ChecklistStep is one line of a checklist an agent keeps. */
+export type ChecklistStep = { text: string; status: string };
 
-/** A Plan is a checklist an agent keeps under an id of its own. */
-export type Plan = { id: string; steps: Step[] };
+/** A Checklist is a list of steps an agent keeps under an id of its own. */
+export type Checklist = { id: string; steps: ChecklistStep[] };
 
 /** A Terminal is a command an agent ran, with what it printed so far. */
 export type Terminal = {
@@ -92,7 +92,7 @@ export type Terminal = {
 };
 
 /** A Thread is what an agent's updates build for one conversation. */
-export type Thread = { entries: Entry[]; terminals: Record<string, Terminal>; plans: Plan[] };
+export type Thread = { entries: Entry[]; terminals: Record<string, Terminal>; checklists: Checklist[] };
 
 /**
  * A MessageUpdate is what one kind of update about a message writes: an
@@ -106,8 +106,8 @@ type MessageUpdate = { kind: "user" | "agent" | "thought"; isWhole: boolean };
  */
 export type PlanUpdate = { entries?: v2.PlanEntry[]; plan?: unstable.PlanUpdateContent };
 
-/** IMAGE_LABEL is what the transcript shows for a picture a prompt carried. */
-export const IMAGE_LABEL = "Picture";
+/** IMAGE_LABEL is what the transcript shows for an image a prompt carried. */
+export const IMAGE_LABEL = "Image";
 
 /** CONTROL_CODES matches a terminal's color and cursor codes. */
 const CONTROL_CODES = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g;
@@ -153,11 +153,11 @@ export function applyMessage(thread: Thread, update: v2.ContentChunk | v2.UserMe
 }
 
 /**
- * applyTool applies an update about a tool call to its entry, making the
+ * applyToolCall applies an update about a tool call to its entry, making the
  * entry on the first update. It returns the entry, and whether this update
  * is the one that completed the call.
  */
-export function applyTool(
+export function applyToolCall(
   thread: Thread,
   update: v2.ToolCallUpdate | v2.ToolCallContentChunk,
 ): { entry: Extract<Entry, { kind: "tool" }>; isNewlyDone: boolean } {
@@ -198,17 +198,17 @@ export function applyTool(
 }
 
 /**
- * applyPlan stores a checklist an agent sent, in place of the one it kept
+ * applyChecklist stores a checklist an agent sent, in place of the one it kept
  * under the same id. Version 1 of the protocol sends one checklist with no
  * id.
  */
-export function applyPlan(thread: Thread, update: PlanUpdate): void {
-  const sent = (update.plan ?? { planId: "", entries: update.entries }) as Partial<v2.PlanItems>;
-  const steps = (sent.entries ?? []).map((step) => ({ text: step.content, status: step.status }));
-  const next = { id: sent.planId ?? "", steps };
-  const index = thread.plans.findIndex((plan) => plan.id === next.id);
-  if (index < 0) thread.plans.push(next);
-  else thread.plans[index] = next;
+export function applyChecklist(thread: Thread, update: PlanUpdate): void {
+  const checklist = (update.plan ?? { planId: "", entries: update.entries }) as Partial<v2.PlanItems>;
+  const steps = (checklist.entries ?? []).map((step) => ({ text: step.content, status: step.status }));
+  const next = { id: checklist.planId ?? "", steps };
+  const index = thread.checklists.findIndex((other) => other.id === next.id);
+  if (index < 0) thread.checklists.push(next);
+  else thread.checklists[index] = next;
 }
 
 /**
@@ -216,7 +216,7 @@ export function applyPlan(thread: Thread, update: PlanUpdate): void {
  * of its output so far, its end, and whether it can be stopped.
  */
 export function applyTerminal(thread: Thread, update: v2.TerminalUpdate): void {
-  const terminal = findTerminal(thread, update.terminalId);
+  const terminal = resolveTerminal(thread, update.terminalId);
   if (update.command) terminal.command = update.command;
   if (update.output) terminal.output = decode(update.output.data);
   if (update.capabilities) terminal.canCancel = !!update.capabilities.cancel;
@@ -226,14 +226,14 @@ export function applyTerminal(thread: Thread, update: v2.TerminalUpdate): void {
 
 /** applyTerminalChunk adds a piece of output to a terminal. */
 export function applyTerminalChunk(thread: Thread, chunk: v2.TerminalOutputChunk): void {
-  findTerminal(thread, chunk.terminalId).output += decode(chunk.data);
+  resolveTerminal(thread, chunk.terminalId).output += decode(chunk.data);
 }
 
 /**
- * printTerminal returns a terminal as text: its command on a line of its
+ * describeTerminal returns a terminal as text: its command on a line of its
  * own, then what it printed, without color and cursor codes.
  */
-export function printTerminal(terminal: Terminal): string {
+export function describeTerminal(terminal: Terminal): string {
   const output = terminal.output.replace(CONTROL_CODES, "");
 
   return terminal.command ? `$ ${terminal.command}\n${output}` : output;
@@ -277,7 +277,7 @@ export function applyCursor(thread: Thread, update: unstable.CursorUpdate): void
  * does nothing else.
  */
 export const BUILDERS: Partial<Record<string, (thread: Thread, update: never) => void>> = {
-  plan_removed: (thread, update: { planId: string }) => removePlan(thread, update.planId),
+  plan_removed: (thread, update: { planId: string }) => removeChecklist(thread, update.planId),
   terminal_update: applyTerminal,
   terminal_output_chunk: applyTerminalChunk,
   compaction_update: applyCompaction,
@@ -285,17 +285,17 @@ export const BUILDERS: Partial<Record<string, (thread: Thread, update: never) =>
   cursor_update: applyCursor,
 };
 
-/** removePlan drops the plan a thread keeps under the given id. */
-export function removePlan(thread: Thread, id: string): void {
-  thread.plans = thread.plans.filter((plan) => plan.id !== id);
+/** removeChecklist drops the checklist a thread keeps under the given id. */
+export function removeChecklist(thread: Thread, id: string): void {
+  thread.checklists = thread.checklists.filter((checklist) => checklist.id !== id);
 }
 
 /**
- * listChecklist returns a thread's checklist: the steps of every plan that
- * is one, in the plans' order.
+ * listChecklist returns a thread's checklist: the steps of every checklist it
+ * keeps, in their order.
  */
-export function listChecklist(thread: Thread): Step[] {
-  return thread.plans.flatMap((plan) => plan.steps);
+export function listChecklist(thread: Thread): ChecklistStep[] {
+  return thread.checklists.flatMap((checklist) => checklist.steps);
 }
 
 /**
@@ -310,10 +310,10 @@ export function toText(block: v2.ContentBlock | undefined): string {
 }
 
 /**
- * findTerminal returns a thread's terminal by its id, making it on the
+ * resolveTerminal returns a thread's terminal by its id, making it on the
  * first update about it.
  */
-function findTerminal(thread: Thread, id: string): Terminal {
+function resolveTerminal(thread: Thread, id: string): Terminal {
   thread.terminals[id] ??= {
     id,
     command: "",
@@ -332,10 +332,10 @@ function findTerminal(thread: Thread, id: string): Terminal {
  * decode returns terminal output as text. The protocol sends it as bytes in
  * base64; data that is no base64 is kept as it came.
  */
-function decode(data: string): string {
+function decode(base64: string): string {
   try {
-    return new TextDecoder().decode(Uint8Array.fromBase64(data));
+    return new TextDecoder().decode(Uint8Array.fromBase64(base64));
   } catch {
-    return data;
+    return base64;
   }
 }

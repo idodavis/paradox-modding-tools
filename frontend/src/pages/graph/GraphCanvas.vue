@@ -1,10 +1,15 @@
-<!-- The canvas the graph draws on, with a minimap, zoom buttons and a legend. -->
+<!--
+  The canvas the event graph draws on, with a minimap, zoom buttons and a
+  legend.
+-->
 <script setup lang="ts">
 import { computed, useTemplateRef } from "vue";
 import {
   BaseEdge,
   EdgeLabelRenderer,
   VueFlow,
+  getRectOfNodes,
+  getTransformForBounds,
   useVueFlow,
   type Edge as FlowEdge,
   type EdgeProps,
@@ -12,11 +17,13 @@ import {
   type GraphNode as FlowNode,
   type Node as FlowInput,
 } from "@vue-flow/core";
-import { useResizeObserver } from "@vueuse/core";
+import { createReusableTemplate, useResizeObserver } from "@vueuse/core";
 import { MiniMap } from "@vue-flow/minimap";
+import { clamp } from "es-toolkit";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
 import GraphNode from "./GraphNode.vue";
+import { roundPath, type Point } from "./layered";
 import type { Drawn } from "./layout";
 
 const {
@@ -33,13 +40,22 @@ const {
   root: string;
   full?: boolean;
 }>();
-const emit = defineEmits<{ select: [id: string]; draw: [id: string] }>();
+const emit = defineEmits<{ select: [id: string]; ask: [id: string] }>();
 
-type Point = { x: number; y: number };
-
-/** LEAD is how far an edge runs level from a handle before it curves, in pixels. */
-const LEAD = 24;
-/** LEGEND is the legend's entries. */
+/** SELF_LOOP is the curve of an edge to its own node, and its label's place. */
+const SELF_LOOP = { out: 40, near: 24, rise: 32, back: 16, labelX: 18, labelY: 14 };
+/** FIT frames a whole drawing, never past full size. */
+const FIT = { padding: 0.05, maxZoom: 1 };
+/**
+ * READABLE_ZOOM is the smallest zoom a view opens fitted at. A drawing that
+ * needs less opens at full size on its root, to pan from.
+ */
+const READABLE_ZOOM = 0.8;
+const ZOOM_LIMITS = { min: 0.3, max: 2 };
+/** FADED_BELOW is the zoom percent under which full screen explains fading. */
+const FADED_BELOW = 70;
+const MINIMAP = { width: 150, height: 96 };
+/** LEGEND is a row for each mark of the canvas, with a sample in classes. */
 const LEGEND = [
   { label: "Event", sample: "h-3 w-5.5 rounded-xs border border-(--line-2) bg-(--bg-3)" },
   {
@@ -48,92 +64,113 @@ const LEGEND = [
   },
   { label: "Message", sample: "h-3 w-5.5 rounded-[3px] bg-(--bg-2)" },
   { label: "On action", sample: "h-2.5 w-5 rounded-full border border-(--line-2) bg-(--bg-2)" },
-  { label: "Root", sample: "h-2.5 w-5 rounded-full border border-primary" },
+  { label: "Root", sample: "h-2.5 w-5 rounded-full border border-secondary" },
+  { label: "Selected", sample: "h-2.5 w-5 rounded-full border border-primary" },
   { label: "Selected path", sample: "h-0.5 w-3.5 bg-(--link)" },
   { label: "Delayed", sample: "w-5 border-t-[1.5px] border-dashed border-(--fg-3)" },
   { label: "Through a macro", sample: "w-5 border-t-2 border-dotted border-(--fg-3)" },
 ];
 
-const { fitView, viewport, zoomIn, zoomOut } = useVueFlow("event-graph");
+const [DefineWire, Wire] = createReusableTemplate<{ edge: EdgeProps; line: ReturnType<typeof buildPath> }>();
+const { dimensions, findNode, fitView, getNodes, setViewport, viewport, zoomIn, zoomOut } = useVueFlow("graph");
 const canvas = useTemplateRef("canvas");
 const zoom = computed(() => Math.round(viewport.value.zoom * 100));
 
 let lastView = "";
 let following = true;
-useResizeObserver(canvas, () => following && void fit());
+useResizeObserver(canvas, () => following && void frame());
 
-/** fitOnce fits the canvas the first time it sees a view. */
-function fitOnce(): void {
+function frameOnce(): void {
   if (lastView === view) return;
   lastView = view;
   following = true;
-  void fit();
+  void frame();
 }
 
-/** stopFollowing stops fitting the view to the canvas's size once the user moves it. */
+/**
+ * frame shows the whole drawing where its text stays readable. A larger one
+ * opens at full size with the root as near the middle as its edges allow, and
+ * along a side it fits, at the top.
+ */
+function frame(): Promise<boolean> {
+  const { width, height } = dimensions.value;
+  const drawn = getRectOfNodes(getNodes.value);
+  const { zoom } = getTransformForBounds(drawn, width, height, ZOOM_LIMITS.min, FIT.maxZoom, FIT.padding);
+  const focus = findNode(root) ?? getNodes.value[0];
+  if (!focus || zoom >= READABLE_ZOOM) return fitView(FIT);
+
+  const { x, y } = focus.computedPosition;
+  return setViewport({
+    x: centerOffset(width, x + focus.dimensions.width / 2, drawn.x, drawn.width),
+    y: drawn.height > height ? centerOffset(height, y + focus.dimensions.height / 2, drawn.y, drawn.height) : -drawn.y,
+    zoom: FIT.maxZoom,
+  });
+}
+
+/**
+ * centerOffset returns the offset along one axis that puts a point at the
+ * middle of the canvas, held back so no empty room shows past the drawing.
+ */
+function centerOffset(canvasSize: number, point: number, start: number, size: number): number {
+  const startAtEdge = -start;
+  const endAtEdge = canvasSize - start - size;
+  return clamp(canvasSize / 2 - point, Math.min(startAtEdge, endAtEdge), Math.max(startAtEdge, endAtEdge));
+}
+
+/**
+ * stopFollowing stops fitting the view to the canvas's size once the user
+ * moves it.
+ */
 function stopFollowing({ event }: FlowEvents["moveStart"]): void {
   if ("sourceEvent" in event && event.sourceEvent) following = false;
 }
 
-/** fit fits the view to everything drawn, never smaller than half size so the text stays readable. */
 function fit(): Promise<boolean> {
-  return fitView({ padding: 0.15, minZoom: 0.5, maxZoom: 1 });
+  return fitView(FIT);
 }
 
 /**
- * buildPath builds a firing's path and label place. The path leaves the firer's handle and reaches the target's level.
- * Between neighbouring ranks it is one S curve; a longer edge is one smooth curve through the points the layout routes
- * it by. The label sits at its middle.
+ * buildPath builds an edge's path and label place: the wire the layout
+ * routed, at right angles with round corners, the label at its middle. An
+ * edge from a node to itself, which the layout does not route, loops over the
+ * node.
  */
 function buildPath(edge: EdgeProps): { path: string; x: number; y: number } {
-  const { sourceX, sourceY, targetX, targetY } = edge;
-  if (edge.source === edge.target) {
-    const top = sourceY - edge.sourceNode.dimensions.height / 2;
-    const path = `M${sourceX},${sourceY} C${sourceX + 40},${sourceY} ${sourceX + 24},${top - 32} ${sourceX - 16},${top}`;
-    return { path, x: sourceX + 18, y: top - 14 };
-  }
-  const inner: Point[] = edge.data.points;
-  if (!inner.length) {
-    const half = (targetX - sourceX) / 2;
-    const path = `M${sourceX},${sourceY} C${sourceX + half},${sourceY} ${targetX - half},${targetY} ${targetX},${targetY}`;
-    return { path, x: (sourceX + targetX) / 2, y: (sourceY + targetY) / 2 };
-  }
-  // the short level runs at both ends make the curve leave and reach the handles straight
-  const points = [
-    { x: sourceX, y: sourceY },
-    { x: sourceX + LEAD, y: sourceY },
-    ...inner,
-    { x: targetX - LEAD, y: targetY },
-    { x: targetX, y: targetY },
-  ];
-  const middle = inner[Math.floor(inner.length / 2)];
-  return { path: traceBasis(points), x: middle.x, y: middle.y };
-}
+  const points: Point[] = edge.data.points;
+  if (points.length) {
+    const [x, y] = points[Math.floor(points.length / 2)];
 
-/** traceBasis traces a uniform B-spline through points as an SVG path, starting and ending on the end points. */
-function traceBasis(points: Point[]): string {
-  const [first, second] = points;
-  let path = `M${first.x},${first.y} L${(5 * first.x + second.x) / 6},${(5 * first.y + second.y) / 6}`;
-  for (let position = 2; position < points.length + 1; position++) {
-    const [before, current] = [points[position - 2], points[position - 1]];
-    const next = points[Math.min(position, points.length - 1)];
-    path +=
-      ` C${(2 * before.x + current.x) / 3},${(2 * before.y + current.y) / 3}` +
-      ` ${(before.x + 2 * current.x) / 3},${(before.y + 2 * current.y) / 3}` +
-      ` ${(before.x + 4 * current.x + next.x) / 6},${(before.y + 4 * current.y + next.y) / 6}`;
+    return { path: roundPath(points), x, y };
   }
-  const last = points[points.length - 1];
-  return `${path} L${last.x},${last.y}`;
+
+  const { sourceX, sourceY } = edge;
+  const top = sourceY - edge.sourceNode.dimensions.height / 2;
+  const { out, near, rise, back, labelX, labelY } = SELF_LOOP;
+  const path = `M${sourceX},${sourceY} C${sourceX + out},${sourceY} ${sourceX + near},${top - rise} ${sourceX - back},${top}`;
+
+  return { path, x: sourceX + labelX, y: top - labelY };
 }
 
 /** resolveColor returns the minimap color of a node. */
 function resolveColor(node: FlowNode): string {
-  return node.id === root ? "var(--accent)" : "var(--line-2)";
+  return node.id === root ? "var(--link)" : "var(--line-2)";
 }
 
-/** click selects the node that was clicked. A loop's marker selects the node it names. */
+/**
+ * click selects the node that was clicked. A loop's marker selects the node it
+ * names.
+ */
 function click(node: FlowNode): void {
-  emit("select", node.data.loop?.kind === "back" ? node.data.node.id : node.id);
+  emit("select", node.data.loop?.marker === "back" ? node.data.node.id : node.id);
+}
+
+/**
+ * ask asks about the node that was double-clicked. A fold and a loop's marker
+ * are no subject.
+ */
+function ask(node: FlowNode): void {
+  if (node.data.loop || node.data.node.count) return;
+  emit("ask", node.data.node.id);
 }
 
 defineExpose({ fit });
@@ -141,42 +178,40 @@ defineExpose({ fit });
 
 <template>
   <div ref="canvas" class="graph relative h-full w-full bg-(--bg-0)">
+    <DefineWire v-slot="{ edge, line }">
+      <BaseEdge :id="edge.id" :path="line.path" />
+      <path v-if="edge.data.conditions" :d="line.path" class="hover-area">
+        <title>{{ edge.data.conditions }}</title>
+      </path>
+      <EdgeLabelRenderer v-if="edge.label">
+        <span class="wire-label" :style="{ transform: `translate(-50%, -50%) translate(${line.x}px, ${line.y}px)` }">{{
+          edge.label
+        }}</span>
+      </EdgeLabelRenderer>
+    </DefineWire>
     <VueFlow
-      id="event-graph"
+      id="graph"
       :nodes="nodes"
       :edges="edges"
       :nodes-draggable="false"
       :nodes-connectable="false"
       :elements-selectable="false"
-      :min-zoom="0.3"
-      :max-zoom="2"
+      :min-zoom="ZOOM_LIMITS.min"
+      :max-zoom="ZOOM_LIMITS.max"
       class="h-full w-full"
       @node-click="({ node }) => click(node)"
-      @node-double-click="({ node }) => !node.data.loop && !node.data.node.count && emit('draw', node.id)"
+      @node-double-click="({ node }) => ask(node)"
       @pane-click="emit('select', '')"
-      @nodes-initialized="fitOnce"
+      @nodes-initialized="frameOnce"
       @move-start="stopFollowing"
     >
-      <template #edge-fire="edge">
-        <BaseEdge :id="edge.id" :path="buildPath(edge).path" />
-        <!-- a wider invisible stroke over the edge, whose title shows the firing's conditions on hover -->
-        <path v-if="edge.data.conditions" :d="buildPath(edge).path" class="hit">
-          <title>{{ edge.data.conditions }}</title>
-        </path>
-        <EdgeLabelRenderer v-if="edge.label">
-          <span
-            class="fire-label"
-            :style="{ transform: `translate(-50%, -50%) translate(${buildPath(edge).x}px, ${buildPath(edge).y}px)` }"
-            >{{ edge.label }}</span
-          >
-        </EdgeLabelRenderer>
-      </template>
+      <template #edge-wire="edge"><Wire :edge="edge" :line="buildPath(edge)" /></template>
       <template #node-graph="{ data }: { data: Drawn }">
         <GraphNode :drawn="data" />
       </template>
       <MiniMap
-        :width="150"
-        :height="96"
+        :width="MINIMAP.width"
+        :height="MINIMAP.height"
         :node-color="resolveColor"
         node-stroke-color="transparent"
         mask-color="color-mix(in srgb, var(--bg-0) 55%, transparent)"
@@ -186,7 +221,7 @@ defineExpose({ fit });
       />
     </VueFlow>
     <div
-      v-if="full && zoom < 70"
+      v-if="full && zoom < FADED_BELOW"
       class="absolute start-4 bottom-3.5 flex items-center gap-2 rounded-lg border border-default bg-muted px-2.5 py-1.5 text-11 text-dimmed"
     >
       <UIcon name="i-lucide-info" class="size-3.5" />
@@ -196,8 +231,8 @@ defineExpose({ fit });
       v-else
       class="absolute start-3 bottom-3 flex items-center gap-3.5 rounded-lg border border-default bg-muted px-2.5 py-1.5 text-11 whitespace-nowrap text-dimmed"
     >
-      <span v-for="item in LEGEND" :key="item.label" class="flex items-center gap-1.5">
-        <span :class="item.sample" />{{ item.label }}
+      <span v-for="row in LEGEND" :key="row.label" class="flex items-center gap-1.5">
+        <span :class="row.sample" />{{ row.label }}
       </span>
     </div>
     <div class="absolute end-43 bottom-3 flex items-end gap-1.5">
@@ -229,7 +264,7 @@ defineExpose({ fit });
   stroke: var(--link);
   stroke-width: 2;
 }
-.hit {
+.hover-area {
   fill: none;
   stroke: transparent;
   stroke-width: 12;
@@ -247,7 +282,7 @@ defineExpose({ fit });
 .graph :deep(.vue-flow__edge.back) {
   opacity: 0.2;
 }
-.fire-label {
+.wire-label {
   position: absolute;
   z-index: 1001;
   padding: 0 4px;
@@ -257,6 +292,9 @@ defineExpose({ fit });
   font-family: var(--font-mono);
   font-size: 10.5px;
   white-space: nowrap;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
 }
 .graph :deep(.vue-flow__minimap) {

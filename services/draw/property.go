@@ -209,10 +209,10 @@ func (l *library) resolveValue(key, value string) (text []loc.Segment, texture s
 		texture = l.resolveTexture(value)
 
 	case isLocalized(key):
-		text = l.resolveText(l.lookupText(value), 0)
+		text = l.resolveText(l.lookupText(value))
 
 	case key == textKeys[1]: // the key that writes a text as shown
-		text = l.resolveText(value, 0)
+		text = l.resolveText(value)
 	}
 
 	return text, texture

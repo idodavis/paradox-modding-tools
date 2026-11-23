@@ -21,7 +21,7 @@ const IS_WINDOW = THIS_WINDOW === "agent";
 
 // The dot and the words of each state the session menu shows a session in.
 const STATES: Record<SessionState, { dot: string; label: string }> = {
-  needs: { dot: "bg-warning", label: "Needs you" },
+  waiting: { dot: "bg-warning", label: "Needs you" },
   working: { dot: "bg-primary", label: "Working" },
   failed: { dot: "bg-error", label: "Failed" },
   done: { dot: "bg-success", label: "Done" },
@@ -37,7 +37,7 @@ const field = useTemplateRef("field");
 const isFullscreen = shallowRef(false);
 const draft = shallowRef<string | null>(null);
 // What the session menu's search box holds, which its sessions' titles match.
-const sought = shallowRef("");
+const query = shallowRef("");
 
 const session = computed(() => agent.active);
 const lacksCompletion = computed(() => !!agents.value && !agents.value.some((row) => row.completion && row.installed));
@@ -64,7 +64,7 @@ const recent = computed(() =>
  */
 const menu = computed(() => {
   const shown = session.value;
-  const records = agent.listRecords().filter((record) => matchQuery(sought.value, record.title));
+  const records = agent.listRecords().filter((record) => matchQuery(query.value, record.title));
   const archived = records.filter((record) => record.isArchived);
   const agents = [...agent.ready].sort(
     (first, second) => Number(second.id === shown?.agent.id) - Number(first.id === shown?.agent.id),
@@ -179,7 +179,7 @@ async function runTask(task: Task): Promise<void> {
           v-else
           :items="menu"
           :content="{ align: 'start' }"
-          @update:open="(isOpen) => isOpen || (sought = '')"
+          @update:open="(isOpen) => isOpen || (query = '')"
         >
           <span class="flex min-w-0" :title="session.title" @dblclick="session.id && startRename()">
             <UButton
@@ -195,7 +195,7 @@ async function runTask(task: Task): Promise<void> {
           <template #content-top>
             <div class="border-b border-default" @keydown.stop>
               <UInput
-                v-model="sought"
+                v-model="query"
                 icon="i-lucide-search"
                 placeholder="Find a session"
                 variant="none"

@@ -7,7 +7,7 @@ all come from the [services](../../docs/ARCHITECTURE.md#the-services), and the a
 
 It is Vue 3 with `<script setup>` and TypeScript, [Nuxt UI](https://ui.nuxt.com/) for components, Pinia for state and
 [Pinia Colada](https://pinia-colada.esm.dev/) for reading Go. The editor is Monaco, the explorer `@pierre/trees`, the
-Event Graph Vue Flow laid out by dagre, and the Terminal xterm.js.
+Graph's canvases laid out by ELK's layered layout, the event graph drawn by Vue Flow, and the Terminal xterm.js.
 
 ```mermaid
 flowchart LR

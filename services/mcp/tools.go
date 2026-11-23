@@ -56,10 +56,17 @@ type findingFilter struct {
 	Limit int    `json:"limit,omitempty" jsonschema:"the most findings wanted; 50 if left out"`
 }
 
-// graphRoot is what an Event Graph is drawn from, and how.
+// graphRoot is the node a view of the Graph is about, and what is drawn of it.
 type graphRoot struct {
-	Root   string        `json:"root" jsonschema:"a node's id from find_roots, such as events:my_mod.0001"`
-	Filter *graph.Filter `json:"filter,omitempty" jsonschema:"what is drawn; the Event Graph's defaults if left out"`
+	Root   string        `json:"root" jsonschema:"a node's id from find_roots, such as events:my_mod.0001 or on_action:on_birth"`
+	Filter *graph.Filter `json:"filter,omitempty" jsonschema:"what is drawn; the Graph's defaults if left out"`
+}
+
+// buildingLine is a building, and the production method each of its groups
+// runs.
+type buildingLine struct {
+	ID     string   `json:"id" jsonschema:"a building's or a production method's id from find_roots"`
+	Picked []string `json:"picked,omitempty" jsonschema:"ids of production methods: each one's group runs it; a group none names runs its first"`
 }
 
 type node struct {
@@ -191,31 +198,39 @@ func (s *Service) addPageTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "list_codes", Title: "List Health's checks", Annotations: readsOnly,
 		Description: "Lists Health's checks: each one's id, question, level and message."},
 		answer(func(struct{}) ([]lsp.Code, error) { return s.Health.ListCodes(), nil }))
-	sdk.AddTool(server, &sdk.Tool{Name: "find_roots", Title: "Find an event to draw", Annotations: readsOnly,
-		Description: "Finds the events, on_actions, decisions, messages and scripted effects an Event Graph can be " +
-			"drawn from, by id, namespace or number."},
+	sdk.AddTool(server, &sdk.Tool{Name: "find_roots", Title: "Find what the Graph shows", Annotations: readsOnly,
+		Description: "Finds the definitions the Graph shows, by id, name or number: events, on_actions, decisions, " +
+			"messages and scripted effects, and the games' goods, buildings, production methods, technologies, " +
+			"innovations and advances."},
 		answer(func(request textQuery) ([]graph.Node, error) {
 			return s.Graph.FindRoots(request.Query, resolveLimit(request.Limit, defaultLimit)), nil
 		}))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Title: "Draw an Event Graph", Annotations: readsOnly,
-		Description: "Draws the Event Graph of a root: what it fires and what fires it, step by step, each firing " +
-			"with the blocks it sits in and its delay."},
-		answer(func(request graphRoot) (graph.Graph, error) {
-			filter := s.Graph.Defaults()
-			if request.Filter != nil {
-				filter = *request.Filter
-			}
+	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Title: "Build an event graph", Annotations: readsOnly,
+		Description: "Builds the graph of what an event, on_action, decision, message or scripted effect fires and " +
+			"what fires it, step by step, each firing with the blocks it sits in and its delay."},
+		answerGraph(s, s.Graph.BuildGraph))
+	sdk.AddTool(server, &sdk.Tool{Name: "build_chain", Title: "Build a good's chain", Annotations: readsOnly,
+		Description: "Gives a good's chain: where it is found, the building lines that make it with what each " +
+			"level takes and makes, where the goods they take come from, and the lines and needs that take it."},
+		answerGraph(s, s.Graph.BuildChain))
+	sdk.AddTool(server, &sdk.Tool{Name: "build_line", Title: "Build a building's line", Annotations: readsOnly,
+		Description: "Gives a building's line: its levels with what unlocks each, a table of what each level makes, " +
+			"takes, employs, costs and gives, and, for a game with production methods, each group's methods and what " +
+			"the picked ones come to."},
+		answer(func(request buildingLine) (graph.Line, error) {
+			line, err := s.Graph.BuildLine(request.ID, request.Picked)
 
-			eventGraph, err := s.Graph.BuildGraph(request.Root, filter)
-			if err != nil {
-				return eventGraph, fmt.Errorf("%w; %s", err, nodeHint)
-			}
-
-			return eventGraph, nil
+			return line, hintNode(err)
 		}))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_detail", Title: "Read an Event Graph node", Annotations: readsOnly,
-		Description: "Gives one Event Graph node's detail: its texts, what it fires and what fires it, the game " +
-			"rules it reads, the game's copy it replaces, and its script."}, answer(s.buildDetail))
+	sdk.AddTool(server, &sdk.Tool{Name: "build_tree", Title: "Build a technology's tree", Annotations: readsOnly,
+		Description: "Gives the tree a technology, an innovation or an advance is in: its technologies with their " +
+			"era, what each gives and unlocks, what each requires, and what the one asked about needs and leads to. " +
+			"The filter's potential names the religions, cultures or countries whose own advances are drawn too."},
+		answerGraph(s, s.Graph.BuildTree))
+	sdk.AddTool(server, &sdk.Tool{Name: "build_detail", Title: "Read a Graph node", Annotations: readsOnly,
+		Description: "Gives one Graph node's detail: what it is listed under and costs, its texts, what it fires and " +
+			"what fires it, every link it has to goods, buildings and technologies, the game rules it reads, the " +
+			"game's copy it replaces, and its script."}, answer(s.buildDetail))
 	sdk.AddTool(server, &sdk.Tool{Name: "search_pages", Title: "Search the game's wiki", Annotations: readsOnly,
 		Description: "Finds the game wiki's modding pages that hold a text."},
 		answer(func(request textQuery) ([]string, error) {
@@ -276,6 +291,21 @@ func answer[In, Out any](respond func(In) (Out, error)) sdk.ToolHandlerFor[In, a
 	}
 }
 
+// answerGraph makes a tool's handler from a view of the Graph that takes a
+// node's id and a filter. A filter left out is the Graph's defaults.
+func answerGraph[Out any](s *Service, build func(string, graph.Filter) (Out, error)) sdk.ToolHandlerFor[graphRoot, any] {
+	return answer(func(request graphRoot) (Out, error) {
+		filter := s.Graph.Defaults()
+		if request.Filter != nil {
+			filter = *request.Filter
+		}
+
+		view, err := build(request.Root, filter)
+
+		return view, hintNode(err)
+	})
+}
+
 // resolveLimit returns the limit asked for, or the fallback if it is left out,
 // zero or negative.
 func resolveLimit(limit, fallback int) int {
@@ -286,15 +316,15 @@ func resolveLimit(limit, fallback int) int {
 	return limit
 }
 
-// A fileAnswer is a file as read_file answers: the file, and a note where
-// the game does not read this copy of it.
+// A fileAnswer is a file with a note where the game does not read this copy
+// of it.
 type fileAnswer struct {
 	workspace.FileText
 	Note string `json:"note,omitempty"`
 }
 
-// hidingNotes holds what read_file says of a file the game does not read, by
-// the reason. {mod} is the mod that hides the file.
+// hidingNotes holds the note on a file the game does not read, by the reason.
+// {mod} is the mod that hides the file.
 var hidingNotes = map[files.Hiding]string{
 	files.HidingShadowed: "The game does not read this copy: {mod} has a file at the same path later in the load " +
 		"order, and the game keeps that one. list_copies lists every copy.",
@@ -303,8 +333,8 @@ var hidingNotes = map[files.Hiding]string{
 	files.HidingUnmounted: "The game does not read this file: it is in no folder the game loads.",
 }
 
-// readFile answers read_file. A file the game does not read carries a note
-// that says why and names the mod whose copy or replace_path hides it. It
+// readFile returns a file with a note where the game does not read it. The
+// note says why and names the mod whose copy or replace_path hides it. It
 // returns an error if the path is no file of the workspace or the game.
 func (s *Service) readFile(request document) (fileAnswer, error) {
 	if _, err := s.locateFile(request.Path); err != nil {
@@ -494,10 +524,12 @@ const (
 		`mods touch the same things, each mod's own problems, and each language's coverage of its localization ` +
 		`(the coverage check). Fix the problems you brought in.
 5. Show the user. show opens the file at the lines you changed, or the page that shows the result, such as the ` +
-		`Event Graph of an event you wired.
+		`Graph of an event you wired.
 
-Events: find_roots finds an event, an on_action, a decision or a scripted effect; build_graph draws what it fires ` +
-		`and what fires it, and build_detail gives one node's texts, script and links.
+Graph: find_roots finds an event, an on_action, a decision, a scripted effect, a good, a building, a production method or a ` +
+		`technology. build_graph gives what an event, an on_action, a decision or a scripted effect fires and what ` +
+		`fires it. build_chain gives who makes and who takes a good, build_line a building's levels and production ` +
+		`methods, and build_tree a technology's tree. build_detail gives one node's texts, script, links and cost.
 Localization: a mod's localization files are YAML under localization/<language>/, each beginning with ` +
 		`l_<language>: and saved with a byte order mark. write_scaffold writes the keys a language lacks, with the ` +
 		`base language's text as the placeholder.`

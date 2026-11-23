@@ -21,7 +21,7 @@ sequenceDiagram
   participant Agent as Agent program
   participant MCP as mcp service
   Page->>Go: opens the stream, naming the agent and the active file
-  Go->>Agent: starts it in the workspace's folder
+  Go->>Agent: starts it in the agent folder
   Go-->>Page: Start, with the folder or the error
   loop until either side ends
     Page->>Go: one ACP message
@@ -36,8 +36,8 @@ sequenceDiagram
 
 `agents` is the table of the agents PMT offers: Claude, GitHub Copilot CLI, GitHub Copilot and Codex. A row has the
 registry's id, the command that registers PMT's tools with that agent outside PMT, and the instruction files and
-folders it reads in a mod. A row's `Makes` are the skills, commands and subagents PMT makes for the agent in the
-workspace's folder, each a path and a first text with `%s` for the name; only Claude's are known. Claude's row has
+folders it reads in a mod. A row's `Skeletons` are the skills, commands and subagents PMT makes for the agent in the
+agent folder, each a path and a first text with `%s` for the name; only Claude's are known. Claude's row has
 `Guards`: its sessions are given the read-only folders as deny rules of
 Claude's own (see [The stream](#the-stream)). It also has `Steers`: Claude takes a prompt sent while its turn runs
 into that turn, so the pane sends it at once. The other agents do not, so the pane holds such a prompt until the turn
@@ -47,7 +47,7 @@ codex-acp 2.8.0 held the second prompt and answered it as a turn of its own once
 row also has `Instructions`, the summary of the instructions PMT's tool server
 gives: the CLI drops those, so the pane adds the summary to a session's first prompt, after the user's text.
 
-Codex's row has `StartMode` and `Unasked`. Codex has no file tool and takes no deny rules: every write is a shell
+Codex's row has `StartMode` and `Bypasses`. Codex has no file tool and takes no deny rules: every write is a shell
 command. Measured with codex-acp 2.8.0: in its default mode, Auto review (`agent`), its own reviewer approved a
 write to a folder outside its own and PMT was asked nothing, and Full access (`agent-full-access`) asks nothing by
 design; in Workspace access (`workspace-write`) the same command came as a permission request. So a session of Codex
@@ -101,20 +101,20 @@ program.
 Each chat opens the Wails stream `agent`. No port is opened. The window's first message names the agent and the active
 file. Tab completion opens the same stream, naming the server's row, once for each window that shows an editor. Go
 starts the program, then answers with a `Start`: the folder it started in, the other folders it may work in, the
-folder its plan files go in (`plans` under the workspace's folder) and the metadata each of its sessions is given,
+folder its plan files go in (`plans` under the agent folder) and the metadata each of its sessions is given,
 or the error that kept the agent from starting.
 
-- **A chat** starts in the workspace's folder (`workspace.MakeFolder`, which makes it if it is missing), with the
+- **A chat** starts in the agent folder (`workspace.CreateAgentFolder`, which makes it if it is missing), with the
   folders of the user's own mods as its other folders. The install's folder and each external mod's are read-only
   and are never among them. With no workspace open it starts in the home folder.
-- **A row that guards** (`Guards`, Claude's) also gets `Meta`: Claude's own deny rules, one for every edit in each
+- **An agent that takes deny rules** (`Guards`, Claude) also gets `Meta`: Claude's own deny rules, one for every edit in each
   read-only folder (`Edit(//c/Games/CK3/**)`), under `claudeCode.options.settings`, where Claude's adapter reads a
   session's options. Claude refuses those edits in every mode, the one that asks nothing included; measured on
   Windows with claude-acp 0.107.2. The page refuses the same edits for every agent when it is asked
   (see the [frontend](../../frontend/src/README.md)). The same settings name `plansDirectory`, so Claude writes
-  its plan files in the workspace's `plans` folder, where the page takes them for plans, and not in its own folder
-  in the user's home; measured with claude-acp 0.109.0. The user's shell rules (the settings `agents.shellAllowed`
-  and `agents.shellRefused`) go in as `Bash(git status:*)` rules, allowed and denied: with them Claude ran
+  its plan files in the agent folder's `plans` folder, where the page takes them for plans, and not in its own
+  folder in the user's home; measured with claude-acp 0.109.0. The user's shell rules (the settings
+  `agents.shellAllowed` and `agents.shellDenied`) go in as `Bash(git status:*)` rules, allowed and denied: with them Claude ran
   `git status` unasked and refused `whoami`, measured with claude-acp 0.109.0. A session takes them when it starts.
 - **GitHub Copilot's CLI** takes neither over the protocol, so its row names program arguments. `DirArg`
   (`--add-dir`) comes before each of the user's own mods' folders, and `DenyArg` (`--deny-tool=write(%s/**)`) gives it
@@ -125,8 +125,8 @@ or the error that kept the agent from starting.
   takes the parentheses as they are.
 - **Shell commands** are covered by no agent's path rule. Measured: Claude refused a `Set-Content` into a denied
   folder by itself, and Copilot's CLI wrote the denied folder with a PowerShell command it was allowed to run. So
-  the page never allows for good a shell command that names a read-only folder (`workspace.FindReadOnly`), and its
-  card says PMT cannot see what the command does there.
+  the page never allows for good a shell command that names a read-only folder (`workspace.FindReadOnlyFolder`),
+  and its card says PMT cannot see what the command does there.
 - **Tab completion** starts in the folder of the mod that holds the active file, else the first mod whose folder
   exists, else the home folder (`workspace.ResolveFolder`, the same rule the Terminal uses), with every other mod's
   folder beside it. It changes no file.
@@ -166,9 +166,9 @@ program and everything it started, and the program's own end closes the stream.
 - **Guards**: whether an agent takes the folders it must not change as deny rules of its own.
 - **Steers**: whether an agent takes a prompt sent while its turn runs into that turn.
 - **StartMode**: the mode an agent's sessions start in, where PMT picks it.
-- **PlanFolder**: the folder outside the workspace where an agent keeps each session's plan files, as a part of its
-  path. GitHub Copilot's CLI writes `~/.copilot/session-state/<session>/plan.md` in its Plan mode (measured with
+- **HomePlanFolder**: the folder outside the workspace where an agent keeps each session's plan files, as a part of
+  its path. GitHub Copilot's CLI writes `~/.copilot/session-state/<session>/plan.md` in its Plan mode (measured with
   1.0.114); the page takes a Markdown file there for a plan, never a change to review.
-- **Unasked**: what makes an agent change files and run commands without asking PMT: a mode by its id, or a value of
+- **Bypasses**: what makes an agent change files and run commands without asking PMT: a mode by its id, or a value of
   another setting as `setting=value`. Codex's row names its Auto review and Full access modes; GitHub Copilot's CLI's
   names its Autopilot mode and `allow_all=on` (its values measured with the CLI 1.0.114).

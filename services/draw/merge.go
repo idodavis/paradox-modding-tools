@@ -130,7 +130,7 @@ type table[K comparable, V any] struct {
 }
 
 const (
-	// maxDepth is how deep templates, types and texts may nest.
+	// maxDepth is how deep templates and types may nest.
 	maxDepth = 8
 
 	absentStatement int32 = 0

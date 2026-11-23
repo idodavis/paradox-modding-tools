@@ -12,7 +12,25 @@ import type { Part, Site } from "@services/lsp/models";
 
 const PLURALS = new Intl.PluralRules("en");
 const NUMBERS = new Intl.NumberFormat("en");
-const LISTS = new Intl.ListFormat("en-GB");
+const LISTS = {
+  conjunction: new Intl.ListFormat("en-GB"),
+  disjunction: new Intl.ListFormat("en-GB", { type: "disjunction" }),
+};
+const ROMAN_DIGITS: [number, string][] = [
+  [1000, "M"],
+  [900, "CM"],
+  [500, "D"],
+  [400, "CD"],
+  [100, "C"],
+  [90, "XC"],
+  [50, "L"],
+  [40, "XL"],
+  [10, "X"],
+  [9, "IX"],
+  [5, "V"],
+  [4, "IV"],
+  [1, "I"],
+];
 const DAYS = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long" });
 const CLOCK = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
@@ -63,9 +81,24 @@ export function abbreviate(name: string): string {
   return words.length > 1 ? `${words[0]?.[0]}${words[1]?.[0]}` : name.slice(0, 2);
 }
 
-/** list joins items into a phrase, such as "a, b and c". It is "" for no items. */
-export function list(items: readonly string[]): string {
-  return LISTS.format(items);
+/**
+ * list joins items into a phrase, such as "a, b and c", or "a, b or c" for a
+ * disjunction. It is "" for no items.
+ */
+export function list(items: readonly string[], type: "conjunction" | "disjunction" = "conjunction"): string {
+  return LISTS[type].format(items);
+}
+
+/** toRoman returns a whole number from 1 as a Roman numeral, such as X. */
+export function toRoman(number: number): string {
+  let rest = number;
+  let numeral = "";
+  for (const [size, digit] of ROMAN_DIGITS) {
+    numeral += digit.repeat(Math.floor(rest / size));
+    rest %= size;
+  }
+
+  return numeral;
 }
 
 /** describeRelease returns a version's release, such as 1.15 for 1.15.1. */

@@ -70,10 +70,10 @@ const hasFile = () => !!activeFile();
 const isOpen = () => useWorkspaceStore().isOpen();
 const isIde = () => router.currentRoute.value.name === "workspace-ide";
 /**
- * isAgentHome reports whether this window can show the agent: the main one
+ * canShowAgent reports whether this window can show the agent: the main one
  * or the agent's own.
  */
-const isAgentHome = () => THIS_WINDOW === "main" || THIS_WINDOW === "agent";
+const canShowAgent = () => THIS_WINDOW === "main" || THIS_WINDOW === "agent";
 
 /** COMMANDS holds every command of the app. */
 export const COMMANDS: readonly Command[] = [
@@ -211,8 +211,8 @@ export const COMMANDS: readonly Command[] = [
   },
   {
     id: "editor.openGraph",
-    label: "Open the event under the cursor",
-    prefix: "Event Graph:",
+    label: "Ask about the name under the cursor",
+    prefix: "Graph:",
     icon: "i-lucide-git-branch",
     kbds: ["meta", "shift", "G"],
     when: hasModel,
@@ -556,17 +556,17 @@ export const COMMANDS: readonly Command[] = [
     icon: "i-lucide-message-circle",
     kbds: ["meta", "L"],
     when: () => isOpen() && !!useAgentStore().current,
-    onSelect: () => useAgentStore().compose(),
+    onSelect: () => useAgentStore().ask(),
   },
   {
-    id: "agent.newSession",
+    id: "agent.startSession",
     label: "Start a new agent session",
     icon: "i-lucide-plus",
-    when: () => isAgentHome() && isOpen() && !!useAgentStore().current,
+    when: () => canShowAgent() && isOpen() && !!useAgentStore().current,
     onSelect: () => {
       const agent = useAgentStore();
       if (agent.current) agent.start(agent.current.id);
-      agent.compose();
+      agent.ask();
     },
   },
   {
@@ -583,14 +583,14 @@ export const COMMANDS: readonly Command[] = [
     id: "agent.keepAll",
     label: "Keep all the agent's changes",
     icon: "i-lucide-check-check",
-    when: () => isAgentHome() && !!useAgentStore().reviews?.length,
+    when: () => canShowAgent() && !!useAgentStore().reviews?.length,
     onSelect: () => useAgentStore().keep(useAgentStore().reviews ?? []),
   },
   {
     id: "agent.undoAll",
     label: "Undo all the agent's changes",
     icon: "i-lucide-undo-2",
-    when: () => isAgentHome() && !!useAgentStore().reviews?.length,
+    when: () => canShowAgent() && !!useAgentStore().reviews?.length,
     onSelect: () => run(() => useAgentStore().undo(useAgentStore().reviews ?? [])),
   },
 ];
@@ -917,14 +917,17 @@ export function openPage(name: PageName): void {
     : router.push({ name }));
 }
 
-/** openGraph opens the Event Graph on the name under the model's caret, if the graph has it. */
+/**
+ * openGraph opens the Graph on the name under the model's caret, if the Graph
+ * has the name as a subject.
+ */
 async function openGraph(model: Model): Promise<void> {
   const card = await lsp.Hover(model.place.path, model.caret.line, model.caret.column);
   if (card?.node) {
     await router.push({
-      name: "event-graph",
+      name: "graph",
       params: { id: useWorkspaceStore().activeId() },
-      query: { root: card.node },
+      query: { subject: card.node },
     });
   }
 }

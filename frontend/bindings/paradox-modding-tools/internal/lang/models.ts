@@ -164,6 +164,64 @@ export interface SourceState {
 }
 
 /**
+ * Type is what the definitions of a database are, where the app treats them
+ * in a way of its own. It is "" for any other database.
+ */
+export enum Type {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * The types the app reads in a way of its own.
+     */
+    TypeEvent = "event",
+    TypeOnAction = "on_action",
+    TypeDecision = "decision",
+    TypeMessage = "message",
+    TypeList = "list",
+    TypeConcept = "concept",
+    TypeModifier = "modifier",
+
+    /**
+     * The types the Graph draws.
+     *
+     * TypeGood is a good, as wood is. TypeGoodCategory is a group of goods,
+     * as CK3's trade_category_mandala_arms is.
+     */
+    TypeGood = "good",
+    TypeGoodCategory = "good_category",
+
+    /**
+     * TypeBuilding is a building, a level of one in CK3. TypeBuildingGroup is
+     * what holds buildings: a district, a holding, a category.
+     */
+    TypeBuilding = "building",
+    TypeBuildingGroup = "building_group",
+
+    /**
+     * TypeProductionMethodGroup is a slot of production methods, and
+     * TypeProductionMethod a way a building produces.
+     */
+    TypeProductionMethodGroup = "production_method_group",
+    TypeProductionMethod = "production_method",
+
+    /**
+     * TypeTechnology is a technology, an innovation or an advance, and TypeEra
+     * the era or age it belongs to.
+     */
+    TypeTechnology = "technology",
+    TypeEra = "era",
+
+    /**
+     * TypeDemand is a demand for goods that is no building, as a pop need or
+     * an army's upkeep.
+     */
+    TypeDemand = "demand",
+};
+
+/**
  * WidgetType is how one of the game's built-in widget types lays out the
  * widgets inside it and its own text.
  */

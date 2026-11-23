@@ -37,7 +37,7 @@ import { applyEdits } from "../editor/models";
 import type { Model } from "../editor/models";
 import CodeLink from "./CodeLink.vue";
 import DrawDetail from "./DrawDetail.vue";
-import PictureViewport, { DRAG } from "./PictureViewport.vue";
+import PictureViewport, { DRAG } from "../../../ui/PictureViewport.vue";
 import WidgetMarks from "./WidgetMarks.vue";
 import { drawCoat, findBoxes, isOwn } from "./coat";
 import { buildPicture, fitPlaceholders, fitTexts, listProperties, placeOnScreen, readRects } from "./picture";

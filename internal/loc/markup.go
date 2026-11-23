@@ -38,9 +38,9 @@ type Segment struct {
 	Span     jomini.Span `json:"span"`
 	TextSpan jomini.Span `json:"textSpan"`
 
-	// Kind is number or text for a data call whose Text was replaced by a
-	// sample of its value, and "" for any other piece.
-	Kind string `json:"kind"`
+	// Sample is number, text or date for a data call whose Text was replaced
+	// by a sample of its value, and "" for any other piece.
+	Sample string `json:"sample"`
 
 	// Call is the parsed data call of a call piece. It is nil if the text is
 	// no call, such as ['x'].

@@ -186,7 +186,7 @@ func TestParseDoc(t *testing.T) {
 			"age", func(field *lang.Field) bool { return strings.HasPrefix(field.Blurb.Value, "Determines") }},
 		{"markdown with alternatives", "x/x.md", "# Reference\nA building of a state.\n\nexample = {\n\tbuildable = yes/no # can this building be built? default yes\n}\n",
 			"buildable", func(field *lang.Field) bool {
-				return field.Value.Value.Type == lang.ValueTypeBool && field.Default.Value == "yes"
+				return field.Value.Value.ValueType == lang.ValueTypeBool && field.Default.Value == "yes"
 			}},
 		{"value list", briefDoc, "key = {\n\tcategory = common # the category\n}\n# Possible values:\n# - common (default)\n# - skilled\n",
 			"category", func(field *lang.Field) bool {
@@ -196,20 +196,20 @@ func TestParseDoc(t *testing.T) {
 			"fire_only_once", func(field *lang.Field) bool { return strings.Contains(field.Blurb.Value, "occur again") }},
 		{"comment run above", briefDoc, "key = {\n\t# full path to the icon. Required, an error is logged if missing\n\ticon = \"gfx/x.dds\"\n}\n",
 			"icon", func(field *lang.Field) bool {
-				return field.Required.Value == "always" && field.Value.Value.Type == lang.ValueTypeText
+				return field.Required.Value == "always" && field.Value.Value.ValueType == lang.ValueTypeText
 			}},
 		{"bullet writing a statement", readmeDoc, "# - always_add_demands = <yes/no> when set to yes the building needs full demand\n",
 			"always_add_demands", func(field *lang.Field) bool {
-				return field.Value.Value.Type == lang.ValueTypeBool && strings.HasPrefix(field.Blurb.Value, "when set to yes")
+				return field.Value.Value.ValueType == lang.ValueTypeBool && strings.HasPrefix(field.Blurb.Value, "when set to yes")
 			}},
 		{"number key", briefDoc, "key = {\n\tranks = {\n\t\t1 = {\n\t\t\tmen_at_arms = x # the men at arms\n\t\t}\n\t}\n}\n",
 			"ranks/<number>/men_at_arms", func(field *lang.Field) bool { return field.Blurb.Value == "the men at arms" }},
 		{"header type with a required term", briefDoc, "# ### Brief: can_only_start_via_script ( optional bool )\ncan_only_start_via_script = yes\n",
 			"can_only_start_via_script", func(field *lang.Field) bool {
-				return field.Value.Value.Type == lang.ValueTypeBool && field.Required.Value == "optional"
+				return field.Value.Value.ValueType == lang.ValueTypeBool && field.Required.Value == "optional"
 			}},
 		{"type term with underscores", readmeDoc, "#\ttraded_quantity = fixed_point # how many units are moved\n",
-			"traded_quantity", func(field *lang.Field) bool { return field.Value.Value.Type == lang.ValueTypeNumber }},
+			"traded_quantity", func(field *lang.Field) bool { return field.Value.Value.ValueType == lang.ValueTypeNumber }},
 		{"placeholder opening a bullet", readmeDoc, "# - allow: <trigger> can the building be built (root = location)\n",
 			"allow", func(field *lang.Field) bool { return field.Shape.Value == lang.ShapeTriggers }},
 		{"shape opening the text above", briefDoc, "key = {\n\t# Effect is executed when the owner dies\n\t# root - active story cycle\n\ton_owner_death = {}\n}\n",
@@ -217,7 +217,7 @@ func TestParseDoc(t *testing.T) {
 		{"nested at its path", briefDoc, "key = {\n\tranks = {\n\t\tliege_modifier = { } # what the liege gets\n\t}\n}\n",
 			"ranks/liege_modifier", func(field *lang.Field) bool { return field.Blurb.Value == "what the liege gets" }},
 		{"header heads a nested statement", briefDoc, "key = {\n\toption = {\n\t\t# ### Brief: weight ( int )\n\t\tweight = 1\n\t}\n}\n",
-			"option/weight", func(field *lang.Field) bool { return field.Value.Value.Type == lang.ValueTypeNumber }},
+			"option/weight", func(field *lang.Field) bool { return field.Value.Value.ValueType == lang.ValueTypeNumber }},
 	}
 
 	for _, each := range cases {

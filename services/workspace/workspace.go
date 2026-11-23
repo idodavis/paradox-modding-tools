@@ -28,7 +28,7 @@
 //
 // # Robustness
 //
-// It refuses to write outside the mods and the workspace's folder, to open a
+// It refuses to write outside the mods and the agent folder, to open a
 // workspace or an install that is not recorded, and to set a load order that
 // does not name each mod once. It reads past a descriptor it cannot read,
 // which leaves the mod with an empty one, and past a changed file it cannot
@@ -118,14 +118,14 @@ type Workspace struct {
 	Game    *game.Game  `json:"game"`
 	Mods    []Mod       `json:"mods"`
 
-	// Folder is the folder the workspace's agents start in: the record's, or
-	// the one a workspace has until its record names one.
-	Folder string `json:"folder"`
+	// AgentFolder is the folder the workspace's agents start in: the record's,
+	// or the one a workspace has until its record names one.
+	AgentFolder string `json:"agentFolder"`
 }
 
-// OriginWorkspace is the origin of the files of the workspace's folder that
-// are in no mod.
-const OriginWorkspace = "workspace"
+// OriginAgentFolder is the origin of the files of the agent folder that are
+// in no mod.
+const OriginAgentFolder = "agentFolder"
 
 // The events the workspace service sends. EventOpened carries the workspace's
 // id, EventFailed the error's text, EventInstallScanned the install's id and
@@ -383,7 +383,7 @@ func (s *Service) ListWorkspaces() []Workspace {
 		install, row, _ := findInstall(records, record.Install)
 		workspaces[position] = Workspace{Record: record, Install: install, Game: row}
 		if row == nil {
-			workspaces[position].Folder = findFolder(record, nil)
+			workspaces[position].AgentFolder = resolveAgentFolder(record, nil)
 
 			continue
 		}
@@ -399,21 +399,21 @@ func (s *Service) ListWorkspaces() []Workspace {
 			workspaces[position].Mods[modPosition] = mod
 		}
 
-		workspaces[position].Folder = findFolder(record, workspaces[position].Mods)
+		workspaces[position].AgentFolder = resolveAgentFolder(record, workspaces[position].Mods)
 	}
 
 	return workspaces
 }
 
-// findFolder returns the folder a workspace's agents start in. It is the
-// folder the record names. A record that names none has its own mod's folder
-// when exactly one of its mods is the user's own and has a folder, so that
-// one mod keeps an agent's files beside it. With no such mod, or several, it
-// is a folder in the user's Documents that belongs to no mod, called after
+// resolveAgentFolder returns the folder a workspace's agents start in. It is
+// the folder the record names. A record that names none has its own mod's
+// folder when exactly one of its mods is the user's own and has a folder, so
+// that one mod keeps an agent's files beside it. With no such mod, or several,
+// it is a folder in the user's Documents that belongs to no mod, called after
 // the workspace, or after its id where its name has no letter or digit.
-func findFolder(record app.Workspace, mods []Mod) string {
-	if record.Folder != "" {
-		return record.Folder
+func resolveAgentFolder(record app.Workspace, mods []Mod) string {
+	if record.AgentFolder != "" {
+		return record.AgentFolder
 	}
 
 	own := slices.DeleteFunc(slices.Clone(mods), func(mod Mod) bool { return mod.External || mod.Broken })
@@ -426,32 +426,32 @@ func findFolder(record app.Workspace, mods []Mod) string {
 	return filepath.Join(home, "Documents", "Paradox Modding Tools", cmp.Or(files.ToSlug(record.Name), record.ID))
 }
 
-// MakeFolder returns the open workspace's folder, making it if it is missing.
-// A folder made for the workspace is recorded, so that renaming the workspace
-// leaves its folder where it is. It returns an error if no workspace is open
-// or the folder cannot be made.
+// CreateAgentFolder returns the open workspace's agent folder, making it if it
+// is missing. A folder made for the workspace is recorded, so that renaming
+// the workspace leaves its folder where it is. It returns an error if no
+// workspace is open or the folder cannot be made.
 //
 //wails:ignore
-func (s *Service) MakeFolder() (string, error) {
+func (s *Service) CreateAgentFolder() (string, error) {
 	ws, err := s.Session()
 	if err != nil {
 		return "", err
 	}
 
-	folder := *ws.Folder.Load()
+	folder := *ws.AgentFolder.Load()
 	if err := os.MkdirAll(folder, 0o755); err != nil {
 		return "", err
 	}
 
-	ws.watchFolder()
+	ws.watchAgentFolder()
 
 	record, _, _, err := findRecords(s.Config.Config(), ws.ID)
-	if err != nil || record.Folder != "" || ws.Locate(ws.Mods.Load(), folder).Origin != OriginWorkspace {
+	if err != nil || record.AgentFolder != "" || ws.Locate(ws.Mods.Load(), folder).Origin != OriginAgentFolder {
 		return folder, err
 	}
 
 	return folder, s.UpdateRecord(ws.ID, func(record *app.Workspace) error {
-		record.Folder = folder
+		record.AgentFolder = folder
 
 		return nil
 	})
@@ -520,8 +520,8 @@ func (s *Service) UpdateRecord(workspaceID string, change func(record *app.Works
 
 // refreshSession has the open workspace's session read again the mods whose
 // records changed in the record of the given workspace, then store and watch
-// the folder the record now gives. It does nothing if another workspace is
-// open, or none.
+// the agent folder the record now gives. It does nothing if another workspace
+// is open, or none.
 func (s *Service) refreshSession(workspaceID string) {
 	ws, err := s.Session()
 	if err != nil || ws.ID != workspaceID {
@@ -530,8 +530,8 @@ func (s *Service) refreshSession(workspaceID string) {
 
 	if record, _, _, err := findRecords(s.Config.Config(), workspaceID); err == nil {
 		ws.refreshChanged(record.Mods)
-		ws.storeFolder(record)
-		ws.watchFolder()
+		ws.storeAgentFolder(record)
+		ws.watchAgentFolder()
 	}
 }
 

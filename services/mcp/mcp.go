@@ -147,8 +147,8 @@ var Tasks = []Task{
 			"file with diagnose, and read build_report's findings about those files. Tell me what is wrong and " +
 			"what could break in the game, the most serious first, and change no file."},
 	{Name: "trace-event", Title: "Why does this event fire?", Chip: "event",
-		Text: "Why does this event fire? Take the attached event, or the one describe_view names. Draw its Event " +
-			"Graph with build_graph, follow what fires it back to where it starts, and tell me in plain words. " +
+		Text: "Why does this event fire? Take the attached event, or the one describe_view names. Ask the " +
+			"Graph what fires it with build_graph, follow it back to where it starts, and tell me in plain words. " +
 			"show can open the graph for me."},
 }
 

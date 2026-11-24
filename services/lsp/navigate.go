@@ -198,8 +198,12 @@ func (s *Service) References(path string, line, column int) ([]Site, error) {
 	return locateSites(ws, mods, reference, occurrences, true), nil
 }
 
+// listOccurrences returns where a name is defined and used. A name spelled
+// inside a key is left out: the walk of an open file holds no such use.
 func listOccurrences(mods *index.Index, place workspace.Place, reference lang.Reference) []index.Site {
-	return slices.Concat(mods.ResolveLocal(reference, place.Position), mods.ListUses(reference.Database, reference.Name))
+	uses := slices.DeleteFunc(slices.Clone(mods.ListUses(reference.Database, reference.Name)), mods.IsSpelled)
+
+	return slices.Concat(mods.ResolveLocal(reference, place.Position), uses)
 }
 
 // PrepareRename returns the range of the name at a position. It returns nil for

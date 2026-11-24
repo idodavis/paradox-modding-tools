@@ -145,21 +145,7 @@ func (f *fireWalk) backward(current Site, effects []Site, use Site) {
 // definition, in source order. They follow it without a break, so the list
 // ends at the first occurrence outside it.
 func (i *Index) ListReferences(definition Site) []Site {
-	var sites []Site
-
-	occurrences := i.Occurrences[definition.File]
-	for position := definition.Occurrence + 1; int(position) < len(occurrences); position++ {
-		occurrence := occurrences[position]
-		if occurrence.Parent < definition.Occurrence {
-			break
-		}
-
-		if occurrence.Role == RoleRefers && occurrence.Parent == definition.Occurrence {
-			sites = append(sites, Site{File: definition.File, Occurrence: position})
-		}
-	}
-
-	return sites
+	return i.listHeld(definition, RoleRefers)
 }
 
 // ListActing returns the copies of a name that a reference in a file reaches.
@@ -255,10 +241,7 @@ func (c *collector) isFiring(context *lang.Context, reference lang.Reference) bo
 		return false
 	}
 
-	keys := context.Path
-	if context.Label != "" {
-		keys = slices.Concat(keys, []string{context.Label})
-	}
+	keys := listKeys(context)
 
 	return slices.ContainsFunc(fields, func(field lang.KeyReference) bool {
 		return c.index.dialect().Matches(field.Games) && jomini.MatchKeyPath(field.KeyPath, keys)

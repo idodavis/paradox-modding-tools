@@ -400,10 +400,10 @@ const groups = computed<ContextMenuItem[][]>(() => [
   ],
   [
     {
-      label: "Open in Graph",
-      kbds: findKbds("editor.openGraph"),
+      label: "Open in Atlas",
+      kbds: findKbds("editor.openAtlas"),
       disabled: !card.value?.node,
-      onSelect: (event) => void findCommand("editor.openGraph")?.onSelect?.(event),
+      onSelect: (event) => void findCommand("editor.openAtlas")?.onSelect?.(event),
     },
     {
       label: "Show in Health",
@@ -522,7 +522,7 @@ const menu = computed(() => hideDisabled(groups.value));
                   <UKbd :value="key" />{{ action }}
                 </span>
                 <span v-if="hovering.hover.value.card?.node" class="flex items-center gap-1">
-                  <UKbd value="Ctrl Shift G" />graph
+                  <UKbd value="Ctrl Shift G" />Atlas
                 </span>
                 <span class="ms-auto">Right-click for more</span>
               </template>

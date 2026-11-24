@@ -635,11 +635,18 @@ export const useAgentStore = defineStore("agent", () => {
         close(): void;
       };
     } = row.client();
-    client.onNotification("session/update", ({ params }) => {
-      const { sessionId, update } = params as v2.UpdateSessionNotification;
+    // The updates of a history the agent replays are held here until it has
+    // sent them all. Shown one by one, a long history blocks the page.
+    let replayed: v2.UpdateSessionNotification[] | undefined;
+    const receive = ({ sessionId, update }: v2.UpdateSessionNotification): void => {
       // A subagent's updates come on its parent's stream under its own id.
       if (!session.id || sessionId === session.id) applyUpdate(session, update);
       else applySubagentUpdate(session, resolveSubagent(session, sessionId), update);
+    };
+    client.onNotification("session/update", ({ params }) => {
+      const notification = params as v2.UpdateSessionNotification;
+      if (replayed) replayed.push(notification);
+      else receive(notification);
     });
     client.onRequest("session/request_permission", ({ params }) => {
       const { title, toolCall, options } = row.toPermission(params);
@@ -691,7 +698,14 @@ export const useAgentStore = defineStore("agent", () => {
         const folder = (await locate(id)) || start.folder;
         const others = [start.folder, ...(start.folders ?? [])].filter((other) => other !== folder);
         const own = { ...start, folder, folders: others };
-        applyOffers(session, (await agent.request(...row.resume(id, own, toSessionParams(session, own)))) as Offers);
+        replayed = [];
+        try {
+          const offers = await agent.request(...row.resume(id, own, toSessionParams(session, own)));
+          replayed.forEach(receive);
+          applyOffers(session, offers as Offers);
+        } finally {
+          replayed = undefined;
+        }
       },
       prompt: async (id, blocks) => {
         startTurn(session);

@@ -65,7 +65,10 @@ index, the mods in load order and the language.
   buffers. Any other file is parsed when asked and kept in a bounded cache.
 - **Texts.** A localization key's text comes in the workspace's language, else the base language, with the message
   the game keeps. A definition's title and description are the texts the game shows it by: the keys it writes, else
-  the keys `game.DefinitionTexts` builds from its name.
+  the keys `lang.DefinitionTexts` builds from its name. `FlattenText` gives a text as the one line a player reads: a
+  data call is the name it shows, or "…" where only the running game can fill it in.
+- **Pictures.** `FindPicture` and `FindPainting` return the file a definition shows, by `lang.DefinitionPictures`
+  and, for an event, by its game's picture chains. A video, as Vic3's events show, is no picture.
 - **Other load orders.** `PreviewOrder` returns the mods' index as another load order would have it, for Health's
   preview. It is `index.Index.Reorder`: the same files and occurrences mounted in the other order, with no file read
   again, and it is kept nowhere.
@@ -178,6 +181,7 @@ has downloaded for an install's game, from the Workshop folder in each of Steam'
 |---|---|
 | `workspace.go` | The service: installs, workspaces, the open, Launch, reading and writing files, serving them. |
 | `session.go` | The open session: its documents, buffers, texts and rescans. |
+| `definitions.go` | What the game shows of a definition: a text as one line, its picture and painting, a modifier's name, and the number a script value stands for. |
 | `mod.go` | Mods, their descriptors, and a new mod's skeleton. |
 | `locate.go` | Places: where a file sits, and every copy of a path in load order. |
 | `review.go` | The review of a coding agent's edits, and the matching of its hunks to a file's lines. |

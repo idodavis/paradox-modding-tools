@@ -11,7 +11,7 @@ reads that workspace. Each page also has its own Help, in the top bar's gear men
   - [Library](#library)
   - [New workspace](#new-workspace)
   - [IDE](#ide)
-  - [Graph](#graph)
+  - [Atlas](#atlas)
   - [Health](#health)
   - [Patch Center](#patch-center)
   - [Publish](#publish)
@@ -103,39 +103,44 @@ An editor that knows the game's script, localization and GUI files.
 - **Delete** moves a file to PMT's trash. **Undo** in the message brings it back.
 - **The command palette** (Ctrl K) runs any command. Type `>` for the commands and settings.
 
-## Graph
+## Atlas
 
-![Graph](images/event-graph.png)
+![Atlas](images/event-graph.png)
 
 Pick a good, a building, a technology or an event in the list on the left, under the game's own groups, or on the
-start page. The kind of thing you pick decides how it is drawn:
+start page. Whatever you pick is the subject of one canvas: it stands in the middle, what leads to it is on its left
+and what it leads to on its right.
 
 | Pick | Drawn as |
 |---|---|
-| An event, on_action, decision, message or scripted effect | A graph, left to right, of what fires it and what it fires |
-| A good (CK3 also a good category) | A sheet: where it is found and what it costs, the buildings that make it with what they take, and the buildings that use it, by group |
-| A Vic3 building or production method | Its production method groups: pick a method in each, and the totals follow |
-| A CK3 building line or an EU5 building | Its levels side by side, the change across them as bars, what never changes said once |
+| An event, on_action, decision, message or scripted effect | What fires it and what it fires, step by step |
+| A good (CK3 also a good category) | The building lines that make it, with what they take, and the buildings and needs that use it |
+| A building or a production method | The building opened: its levels as a table and its production methods, with the goods it takes and makes beside it |
 | A Vic3 technology or an EU5 advance | The whole tree with the chain of the one you pick lit, or that chain alone |
 | A CK3 innovation | A grid of era by group, each innovation with its picture |
 
-- A good's sheet narrows **By era** and by where a definition comes **From**: the game, a mod, or only what your mods
-  add or change. CK3 says of each building whether it produces a good, boosts it by a share, or gives it when a need
-  is met. An event's graph picks the kinds drawn, the mods shown, and whether scripted effects are walked into for the
+- Every node carries the dot of the mod or game that writes it. **From** hides what only the unchecked origins
+  define, and **Available by** keeps what a technology of that era or an earlier one unlocks.
+- A good's side with more than twelve buildings is drawn as the game's own groups. Click a group to open it to its
+  first eight; the detail lists the rest. CK3 says of each building whether it produces a good, boosts it by a share,
+  or gives it when a need is met.
+- Click a production method of an opened building to run it in its group, and **With these methods** follows your
+  picks. What a building gives only under a condition is in the detail.
+- An event's canvas picks the kinds drawn, the mods shown, and whether scripted effects are walked into for the
   events they fire; **Reach** sets how deep it goes and how many nodes it draws.
-- A tree reads left to right or top to bottom, and shows the wires outside the chain faint or not at all. An EU5 age
-  can also show the advances of one religion, culture or country.
-- Click a card to select it; double-click it to make it the subject. A card of a technology's tree becomes the
+- A tree reads left to right or top to bottom. An EU5 age can also show the advances of one religion, culture or
+  country.
+- Click a node to select it; double-click it to make it the subject. A card of a technology's tree becomes the
   subject on a click. Back and Forward step through what you opened.
 - The start page shows the game's goods, building groups and trees, the ones you opened last and the things your mods
   define. In the IDE, Ctrl Shift G opens the name under the cursor.
-- The detail opens from the button at the right edge. It has an Overview, the links both ways and the script. The
-  Overview says what the thing is, what a technology needs, leads to, unlocks and gives, and what it says in the
-  game's words. Click anything it names, such as a building a technology unlocks, to open that in the Graph. If it
-  replaces the game's copy, you can compare the two.
-- A dashed node of an event's graph is one the depth stopped at, and a group that says "N more" holds the rest; click
+- The detail opens from the last button of the row over the canvas. It has an Overview, the links both ways and the
+  script. The Overview says what the thing is, what it gives and what it says in the game's words. Click anything it
+  names, such as a building a technology unlocks, to open that in Atlas. If it replaces the game's copy, you can
+  compare the two.
+- A dashed node of an event's canvas is one the depth stopped at, and a group that says "N more" holds the rest; click
   either to open it.
-- In an event's graph, a hidden event is hatched and a message is drawn as a toast. A delayed firing is dashed, one
+- On an event's canvas, a hidden event is hatched and a message is drawn as a toast. A delayed firing is dashed, one
   through a scripted effect dotted, and hovering a line shows the conditions it fires under. Firers that reach the root
   only round a loop of its own chain fold into a "↺ more firers" pill.
 
@@ -315,7 +320,7 @@ A pane that chats with a coding agent: Claude, GitHub Copilot, Codex, or one of 
 and signs in to its own account. PMT never sees it. PMT installs the agent for you from the Agent Client Protocol's
 registry into its own folder, with Node if your system has none new enough.
 
-- The agent is given PMT's tools, so it finds names, problems, Health's findings and the Graph as PMT does, with
+- The agent is given PMT's tools, so it finds names, problems, Health's findings and what Atlas draws as PMT does, with
   your unsaved text. It can also read what each game version changed, which is what it needs to bring a mod up to date
   after a patch. The same tools can be added to an agent you run yourself.
 - What it asks permission for shows in the session. Nothing opens before you choose. PMT's own tools that only read
@@ -368,7 +373,7 @@ it out of your totals.
 
 Every page works. A mod's descriptor is its `.mod` file. When two events share an id, the game keeps the one with the
 highest `id_override_priority`, and Health's Compatibility view explains how the game picks. The Visual view draws
-CK3's GUI windows and coats of arms. The Graph follows CK3's events, on_actions, decisions and messages, and answers about its goods, building levels and
+CK3's GUI windows and coats of arms. Atlas follows CK3's events, on_actions, decisions and messages, and answers about its goods, building levels and
 innovations.
 
 ### Victoria 3
@@ -388,7 +393,7 @@ What EU5 has:
 - The editor, with hover, completion, go to and rename, over EU5's three stages (`in_game`, `main_menu` and
   `loading_screen`).
 - Entry modes such as `INJECT:` and `REPLACE:` before a name, which the editor knows and checks.
-- The Graph, Health, the Patch Center, the Visual view and Publish.
+- Atlas, Health, the Patch Center, the Visual view and Publish.
 
 EU5 has no Linux build. On Linux it runs through Proton, PMT finds its documents folder in Steam's Proton folder, and
 PMT cannot start the game for you. See [Each system](#each-system).

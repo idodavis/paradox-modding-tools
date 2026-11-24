@@ -712,8 +712,7 @@ func (s *Session) resolveText(mods *index.Index, textKey string, reference lang.
 // definition's name for its title or description, as key says. It returns
 // false if no such key has a message.
 func (s *Session) FindBuiltKey(mods *index.Index, reference lang.Reference, key string) (string, bool) {
-	for _, pattern := range lang.LookupDialect(s.Game.ID).ListTextKeys(reference.Database, key) {
-		textKey := fmt.Sprintf(pattern, reference.Name)
+	for _, textKey := range lang.LookupDialect(s.Game.ID).ListTextKeys(reference, key) {
 		if _, _, ok := s.LookupText(mods, textKey); ok {
 			return textKey, true
 		}

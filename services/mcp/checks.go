@@ -13,8 +13,8 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/lang"
+	"paradox-modding-tools/services/atlas"
 	"paradox-modding-tools/services/draw"
-	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/workspace"
 )
@@ -34,15 +34,15 @@ type queryKey struct {
 
 // queryKeys holds the keys show takes, in the order the guide lists them.
 var queryKeys = []queryKey{
-	{Page: "graph", Key: "subject", Help: "a node's id from find_roots, such as events:my_mod.0001 or goods:books",
+	{Page: "atlas", Key: "subject", Help: "a node's id from find_roots, such as events:my_mod.0001 or goods:books",
 		Check: (*Service).checkNode},
-	{Page: "graph", Key: "node", Help: "a node's id, selected with its detail shown", Check: (*Service).checkNode},
-	{Page: "graph", Key: "conditions", Help: "the view's filter as JSON, as build_graph, build_chain and " +
-		"build_tree take it, its parts left out at the defaults", Check: (*Service).checkFilter},
-	{Page: "graph", Key: "picked", Help: "a production method's id, the one its group of a Vic3 building runs"},
-	{Page: "graph", Key: "view", Help: "a technology's chain alone instead of its whole tree", Values: []string{"chain"}},
-	{Page: "graph", Key: "direction", Help: "a tree read top to bottom instead of left to right", Values: []string{"down"}},
-	{Page: "graph", Key: "wires", Help: "a tree without the wires outside the chain", Values: []string{"hidden"}},
+	{Page: "atlas", Key: "node", Help: "a node's id, selected with its detail shown", Check: (*Service).checkNode},
+	{Page: "atlas", Key: "conditions", Help: "the view's filter as JSON, as build_graph takes it, its parts left " +
+		"out at the defaults", Check: (*Service).checkFilter},
+	{Page: "atlas", Key: "picked", Help: "the ids of production methods, joined by commas: each one's group of a " +
+		"building runs it", Check: (*Service).checkPicked},
+	{Page: "atlas", Key: "view", Help: "a technology's chain alone instead of its whole tree", Values: []string{"chain"}},
+	{Page: "atlas", Key: "direction", Help: "a tree read top to bottom instead of left to right", Values: []string{"down"}},
 	{Page: "health", Key: "view", Help: "the view shown; left out, the first with a row for code or name",
 		Values: []string{"summary", "compatibility", "patch", "mod", "log"}},
 	{Page: "health", Key: "mod", Help: "the mod the mod view shows, by its id", Check: (*Service).checkMod},
@@ -54,8 +54,6 @@ var queryKeys = []queryKey{
 	{Page: "release", Key: "mod", Help: "the mod shown, by its id", Check: (*Service).checkMod},
 	{Page: "release", Key: "compare", Help: "the compare of the mod with its Steam item", Values: []string{"steam"}},
 }
-
-const nodeHint = "find_roots gives node ids, such as events:my_mod.0001 or goods:books"
 
 // checkPage returns an error if PMT has no such page, or if the query has a
 // key the page does not take or a value the key does not accept. A query needs
@@ -111,22 +109,27 @@ func (s *Service) checkPage(page string, query map[string]string) error {
 	return errors.Join(errs...)
 }
 
+const nodeHint = "find_roots gives node ids, such as events:my_mod.0001 or goods:books"
+
+// checkNode returns an error, saying where ids come from, if Atlas has no
+// node of that id.
 func (s *Service) checkNode(id string) error {
-	_, err := s.buildDetail(node{ID: id})
+	_, err := s.Atlas.BuildDetail(id)
 
-	return err
+	return hintNode(err)
 }
 
-// buildDetail returns one Graph node's detail. The error for a missing
-// node says where node ids come from.
-func (s *Service) buildDetail(request node) (graph.Detail, error) {
-	detail, err := s.Graph.BuildDetail(request.ID)
+// checkPicked checks each id of a list joined by commas as checkNode does.
+func (s *Service) checkPicked(ids string) error {
+	var errs []error
+	for id := range strings.SplitSeq(ids, ",") {
+		errs = append(errs, s.checkNode(id))
+	}
 
-	return detail, hintNode(err)
+	return errors.Join(errs...)
 }
 
-// hintNode adds where node ids come from to an error of the Graph. It
-// returns nil for no error.
+// hintNode adds where node ids come from to an error about a node.
 func hintNode(err error) error {
 	if err == nil {
 		return nil
@@ -135,13 +138,10 @@ func hintNode(err error) error {
 	return fmt.Errorf("%w; %s", err, nodeHint)
 }
 
-// checkFilter returns an error if the text is not a Graph filter in JSON.
+// checkFilter returns an error if the text is no JSON of Atlas's filter.
 func (s *Service) checkFilter(text string) error {
-	decoder := json.NewDecoder(strings.NewReader(text))
-	decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(&graph.Filter{}); err != nil {
-		return fmt.Errorf("conditions is not a Graph filter as JSON: %w", err)
+	if err := json.Unmarshal([]byte(text), &atlas.Filter{}); err != nil {
+		return fmt.Errorf("conditions is a filter as JSON, as build_graph takes it: %w", err)
 	}
 
 	return nil

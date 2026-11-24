@@ -775,3 +775,50 @@ func TestOpenInstalls(t *testing.T) {
 		})
 	}
 }
+
+// TestRowsReadInstalls opens each real install that PMT_TEST_INSTALL_<GAME> names and fails naming each picture row
+// and each text row of the game that reads nothing there: no definition shows the row's file or has its text.
+func TestRowsReadInstalls(t *testing.T) {
+	for _, gameID := range []string{ck3, vic3, eu5} {
+		t.Run(gameID, func(t *testing.T) {
+			variable := "PMT_TEST_INSTALL_" + strings.ToUpper(gameID)
+			install := os.Getenv(variable)
+			if install == "" {
+				t.Skipf("%s is not set", variable)
+			}
+			ws, _, _ := listOpenStages(t, openConfig(t, gameID, install))
+			mods, dialect := ws.Mods.Load(), lang.LookupDialect(gameID)
+			for position, row := range lang.DefinitionPictures {
+				shows := func(site index.Site) bool {
+					tree, statement, err := ws.FindStatement(mods, site)
+					if err != nil {
+						return false
+					}
+					_, ok := mods.ResolveTexture(resolvePicture(row, tree, statement, mods.ToReference(site).Name))
+					return ok
+				}
+				if dialect.Matches(row.Games) && !slices.ContainsFunc(mods.ListDefinitions(row.Database), shows) {
+					t.Errorf("picture row %d, of %s, reads nothing", position, row.Database)
+				}
+			}
+			for position, row := range lang.DefinitionTexts {
+				for _, pattern := range []string{row.Title, row.Description} {
+					written := func(site index.Site) bool {
+						name := mods.ToReference(site).Name
+						if row.Capitals {
+							name = strings.ToUpper(name)
+						}
+						_, _, ok := ws.LookupText(mods, strings.Replace(pattern, "%s", name, 1))
+						return ok
+					}
+					reads := slices.ContainsFunc(row.Databases, func(database string) bool {
+						return slices.ContainsFunc(mods.ListDefinitions(database), written)
+					})
+					if dialect.Matches(row.Games) && pattern != "" && !reads {
+						t.Errorf("text row %d, %s of %v, reads nothing", position, pattern, row.Databases)
+					}
+				}
+			}
+		})
+	}
+}

@@ -402,15 +402,16 @@ func (j *judge) judgeMessages() {
 	}
 
 	// The index holds keys of the given languages only, so a key named in
-	// another language is not judged.
+	// another language is not judged. Nor is a name the game's own files
+	// write: the game fills in a value at $VAL$ whether or not a key VAL is
+	// defined.
 	held := slices.Contains(j.languages, messages.Language)
 	for position, message := range messages.Messages {
-		references := j.document.MessageContexts[position].References
-		if !held {
-			references = slices.DeleteFunc(slices.Clone(references), func(reference lang.Reference) bool {
-				return reference.Database == lang.Localization
-			})
-		}
+		references := slices.Clone(j.document.MessageContexts[position].References)
+		references = slices.DeleteFunc(references, func(reference lang.Reference) bool {
+			return reference.Database == lang.Localization &&
+				(!held || j.index.isUsedByGame(reference.Database, reference.Name))
+		})
 
 		j.judgeMissing(references)
 		j.judgeCalls(message.Segments, "")

@@ -50,7 +50,7 @@ const COLUMNS = [
       "Go to definition, find references, and rename",
       "Workspace Health: conflicts, load order, dangling references",
       "Localization coverage",
-      "The Graph",
+      "Atlas",
     ],
   },
 ];

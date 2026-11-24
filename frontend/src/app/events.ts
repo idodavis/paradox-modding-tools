@@ -24,7 +24,7 @@ const WORKSPACE_KEYS = [
   keys.places,
   keys.draws,
   keys.health,
-  keys.graph,
+  keys.atlas,
   keys.wiki,
   keys.patch,
   keys.gits,
@@ -55,6 +55,7 @@ const EVENTS: { [E in keyof Events.CustomEvents]?: EventRow<E> } = {
       keys.place(path),
       keys.draws,
       keys.health,
+      keys.atlas,
       keys.patch,
       ...(descriptor ? [keys.workspaces, keys.releases] : []),
       ...useQueryCache()

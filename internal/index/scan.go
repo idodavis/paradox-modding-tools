@@ -43,6 +43,11 @@ type collector struct {
 	// write the keys of its title and of its description. A statement of 0
 	// is none.
 	texts map[int32][2]int32
+
+	// rows holds the positions of the link rows that read the definitions
+	// of rowDatabase, the database asked about last.
+	rowDatabase string
+	rows        []uint8
 }
 
 // contextPool reuses the walk's lists of contexts across files, so a scan
@@ -444,12 +449,15 @@ func (c *collector) collectStatement(tree *jomini.Tree, statement int32, context
 		occurrence.Line = int32(tree.Lines.ToPosition(reference.Span.Start).Line)
 		occurrence.Parent, occurrence.Statement = holder, statement
 		occurrence.Firing = c.countFiring(tree, statement, context, reference)
+		occurrence.Link = c.findLink(context, reference)
 		if holder >= 0 && reference.Database == lang.Localization {
 			occurrence.Titles, occurrence.Describes = statement == texts[0], statement == texts[1]
 		}
 
 		c.occurrences = append(c.occurrences, occurrence)
 	}
+
+	c.occurrences = append(c.occurrences, c.spellLinks(tree, statement, holder, context)...)
 }
 
 // The offset and the prime of the 32-bit FNV-1a hash.

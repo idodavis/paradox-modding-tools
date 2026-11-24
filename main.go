@@ -12,9 +12,9 @@ import (
 
 	"paradox-modding-tools/services/agent"
 	"paradox-modding-tools/services/app"
+	"paradox-modding-tools/services/atlas"
 	"paradox-modding-tools/services/draw"
 	"paradox-modding-tools/services/git"
-	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/mcp"
@@ -85,14 +85,14 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 	gitService := &git.Service{Workspace: wsp}
 	lspService := &lsp.Service{Workspace: wsp}
 	healthService := &health.Service{Workspace: wsp}
-	graphService := &graph.Service{Workspace: wsp}
+	atlasService := &atlas.Service{Workspace: wsp}
 	wikiService := &wiki.Service{Workspace: wsp}
 	drawService := &draw.Service{Workspace: wsp}
 	steamService := &steam.Service{Workspace: wsp, Git: gitService}
 	patchService := &patch.Service{Workspace: wsp, Wiki: wikiService}
 	searchService := &search.Service{Workspace: wsp}
 	mcpService := &mcp.Service{
-		Workspace: wsp, LSP: lspService, Health: healthService, Graph: graphService, Wiki: wikiService,
+		Workspace: wsp, LSP: lspService, Health: healthService, Atlas: atlasService, Wiki: wikiService,
 		Patch: patchService, Draw: drawService, Search: searchService, Steam: steamService, Build: version,
 	}
 
@@ -104,7 +104,7 @@ func listServices(config *app.ConfigFile, appService *app.Service) []application
 		application.NewService(&terminal.Service{Workspace: wsp, Config: config}),
 		application.NewService(drawService),
 		application.NewService(healthService),
-		application.NewService(graphService),
+		application.NewService(atlasService),
 		application.NewService(searchService),
 		application.NewService(wikiService),
 		application.NewService(patchService),

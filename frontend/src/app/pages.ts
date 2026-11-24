@@ -174,8 +174,8 @@ export const PAGES = {
       },
     ],
   },
-  graph: {
-    title: "Graph",
+  atlas: {
+    title: "Atlas",
     icon: "i-lucide-git-branch",
     workspace: true,
     start: [
@@ -186,34 +186,34 @@ export const PAGES = {
     help: [
       {
         heading: "Subject",
-        text: "The list on the left holds the game's goods, buildings, technologies and events, each tab under the game's own groups. Click a row to make it the subject; Back and Forward step through what you opened. In the IDE, Ctrl Shift G opens the name under the cursor. The kind of the subject picks the view.",
+        text: "The list on the left holds the game's goods, buildings, technologies and events, each tab under the game's own groups. Click a row to make it the subject; Back and Forward step through what you opened. In the IDE, Ctrl Shift G opens the name under the cursor. Every subject is drawn on one canvas: the subject in the middle, what leads to it on its left, what it leads to on its right.",
+      },
+      {
+        heading: "The canvas",
+        text: "Click a node to select it and light its path to the subject; the wires that touch it say what they do. Double-click a node to make it the subject. Every node carries the dot of the mod or game that writes it, and From hides what only unchecked origins define. Fit shows the whole canvas, and the map in the corner pans and zooms it.",
       },
       {
         heading: "A good",
-        text: "A good is a sheet: its head says where it is found and what it costs. How it's made lists the buildings that make it, a building whose levels take goods as a table of its levels. What uses it lists the buildings that take it, by group; click a group to open it. CK3 says of each building whether it produces the good, boosts it by a share, or gives it when a need is met. By era and From narrow both lists.",
+        text: "The building lines that make a good stand on its left, each with how it makes it: produces an amount, boosts by a share, or gives it when a need is met. What those lines take stands one step further out. The buildings and needs that take the good stand on its right. A side of more than twelve is drawn as the game's own groups: click a group to open it to its first eight, and its detail lists the rest. Available by keeps only what a technology of that era or an earlier one unlocks.",
       },
       {
         heading: "A building",
-        text: "A Victoria 3 building shows its production method groups: pick one method in each, and the totals follow your picks. A CK3 building line or an EU5 building shows its levels side by side, with what changes across them as bars and what never changes said once.",
+        text: "A building is opened in the middle: its levels side by side as a table, then its production methods, with the goods it takes on its left and the goods it makes on its right. Click a production method to run it in its group, and With these methods follows your picks. An amount is for one level of the building at full employment, unless it says for the building. What holds only under a condition is in the detail.",
       },
       {
         heading: "A technology",
-        text: "Whole tree draws every technology of the tree, with the chain of the selected one lit: what it needs and what it leads to. Only its chain draws that chain alone. A technology stands after everything it requires. The arrows at the top right turn the tree left to right or top to bottom, and the eye shows or hides the wires outside the chain. An EU5 age can also show the advances of one religion, culture or country. CK3's innovations have no prerequisites, so they are a grid of era by group.",
+        text: "Whole tree draws every technology of the tree, with the chain of the selected one lit: what it needs and what it leads to. Only its chain draws that chain alone. A technology stands in the middle of what it leads to, and a second requirement is a dashed wire. The arrows turn the tree left to right or top to bottom. An EU5 age can also show the advances of one country, culture or religion. CK3's innovations have no prerequisites, so they are a grid of era by group.",
       },
       {
         heading: "Detail",
-        text: "The button at the right edge opens the detail of what is selected: what it is, what it says in the game's words, its links both ways, and its script. Click anything it names to open that in the Graph. Open in IDE goes to its definition. If it replaces the game's copy, you can compare the two.",
+        text: "The last button of the row over the canvas opens the detail of what is selected: what it is, what it says in the game's words, its links both ways, and its script. Click anything it names to open that in Atlas. Open in IDE goes to its definition. If it replaces the game's copy, you can compare the two.",
       },
       {
-        heading: "Event graph",
-        text: "An event, an on_action, a decision, a message or a scripted effect is drawn as what fires it and what it fires. Show picks which of those are drawn, From which origins, Through scripted effects follows an effect to what it fires, and Reach sets how deep and how many nodes. Reset puts them back.",
+        heading: "An event",
+        text: "An event, an on_action, a decision, a message or a scripted effect is drawn as what fires it and what it fires. Show picks which of those are drawn, From which origins, Through scripted effects follows an effect to what it fires, and Reach sets how deep and how many nodes. Reset puts them back. A dashed node is one the depth stopped at, and an N more group holds the rest: click either to open it, and Collapse all closes what you opened.",
       },
       {
-        heading: "Stepping",
-        text: "Click a node to light its path. Double-click it to make it the subject. A dashed node is one the depth stopped at, and an N more group holds the rest: click either to open it, and Collapse all closes what you opened.",
-      },
-      {
-        heading: "What the graph does not work out",
+        heading: "What Atlas does not work out",
         text: "A weight is the number written, marked ± where blocks change it, never worked out. A trigger is shown, never evaluated. A delay written as a value or a name is not put in order. A CK3 message sent without a type is not drawn.",
       },
     ],
@@ -340,7 +340,7 @@ export const PANE_HELP: readonly HelpSection[] = [
   },
   {
     heading: "Tools and permissions",
-    text: "Every session is given PMT's tools, so the agent finds names, problems, Health's findings and the Graph as PMT does, with your unsaved text. What the agent asks permission for shows in the session, and a link it asks to open shows as a card; nothing opens before you choose.",
+    text: "Every session is given PMT's tools, so the agent finds names, problems, Health's findings and what Atlas draws as PMT does, with your unsaved text. What the agent asks permission for shows in the session, and a link it asks to open shows as a card; nothing opens before you choose.",
   },
   {
     heading: "Attachments and sessions",

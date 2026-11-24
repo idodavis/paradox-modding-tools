@@ -7,7 +7,7 @@ all come from the [services](../../docs/ARCHITECTURE.md#the-services), and the a
 
 It is Vue 3 with `<script setup>` and TypeScript, [Nuxt UI](https://ui.nuxt.com/) for components, Pinia for state and
 [Pinia Colada](https://pinia-colada.esm.dev/) for reading Go. The editor is Monaco, the explorer `@pierre/trees`, the
-Graph's canvases laid out by ELK's layered layout, the event graph drawn by Vue Flow, and the Terminal xterm.js.
+Atlas's canvas drawn by Vue Flow and laid out by ELK's layered layout, and the Terminal xterm.js.
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,7 @@ flowchart LR
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `main.ts`    | The bootstrap: plugins, the one error handler, Monaco's setup, the mount.                                                                                                           |
 | `app/`       | The frame every page sits in: the top bar, the status bar, the command palette, the agent pane, Settings, and the tables the whole app reads (pages, commands, events, the router). |
-| `pages/`     | One folder per page: `library`, `wizard`, `newmod`, `ide`, `graph`, `health`, `patch`, `publish`.                                                                                   |
+| `pages/`     | One folder per page: `library`, `wizard`, `newmod`, `ide`, `atlas`, `health`, `patch`, `publish`.                                                                                   |
 | `ui/`        | Components more than one page uses, such as the hover card, a source link or the load order.                                                                                        |
 | `stores/`    | The Pinia stores.                                                                                                                                                                   |
 | `queries.ts` | Every query that reads Go, and the keys that events and mutations refresh.                                                                                                          |

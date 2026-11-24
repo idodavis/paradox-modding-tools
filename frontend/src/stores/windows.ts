@@ -276,7 +276,7 @@ export const useWindowsStore = defineStore("windows", () => {
       showWindow(target);
       return;
     }
-    // A page shown here takes its query along, such as the graph's root.
+    // A page shown here takes its query along.
     const current = router.currentRoute.value;
     const route = router.resolve({
       name: tool ?? "workspace-ide",

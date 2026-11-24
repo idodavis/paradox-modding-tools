@@ -50,8 +50,8 @@ import (
 
 	"paradox-modding-tools/internal/files"
 	"paradox-modding-tools/internal/terminal"
+	"paradox-modding-tools/services/atlas"
 	"paradox-modding-tools/services/draw"
-	"paradox-modding-tools/services/graph"
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/patch"
@@ -66,7 +66,7 @@ type Service struct {
 	Workspace *workspace.Service
 	LSP       *lsp.Service
 	Health    *health.Service
-	Graph     *graph.Service
+	Atlas     *atlas.Service
 	Wiki      *wiki.Service
 	Patch     *patch.Service
 	Draw      *draw.Service
@@ -147,9 +147,9 @@ var Tasks = []Task{
 			"file with diagnose, and read build_report's findings about those files. Tell me what is wrong and " +
 			"what could break in the game, the most serious first, and change no file."},
 	{Name: "trace-event", Title: "Why does this event fire?", Chip: "event",
-		Text: "Why does this event fire? Take the attached event, or the one describe_view names. Ask the " +
-			"Graph what fires it with build_graph, follow it back to where it starts, and tell me in plain words. " +
-			"show can open the graph for me."},
+		Text: "Why does this event fire? Take the attached event, or the one describe_view names. Ask " +
+			"Atlas what fires it with build_graph, follow it back to where it starts, and tell me in plain words. " +
+			"show can open it in Atlas for me."},
 }
 
 // ServerName is the name PMT's server goes by in an agent's session.

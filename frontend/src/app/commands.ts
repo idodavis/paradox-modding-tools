@@ -31,7 +31,7 @@ const createMod = useOverlay().create(CreateModForm);
 
 /** A Command is one command: a menu item whose id names its area, such as `editor.save`. */
 export type Command = Omit<CommandPaletteItem, "kbds"> & {
-  /** `<area>.<verb>`: editor.save, file.rename, graph.open, window.popOut … */
+  /** `<area>.<verb>`: editor.save, file.rename, editor.openAtlas, window.popOut … */
   id: string;
   /** Whether the command applies now. One that does not is left out of the palette and its shortcut is off. */
   when: () => boolean;
@@ -210,13 +210,13 @@ export const COMMANDS: readonly Command[] = [
     onSelect: () => useEditorStore().go(1),
   },
   {
-    id: "editor.openGraph",
-    label: "Ask about the name under the cursor",
-    prefix: "Graph:",
+    id: "editor.openAtlas",
+    label: "Open the name under the cursor",
+    prefix: "Atlas:",
     icon: "i-lucide-git-branch",
     kbds: ["meta", "shift", "G"],
     when: hasModel,
-    onSelect: actOn(activeModel, (model) => run(() => openGraph(model))),
+    onSelect: actOn(activeModel, (model) => run(() => openAtlas(model))),
   },
   {
     id: "editor.toggleWiki",
@@ -928,15 +928,12 @@ export function openPage(name: PageName): void {
     : router.push({ name }));
 }
 
-/**
- * openGraph opens the Graph on the name under the model's caret, if the Graph
- * has the name as a subject.
- */
-async function openGraph(model: Model): Promise<void> {
+/** openAtlas opens Atlas on the name under the model's caret, if Atlas draws the name. */
+async function openAtlas(model: Model): Promise<void> {
   const card = await lsp.Hover(model.place.path, model.caret.line, model.caret.column);
   if (card?.node) {
     await router.push({
-      name: "graph",
+      name: "atlas",
       params: { id: useWorkspaceStore().activeId() },
       query: { subject: card.node },
     });

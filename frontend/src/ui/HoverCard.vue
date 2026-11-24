@@ -10,7 +10,7 @@ import { useQuery } from "@pinia/colada";
 import type { Card, Diagnostic } from "@services/lsp/models";
 
 import { SYNTAX } from "../lib/syntax";
-import { codesQuery, useLevels } from "../queries";
+import { codesQuery, fileUrl, useLevels } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
 import OriginChip from "./OriginChip.vue";
@@ -24,6 +24,8 @@ defineSlots<{
 }>();
 
 const SITES_SHOWN = 4;
+/** MASK draws a picture the game tints as a shape in the text's color. */
+const MASK = { maskSize: "contain", maskRepeat: "no-repeat", maskPosition: "center" };
 
 const settings = useSettingsStore();
 const workspace = useWorkspaceStore();
@@ -78,6 +80,12 @@ const tint = computed(() => {
     <template v-if="card">
       <div class="flex flex-col gap-1 px-3.5 py-2.5">
         <div class="flex min-w-0 items-center gap-2">
+          <span
+            v-if="card.picture && card.silhouette"
+            class="block size-6 shrink-0 bg-(--fg-1)"
+            :style="{ ...MASK, maskImage: `url('${fileUrl(card.picture)}')` }"
+          />
+          <img v-else-if="card.picture" :src="fileUrl(card.picture)" alt="" class="size-6 shrink-0 object-contain" />
           <UBadge
             :label="card.class ? `${card.what} · ${card.class}` : card.what"
             color="neutral"

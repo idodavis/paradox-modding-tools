@@ -105,9 +105,9 @@ flowchart TD
   patch --> wiki
   agent --> mcp
   terminal --> mcp
-  mcp --> draw & graphs["graph"] & health & search & wiki & patch
+  mcp --> draw & atlas & health & search & wiki & patch
   terminal --> lsp
-  draw & graphs & health & search --> lsp
+  draw & atlas & health & search --> lsp
   lsp & wiki & patch --> workspace
   git --> workspace
   workspace --> app
@@ -120,7 +120,7 @@ flowchart TD
 | [workspace](../services/workspace/README.md) | The one open workspace: its schema and indexes, its files, and the watcher on its mods. |
 | [lsp](../services/lsp/README.md) | The editor's language features: hover cards, completion, checks, go-to and references, and the lexicon of the game's commands. |
 | [draw](../services/draw/README.md) | The Visual view: GUI windows as widgets, and coats of arms. |
-| [graph](../services/graph/README.md) | The Graph: an event's firings, a good's chain, a building's line and a technology's tree, and the detail of one node. |
+| [atlas](../services/atlas/README.md) | Atlas: what fires an event, who makes and takes a good, a building's line and a technology's tree as one canvas, and the detail of one node. |
 | [health](../services/health/README.md) | The Health report: what is wrong in the workspace's mods, and the game's error log. |
 | [search](../services/search/) | Text search and replace over the workspace, and the file search behind Ctrl P. |
 | [git](../services/git/README.md) | Source control, through the git installed on the machine. |
@@ -241,7 +241,7 @@ read that section refresh. Each package README lists the events its service send
 | Wiki pane | `pages/ide/WikiPane.vue` | wiki, lsp | |
 | Terminal | `pages/ide/terminal`, `stores/terminal.ts` | terminal | terminal |
 | Assistant | `app/agent/`, `stores/agent.ts` | agent, mcp | |
-| Graph | `pages/graph` | graph | index, lang |
+| Atlas | `pages/atlas` | atlas | index, lang |
 | Health | `pages/health` | health | index, lang, loc |
 | Patch Center | `pages/patch` | patch, wiki, health, lsp, workspace | patch, schema |
 | Publish | `pages/publish`, `stores/uploads.ts` | steam | files, game |

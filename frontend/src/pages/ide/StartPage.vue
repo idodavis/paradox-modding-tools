@@ -38,7 +38,7 @@ const KNOWN: { note: string; keys?: string[]; command?: string }[] = [
   { keys: ["F2"], note: "rename it everywhere" },
   { command: "editor.back", note: "back to where you were" },
   { command: "editor.toggleWiki", note: "the Wiki for this file" },
-  { command: "editor.openGraph", note: "the event in the graph" },
+  { command: "editor.openAtlas", note: "the name in Atlas" },
 ];
 
 const editor = useEditorStore();

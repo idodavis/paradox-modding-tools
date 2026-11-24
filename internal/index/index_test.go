@@ -225,6 +225,49 @@ func TestScanInstalls(t *testing.T) {
 	}
 }
 
+// TestLinkRowsReadInstalls scans each real install that
+// PMT_TEST_INSTALL_<GAME> names and fails naming each link row of the game
+// that reads nothing there. It logs how much each row reads.
+func TestLinkRowsReadInstalls(t *testing.T) {
+	for _, gameID := range []string{"ck3", "vic3", "eu5"} {
+		t.Run(gameID, func(t *testing.T) {
+			variable := "PMT_TEST_INSTALL_" + strings.ToUpper(gameID)
+			install := os.Getenv(variable)
+			if install == "" {
+				t.Skipf("%s is not set", variable)
+			}
+
+			built, scanned, _ := scanInstall(t, gameID, install)
+			counts := make([]int, len(linkRows))
+			for _, occurrences := range scanned.Occurrences {
+				for _, occurrence := range occurrences {
+					if occurrence.Link > 0 {
+						counts[occurrence.Link-1]++
+					}
+				}
+			}
+
+			for position, row := range linkRows {
+				if !scanned.dialect().Matches(row.Games) {
+					continue
+				}
+
+				for _, definition := range scanned.ListDefinitions(row.Database) {
+					if row.Nested || row.Named {
+						counts[position] += len(scanned.listPlaced(built, definition, nil, nil))
+					}
+				}
+
+				name := fmt.Sprintf("%s of %s at %q%s", row.Relation, row.Database, row.KeyPath, row.Pattern)
+				t.Logf("%d: %s reads %d", position, name, counts[position])
+				if counts[position] == 0 {
+					t.Errorf("row %d, %s, reads nothing", position, name)
+				}
+			}
+		})
+	}
+}
+
 // dumpInstall writes an install's schema and index to two files whose paths
 // start with the given prefix: the schema as indented JSON, and the index as
 // one line per file. Two dumps of one install differ only where the schema or

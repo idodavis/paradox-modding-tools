@@ -4,8 +4,9 @@
 
 The index records what a scan found in the files of an install or of a workspace's mods: every definition, reference
 and localization message, with lookups by name. It decides which definition the game keeps when several compete, and it
-lists what fires what. The rules it applies to the scan, to which copy the game keeps and to what fires what, and what
-it does with input that breaks them, are its package doc, in [index.go](index.go).
+lists what fires what and what links to what. The rules it applies to the scan, to which copy the game keeps, to what
+fires what and to what links what, and what it does with input that breaks them, are its package doc, in
+[index.go](index.go).
 
 What a database is and how it matches names is [lang](../lang/README.md)'s. Which file the game reads at a path
 is decided by the mounts of [files](../files/README.md), which an index embeds, so their `Files`, `FindLoaded` and
@@ -14,7 +15,7 @@ is decided by the mounts of [files](../files/README.md), which an index embeds, 
 **Uses** [files](../files/README.md), [game](../game/README.md), [jomini](../jomini/README.md),
 [lang](../lang/README.md), [loc](../loc/README.md), [texture](../texture/README.md) · **Used by** the
 [workspace](../../services/workspace/README.md) service, which builds and holds it, and the services that read it:
-[lsp](../../services/lsp/README.md), [draw](../../services/draw/README.md), [graph](../../services/graph/README.md),
+[lsp](../../services/lsp/README.md), [atlas](../../services/atlas/README.md), [draw](../../services/draw/README.md),
 [health](../../services/health/README.md), [wiki](../../services/wiki/README.md),
 [steam](../../services/steam/README.md) and [search](../../services/search/).
 
@@ -72,6 +73,7 @@ copy `FindKept` returns.
 | `translation.go` | The game's localization in a second language, scanned once on an install's index and cached by language, and the message the game shows for a key. |
 | `problems.go` | The problems of a walked file that need every file: a name nothing defines, a text written twice or missing, a required key no copy writes, an entry mode with nothing to act on, a priority tie and an unknown data call. `ListProblems` returns them with the ones the walk recorded. |
 | `fires.go` | What fires what, and the rule that marks a reference as firing, with the fields it lists. |
+| `links.go` | What links what: the rows of the links each game writes between goods, buildings, production methods and technologies, the rule that marks a reference as a link, and the links of a definition. |
 
 ## Terms
 
@@ -91,3 +93,14 @@ copy `FindKept` returns.
   [lang](../lang/README.md)'s.
 - **Unsettled**: the reason of a winner where no source says which copy the game keeps.
 - **Fire**: one firing: a source, a target, the reference that names the target, and the scripted effects between.
+- **Link**: one tie between two definitions, in the direction its relation reads: a source, a target, where it is
+  written, and how its amount is written.
+- **Relation**: what a link says of its two ends: a level, a part, an input, an output, a boost, what a need gives, an
+  employment, an unlock, a requirement, an era, a resource or an access.
+- **Spelled name**: a name written inside a key, as `trade_good_wood` in CK3's `trade_good_wood_production_add`. The
+  scan makes a reference for it, which find references and rename leave out.
+
+Measured on the three installs, the 64 link rows each read at least one link on their game: CK3's 20 rows, Vic3's 30
+and EU5's 14. The scan took 2.54 s, 0.85 s and 1.74 s before the links were marked and 2.59 s, 0.87 s and 1.83 s after.
+No CK3 file writes a `_production_flat` key outside a need or names an innovation under a building's `is_enabled`, and
+no Vic3 file defines the company categories that `unlocking_company_categories` names, so no row reads those.

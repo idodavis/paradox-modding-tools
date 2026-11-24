@@ -49,10 +49,10 @@ type Dialect struct {
 	// rgb { 255 255 255 }.
 	CoatColor jomini.ColorForm
 
-	// GraphTypes are the types of definition the Graph has a view of, beside
-	// what fires. A Vic3 production method opens its building, and a CK3
-	// category of goods is shown as a good is.
-	GraphTypes []Type
+	// AtlasTypes are the types of definition Atlas draws, beside what fires.
+	// A Vic3 production method opens its building, and a CK3 category of
+	// goods is drawn as a good is.
+	AtlasTypes []Type
 }
 
 // Keyword is a fixed word of the script language, such as if, limit or add.
@@ -109,6 +109,15 @@ type Keyword struct {
 
 	// Blurb is the keyword's hover text, shown where no dump gives one.
 	Blurb string
+
+	// Phrase is the keyword in the words of a condition, as "any of" for OR.
+	// %s stands for what a key that ends in * names, as vassal in any_vassal.
+	// It is "" for a keyword said by its key.
+	Phrase string
+
+	// Negates is whether a block of the keyword holds when what is inside it
+	// does not, as NOT's does.
+	Negates bool
 }
 
 // KeywordClass is what kind of keyword one is. It is "" for a keyword of no
@@ -279,7 +288,7 @@ var dialects = map[string]*Dialect{
 		DecisionEffects:   []string{"execute_decision"},
 		UndeclaredWidgets: []string{"zoomarea", "text_occluder"},
 		CoatColor:         jomini.ColorForm{Tag: "rgb", Example: []string{"255", "255", "255"}},
-		GraphTypes:        []Type{TypeGood, TypeGoodCategory, TypeBuilding, TypeTechnology},
+		AtlasTypes:        []Type{TypeGood, TypeGoodCategory, TypeBuilding, TypeTechnology},
 	},
 	game.Vic3: {
 		ID: game.Vic3,
@@ -294,7 +303,7 @@ var dialects = map[string]*Dialect{
 		LocReplaceFolders: []string{"localization/%s/replace", "localization/replace/%s"},
 		UndeclaredWidgets: []string{"overlappingitembox", "treemapchart", "portrait_button", "axis"},
 		CoatColor:         jomini.ColorForm{Tag: jomini.TagHSV360, Example: []string{"360", "100", "100"}},
-		GraphTypes:        []Type{TypeGood, TypeBuilding, TypeProductionMethod, TypeTechnology},
+		AtlasTypes:        []Type{TypeGood, TypeBuilding, TypeProductionMethod, TypeTechnology},
 	},
 	game.EU5: {
 		ID: game.EU5,
@@ -319,7 +328,7 @@ var dialects = map[string]*Dialect{
 		BookmarkFolder: "common/bookmarks", SetupKey: "setup_folder",
 		UndeclaredWidgets: []string{"axis", "plotline", "screen_grab", "newsfeed_carousel"},
 		CoatColor:         jomini.ColorForm{Tag: jomini.TagHSV360, Example: []string{"360", "100", "100"}},
-		GraphTypes:        []Type{TypeGood, TypeBuilding, TypeTechnology},
+		AtlasTypes:        []Type{TypeGood, TypeBuilding, TypeTechnology},
 	},
 }
 
@@ -352,9 +361,13 @@ const descBlurb = "The text shown: a localization key, or a block that chooses o
 // customBlurb is the hover text of the custom key of a list.
 const customBlurb = "The text shown for the list in the tooltip: a localization key."
 
-// logical returns the row of a keyword that joins triggers, as and does.
-func logical(key, blurb string) Keyword {
-	return Keyword{Key: key, Class: KeywordClassLogical, Shape: ShapeTriggers, Blurb: blurb}
+// logical returns the row of a keyword that joins triggers, as and does. The
+// phrase says it in a condition's words, and the keyword negates if its
+// block holds when what is inside does not.
+func logical(key, phrase string, negates bool, blurb string) Keyword {
+	return Keyword{
+		Key: key, Class: KeywordClassLogical, Shape: ShapeTriggers, Blurb: blurb, Phrase: phrase, Negates: negates,
+	}
 }
 
 // math returns the row of a keyword that computes in a script value's
@@ -373,13 +386,13 @@ func iterator(key string, shape Shape, blurb string) Keyword {
 // fit a key, a row with a Parent comes before one without, and then the
 // first row wins.
 var Keywords = []Keyword{
-	logical("and", "True only when everything inside it is true."),
-	logical("or", "True when at least one thing inside it is true."),
-	logical("not", "True when what is inside it is false."),
-	logical("nor", "True only when nothing inside it is true."),
-	logical("nand", "True unless everything inside it is true."),
-	logical("all_false", "True only when nothing inside it is true (the same as NOR)."),
-	logical("any_false", "True when at least one thing inside it is false (the same as NAND)."),
+	logical("and", "all of", false, "True only when everything inside it is true."),
+	logical("or", "any of", false, "True when at least one thing inside it is true."),
+	logical("not", "not all of", true, "True when what is inside it is false."),
+	logical("nor", "none of", true, "True only when nothing inside it is true."),
+	logical("nand", "not all of", true, "True unless everything inside it is true."),
+	logical("all_false", "none of", true, "True only when nothing inside it is true (the same as NOR)."),
+	logical("any_false", "not all of", true, "True when at least one thing inside it is false (the same as NAND)."),
 	{Key: "always", Class: KeywordClassLogical, Blurb: "True or false as written: always = yes is always true."},
 
 	{Key: "if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Blurb: "Runs what is inside it when its limit holds."},
@@ -391,14 +404,17 @@ var Keywords = []Keyword{
 		Key: "else", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"if", "else_if"},
 		Blurb: "Runs when no if or else_if before it ran.",
 	},
-	{Key: "trigger_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Blurb: "Checks what is inside it only when its limit holds."},
+	{
+		Key: "trigger_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Phrase: "if",
+		Blurb: "Checks what is inside it only when its limit holds.",
+	},
 	{
 		Key: "trigger_else_if", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"trigger_if", "trigger_else_if"},
-		Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds.",
+		Phrase: "else if", Blurb: "Checks what is inside it when the trigger_if before it was skipped and its own limit holds.",
 	},
 	{
 		Key: "trigger_else", Class: KeywordClassConditional, Shape: ShapeEnclosing, Follows: []string{"trigger_if", "trigger_else_if"},
-		Blurb: "Checks what is inside it when every trigger_if before it was skipped.",
+		Phrase: "else", Blurb: "Checks what is inside it when every trigger_if before it was skipped.",
 	},
 	// an else inside a progress_condition takes over when its limit fails,
 	// and may hold an else of its own (Vic3 scripted_progress_bars.md)
@@ -406,9 +422,15 @@ var Keywords = []Keyword{
 		Games: []string{game.Vic3}, Key: "else", Parent: "progress_condition", Class: KeywordClassConditional, Shape: ShapeEnclosing,
 		Recursive: true, Blurb: "Takes over when the limit of the progress condition or the else around it fails.",
 	},
-	{Key: "limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "The conditions an if, exists, a list, a while or a trigger_if checks first."},
+	{
+		Key: "limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Phrase: "when",
+		Blurb: "The conditions an if, exists, a list, a while or a trigger_if checks first.",
+	},
 	{Key: "alternative_limit", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "A second limit a list falls back to when its limit matches nothing."},
-	{Key: "calc_true_if", Class: KeywordClassConditional, Shape: ShapeTriggers, Blurb: "True when at least amount of the triggers inside it are true."},
+	{
+		Key: "calc_true_if", Class: KeywordClassConditional, Shape: ShapeTriggers, Phrase: "at least the amount of",
+		Blurb: "True when at least amount of the triggers inside it are true.",
+	},
 
 	// a switch is trigger = <a trigger>, a block for each value and
 	// fallback = { } (effects.log and triggers.log)
@@ -506,7 +528,10 @@ var Keywords = []Keyword{
 	iterator("every_*", ShapeEffects, "Runs the effects inside it on every item of the list named after every_."),
 	iterator("random_*", ShapeEffects, "Runs the effects inside it on one random item of the list."),
 	iterator("ordered_*", ShapeEffects, "Runs the effects inside it on the items of the list in the order given."),
-	iterator("any_*", ShapeTriggers, "True when at least one item of the list passes the triggers inside it."),
+	{
+		Key: "any_*", Class: KeywordClassList, Shape: ShapeTriggers, Phrase: "any %s where",
+		Blurb: "True when at least one item of the list passes the triggers inside it.",
+	},
 	// no dump declares a list's custom text; the games write it inside every_
 	// and ordered_ lists only
 	{Key: "custom", Parent: "every_*", Class: KeywordClassDisplay, Shape: ShapeDescription, Blurb: customBlurb},

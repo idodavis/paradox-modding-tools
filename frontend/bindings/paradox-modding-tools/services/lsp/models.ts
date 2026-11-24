@@ -62,15 +62,22 @@ export interface Card {
     "inferred": boolean;
 
     /**
-     * Node is the Graph's id of the name, "" if the Graph asks no question
-     * about it.
-     */
-    "node"?: string;
-
-    /**
      * Color is the CSS color the word stands for, "" for none.
      */
     "color"?: string;
+
+    /**
+     * Picture is the file of the picture a definition shows, "" for none.
+     * Silhouette is whether the game tints it in the color of the text.
+     */
+    "picture"?: string;
+    "silhouette"?: boolean;
+
+    /**
+     * Node is the id Atlas draws the name by, "" for a name it draws nothing
+     * of.
+     */
+    "node"?: string;
     "sites"?: Site[] | null;
 
     /**

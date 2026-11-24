@@ -17,7 +17,7 @@ of it is [lsp](../../services/lsp/README.md)'s.
 **Uses** [files](../files/README.md), [game](../game/README.md), [jomini](../jomini/README.md),
 [loc](../loc/README.md) · **Used by** [schema](../schema/README.md), [index](../index/README.md),
 [workspace](../../services/workspace/README.md), [lsp](../../services/lsp/README.md),
-[draw](../../services/draw/README.md), [graph](../../services/graph/README.md),
+[atlas](../../services/atlas/README.md), [draw](../../services/draw/README.md),
 [health](../../services/health/README.md), [mcp](../../services/mcp/README.md),
 [wiki](../../services/wiki/README.md).
 
@@ -32,7 +32,7 @@ flowchart TD
   file["A parsed file"] --> walk
   walk --> contexts["A Context for each statement<br/>what its key is, its scope, what it refers to"]
   walk --> problems["The problems the file shows by itself"]
-  contexts --> readers["The index's scan, lsp's answers,<br/>draw, graph, health"]
+  contexts --> readers["The index's scan, lsp's answers,<br/>draw, atlas, health"]
 ```
 
 ## Files
@@ -65,8 +65,15 @@ flowchart TD
 - **Nesting**: a database whose definitions are written inside another database's definitions.
 - **Field**: one key that may be written in a definition, with what it takes.
 - **Type**: what the definitions of a database are, where the app treats them in a way of its own: an `event`, an
-  `on_action`, a `good`, a `building`, a `technology`. A `Declaration` holds it, and `Dialect.Questions` holds the
-  questions the Graph asks about a definition of each type.
+  `on_action`, a `good`, a `building`, a `technology`. A `Declaration` holds it, and `Dialect.AtlasTypes` lists the
+  types Atlas draws beside what fires.
+- **Text keys**: the localization keys the game builds from a definition's name for its title and description
+  (`DefinitionTexts`), a modifier's name among them. `Dialect.ListTextKeys` returns them in the order the game tries
+  them.
+- **Picture row**: how the definitions of one database show a picture, or the painting behind their head: the file a
+  definition names, or the file named after it (`DefinitionPictures`).
+- **Phrase**: a keyword in the words of a condition, as "any of" for `OR`. A keyword that **negates** holds when what
+  is inside its block does not.
 - **Expected**: what a field's value must be. **ValueType**: which type of value it is, as a `number` or a `reference`.
   A type of scope is a scope type, and a type of value a value type, so a bare "type" is a `Type`.
 - **Requirement**: whether a field must be written.

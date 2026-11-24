@@ -308,7 +308,7 @@ var Catalog = []Setting{
 		Help:  "The size of the whole interface, as a percentage.",
 		Words: "zoom size percent"},
 	{Key: "appearance.pages", Label: "Pages a workspace shows",
-		Section: "appearance", Type: "text", Default: "workspace-ide,graph,health,patch-center,release",
+		Section: "appearance", Type: "text", Default: "workspace-ide,atlas,health,patch-center,release",
 		Help:  "The pages the top bar shows, in order.",
 		Words: "sidebar navigation hide"},
 	{Key: "guidance.newModders", Label: "Guidance for new modders",

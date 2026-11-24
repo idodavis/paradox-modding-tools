@@ -42,7 +42,7 @@ export function splitChips(text: string): { text: string; names: string[] } {
 <script setup lang="ts">
 import { createReusableTemplate, useIntervalFn, useTimeoutFn, useTimestamp } from "@vueuse/core";
 import { Browser, Clipboard } from "@wailsio/runtime";
-import { sumBy } from "es-toolkit";
+import { countBy, sumBy } from "es-toolkit";
 import { computed, reactive, shallowRef } from "vue";
 
 import type { Review } from "@services/workspace/models";
@@ -58,10 +58,18 @@ import LineCounts from "../../ui/LineCounts.vue";
 import { TABLES } from "../../ui/RichEditor.vue";
 
 /**
- * A MessagePart is one entry of the transcript with what its view needs: a
- * tool call's title, or the subagent a tool call started.
+ * A Message is one of the user's prompts, or the entries the agent wrote up
+ * to the next one.
  */
-type MessagePart = { entry: Entry; tool?: ToolTitle; subagent?: Subagent };
+type Message = { id: string; role: "user" | "assistant"; parts: Entry[] };
+
+/**
+ * SHOWN_MESSAGES is how many of the latest messages the chat draws until the
+ * user asks for the earlier ones. A long history drawn whole blocks the page.
+ */
+const SHOWN_MESSAGES = 30;
+/** LOOKS holds how a message of each role is drawn. */
+const LOOKS = { user: { side: "right", variant: "soft" }, assistant: { side: "left", variant: "naked" } } as const;
 
 const { session, thread } = defineProps<{
   session: Session;
@@ -106,7 +114,7 @@ const agent = useAgentStore();
 const toolView = useToolViewStore();
 // What the user has filled in of each open form, by the form's id.
 const contents = reactive<Record<string, Record<string, unknown>>>({});
-const [DefineTool, ShowTool] = createReusableTemplate<{ entry: Entry; tool?: ToolTitle }>();
+const [DefineTool, ShowTool] = createReusableTemplate<{ entry: Entry }>();
 const [DefineEdit, ShowEdit] = createReusableTemplate<{ edit: FileEdit }>();
 const [DefineEdits, ShowEdits] = createReusableTemplate<{ edits: FileEdit[]; turn?: Turn }>();
 const [DefineTurn, ShowTurn] = createReusableTemplate<{ turn: Turn }>();
@@ -115,45 +123,49 @@ const now = useTimestamp({ scheduler: (tick) => useIntervalFn(tick, 1000) });
 const copiedId = shallowRef("");
 const { start: clearCopied } = useTimeoutFn(() => (copiedId.value = ""), 1500, { immediate: false });
 // Each user entry is a message of its own; the entries after it, the agent's texts and tool calls, share one message.
-// The call that asks to start on a plan is left out: the prompt box asks it.
-const messages = computed(() =>
-  thread.entries.reduce<{ id: string; role: "user" | "assistant"; parts: MessagePart[] }[]>((list, entry) => {
-    if (entry.kind === "tool" && entry.type === "switch_mode") return list;
-    const subagent = entry.kind === "subagent" ? session.subagents.find((other) => other.id === entry.id) : undefined;
-    const part = { entry, subagent, tool: entry.kind === "tool" ? describeToolCall(entry) : undefined };
+// The call that asks to start on a plan is left out: the prompt box asks it. A message whose entries are the same
+// keeps its object, so that only a changed message is drawn again.
+const messages = computed<Message[]>((previous) => {
+  const list: Message[] = [];
+  for (const entry of thread.entries) {
+    if (entry.kind === "tool" && entry.type === "switch_mode") continue;
     const last = list.at(-1);
-    if (entry.kind !== "user" && last?.role === "assistant") last.parts.push(part);
-    else list.push({ id: entry.id, role: entry.kind === "user" ? "user" : "assistant", parts: [part] });
-    return list;
-  }, []),
-);
-// The files each message's tool calls changed, by the message's id. A plan
-// file is no change to review, so it is left out.
-const messageEdits = computed(
-  () =>
-    new Map(
-      messages.value.map((message) => [
-        message.id,
-        listChanges(message.parts.map(({ entry }) => entry)).filter((edit) => !isPlanFile(session, edit.path)),
-      ]),
-    ),
-);
-// A resumed session's replay arrives while it starts, so the chat follows it as it follows a reply.
-const status = computed(() => (session.state === "running" || session.state === "starting" ? "streaming" : "ready"));
+    if (entry.kind !== "user" && last?.role === "assistant") last.parts.push(entry);
+    else list.push({ id: entry.id, role: entry.kind === "user" ? "user" : "assistant", parts: [entry] });
+  }
+
+  return list.map((message, index) => {
+    const kept = previous?.[index];
+    const isSame =
+      kept?.parts.length === message.parts.length && kept.parts.every((entry, part) => entry === message.parts[part]);
+
+    return kept && isSame ? kept : message;
+  });
+});
+const isWhole = shallowRef(false);
+const shown = computed(() => (isWhole.value ? messages.value : messages.value.slice(-SHOWN_MESSAGES)));
 const busy = computed(() => session.state === "running");
 
+/**
+ * listEdits returns the files a message's tool calls changed. A plan file is
+ * no change to review, so it is left out.
+ */
+function listEdits(message: Message): FileEdit[] {
+  return listChanges(message.parts).filter((edit) => !isPlanFile(session, edit.path));
+}
+
 /** copyAnswer puts a message's answer, the last text the agent wrote in it, on the clipboard, and marks it copied. */
-async function copyAnswer(id: string, parts: MessagePart[]): Promise<void> {
-  const answer = parts.findLast(({ entry }) => entry.kind === "agent")?.entry;
+async function copyAnswer(message: Message): Promise<void> {
+  const answer = message.parts.findLast((entry) => entry.kind === "agent");
   if (answer?.kind !== "agent") return;
   await Clipboard.SetText(answer.text);
-  copiedId.value = id;
+  copiedId.value = message.id;
   clearCopied();
 }
 
 /** findTurn returns the record of the turn that ended in a message, if any. */
-function findTurn(parts: MessagePart[]): Turn | undefined {
-  return parts.map(({ entry }) => entry).findLast((entry) => entry.kind === "turn");
+function findTurn(message: Message): Turn | undefined {
+  return message.parts.findLast((entry) => entry.kind === "turn");
 }
 
 /**
@@ -172,12 +184,15 @@ function listReviews(turn: Turn): Review[] {
   return (agent.reviews ?? []).filter((review) => turn.paths.includes(review.path));
 }
 
-/** groupToolCalls returns a message's parts as runs. Consecutive tool calls share a run, and any other part has its own. */
-function groupToolCalls(parts: MessagePart[]): MessagePart[][] {
-  return parts.reduce<MessagePart[][]>((runs, part) => {
+/**
+ * groupToolCalls returns a message's entries as runs. Consecutive tool calls share a run, and any other entry has its
+ * own.
+ */
+function groupToolCalls(message: Message): Entry[][] {
+  return message.parts.reduce<Entry[][]>((runs, entry) => {
     const last = runs.at(-1);
-    if (part.tool && last?.at(-1)?.tool) last.push(part);
-    else runs.push([part]);
+    if (entry.kind === "tool" && last?.at(-1)?.kind === "tool") last.push(entry);
+    else runs.push([entry]);
     return runs;
   }, []);
 }
@@ -186,18 +201,18 @@ function groupToolCalls(parts: MessagePart[]): MessagePart[][] {
  * classifyRun returns the status a run of tool calls shows: failed if any call failed, in progress while one runs,
  * completed once every call has, and pending otherwise.
  */
-function classifyRun(run: MessagePart[]): string {
-  const statuses = run.flatMap(({ entry }) => (entry.kind === "tool" ? [entry.status] : []));
+function classifyRun(run: Entry[]): string {
+  const statuses = run.flatMap((entry) => (entry.kind === "tool" ? [entry.status] : []));
   if (statuses.includes("failed")) return "failed";
   if (statuses.includes("in_progress")) return "in_progress";
   return statuses.every((status) => status === "completed") ? "completed" : "pending";
 }
 
 /** describeRun returns the label of a run of tool calls: how many, then each tool used once, with its count. */
-function describeRun(run: MessagePart[]): string {
-  const counts = new Map<string, number>();
-  for (const { tool } of run) if (tool) counts.set(tool.text, (counts.get(tool.text) ?? 0) + 1);
-  const labels = [...counts].map(([title, count]) => (count > 1 ? `${title} ×${count}` : title));
+function describeRun(run: Entry[]): string {
+  const titles = run.flatMap((entry) => (entry.kind === "tool" ? [describeToolCall(entry).text] : []));
+  const counts = Object.entries(countBy(titles, (title) => title));
+  const labels = counts.map(([title, count]) => (count > 1 ? `${title} ×${count}` : title));
   return `Used ${run.length} tools · ${labels.join(", ")}`;
 }
 
@@ -279,11 +294,11 @@ function openLink(event: MouseEvent): void {
 
 <template>
   <div class="flex flex-col" @click.capture="openLink" @auxclick.capture="openLink">
-    <DefineTool v-slot="{ entry, tool }">
+    <DefineTool v-slot="{ entry }">
       <UChatTool
         v-if="entry.kind === 'tool'"
-        :text="tool?.text"
-        :suffix="tool?.suffix"
+        :text="describeToolCall(entry).text"
+        :suffix="describeToolCall(entry).suffix"
         :icon="STATUSES[entry.status]?.icon ?? 'i-lucide-wrench'"
         :loading="entry.status === 'in_progress'"
         :ui="{ ...MACHINERY, leadingIcon: STATUSES[entry.status]?.color }"
@@ -329,7 +344,7 @@ function openLink(event: MouseEvent): void {
       </div>
     </DefineEdit>
     <DefineEdits v-slot="{ edits, turn }">
-      <UCollapsible class="max-w-180 rounded-md border border-default">
+      <UCollapsible v-if="edits.length" class="max-w-180 rounded-md border border-default">
         <template #default="{ open }">
           <div class="flex h-7 cursor-pointer items-center gap-2 ps-2.5 pe-1 text-12 hover:bg-elevated">
             <UIcon :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5 text-dimmed" />
@@ -387,237 +402,253 @@ function openLink(event: MouseEvent): void {
     </DefineTurn>
 
     <UChatMessages
-      :messages="messages"
-      :status="status"
+      :messages="shown"
+      :status="busy ? 'streaming' : 'ready'"
       :should-auto-scroll="true"
       compact
-      :user="{ side: 'right', variant: 'soft' }"
-      :assistant="{ side: 'left', variant: 'naked' }"
       :ui="{ root: 'gap-3.5' }"
     >
-      <template #content="{ message }">
-        <template v-for="run in groupToolCalls(message.parts as MessagePart[])" :key="run[0]?.entry.id">
-          <UChatTool
-            v-if="run.length > 1"
-            :text="describeRun(run)"
-            :icon="STATUSES[classifyRun(run)]?.icon"
-            :loading="classifyRun(run) === 'in_progress'"
-            :ui="{ ...MACHINERY, leadingIcon: STATUSES[classifyRun(run)]?.color }"
-            :class="MACHINERY_ROW"
-          >
-            <div class="flex flex-col gap-1.5 ps-6">
-              <ShowTool v-for="part in run" :key="part.entry.id" :entry="part.entry" :tool="part.tool" />
-            </div>
-          </UChatTool>
-          <template v-else>
-            <template v-for="{ entry, tool, subagent } in run" :key="entry.id">
-              <!-- A long path has no place to break, so the text wraps anywhere. -->
-              <div v-if="entry.kind === 'user'" class="flex max-w-full min-w-0 flex-col items-end gap-1.5">
-                <span class="max-w-full text-13 leading-5 wrap-anywhere whitespace-pre-wrap">{{
-                  splitChips(entry.text).text
-                }}</span>
-                <span
-                  v-for="chip in [...entry.chips, ...splitChips(entry.text).names]"
-                  :key="chip"
-                  class="flex items-center gap-1 font-mono text-11 text-toned"
-                >
-                  <UIcon name="i-lucide-file" class="size-3 text-dimmed" />{{ chip }}
-                </span>
-                <!-- Edit copies the session up to this prompt. -->
-                <UButton
-                  v-if="entry.cursor && session.forkable"
-                  label="Edit"
-                  icon="i-lucide-pencil"
-                  variant="ghost"
-                  color="neutral"
-                  size="xs"
-                  @click="agent.fork(session, entry)"
-                />
+      <UButton
+        v-if="shown.length < messages.length"
+        label="Show earlier"
+        icon="i-lucide-history"
+        variant="ghost"
+        color="neutral"
+        size="xs"
+        class="self-center"
+        @click="isWhole = true"
+      />
+      <UChatMessage
+        v-for="message in shown"
+        :key="message.id"
+        v-memo="[message]"
+        v-bind="{ ...LOOKS[message.role], ...message }"
+        compact
+      >
+        <template #content>
+          <template v-for="run in groupToolCalls(message)" :key="run[0]?.id">
+            <UChatTool
+              v-if="run.length > 1"
+              :text="describeRun(run)"
+              :icon="STATUSES[classifyRun(run)]?.icon"
+              :loading="classifyRun(run) === 'in_progress'"
+              :ui="{ ...MACHINERY, leadingIcon: STATUSES[classifyRun(run)]?.color }"
+              :class="MACHINERY_ROW"
+            >
+              <div class="flex flex-col gap-1.5 ps-6">
+                <ShowTool v-for="entry in run" :key="entry.id" :entry="entry" />
               </div>
-              <UEditor
-                v-else-if="entry.kind === 'agent'"
-                :model-value="entry.text"
-                content-type="markdown"
-                :extensions="TABLES"
-                :starter-kit="LINKS"
-                :editable="false"
-                :mention="false"
-                :ui="{ base: ANSWER }"
-                class="max-w-180 not-first:mt-4 not-last:mb-4"
-              />
-              <UChatReasoning
-                v-else-if="entry.kind === 'thought'"
-                :text="entry.text"
-                :streaming="busy"
-                :ui="MACHINERY"
-                :class="MACHINERY_ROW"
-              />
-              <button
-                v-else-if="subagent"
-                type="button"
-                class="flex w-full items-center gap-1.5 text-start text-12 text-dimmed hover:text-toned"
-                :class="MACHINERY_ROW"
-                @click="emit('subagents')"
-              >
-                <UIcon
-                  name="i-lucide-bot"
-                  class="size-3.5 shrink-0"
-                  :class="subagent.isRunning ? 'text-primary' : 'text-success'"
-                />
-                <span class="shrink-0 font-medium text-highlighted">{{ subagent.description || "Subagent" }}</span>
-                <span class="min-w-0 grow truncate">{{ subagent.title }}</span>
-                <span class="shrink-0 text-11 tabular-nums">{{ describeRunTime(subagent) }}</span>
-                <UIcon name="i-lucide-chevron-right" class="size-3.5 shrink-0" />
-              </button>
-              <div v-else-if="entry.kind === 'tool'" :class="MACHINERY_ROW">
-                <ShowTool :entry="entry" :tool="tool" />
-              </div>
-              <!-- A plan is named here and opened from the pinned row. -->
-              <button
-                v-else-if="entry.kind === 'plan'"
-                type="button"
-                class="flex items-center gap-1.5 text-start text-12 text-dimmed hover:text-toned"
-                :class="MACHINERY_ROW"
-                @click="agent.showPlan(session, entry.plan)"
-              >
-                <UIcon name="i-lucide-file-text" class="size-3.5 shrink-0" />
-                <span class="shrink-0">{{ entry.isUpdate ? "Updated the plan" : "Wrote the plan" }}</span>
-                <span v-if="session.documents.length > 1" class="min-w-0 truncate font-medium text-highlighted">
-                  {{ describeDocument(entry.plan) }}
-                </span>
-              </button>
-              <!-- A request to start on a plan is in the prompt box. -->
-              <div
-                v-else-if="entry.kind === 'permission' && !entry.plan"
-                class="flex max-w-180 flex-col gap-2.5 rounded-lg border border-primary bg-(--accent-soft) px-3.5 py-3"
-              >
-                <span class="flex items-center gap-2.5 text-13 font-medium">
-                  <UIcon name="i-lucide-shield" class="size-4 text-primary" />{{ entry.title }}
-                </span>
-                <div class="flex flex-wrap gap-2">
-                  <UButton
-                    v-for="option in entry.options"
-                    :key="option.id"
-                    :label="option.name"
-                    :color="OPTION_STYLES[option.kind]?.color ?? 'neutral'"
-                    :variant="OPTION_STYLES[option.kind]?.variant ?? 'ghost'"
-                    size="sm"
-                    @click="agent.reply(session, entry.id, option.id)"
-                  />
-                </div>
-              </div>
-              <AgentLink
-                v-else-if="entry.kind === 'link'"
-                :agent="session.agent.name"
-                :message="entry.message"
-                :url="entry.url"
-                @answer="(action) => agent.reply(session, entry.id, action)"
-              />
-              <form
-                v-else-if="entry.kind === 'form'"
-                class="flex max-w-180 flex-col gap-3 rounded-lg border border-primary bg-(--accent-soft) px-3.5 py-3"
-                @submit.prevent="agent.reply(session, entry.id, lookupContent(entry.id))"
-              >
-                <span class="flex items-center gap-2.5 text-13 font-medium">
-                  <UIcon name="i-lucide-circle-help" class="size-4 shrink-0 text-primary" />{{ entry.message }}
-                </span>
-                <div v-for="property in entry.properties" :key="property.key" class="flex flex-col gap-1.5">
+            </UChatTool>
+            <template v-else>
+              <template v-for="entry in run" :key="entry.id">
+                <!-- A long path has no place to break, so the text wraps anywhere. -->
+                <div v-if="entry.kind === 'user'" class="flex max-w-full min-w-0 flex-col items-end gap-1.5">
+                  <span class="max-w-full text-13 leading-5 wrap-anywhere whitespace-pre-wrap">{{
+                    splitChips(entry.text).text
+                  }}</span>
                   <span
-                    v-if="entry.properties.length > 1 || property.title !== entry.message"
-                    class="text-12 font-medium"
+                    v-for="chip in [...entry.chips, ...splitChips(entry.text).names]"
+                    :key="chip"
+                    class="flex items-center gap-1 font-mono text-11 text-toned"
                   >
-                    {{ property.title }}
+                    <UIcon name="i-lucide-file" class="size-3 text-dimmed" />{{ chip }}
                   </span>
-                  <span v-if="property.description && !property.choices.length" class="text-11 text-toned">
-                    {{ property.description }}
-                  </span>
-                  <div v-if="property.choices.length" class="flex flex-col gap-1">
-                    <span v-for="choice in property.choices" :key="choice.value" class="flex items-center gap-2">
-                      <UButton
-                        :label="choice.title"
-                        :color="isPicked(entry.id, property, choice.value) ? 'primary' : 'neutral'"
-                        :variant="isPicked(entry.id, property, choice.value) ? 'solid' : 'outline'"
-                        size="sm"
-                        class="shrink-0"
-                        @click="pick(entry.id, property, choice.value)"
-                      />
-                      <span class="min-w-0 text-11 text-toned">{{ choice.description }}</span>
-                    </span>
-                  </div>
-                  <USwitch
-                    v-else-if="property.type === 'boolean'"
-                    :model-value="!!lookupContent(entry.id)[property.key]"
-                    size="sm"
-                    :aria-label="property.title"
-                    @update:model-value="(value) => replyField(entry.id, property.key, value)"
-                  />
-                  <UInput
-                    v-else
-                    :model-value="String(lookupContent(entry.id)[property.key] ?? '')"
-                    :type="property.type === 'string' ? 'text' : 'number'"
-                    size="sm"
-                    :aria-label="property.title"
-                    class="w-full"
-                    @update:model-value="
-                      (value) => replyField(entry.id, property.key, property.type === 'string' ? value : Number(value))
-                    "
-                  />
-                </div>
-                <div class="flex gap-2">
-                  <UButton type="submit" label="Send" size="sm" :disabled="!isFilled(entry.id, entry.properties)" />
+                  <!-- Edit copies the session up to this prompt. -->
                   <UButton
-                    label="Skip"
+                    v-if="entry.cursor && session.forkable"
+                    label="Edit"
+                    icon="i-lucide-pencil"
                     variant="ghost"
                     color="neutral"
-                    size="sm"
-                    @click="agent.reply(session, entry.id, null)"
+                    size="xs"
+                    @click="agent.fork(session, entry)"
                   />
                 </div>
-              </form>
-              <div
-                v-else-if="entry.kind === 'compaction' && entry.status === 'in_progress'"
-                class="flex items-center gap-1.5 text-12 text-dimmed"
-                :class="MACHINERY_ROW"
-              >
-                <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin text-primary" />
-                Compacting the conversation…
-              </div>
-              <UChatTool
-                v-else-if="entry.kind === 'compaction'"
-                :text="
-                  entry.status === 'completed' ? 'Compacted the conversation' : 'The conversation was not compacted'
-                "
-                :icon="STATUSES[entry.status]?.icon ?? 'i-lucide-x'"
-                :ui="{ ...MACHINERY, leadingIcon: STATUSES[entry.status]?.color ?? 'text-error' }"
-                :class="MACHINERY_ROW"
-              >
-                <p class="ps-6 text-12 whitespace-pre-wrap text-toned">{{ entry.text }}</p>
-              </UChatTool>
-              <p v-else-if="entry.kind === 'notice'" class="text-12 text-dimmed">{{ entry.text }}</p>
+                <UEditor
+                  v-else-if="entry.kind === 'agent'"
+                  :model-value="entry.text"
+                  content-type="markdown"
+                  :extensions="TABLES"
+                  :starter-kit="LINKS"
+                  :editable="false"
+                  :mention="false"
+                  :ui="{ base: ANSWER }"
+                  class="max-w-180 not-first:mt-4 not-last:mb-4"
+                />
+                <UChatReasoning
+                  v-else-if="entry.kind === 'thought'"
+                  :text="entry.text"
+                  :streaming="busy"
+                  :ui="MACHINERY"
+                  :class="MACHINERY_ROW"
+                />
+                <template v-else-if="entry.kind === 'subagent'">
+                  <button
+                    v-for="subagent in session.subagents.filter((other) => other.id === entry.id)"
+                    :key="subagent.id"
+                    type="button"
+                    class="flex w-full items-center gap-1.5 text-start text-12 text-dimmed hover:text-toned"
+                    :class="MACHINERY_ROW"
+                    @click="emit('subagents')"
+                  >
+                    <UIcon
+                      name="i-lucide-bot"
+                      class="size-3.5 shrink-0"
+                      :class="subagent.isRunning ? 'text-primary' : 'text-success'"
+                    />
+                    <span class="shrink-0 font-medium text-highlighted">{{ subagent.description || "Subagent" }}</span>
+                    <span class="min-w-0 grow truncate">{{ subagent.title }}</span>
+                    <span class="shrink-0 text-11 tabular-nums">{{ describeRunTime(subagent) }}</span>
+                    <UIcon name="i-lucide-chevron-right" class="size-3.5 shrink-0" />
+                  </button>
+                </template>
+                <div v-else-if="entry.kind === 'tool'" :class="MACHINERY_ROW">
+                  <ShowTool :entry="entry" />
+                </div>
+                <!-- A plan is named here and opened from the pinned row. -->
+                <button
+                  v-else-if="entry.kind === 'plan'"
+                  type="button"
+                  class="flex items-center gap-1.5 text-start text-12 text-dimmed hover:text-toned"
+                  :class="MACHINERY_ROW"
+                  @click="agent.showPlan(session, entry.plan)"
+                >
+                  <UIcon name="i-lucide-file-text" class="size-3.5 shrink-0" />
+                  <span class="shrink-0">{{ entry.isUpdate ? "Updated the plan" : "Wrote the plan" }}</span>
+                  <span v-if="session.documents.length > 1" class="min-w-0 truncate font-medium text-highlighted">
+                    {{ describeDocument(entry.plan) }}
+                  </span>
+                </button>
+                <!-- A request to start on a plan is in the prompt box. -->
+                <div
+                  v-else-if="entry.kind === 'permission' && !entry.plan"
+                  class="flex max-w-180 flex-col gap-2.5 rounded-lg border border-primary bg-(--accent-soft) px-3.5 py-3"
+                >
+                  <span class="flex items-center gap-2.5 text-13 font-medium">
+                    <UIcon name="i-lucide-shield" class="size-4 text-primary" />{{ entry.title }}
+                  </span>
+                  <div class="flex flex-wrap gap-2">
+                    <UButton
+                      v-for="option in entry.options"
+                      :key="option.id"
+                      :label="option.name"
+                      :color="OPTION_STYLES[option.kind]?.color ?? 'neutral'"
+                      :variant="OPTION_STYLES[option.kind]?.variant ?? 'ghost'"
+                      size="sm"
+                      @click="agent.reply(session, entry.id, option.id)"
+                    />
+                  </div>
+                </div>
+                <AgentLink
+                  v-else-if="entry.kind === 'link'"
+                  :agent="session.agent.name"
+                  :message="entry.message"
+                  :url="entry.url"
+                  @answer="(action) => agent.reply(session, entry.id, action)"
+                />
+                <form
+                  v-else-if="entry.kind === 'form'"
+                  class="flex max-w-180 flex-col gap-3 rounded-lg border border-primary bg-(--accent-soft) px-3.5 py-3"
+                  @submit.prevent="agent.reply(session, entry.id, lookupContent(entry.id))"
+                >
+                  <span class="flex items-center gap-2.5 text-13 font-medium">
+                    <UIcon name="i-lucide-circle-help" class="size-4 shrink-0 text-primary" />{{ entry.message }}
+                  </span>
+                  <div v-for="property in entry.properties" :key="property.key" class="flex flex-col gap-1.5">
+                    <span
+                      v-if="entry.properties.length > 1 || property.title !== entry.message"
+                      class="text-12 font-medium"
+                    >
+                      {{ property.title }}
+                    </span>
+                    <span v-if="property.description && !property.choices.length" class="text-11 text-toned">
+                      {{ property.description }}
+                    </span>
+                    <div v-if="property.choices.length" class="flex flex-col gap-1">
+                      <span v-for="choice in property.choices" :key="choice.value" class="flex items-center gap-2">
+                        <UButton
+                          :label="choice.title"
+                          :color="isPicked(entry.id, property, choice.value) ? 'primary' : 'neutral'"
+                          :variant="isPicked(entry.id, property, choice.value) ? 'solid' : 'outline'"
+                          size="sm"
+                          class="shrink-0"
+                          @click="pick(entry.id, property, choice.value)"
+                        />
+                        <span class="min-w-0 text-11 text-toned">{{ choice.description }}</span>
+                      </span>
+                    </div>
+                    <USwitch
+                      v-else-if="property.type === 'boolean'"
+                      :model-value="!!lookupContent(entry.id)[property.key]"
+                      size="sm"
+                      :aria-label="property.title"
+                      @update:model-value="(value) => replyField(entry.id, property.key, value)"
+                    />
+                    <UInput
+                      v-else
+                      :model-value="String(lookupContent(entry.id)[property.key] ?? '')"
+                      :type="property.type === 'string' ? 'text' : 'number'"
+                      size="sm"
+                      :aria-label="property.title"
+                      class="w-full"
+                      @update:model-value="
+                        (value) =>
+                          replyField(entry.id, property.key, property.type === 'string' ? value : Number(value))
+                      "
+                    />
+                  </div>
+                  <div class="flex gap-2">
+                    <UButton type="submit" label="Send" size="sm" :disabled="!isFilled(entry.id, entry.properties)" />
+                    <UButton
+                      label="Skip"
+                      variant="ghost"
+                      color="neutral"
+                      size="sm"
+                      @click="agent.reply(session, entry.id, null)"
+                    />
+                  </div>
+                </form>
+                <div
+                  v-else-if="entry.kind === 'compaction' && entry.status === 'in_progress'"
+                  class="flex items-center gap-1.5 text-12 text-dimmed"
+                  :class="MACHINERY_ROW"
+                >
+                  <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin text-primary" />
+                  Compacting the conversation…
+                </div>
+                <UChatTool
+                  v-else-if="entry.kind === 'compaction'"
+                  :text="
+                    entry.status === 'completed' ? 'Compacted the conversation' : 'The conversation was not compacted'
+                  "
+                  :icon="STATUSES[entry.status]?.icon ?? 'i-lucide-x'"
+                  :ui="{ ...MACHINERY, leadingIcon: STATUSES[entry.status]?.color ?? 'text-error' }"
+                  :class="MACHINERY_ROW"
+                >
+                  <p class="ps-6 text-12 whitespace-pre-wrap text-toned">{{ entry.text }}</p>
+                </UChatTool>
+                <p v-else-if="entry.kind === 'notice'" class="text-12 text-dimmed">{{ entry.text }}</p>
+              </template>
             </template>
           </template>
+          <template v-for="turn in [findTurn(message)]" :key="turn?.id ?? ''">
+            <ShowEdits :edits="listEdits(message)" :turn="turn" />
+            <ShowTurn v-if="turn" :turn="turn" />
+          </template>
         </template>
-        <template v-for="turn in [findTurn(message.parts as MessagePart[])]" :key="turn?.id ?? ''">
-          <ShowEdits
-            v-if="messageEdits.get(message.id)?.length"
-            :edits="messageEdits.get(message.id) ?? []"
-            :turn="turn"
+        <template #actions>
+          <UButton
+            v-if="message.parts.some((entry) => entry.kind === 'agent')"
+            :icon="copiedId === message.id ? 'i-lucide-check' : 'i-lucide-copy'"
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            square
+            aria-label="Copy"
+            @click="copyAnswer(message)"
           />
-          <ShowTurn v-if="turn" :turn="turn" />
         </template>
-      </template>
-      <template #actions="{ message }">
-        <UButton
-          v-if="(message.parts as MessagePart[]).some(({ entry }) => entry.kind === 'agent')"
-          :icon="copiedId === message.id ? 'i-lucide-check' : 'i-lucide-copy'"
-          variant="ghost"
-          color="neutral"
-          size="xs"
-          square
-          aria-label="Copy"
-          @click="copyAnswer(message.id, message.parts as MessagePart[])"
-        />
-      </template>
+      </UChatMessage>
     </UChatMessages>
   </div>
 </template>

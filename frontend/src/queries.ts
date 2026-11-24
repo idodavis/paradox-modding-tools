@@ -3,9 +3,9 @@ import { defineQueryOptions, useMutation, useQuery, useQueryCache, type UseQuery
 
 import * as agent from "@services/agent/service";
 import * as app from "@services/app/service";
+import * as atlas from "@services/atlas/service";
 import * as draw from "@services/draw/service";
 import * as git from "@services/git/service";
-import * as graph from "@services/graph/service";
 import * as health from "@services/health/service";
 import * as lsp from "@services/lsp/service";
 import * as mcp from "@services/mcp/service";
@@ -16,9 +16,9 @@ import * as terminal from "@services/terminal/service";
 import * as wiki from "@services/wiki/service";
 import * as workspace from "@services/workspace/service";
 import type { Format } from "@internal/files/models";
-import { Type } from "@internal/lang/models";
+import type { Type } from "@internal/lang/models";
+import type { Filter, Graph } from "@services/atlas/models";
 import type { Coat, PictureList, States } from "@services/draw/models";
-import type { Filter } from "@services/graph/models";
 import type { Site } from "@services/lsp/models";
 
 export function fileUrl(path: string): string {
@@ -67,7 +67,7 @@ export const keys = {
   roots: ["roots"] as const,
   draw: (path: string) => [...KINDS.draws, path] as const,
   health: ["health"] as const,
-  graph: ["graph"] as const,
+  atlas: ["atlas"] as const,
   wiki: ["wiki"] as const,
   patch: ["patch"] as const,
   git: (dir: string) => [...KINDS.gits, dir] as const,
@@ -257,6 +257,31 @@ export const readersQuery = defineQueryOptions((key: string) => ({
   query: () => health.ListReaders(key),
 }));
 
+export const defaultsQuery = defineQueryOptions({ key: [...keys.atlas, "defaults"], query: () => atlas.Defaults() });
+// A new subject or filter shows the last canvas until its own arrives, so the view never blanks.
+export const graphQuery = defineQueryOptions(({ subject, filter }: { subject: string; filter: Filter }) => ({
+  key: [...keys.atlas, "graph", subject, filter],
+  query: () => atlas.BuildGraph(subject, filter),
+  placeholderData: (previous: Graph | undefined) => previous,
+}));
+export const detailQuery = defineQueryOptions((id: string) => ({
+  key: [...keys.atlas, "detail", id],
+  query: () => atlas.BuildDetail(id),
+}));
+export const catalogsQuery = defineQueryOptions({
+  key: [...keys.atlas, "catalogs"],
+  query: () => atlas.ListCatalogs(),
+});
+/** EVERY_ROW is the limit that lists a whole catalog. */
+export const EVERY_ROW = 1_000_000;
+export const catalogQuery = defineQueryOptions(
+  ({ types, query, limit }: { types: Type[]; query: string; limit: number }) => ({
+    key: [...keys.atlas, "catalog", types, query, limit],
+    query: () => atlas.ListCatalog(types, query, limit),
+  }),
+);
+export const ownRootsQuery = defineQueryOptions({ key: [...keys.atlas, "own"], query: () => atlas.ListOwnRoots() });
+
 export const legendQuery = defineQueryOptions({ key: ["app", "legend"], query: () => lsp.ListLegend() });
 export const indentationQuery = defineQueryOptions((path: string) => ({
   key: [...keys.file(path), "indentation"],
@@ -277,49 +302,6 @@ export const textColorsQuery = defineQueryOptions(
     query: () => lsp.ColorText(path, format, text, line),
   }),
 );
-
-export const graphQuery = defineQueryOptions(({ subject, filter }: { subject: string; filter: Filter }) => ({
-  key: [...keys.graph, subject, filter],
-  query: () => graph.BuildGraph(subject, filter),
-}));
-export const graphChainQuery = defineQueryOptions(({ id, filter }: { id: string; filter: Filter }) => ({
-  key: [...keys.graph, "chain", id, filter],
-  query: () => graph.BuildChain(id, filter),
-}));
-export const graphLineQuery = defineQueryOptions(({ id, picked }: { id: string; picked: string[] }) => ({
-  key: [...keys.graph, "line", id, picked],
-  query: () => graph.BuildLine(id, picked),
-}));
-export const graphTreeQuery = defineQueryOptions(({ id, filter }: { id: string; filter: Filter }) => ({
-  key: [...keys.graph, "tree", id, filter],
-  query: () => graph.BuildTree(id, filter),
-}));
-export const graphErasQuery = defineQueryOptions({
-  key: [...keys.graph, "eras"],
-  query: () => graph.ListDefinitions(Type.TypeEra),
-});
-export const detailQuery = defineQueryOptions((id: string) => ({
-  key: [...keys.graph, "detail", id],
-  query: () => graph.BuildDetail(id),
-}));
-export const graphCatalogsQuery = defineQueryOptions({
-  key: [...keys.graph, "catalogs"],
-  query: () => graph.ListCatalogs(),
-});
-export const graphCatalogQuery = defineQueryOptions(
-  ({ types, query, limit }: { types: Type[]; query: string; limit: number }) => ({
-    key: [...keys.graph, "catalog", types, query, limit],
-    query: () => graph.ListCatalog(types, query, limit),
-  }),
-);
-export const ownRootsQuery = defineQueryOptions({
-  key: [...keys.graph, "own"],
-  query: () => graph.ListOwnRoots(),
-});
-export const graphDefaultsQuery = defineQueryOptions({
-  key: [...keys.graph, "defaults"],
-  query: () => graph.Defaults(),
-});
 
 export const fileSearchQuery = defineQueryOptions(({ query, limit }: { query: string; limit: number }) => ({
   key: [...keys.search, "files", query, limit],

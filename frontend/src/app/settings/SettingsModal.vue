@@ -701,7 +701,7 @@ async function remove(): Promise<void> {
                     </div>
                   </div>
                   <p class="shrink-0 border-t border-default px-3.5 py-3 text-12 text-dimmed">
-                    Health and the Graph follow a new order as soon as you drop it. Colors stay with the mod, not the
+                    Health and Atlas follow a new order as soon as you drop it. Colors stay with the mod, not the
                     position.
                   </p>
                 </div>

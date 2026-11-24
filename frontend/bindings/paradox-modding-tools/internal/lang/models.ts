@@ -185,7 +185,7 @@ export enum Type {
     TypeModifier = "modifier",
 
     /**
-     * The types the Graph draws.
+     * The types Atlas draws.
      *
      * TypeGood is a good, as wood is. TypeGoodCategory is a group of goods,
      * as CK3's trade_category_mandala_arms is.

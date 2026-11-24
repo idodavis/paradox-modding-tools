@@ -32,7 +32,7 @@ jobs:
               "Assistant": "area: ide",
               "Save as DDS": "area: ide",
               "Language / scan / cache": "area: ide",
-              "Graph": "area: graph",
+              "Atlas": "area: graph",
               "Health": "area: health",
               "Patch Center": "area: patch notes",
               "Publish / Steam Workshop": "area: publish",

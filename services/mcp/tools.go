@@ -20,7 +20,7 @@ import (
 	"paradox-modding-tools/internal/loc"
 	"paradox-modding-tools/internal/patch"
 	"paradox-modding-tools/internal/schema"
-	"paradox-modding-tools/services/graph"
+	"paradox-modding-tools/services/atlas"
 	"paradox-modding-tools/services/health"
 	"paradox-modding-tools/services/lsp"
 	"paradox-modding-tools/services/search"
@@ -56,17 +56,10 @@ type findingFilter struct {
 	Limit int    `json:"limit,omitempty" jsonschema:"the most findings wanted; 50 if left out"`
 }
 
-// graphRoot is the node a view of the Graph is about, and what is drawn of it.
-type graphRoot struct {
-	Root   string        `json:"root" jsonschema:"a node's id from find_roots, such as events:my_mod.0001 or on_action:on_birth"`
-	Filter *graph.Filter `json:"filter,omitempty" jsonschema:"what is drawn; the Graph's defaults if left out"`
-}
-
-// buildingLine is a building, and the production method each of its groups
-// runs.
-type buildingLine struct {
-	ID     string   `json:"id" jsonschema:"a building's or a production method's id from find_roots"`
-	Picked []string `json:"picked,omitempty" jsonschema:"ids of production methods: each one's group runs it; a group none names runs its first"`
+// canvas is the subject Atlas draws, and what is drawn of it.
+type canvas struct {
+	Subject string        `json:"subject" jsonschema:"a node's id from find_roots, such as events:my_mod.0001 or goods:books"`
+	Filter  *atlas.Filter `json:"filter,omitempty" jsonschema:"what is drawn, every part given; Atlas's defaults if left out"`
 }
 
 type node struct {
@@ -198,37 +191,23 @@ func (s *Service) addPageTools(server *sdk.Server) {
 	sdk.AddTool(server, &sdk.Tool{Name: "list_codes", Title: "List Health's checks", Annotations: readsOnly,
 		Description: "Lists Health's checks: each one's id, question, level and message."},
 		answer(func(struct{}) ([]lsp.Code, error) { return s.Health.ListCodes(), nil }))
-	sdk.AddTool(server, &sdk.Tool{Name: "find_roots", Title: "Find what the Graph shows", Annotations: readsOnly,
-		Description: "Finds the definitions the Graph shows, by id, name or number: events, on_actions, decisions, " +
-			"messages and scripted effects, and the games' goods, buildings, production methods, technologies, " +
-			"innovations and advances."},
-		answer(func(request textQuery) ([]graph.Node, error) {
-			return s.Graph.FindRoots(request.Query, resolveLimit(request.Limit, defaultLimit)), nil
+	sdk.AddTool(server, &sdk.Tool{Name: "find_roots", Title: "Find what Atlas draws", Annotations: readsOnly,
+		Description: "Finds what Atlas can draw, by name or title: events, on_actions, decisions, messages and " +
+			"scripted effects, and the games' goods, buildings, production methods, technologies, innovations and " +
+			"advances."},
+		answer(func(request textQuery) ([]atlas.Node, error) {
+			return s.Atlas.FindRoots(request.Query, resolveLimit(request.Limit, defaultLimit)), nil
 		}))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Title: "Build an event graph", Annotations: readsOnly,
-		Description: "Builds the graph of what an event, on_action, decision, message or scripted effect fires and " +
-			"what fires it, step by step, each firing with the blocks it sits in and its delay."},
-		answerGraph(s, s.Graph.BuildGraph))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_chain", Title: "Build a good's chain", Annotations: readsOnly,
-		Description: "Gives a good's chain: where it is found, the building lines that make it with what each " +
-			"level takes and makes, where the goods they take come from, and the lines and needs that take it."},
-		answerGraph(s, s.Graph.BuildChain))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_line", Title: "Build a building's line", Annotations: readsOnly,
-		Description: "Gives a building's line: its levels with what unlocks each, a table of what each level makes, " +
-			"takes, employs, costs and gives, and, for a game with production methods, each group's methods and what " +
-			"the picked ones come to."},
-		answer(func(request buildingLine) (graph.Line, error) {
-			line, err := s.Graph.BuildLine(request.ID, request.Picked)
-
-			return line, hintNode(err)
-		}))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_tree", Title: "Build a technology's tree", Annotations: readsOnly,
-		Description: "Gives the tree a technology, an innovation or an advance is in: its technologies with their " +
-			"era, what each gives and unlocks, what each requires, and what the one asked about needs and leads to. " +
-			"The filter's potential names the religions, cultures or countries whose own advances are drawn too."},
-		answerGraph(s, s.Graph.BuildTree))
-	sdk.AddTool(server, &sdk.Tool{Name: "build_detail", Title: "Read a Graph node", Annotations: readsOnly,
-		Description: "Gives one Graph node's detail: what it is listed under and costs, its texts, what it fires and " +
+	sdk.AddTool(server, &sdk.Tool{Name: "build_graph", Title: "Draw a subject as Atlas does", Annotations: readsOnly,
+		Description: "Gives what Atlas draws of a subject, as nodes and the edges between them. An event, on_action, " +
+			"decision, message or scripted effect: what fires it and what it fires, step by step, each firing with " +
+			"the blocks it sits in and its delay. A good: the building lines that make it with what they take, and " +
+			"the lines and needs that take it. A building or a production method: its levels with what each makes, " +
+			"takes, employs, costs and gives, its production methods and what the filter's picked ones come to. A " +
+			"technology, an innovation or an advance: its tree, with what each requires, gives and unlocks."},
+		answer(s.buildGraph))
+	sdk.AddTool(server, &sdk.Tool{Name: "build_detail", Title: "Read an Atlas node", Annotations: readsOnly,
+		Description: "Gives one Atlas node's detail: what it is listed under and costs, its texts, what it fires and " +
 			"what fires it, every link it has to goods, buildings and technologies, the game rules it reads, the " +
 			"game's copy it replaces, and its script."}, answer(s.buildDetail))
 	sdk.AddTool(server, &sdk.Tool{Name: "search_pages", Title: "Search the game's wiki", Annotations: readsOnly,
@@ -289,21 +268,6 @@ func answer[In, Out any](respond func(In) (Out, error)) sdk.ToolHandlerFor[In, a
 
 		return nil, output, err
 	}
-}
-
-// answerGraph makes a tool's handler from a view of the Graph that takes a
-// node's id and a filter. A filter left out is the Graph's defaults.
-func answerGraph[Out any](s *Service, build func(string, graph.Filter) (Out, error)) sdk.ToolHandlerFor[graphRoot, any] {
-	return answer(func(request graphRoot) (Out, error) {
-		filter := s.Graph.Defaults()
-		if request.Filter != nil {
-			filter = *request.Filter
-		}
-
-		view, err := build(request.Root, filter)
-
-		return view, hintNode(err)
-	})
 }
 
 // resolveLimit returns the limit asked for, or the fallback if it is left out,
@@ -420,6 +384,28 @@ func (s *Service) buildReport(filter findingFilter) (health.Report, error) {
 	return report, err
 }
 
+// buildGraph returns what Atlas draws of a subject, under Atlas's defaults
+// where the filter is left out. An error about the subject says where ids
+// come from.
+func (s *Service) buildGraph(request canvas) (atlas.Graph, error) {
+	filter := s.Atlas.Defaults()
+	if request.Filter != nil {
+		filter = *request.Filter
+	}
+
+	graph, err := s.Atlas.BuildGraph(request.Subject, filter)
+
+	return graph, hintNode(err)
+}
+
+// buildDetail returns a node's detail. An error about the node says where
+// ids come from.
+func (s *Service) buildDetail(request node) (atlas.Detail, error) {
+	detail, err := s.Atlas.BuildDetail(request.ID)
+
+	return detail, hintNode(err)
+}
+
 // buildLexicon returns the rows of a class whose name holds the filter's text.
 func (s *Service) buildLexicon(filter lexiconFilter) ([]lsp.LexiconRow, error) {
 	end := ""
@@ -523,13 +509,14 @@ const (
 4. Check it. diagnose the file, or your text before you write it. build_report gives Health's findings: how the ` +
 		`mods touch the same things, each mod's own problems, and each language's coverage of its localization ` +
 		`(the coverage check). Fix the problems you brought in.
-5. Show the user. show opens the file at the lines you changed, or the page that shows the result, such as the ` +
-		`Graph of an event you wired.
+5. Show the user. show opens the file at the lines you changed, or the page that shows the result, such as an ` +
+		`event you wired in Atlas.
 
-Graph: find_roots finds an event, an on_action, a decision, a scripted effect, a good, a building, a production method or a ` +
-		`technology. build_graph gives what an event, an on_action, a decision or a scripted effect fires and what ` +
-		`fires it. build_chain gives who makes and who takes a good, build_line a building's levels and production ` +
-		`methods, and build_tree a technology's tree. build_detail gives one node's texts, script, links and cost.
+Atlas: find_roots finds an event, an on_action, a decision, a scripted effect, a good, a building, a production ` +
+		`method or a technology. build_graph gives what Atlas draws of one: what fires an event and what it fires, ` +
+		`who makes and who takes a good, a building's levels and production methods, a technology's tree. ` +
+		`build_detail gives one node's texts, script, links and cost.
+
 Localization: a mod's localization files are YAML under localization/<language>/, each beginning with ` +
 		`l_<language>: and saved with a byte order mark. write_scaffold writes the keys a language lacks, with the ` +
 		`base language's text as the placeholder.`

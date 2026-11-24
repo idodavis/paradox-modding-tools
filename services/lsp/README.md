@@ -18,7 +18,7 @@ problems in words.
 [game](../../internal/game/README.md), [index](../../internal/index/README.md),
 [jomini](../../internal/jomini/README.md), [loc](../../internal/loc/README.md),
 [lang](../../internal/lang/README.md), [texture](../../internal/texture/README.md) · **Used by**
-[draw](../draw/README.md), [graph](../graph/README.md), [health](../health/README.md), [mcp](../mcp/README.md),
+[atlas](../atlas/README.md), [draw](../draw/README.md), [health](../health/README.md), [mcp](../mcp/README.md),
 [search](../search/), [terminal](../terminal/README.md).
 
 ## One answer

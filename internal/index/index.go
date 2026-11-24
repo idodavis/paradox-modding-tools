@@ -1,8 +1,8 @@
 // Package index records what a scan found in the files of an install or of
 // a workspace's mods: every definition, reference and localization message,
 // with lookups by name. It decides which definition the game keeps when
-// several compete, lists what fires what, and loads an install's index from
-// its cache. It keeps no source: anything beyond what a statement defines
+// several compete, lists what fires what and what links to what, and loads an
+// install's index from its cache. It keeps no source: anything beyond what a statement defines
 // and refers to is read by walking the file again.
 //
 // An install's index is scanned once and cached. A mods' index stands on it:
@@ -17,6 +17,9 @@
 //   - A localization file gives an occurrence for each message, followed by
 //     the names its text refers to. A localization key is defined by its
 //     messages.
+//   - A localization key a text names is not reported as undefined where
+//     the game's own files name it too: the game fills in a value at $VAL$
+//     whether or not a key VAL is defined.
 //   - A table file whose database names its definitions by their first
 //     column gives a definition for each row.
 //   - The game's own localization is scanned in the base language only. A
@@ -96,6 +99,30 @@
 // says which one runs. Asked to follow, a walk goes through the scripted
 // effects on the way, and effects that call each other end it.
 //
+// # What links what
+//
+// A link ties two definitions as a row of the link rows reads it: a building
+// that takes a good, a technology that unlocks a law. The scan marks each
+// reference that writes one.
+//
+//   - The first row that fits a reference reads it, so a narrower key path
+//     comes first.
+//   - A link is written one of four ways: as a reference under the row's key
+//     path; as a key that spells its target, as Vic3's goods_input_coal_add
+//     does; as a definition written inside its target's, as an EU5 unique
+//     production method is in its building; or as a definition named after
+//     its target, as a CK3 county potential is after its good.
+//   - Where the walk makes no reference at a key that spells a name, as in
+//     CK3, the scan makes one for each database a row says the key may name.
+//   - A link runs from the end that does it: a technology unlocks, a building
+//     takes. A row written by the other end says so.
+//   - A link's amount is the value of the key its row names beside it, else
+//     its own statement's value. It may be a share of what is produced.
+//   - The definitions of one database that name a definition may be one link
+//     with their number, as the places a good is found are.
+//   - Only the copies the game keeps write links, and a link to a name the
+//     game keeps no definition of is left out.
+//
 // # Robustness
 //
 // A file that cannot be read, or whose format holds no names, gets no
@@ -163,6 +190,10 @@ type Occurrence struct {
 	// of blocks up to the statement that writes the firing: 2 for my_event.1
 	// in trigger_event = { id = my_event.1 }.
 	Firing uint8
+
+	// Link is 0 for a reference that is no link. For one a row of the link
+	// rows reads, it is one more than the row's position.
+	Link uint8
 
 	// Titles is set for a reference that is the localization key of its
 	// definition's title, and Describes for the key of its description.

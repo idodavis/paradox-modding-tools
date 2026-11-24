@@ -140,7 +140,7 @@ const (
 	TypeModifier Type = "modifier"
 )
 
-// The types the Graph draws.
+// The types Atlas draws.
 const (
 	// TypeGood is a good, as wood is. TypeGoodCategory is a group of goods,
 	// as CK3's trade_category_mandala_arms is.
@@ -361,8 +361,59 @@ type TextKeys struct {
 	Title       string
 	Description string
 
+	// Capitals is whether the keys write the name in capitals, as CK3's
+	// MOD_STEWARDSHIP does for the modifier stewardship.
+	Capitals bool
+
 	Databases []string
 }
+
+// PictureRow is how the definitions of one database show a picture: the file
+// a definition names, or the file named after it. Of a database's rows the
+// first that leads to a file shows.
+type PictureRow struct {
+	// Games are the games the row holds for, all if none.
+	Games []string
+
+	Database string
+
+	// Painting is set for the painting behind a definition's head, where
+	// any other row is its picture.
+	Painting bool
+
+	// Key is the way from the definition to the key that writes the file,
+	// as keys joined by slashes. A constant, as @icon, stands for its text,
+	// and a value that does not start with gfx/ is a path under Folder. Of
+	// several blocks of one key, the first with no trigger is read. Key is
+	// "" for a file named after the definition.
+	Key    string
+	Folder string
+
+	// Pattern is the path of a file named after the definition, with %s for
+	// its name, or for the value of the key Field where that is set.
+	Pattern string
+	Field   string
+
+	// Silhouette is set where the game tints the picture in the color of
+	// the text beside it.
+	Silhouette bool
+}
+
+// ModifierFormats is CK3's database of how each modifier's value is written.
+// Vic3 and EU5 write the same keys in the database Schema.ModifierTypes names.
+const ModifierFormats = "modifier_definition_formats"
+
+// ModifierPrefix is the key of a CK3 modifier's format that names the text
+// shown before its value, and ModifierPrefixEnding how that text's key ends.
+// Without the ending the key is the modifier's name: fort_level writes
+// prefix = MOD_HOLDING_FORT_LEVEL_PREFIX
+// (common/modifier_definition_formats/00_definitions.txt:2642-2645), and
+// MOD_HOLDING_FORT_LEVEL names it
+// (localization/english/modifiers/modifiers_l_english.yml:974).
+const (
+	ModifierPrefix       = "prefix"
+	ModifierPrefixEnding = "_PREFIX"
+)
 
 // Localization is the database of localization keys, and File the database
 // of file paths. Neither has definitions written in script.
@@ -561,7 +612,7 @@ var Declarations = []Declaration{
 		Folder: "common/buildings", Games: []string{game.CK3}, Type: TypeBuilding,
 		References: []KeyReference{{KeyPath: "trade_good_need/trade_good_category", Target: "trade/trade_good_categories"}},
 	},
-	// the types of CK3's goods, buildings and technologies that the Graph draws
+	// the types of CK3's goods, buildings and technologies that Atlas draws
 	{Folder: "common/domiciles/buildings", Games: []string{game.CK3}, Type: TypeBuilding},
 	{Folder: "common/districts", Games: []string{game.CK3}, Type: TypeBuildingGroup},
 	{Folder: "common/holdings", Games: []string{game.CK3}, Type: TypeBuildingGroup},
@@ -655,12 +706,17 @@ var Declarations = []Declaration{
 		},
 	},
 	{Folder: "common/decisions", Games: []string{game.Vic3}, Type: TypeDecision},
-	// the types of Vic3's goods, buildings and technologies that the Graph draws
+	// the types of Vic3's goods, buildings and technologies that Atlas draws
 	{Folder: "common/goods", Games: []string{game.Vic3}, Type: TypeGood},
 	{Folder: "common/buildings", Games: []string{game.Vic3}, Type: TypeBuilding},
 	{Folder: "common/building_groups", Games: []string{game.Vic3}, Type: TypeBuildingGroup},
 	{Folder: "common/production_method_groups", Games: []string{game.Vic3}, Type: TypeProductionMethodGroup},
-	{Folder: "common/production_methods", Games: []string{game.Vic3}, Type: TypeProductionMethod},
+	// a method lists the goods its building must reach
+	// (production_methods.md:29)
+	{
+		Folder: "common/production_methods", Games: []string{game.Vic3}, Type: TypeProductionMethod,
+		References: []KeyReference{{KeyPath: "required_input_goods", Target: "goods"}},
+	},
 	{Folder: "common/technology/technologies", Games: []string{game.Vic3}, Type: TypeTechnology},
 	{Folder: "common/technology/eras", Games: []string{game.Vic3}, Type: TypeEra},
 	{
@@ -777,7 +833,7 @@ var Declarations = []Declaration{
 	// a demand writes a good and its amount, as wine = 1 (in_game/common/
 	// goods_demand/pop_demands.txt:15)
 	{Folder: "common/goods_demand", Games: []string{game.EU5}, Type: TypeDemand, Fields: goodsKeys},
-	// the types of EU5's goods, buildings and technologies that the Graph draws
+	// the types of EU5's goods, buildings and technologies that Atlas draws
 	{Folder: "common/goods", Games: []string{game.EU5}, Type: TypeGood},
 	{Folder: "common/building_categories", Games: []string{game.EU5}, Type: TypeBuildingGroup},
 	{Folder: "common/advances", Games: []string{game.EU5}, Type: TypeTechnology},
@@ -1110,34 +1166,116 @@ var DefinitionTexts = []TextKeys{
 		"social_hierarchies", "technology/technologies", "themes", "treaty_articles",
 	}},
 	{Games: []string{game.Vic3}, Title: "%s_name", Description: "%s_desc", Databases: []string{"proposal_types"}},
+	// A modifier's name is the first of these keys the game has a text for.
+	// CK3: stewardship (localization/english/core_l_english.yml:577),
+	// MOD_STEWARDSHIP and MOD_MONTHLY_INCOME
+	// (modifiers/modifiers_l_english.yml:4 and 686),
+	// MOD_TRADE_ROUTE_LENGTH_ADD (modifiers/gdp_modifiers_l_english.yml:13).
+	// EU5: MODIFIER_TYPE_NAME_<key>
+	// (main_menu/localization/english/modifier_types_l_english.yml:2).
+	{Games: []string{game.CK3}, Title: "%s", Databases: []string{ModifierFormats}},
+	{Games: []string{game.CK3}, Title: "MOD_%s", Capitals: true, Databases: []string{ModifierFormats}},
+	{Games: []string{game.CK3}, Title: "MOD_%s_ADD", Capitals: true, Databases: []string{ModifierFormats}},
+	{Games: []string{game.CK3}, Title: "MOD_MONTHLY_%s", Capitals: true, Databases: []string{ModifierFormats}},
+	{Games: []string{game.EU5}, Title: "MODIFIER_TYPE_NAME_%s", Databases: []string{"modifier_type_definitions"}},
 }
 
-// ListTextKeys returns the localization keys that may hold a definition's
-// title or description, with %s for its name, where the definition names none
-// itself. key is TitleKey or DescriptionKey. Without a row the title's key is
-// the name, and there is no description.
-func (d *Dialect) ListTextKeys(database, key string) []string {
-	var patterns []string
+// ListTextKeys returns the localization keys that may hold the title or the
+// description of a definition that names none itself, in the order the game
+// tries them. key is TitleKey or DescriptionKey. Without a row the title's
+// key is the definition's name, and there is no description.
+func (d *Dialect) ListTextKeys(reference Reference, key string) []string {
+	var keys []string
 	for _, row := range DefinitionTexts {
-		if !d.Matches(row.Games) || !slices.Contains(row.Databases, database) {
+		if !d.Matches(row.Games) || !slices.Contains(row.Databases, reference.Database) {
 			continue
 		}
 
-		pattern := row.Description
+		pattern, name := row.Description, reference.Name
 		if key == TitleKey {
 			pattern = row.Title
 		}
 
+		if row.Capitals {
+			name = strings.ToUpper(name)
+		}
+
 		if pattern != "" {
-			patterns = append(patterns, pattern)
+			keys = append(keys, strings.Replace(pattern, "%s", name, 1))
 		}
 	}
 
-	if len(patterns) == 0 && key == TitleKey {
-		return []string{"%s"}
+	if len(keys) == 0 && key == TitleKey {
+		return []string{reference.Name}
 	}
 
-	return patterns
+	return keys
+}
+
+// DefinitionPictures are the pictures and paintings of each game's goods,
+// buildings, technologies and what they are grouped under. Each row cites the
+// game's file and line, or a file of the folder it names.
+var DefinitionPictures = []PictureRow{
+	// gfx/interface/icons/trade/trade_goods/trade_good_alum.dds and
+	// trade_good_categories/trade_category_agricultural_goods.dds
+	{Games: []string{game.CK3}, Database: "trade/trade_good_types", Pattern: "gfx/interface/icons/trade/trade_goods/%s"},
+	{
+		Games: []string{game.CK3}, Database: "trade/trade_good_categories",
+		Pattern: "gfx/interface/icons/trade/trade_good_categories/%s",
+	},
+	// regular_district_buildings/00_guild_district_buildings.txt:852 writes
+	// type_icon, a shape the game tints
+	{
+		Games: []string{game.CK3}, Database: "buildings", Key: "type_icon", Folder: "gfx/interface/icons/building_types",
+		Silhouette: true,
+	},
+	// common/culture/innovations/00_cultural_maa_innovations.txt:2 writes
+	// the constant that line 40 gives as the icon
+	{Games: []string{game.CK3}, Database: "culture/innovations", Key: "icon"},
+	// common/districts/duchy_capital_districts.txt:8 and 16 write a
+	// background for some cases and one for the rest. An era's is
+	// gfx/interface/window_culture/culture_era_illustrations/
+	// culture_era_tribal.dds
+	{Games: []string{game.CK3}, Database: "districts", Painting: true, Key: "background/reference"},
+	{
+		Games: []string{game.CK3}, Database: "culture/eras", Painting: true,
+		Pattern: "gfx/interface/window_culture/culture_era_illustrations/%s",
+	},
+	// common/goods/00_goods.txt:10; buildings/01_industry.txt:175 and 211, an
+	// icon and the background behind it;
+	// technology/technologies/10_production.txt:6-7, whose category names
+	// gfx/interface/illustrations/tech_tree/illustration_tech_production.dds
+	{Games: []string{game.Vic3}, Database: "goods", Key: "texture"},
+	{Games: []string{game.Vic3}, Database: "buildings", Key: "icon"},
+	{Games: []string{game.Vic3}, Database: "buildings", Painting: true, Key: "background"},
+	{Games: []string{game.Vic3}, Database: "technology/technologies", Key: "texture"},
+	{
+		Games: []string{game.Vic3}, Database: "technology/technologies", Painting: true, Field: "category",
+		Pattern: "gfx/interface/illustrations/tech_tree/illustration_tech_%s",
+	},
+	// common/pop_types/laborers.txt:2 writes a pop type's icon, as
+	// gfx/interface/icons/pops_icons/laborers.dds
+	{Games: []string{game.Vic3}, Database: "pop_types", Key: "texture"},
+	// common/production_methods/01_industry.txt:928 writes a production
+	// method's icon, and common/production_method_groups/01_industry.txt:95
+	// its group's
+	{Games: []string{game.Vic3}, Database: "production_methods", Key: "texture"},
+	{Games: []string{game.Vic3}, Database: "production_method_groups", Key: "texture"},
+	// main_menu/gfx/interface/icons/trade_goods/icon_goods_alum.dds,
+	// icons/buildings/ablaq_palace.dds, icons/building_categories/
+	// consumer_goods_category.dds, icons/pops/clergy.dds
+	{Games: []string{game.EU5}, Database: "goods", Pattern: "gfx/interface/icons/trade_goods/icon_goods_%s"},
+	{Games: []string{game.EU5}, Database: "pop_types", Pattern: "gfx/interface/icons/pops/%s"},
+	{Games: []string{game.EU5}, Database: "building_types", Pattern: "gfx/interface/icons/buildings/%s"},
+	{Games: []string{game.EU5}, Database: "building_categories", Pattern: "gfx/interface/icons/building_categories/%s"},
+	// in_game/common/advances/0_age_of_renaissance.txt:6 writes an advance's
+	// icon. One that writes none shows the file named after it, as
+	// advance/baptism_books.dds, else advance/_default.dds. An age's painting
+	// is illustrations/advances/age_1_traditions.dds
+	{Games: []string{game.EU5}, Database: "advances", Key: "icon", Folder: "gfx/interface/advance"},
+	{Games: []string{game.EU5}, Database: "advances", Pattern: "gfx/interface/advance/%s"},
+	{Games: []string{game.EU5}, Database: "advances", Pattern: "gfx/interface/advance/_default"},
+	{Games: []string{game.EU5}, Database: "age", Painting: true, Pattern: "gfx/interface/illustrations/advances/%s"},
 }
 
 // Nestings holds the nestings that are written in the definitions of every

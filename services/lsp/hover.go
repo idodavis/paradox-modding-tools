@@ -53,12 +53,17 @@ type Card struct {
 	Stale    bool `json:"stale,omitempty"`
 	Inferred bool `json:"inferred"`
 
-	// Node is the Graph's id of the name, "" if the Graph asks no question
-	// about it.
-	Node string `json:"node,omitempty"`
-
 	// Color is the CSS color the word stands for, "" for none.
 	Color string `json:"color,omitempty"`
+
+	// Picture is the file of the picture a definition shows, "" for none.
+	// Silhouette is whether the game tints it in the color of the text.
+	Picture    string `json:"picture,omitempty"`
+	Silhouette bool   `json:"silhouette,omitempty"`
+
+	// Node is the id Atlas draws the name by, "" for a name it draws nothing
+	// of.
+	Node string `json:"node,omitempty"`
 
 	Sites []Site `json:"sites,omitempty"`
 
@@ -239,6 +244,9 @@ func (s *Service) describeHit(ws *workspace.Session, mods *index.Index, place wo
 	case context.Category == lang.CategoryField:
 		describeField(card, cursor)
 		card.Stale = ws.Schema.Dumps.Stale
+		if ws.Schema.DeclaresModifier(card.Title) {
+			card.Quote = ws.LookupModifierTitle(mods, card.Title)
+		}
 
 	case context.Category == lang.CategoryParameter:
 		card.What = cardParameter
@@ -524,9 +532,13 @@ func describeDefinitions(card *Card, ws *workspace.Session, mods *index.Index, p
 	card.What = lang.DescribeDefinition(reference.Database, false)
 	card.Sites, card.Color = MakeSites(ws, mods, entries, winner), findDefinedColor(ws, mods, winner)
 	card.add(rowImage, describeImage(mods, reference))
-	graphTypes := lang.LookupDialect(ws.Game.ID).GraphTypes
+	if winner != nil {
+		card.Picture, card.Silhouette = ws.FindPicture(mods, winner.Site)
+	}
+
+	atlasTypes := lang.LookupDialect(ws.Game.ID).AtlasTypes
 	if slices.Contains(ws.Schema.FireDatabases, reference.Database) ||
-		slices.Contains(graphTypes, ws.Schema.LookupType(reference.Database)) {
+		slices.Contains(atlasTypes, ws.Schema.LookupType(reference.Database)) {
 		card.Node = reference.ToID()
 	}
 
